@@ -48,9 +48,8 @@ pub fn makes_food(db: &Db, r: usize) -> bool {
 /// need, but anything beyond that is free for other work. A recipe whose
 /// output is already piling up reserves nothing.
 pub fn food_reserve(db: &Db, town: &crate::world::Town, params: &Params) -> Vec<f32> {
-    let need = town.residents.len() as f32
-        * params.needs.hunger_per_day
-        * params.market.food_reserve_days;
+    let need =
+        town.residents.len() as f32 * params.needs.hunger_per_day * params.market.food_reserve_days;
     let mut r = vec![0.0; db.content.products.len()];
     for (k, m) in db.recipes.iter().enumerate() {
         if !makes_food(db, k)

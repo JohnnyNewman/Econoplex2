@@ -238,6 +238,10 @@ pub struct MarketParams {
     pub build_threshold: f32,
     /// Price, as a share of base price, a town offers for a building type it lacks.
     pub new_building_appeal: f32,
+    /// Plots of new land (fields, woodlots) each town can still open up.
+    pub free_land: u32,
+    /// A town opens new land when its sites of a kind are this depleted on average.
+    pub land_threshold: f32,
 }
 
 #[derive(Debug, Clone, Deserialize)]

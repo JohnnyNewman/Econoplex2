@@ -120,12 +120,7 @@ pub fn attach_building_sprites(
     }
 }
 
-pub fn spawn_static(
-    mut commands: Commands,
-    db: Res<Db>,
-    towns: Res<Towns>,
-    nature: Query<(Entity, &NaturalResource, &Pos)>,
-) {
+pub fn spawn_static(mut commands: Commands, towns: Res<Towns>) {
     for town in &towns.0 {
         commands.spawn((
             Text2d::new(town.name.clone()),
@@ -137,6 +132,14 @@ pub fn spawn_static(
             Transform::from_xyz(town.pos.0, town.pos.1 + 120.0, 5.0),
         ));
     }
+}
+
+/// Nature sites get a colored square: at startup, and when a town opens new land.
+pub fn attach_nature_sprites(
+    mut commands: Commands,
+    db: Res<Db>,
+    nature: Query<(Entity, &NaturalResource, &Pos), Without<Sprite>>,
+) {
     for (e, n, pos) in &nature {
         let color = match db.content.nature[n.kind as usize].id.as_str() {
             "forest" => Color::srgb(0.15, 0.45, 0.2),

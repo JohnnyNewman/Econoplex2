@@ -280,6 +280,33 @@ fn print_final(sim: &Simulation) {
         );
     }
 
+    println!("\nLand (sites; opened during the run, plots still free):");
+    let mut q = sim
+        .world
+        .try_query::<&sim_core::components::NaturalResource>()
+        .expect("nature sites are registered");
+    for town in &towns.0 {
+        let mut kinds = vec![0usize; db.content.nature.len()];
+        for &e in &town.nature_sites {
+            if let Ok(n) = q.get(&sim.world, e) {
+                kinds[n.kind as usize] += 1;
+            }
+        }
+        let list: Vec<String> = kinds
+            .iter()
+            .enumerate()
+            .filter(|k| *k.1 > 0)
+            .map(|(k, n)| format!("{} {n}", db.content.nature[k].name))
+            .collect();
+        println!(
+            "  {:<11} {} (opened {}, free {})",
+            town.name,
+            list.join(", "),
+            town.cleared,
+            town.free_land
+        );
+    }
+
     println!("\nJobs over the whole run (times chosen / runs completed):");
     for (r, m) in db.recipes.iter().enumerate() {
         println!("  {:<26} {:>8} / {:>8}", m.name, log.chosen[r], log.runs[r]);

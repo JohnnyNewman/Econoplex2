@@ -285,7 +285,37 @@ pub fn produce(
                 town.quality[pi] = (old * town.quality[pi] + q * quality) / (old + q).max(1e-6);
                 town.stock[pi] += q;
                 town.produced_this_year[pi] += q;
-                if db.category(p) == Category::Building {
+                if let Some(kind) = db.opens[pi] {
+                    // New land: a fresh site that starts bare and grows in. Two crews
+                    // can finish on the last free plot; only the first one gets it.
+                    town.stock[pi] -= q;
+                    if town.free_land == 0 {
+                        continue;
+                    }
+                    let def = &db.content.nature[kind as usize];
+                    let k = (town.nature_sites.len() + town.cleared as usize) as f32;
+                    let a = k * 2.399_963 + task.town as f32;
+                    let r = 270.0 + 6.0 * town.cleared as f32;
+                    let e = commands
+                        .spawn((
+                            NaturalResource {
+                                kind,
+                                amount: 0.0,
+                                capacity: def.capacity,
+                                regrowth: def.regrowth,
+                            },
+                            TownId(task.town),
+                            Pos {
+                                x: town.pos.0 + r * a.cos(),
+                                y: town.pos.1 + r * a.sin(),
+                            },
+                        ))
+                        .id();
+                    town.nature_sites.push(e);
+                    town.free_land = town.free_land.saturating_sub(1);
+                    town.cleared += 1;
+                    town.price[pi] = 0.0;
+                } else if db.category(p) == Category::Building {
                     // The finished building becomes a workplace (stock tracks nothing here).
                     town.stock[pi] -= q;
                     let pos = town.next_building_pos();

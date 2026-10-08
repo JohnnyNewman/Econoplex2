@@ -234,3 +234,40 @@ fn food_comes_first_and_gluts_stop_production() {
         "other trades took the bakeries' wood"
     );
 }
+
+#[test]
+fn towns_clear_new_land_up_to_their_limit() {
+    let mut s = sim(5);
+    let dpy = s.world.resource::<sim_core::SimClock>().days_per_year;
+    let free = s
+        .world
+        .resource::<sim_core::world::Params>()
+        .market
+        .free_land;
+    let sites_before: Vec<usize> = s
+        .world
+        .resource::<sim_core::Towns>()
+        .0
+        .iter()
+        .map(|t| t.nature_sites.len())
+        .collect();
+    for _ in 0..5 * dpy {
+        s.step();
+    }
+    let towns = s.world.resource::<sim_core::Towns>();
+    let opened: u32 = towns.0.iter().map(|t| t.cleared).sum();
+    assert!(opened > 0, "no town cleared a field or planted a woodlot");
+    for (t, town) in towns.0.iter().enumerate() {
+        assert_eq!(
+            town.cleared + town.free_land,
+            free,
+            "{} overused its land",
+            town.name
+        );
+        assert_eq!(
+            town.nature_sites.len(),
+            sites_before[t] + town.cleared as usize,
+            "every opened plot is a new site"
+        );
+    }
+}
