@@ -63,3 +63,77 @@ fn economy_produces_and_people_learn() {
         st.alive_count()
     );
 }
+
+#[test]
+fn money_is_conserved() {
+    let mut s = sim(4);
+    let money = |s: &Simulation| {
+        sim_core::world::total_money(
+            s.world.resource::<sim_core::AgentStore>(),
+            s.world.resource::<sim_core::Towns>(),
+        )
+    };
+    let before = money(&s);
+    for _ in 0..600 {
+        s.step();
+    }
+    let after = money(&s);
+    assert!(
+        ((after - before) / before).abs() < 1e-3,
+        "money changed from {before} to {after}"
+    );
+}
+
+#[test]
+fn first_year_has_no_famine() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let mut s = Simulation::from_paths(&AssetPaths::from_root(&root)).unwrap();
+    let start = s.world.resource::<sim_core::AgentStore>().alive_count();
+    let dpy = s.world.resource::<sim_core::SimClock>().days_per_year;
+    for _ in 0..dpy {
+        s.step();
+    }
+    let end = s.world.resource::<sim_core::AgentStore>().alive_count();
+    assert!(
+        end as f32 >= 0.97 * start as f32,
+        "population fell from {start} to {end} in the first year"
+    );
+}
+
+#[test]
+fn towns_construct_buildings() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let mut s = Simulation::from_paths(&AssetPaths::from_root(&root)).unwrap();
+    let dpy = s.world.resource::<sim_core::SimClock>().days_per_year;
+    for _ in 0..10 * dpy {
+        s.step();
+    }
+    let towns = s.world.resource::<sim_core::Towns>();
+    let built: u32 = towns.0.iter().map(|t| t.built).sum();
+    assert!(built > 0, "no building was constructed in 10 years");
+    for t in &towns.0 {
+        assert!(
+            t.buildings.len() <= 40,
+            "{} overbuilt: {} buildings",
+            t.name,
+            t.buildings.len()
+        );
+    }
+}
+
+#[test]
+fn sword_towns_raise_squads_and_raid() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let mut s = Simulation::from_paths(&AssetPaths::from_root(&root)).unwrap();
+    let dpy = s.world.resource::<sim_core::SimClock>().days_per_year;
+    let mut raids = 0;
+    let mut soldiers = 0;
+    for _ in 0..20 * dpy {
+        s.step();
+        let towns = s.world.resource::<sim_core::Towns>();
+        raids += towns.0.iter().filter(|t| t.raid.is_some()).count();
+        soldiers = soldiers.max(towns.0.iter().map(|t| t.squad.len()).sum());
+    }
+    assert!(soldiers > 0, "no town raised a squad");
+    assert!(raids > 0, "no raid in 20 years");
+}

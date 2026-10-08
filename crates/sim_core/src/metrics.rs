@@ -28,9 +28,15 @@ pub struct TownStats {
     /// Mean of the ideological mind axes.
     pub ideology: [f32; MIND_DIM - mind::IDEOLOGY_START],
     pub ideology_spread: f32,
-    /// Longswords in the armory by level 1, 2, 3.
+    /// Longswords in the armory or carried by soldiers, by level 1, 2, 3.
     pub swords: [u32; 3],
     pub tools_in_use: usize,
+    pub treasury: f32,
+    pub buildings: usize,
+    pub soldiers: usize,
+    pub war: crate::world::WarCounters,
+    /// Mean wealth of residents.
+    pub mean_wealth: f32,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -38,6 +44,8 @@ pub struct YearStats {
     pub year: u64,
     pub population: usize,
     pub success_rate: f32,
+    /// Agents' wealth plus treasuries; constant when the money loop is closed.
+    pub total_money: f64,
     pub towns: Vec<TownStats>,
 }
 
@@ -128,6 +136,7 @@ pub fn economic_complexity(x: &[Vec<f32>]) -> (Vec<Vec<bool>>, Vec<f32>) {
     (m, eci)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn record(
     store: Res<AgentStore>,
     mut towns: ResMut<Towns>,
@@ -136,7 +145,7 @@ pub fn record(
     log: Res<WorkLog>,
     params: Res<crate::world::Params>,
     mut metrics: ResMut<Metrics>,
-    weapons: Query<&crate::components::Product, With<crate::components::Stored>>,
+    weapons: Query<&crate::components::Product>,
 ) {
     if clock.tick == 0 || clock.day_of_year() != 0 {
         return;
@@ -217,6 +226,16 @@ pub fn record(
             top_sum += profile.iter().copied().fold(0.0, f32::max);
         }
         let n = s.population.max(1) as f32;
+        s.treasury = town.treasury;
+        s.buildings = town.buildings.len();
+        s.soldiers = town.squad.len();
+        s.war = town.war;
+        s.mean_wealth = town
+            .residents
+            .iter()
+            .map(|&i| store.wealth[i as usize])
+            .sum::<f32>()
+            / n;
         s.ideology = ideo_sum.map(|v| v / n);
         let mut spread = 0.0;
         for &i in &town.residents {
@@ -228,7 +247,8 @@ pub fn record(
         s.ideology_spread = (spread / n).sqrt();
         s.specialization = spec_sum / s.adults.max(1) as f32;
         s.mean_top_skill = top_sum / s.adults.max(1) as f32;
-        for &e in &town.armory {
+        let carried = town.squad.iter().filter_map(|&s| store.weapon[s as usize]);
+        for e in town.armory.iter().copied().chain(carried) {
             if let Ok(p) = weapons.get(e) {
                 for (lvl, id) in sword_ids.iter().enumerate() {
                     if *id == Some(p.def) {
@@ -240,7 +260,11 @@ pub fn record(
         ys.population += s.population;
         ys.towns.push(s);
     }
+    ys.total_money = crate::world::total_money(&store, &towns);
     metrics.years.push(ys);
+    for t in towns.0.iter_mut() {
+        t.war = Default::default();
+    }
 }
 
 #[cfg(test)]

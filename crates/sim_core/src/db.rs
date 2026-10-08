@@ -23,8 +23,11 @@ pub struct RecipeMeta {
     pub building: Option<u32>,
     pub duration: f32,
     pub max_team: usize,
-    /// Hunger removed by one run's outputs.
+    /// Hunger one run's outputs can eventually remove, counting outputs that
+    /// feed into food recipes (grain and flour lead to bread).
     pub food_out: f32,
+    /// Construction recipes: the building this recipe puts up.
+    pub builds: Option<u32>,
 }
 
 #[derive(Resource)]
@@ -75,6 +78,7 @@ impl Db {
             d.iter_mut().for_each(|x| *x /= n);
         }
 
+        let food_potential = food_potential(&content);
         let recipes = content
             .recipes
             .iter()
@@ -91,7 +95,7 @@ impl Db {
                     .collect();
                 let food_out = outputs
                     .iter()
-                    .map(|(p, q)| content.products[*p as usize].food * q)
+                    .map(|(p, q)| food_potential[*p as usize] * q)
                     .sum();
                 RecipeMeta {
                     name: r.name.clone(),
@@ -106,12 +110,16 @@ impl Db {
                         .iter()
                         .map(|(p, q)| (content.product(p).unwrap(), *q as f32))
                         .collect(),
-                    outputs,
+                    outputs: outputs.clone(),
                     nature: r.nature.as_ref().map(|n| content.nature_kind(n).unwrap()),
                     building: r.building.as_ref().map(|b| content.product(b).unwrap()),
                     duration: r.duration,
                     max_team: r.max_team.max(1) as usize,
                     food_out,
+                    builds: outputs
+                        .iter()
+                        .map(|o| o.0)
+                        .find(|&p| content.products[p as usize].category == Category::Building),
                 }
             })
             .collect();
@@ -159,4 +167,36 @@ impl Db {
             .map(|&s| dot(cap, &self.skill_vecs[s as usize]))
             .fold(0.0, f32::max)
     }
+}
+
+/// Hunger each product can eventually remove: its own food value, or the food its
+/// best downstream recipe makes per unit of input (shared evenly across inputs).
+pub fn food_potential(content: &Content) -> Vec<f32> {
+    let mut pot: Vec<f32> = content.products.iter().map(|p| p.food).collect();
+    // Production chains are short DAGs; a few relaxation passes reach the fixed point.
+    for _ in 0..content.recipes.len().min(16) {
+        let mut changed = false;
+        for r in &content.recipes {
+            let out: f32 = r
+                .outputs
+                .iter()
+                .map(|(p, q)| pot[content.product(p).unwrap() as usize] * *q as f32)
+                .sum();
+            let inputs: f32 = r.inputs.iter().map(|(_, q)| *q as f32).sum();
+            if inputs <= 0.0 {
+                continue;
+            }
+            for (p, _) in &r.inputs {
+                let i = content.product(p).unwrap() as usize;
+                if out / inputs > pot[i] + 1e-6 {
+                    pot[i] = out / inputs;
+                    changed = true;
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    pot
 }

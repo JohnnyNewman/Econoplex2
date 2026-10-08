@@ -16,6 +16,39 @@ pub fn sense(
     clock.tick += 1;
     let p = &params.needs;
     let store = &mut *store;
+
+    // Food that a recipe turns into more food (grain into flour for bread) is held
+    // back for one day of that work, so hungry people don't eat the seed of the
+    // next harvest and lock the town into famine.
+    let reserve: Vec<Vec<f32>> = towns
+        .0
+        .iter()
+        .map(|town| {
+            let mut r = vec![0.0; db.content.products.len()];
+            for m in &db.recipes {
+                let in_food: f32 = m
+                    .inputs
+                    .iter()
+                    .map(|&(p, q)| db.content.products[p as usize].food * q)
+                    .sum();
+                if m.food_out <= in_food {
+                    continue;
+                }
+                let workers = match m.building {
+                    Some(b) => {
+                        (db.content.products[b as usize].slots as usize * town.building_count(b))
+                            as f32
+                    }
+                    None => 0.0,
+                };
+                for &(p, q) in &m.inputs {
+                    r[p as usize] += q * workers / m.duration;
+                }
+            }
+            r
+        })
+        .collect();
+
     for i in 0..store.len() {
         if !store.alive[i] {
             continue;
@@ -28,7 +61,7 @@ pub fn sense(
         if st[HUNGER] > p.eat_threshold {
             for &(food, value) in &db.foods {
                 let f = food as usize;
-                if town.stock[f] >= 1.0 {
+                if town.stock[f] >= 1.0 + reserve[store.town[i] as usize][f] {
                     town.stock[f] -= 1.0;
                     st[HUNGER] = (st[HUNGER] - value).max(0.0);
                     let pay = town.price[f].min(store.wealth[i].max(0.0));
@@ -50,7 +83,7 @@ pub fn sense(
                 st[FATIGUE] = (st[FATIGUE] - p.fatigue_rest_recovery).max(0.0);
                 store.activity[i] = Activity::Idle;
             }
-            Activity::Idle | Activity::Child => {
+            Activity::Idle | Activity::Child | Activity::Soldier => {
                 st[FATIGUE] = (st[FATIGUE] - p.fatigue_idle_recovery).max(0.0)
             }
             Activity::Working(_) => {}

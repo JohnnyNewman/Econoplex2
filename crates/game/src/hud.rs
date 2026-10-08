@@ -108,7 +108,7 @@ pub fn update_hud(
         store.alive_count()
     );
     let latest = metrics.latest();
-    s.push_str("\ntown          pop   food  ECI  div  swords 1/2/3\n");
+    s.push_str("\ntown          pop   food  ECI  div  swords 1/2/3  army\n");
     for (t, town) in towns.0.iter().enumerate() {
         let food = town.food_stock(&db) / town.residents.len().max(1) as f32;
         let (eci, div, swords) = latest
@@ -121,8 +121,16 @@ pub fn update_hud(
                 )
             })
             .unwrap_or(("  -  ".into(), "-".into(), [0; 3]));
+        let army = match &town.raid {
+            Some(r) => format!(
+                "{} -> {}",
+                town.squad.len(),
+                towns.0[r.target as usize].name
+            ),
+            None => town.squad.len().to_string(),
+        };
         s.push_str(&format!(
-            "{:<11} {:>5} {:>6.1} {} {:>4}  {}/{}/{}\n",
+            "{:<11} {:>5} {:>6.1} {} {:>4}  {}/{}/{}  {}\n",
             town.name,
             town.residents.len(),
             food,
@@ -130,7 +138,8 @@ pub fn update_hud(
             div,
             swords[0],
             swords[1],
-            swords[2]
+            swords[2],
+            army
         ));
     }
     if latest.is_none() {

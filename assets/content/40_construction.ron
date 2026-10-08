@@ -1,0 +1,24 @@
+// Construction: towns put up new buildings when the existing ones are full.
+// A building's `slots` (in 00_core.ron) is how many people can work in it at once.
+(
+    skills: [
+        (id: "construction", name: "Construction", domain: "construction", prereqs: ["carpentry"]),
+    ],
+    recipes: [
+        (id: "build_workshop", name: "Build workshop", skill: "construction", difficulty: 0.30,
+            inputs: [("plank", 12), ("wood", 6)], outputs: [("workshop", 1)],
+            duration: 30.0, max_team: 6, physique: [("strength", 0.3), ("endurance", 0.2)]),
+        (id: "build_mill", name: "Build mill", skill: "construction", difficulty: 0.35,
+            inputs: [("plank", 16), ("wood", 10)], outputs: [("mill", 1)],
+            duration: 40.0, max_team: 6, physique: [("strength", 0.3), ("endurance", 0.2)]),
+        (id: "build_bakery", name: "Build bakery", skill: "construction", difficulty: 0.35,
+            inputs: [("plank", 12), ("wood", 12)], outputs: [("bakery", 1)],
+            duration: 35.0, max_team: 6, physique: [("strength", 0.3), ("endurance", 0.2)]),
+        (id: "build_furnace", name: "Build furnace", skill: "construction", difficulty: 0.45,
+            inputs: [("plank", 8), ("wood", 20)], outputs: [("furnace", 1)],
+            duration: 40.0, max_team: 6, physique: [("strength", 0.3), ("endurance", 0.2)]),
+        (id: "build_smithy", name: "Build smithy", skill: "construction", difficulty: 0.50,
+            inputs: [("plank", 12), ("iron", 6)], outputs: [("smithy", 1)],
+            duration: 50.0, max_team: 6, physique: [("strength", 0.3), ("endurance", 0.2)]),
+    ],
+)

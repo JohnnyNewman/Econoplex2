@@ -17,6 +17,8 @@ pub enum Activity {
     Idle,
     Resting,
     Working(Entity),
+    /// Serving in the town's squad (drilling at home, or marching on a raid).
+    Soldier,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,6 +50,9 @@ pub struct AgentStore {
     // --- equipment: capability bonus from the equipped tool (cached)
     pub equip_vec: Vec<CapVec>,
     pub equipped: Vec<Option<Entity>>,
+    /// Soldiers' weapon and its cached fighting power.
+    pub weapon: Vec<Option<Entity>>,
+    pub weapon_power: Vec<f32>,
     // --- bookkeeping
     pub alive: Vec<bool>,
     pub entity: Vec<Entity>,
@@ -107,6 +112,8 @@ impl AgentStore {
         self.aptitude.push(a.aptitude);
         self.equip_vec.push([0.0; CAP_DIM]);
         self.equipped.push(None);
+        self.weapon.push(None);
+        self.weapon_power.push(0.0);
         self.alive.push(true);
         self.entity.push(a.entity);
         self.town.push(a.town);

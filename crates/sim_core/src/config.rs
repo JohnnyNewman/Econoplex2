@@ -30,6 +30,7 @@ pub struct ModelParams {
     pub market: MarketParams,
     pub organize: OrganizeParams,
     pub work: WorkParams,
+    pub military: MilitaryParams,
 }
 
 impl ModelParams {
@@ -197,6 +198,8 @@ pub struct LifeParams {
     pub partner_interval: u32,
     /// Food stock per capita at which births run at full rate.
     pub food_for_births: f32,
+    /// How much more likely founders start in a trade per unit of its food output.
+    pub starting_food_bias: f32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -210,6 +213,22 @@ pub struct MarketParams {
     pub trade_amount: f32,
     /// Fraction of price lost per unit traded (transport cost).
     pub transport_cost: f32,
+    /// Yearly tax on each agent's wealth above `tax_free_wealth`, paid to the town
+    /// treasury. It returns savings to the market so wages can keep flowing.
+    pub wealth_tax: f32,
+    pub tax_free_wealth: f32,
+    /// Treasury a town keeps per resident; above it, `public_spending` of the excess
+    /// per year is paid out to residents, so towns don't hoard money either.
+    pub treasury_reserve_per_capita: f32,
+    pub public_spending: f32,
+    /// Fraction of food stock that spoils per year.
+    pub food_spoilage: f32,
+    /// Guild members may buy a tool on credit until their wealth reaches minus this.
+    pub tool_credit: f32,
+    /// Share of a building type's slots in use above which the town wants another.
+    pub build_threshold: f32,
+    /// Price, as a share of base price, a town offers for a building type it lacks.
+    pub new_building_appeal: f32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -217,6 +236,40 @@ pub struct OrganizeParams {
     pub interval: u32,
     pub guild_threshold: f32,
     pub master_threshold: f32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct MilitaryParams {
+    /// Days between musters (recruiting, releasing, arming soldiers).
+    pub muster_interval: u32,
+    /// Share of a town's adults it keeps under arms when it can pay them.
+    pub soldier_share: f32,
+    /// Daily pay per soldier, from the town treasury.
+    pub soldier_pay: f32,
+    /// Oldest age at which adults are recruited.
+    pub max_recruit_age: f32,
+    /// Learning multiplier for daily drill and for battle.
+    pub drill_rate: f32,
+    pub battle_learning: f32,
+    /// Weapon power per tier at quality 0.5.
+    pub weapon_power: f32,
+    /// Fighting strength of each adult at home who is not a soldier.
+    pub militia_power: f32,
+    /// Map units a squad marches per day.
+    pub march_speed: f32,
+    /// Days a town waits after a raid before the next one.
+    pub raid_cooldown: u32,
+    /// A town raids only when its squad is this many times stronger than the defense.
+    pub raid_margin: f32,
+    /// Daily chance that a town able to raid decides to, scaled by its soldiers' ambition and risk.
+    pub raid_appetite: f32,
+    pub min_raid_squad: usize,
+    /// Win chance = A^k / (A^k + D^k).
+    pub battle_steepness: f32,
+    /// Base chance a fighter falls in battle (scaled by the enemy's share of strength).
+    pub casualty_rate: f32,
+    /// Share of the defender's treasury and stores a winning raid carries off.
+    pub loot_share: f32,
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -68,6 +68,9 @@ pub struct ProductDef {
     pub food: f32,
     #[serde(default)]
     pub equip: Option<EquipDef>,
+    /// Buildings: how many people can work in one at a time (0 = unlimited).
+    #[serde(default)]
+    pub slots: u32,
 }
 
 /// One production step. A product such as a level-3 longsword is the end of a chain of steps.

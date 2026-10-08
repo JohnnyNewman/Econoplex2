@@ -88,22 +88,69 @@ nonnegative.
 
 | Step | What happens |
 | --- | --- |
-| sense | Hunger rises; agents eat the best food in their town; health, fatigue and happiness update |
-| decide | Each idle adult scores a sample of feasible jobs and resting: utility = (bias + Wm·mind + Ws·state) · features, softmax with temperature |
+| sense | Hunger rises; agents buy and eat the best food in their town, leaving a day's grain for the mills; health, fatigue and happiness update |
+| decide | Each idle adult scores a sample of open jobs and resting: utility = (bias + Wm·mind + Ws·state) · features, softmax with temperature. Jobs fill up: nature, inputs and building slots limit how many can take each one |
 | assign | Agents choosing the same job form teams; inputs and nature are reserved; task entities spawn; children join a working parent |
-| produce | Teams pool capabilities (element-wise max minus coordination cost); success = sigmoid(k·(effective − difficulty)); quality is the weakest link of step and inputs |
+| produce | Teams pool capabilities (element-wise max minus coordination cost); success = sigmoid(k·(effective − difficulty)); quality is the weakest link of step and inputs. The town buys the output and pays wages from its treasury; finished construction becomes a new building |
 | learn | Practice with diminishing returns; master-to-apprentice diffusion along the skill direction only |
 | socialize | Bounded-confidence alignment on the ideological axes between coworkers and random townspeople |
 | body | Norm budget and forgetting on capability; physique trains toward the genetic potential |
-| settle | Prices follow stock vs. per-capita targets; caravans trade between towns; nature regrows |
-| organize | Guild membership and roles from domain proficiency; guild members take matching tools |
-| lifecycle | Aging and Gompertz mortality, partnering by mind affinity, births with genetic inheritance |
+| settle | Prices follow stock vs. per-capita targets; buildings are priced by how full they are; food spoils; wealth tax and public spending; caravans trade goods and tools between towns; nature regrows |
+| organize | Guild membership and roles from domain proficiency; guild members buy matching tools (on credit if needed) |
+| military | Musters (recruit, release, arm with longswords), soldier pay and drill, raids and battles |
+| lifecycle | Aging and Gompertz mortality, bequests, partnering by mind affinity, births with genetic inheritance |
 | metrics | Yearly: diversity, RCA, economic complexity index, specialization, culture |
 
 Decision features are `[value, skill, effort, novelty, social, need]`. Value is a job's
 profit relative to the average job the town offers, so oversupplied trades lose
 appeal. Skills are never inherited: children of smiths become smiths only by working
-next to their parents.
+next to their parents. The need feature counts a job's food potential, so milling and
+cutting wood for the bakery help against hunger too, not only farming and baking.
+
+### Money
+
+Money is never created or destroyed; `econoplex-sim` prints the total each year and
+the `money_is_conserved` test checks it. It moves between agents' wealth and town
+treasuries:
+
+| Flow | From → to |
+| --- | --- |
+| Wages: the town market buys each finished output and pays the team `wage_share` of the value added | treasury → workers |
+| Food, eaten at the town price (agents with no money still eat) | eater → treasury |
+| Tools, bought by guild members, on credit up to `tool_credit` | member → treasury |
+| Caravans: the buying town pays the destination price | buyer treasury → seller treasury |
+| Wealth tax on savings above `tax_free_wealth` | agent → treasury |
+| Public spending of a treasury above its per-capita reserve | treasury → residents |
+| Bequests: partner, else children, else the town | dead agent → heirs |
+
+When a treasury runs dry, wages for that day are cut, so pay follows what people
+actually spend. All rates are in the `market` section of `models.ron`.
+
+### Construction
+
+Buildings are products with `slots`: how many people can work in one at a time. When a
+building type's slots have been about `build_threshold` full for a month and the goods
+it makes sell above base price, the town offers to pay for another one, and a crew
+with the Construction skill builds it from planks, wood and (for a smithy) iron. A
+town also offers a discounted price for a building type it lacks, which is how a town
+can enter a new line of work. Construction recipes live in
+`assets/content/40_construction.ron`; one crew builds each building type at a time.
+
+### Squads and raids
+
+Every town keeps a squad of up to `soldier_share` of its adults, as many as its
+treasury can pay for a month. Recruits are the most ambitious, risk-loving and
+physically strong idle adults. Soldiers stop working, are paid `soldier_pay` a day,
+take the best longsword in the armory, and learn the Fighting skill by drilling.
+
+A town whose squad is `raid_margin` times stronger than a neighbor's defense (its
+soldiers at home plus a small militia strength per adult) may raid it, more often
+when its soldiers are ambitious and risk-loving. The squad marches across the map,
+fights on arrival (win chance A^k / (A^k + D^k)), and both sides lose fighters in
+proportion to the enemy's strength. A winning raid takes `loot_share` of the
+defender's treasury at once and carries the same share of its stores home. Fallen
+fighters die, so their skills die with them. All of this is in the `military`
+section of `models.ron`.
 
 ### Swapping a formula
 
@@ -130,22 +177,28 @@ seed, same state hash (`econoplex-sim --hash`, and the `same_seed_same_state` te
 
 ## What a 30-year run shows
 
-With the default scenario (four towns, 1,200 agents), towns specialize differently
-from identical rules. Brassmoor, with ore, a furnace and a smithy, becomes the
-metalworking center with the highest complexity score and most swords. Greenvale,
-without a smithy, becomes the breadbasket with the lowest score. Level-3 longswords
-appear only rarely, after decades.
+With the default scenario (four towns, 1,200 agents), nobody starves in the first year
+and the population roughly doubles over 30 years while the money supply stays fixed.
+Towns specialize differently from identical rules: Ironhold and Brassmoor, with ore, a
+furnace and a smithy, become sword makers with the highest complexity scores.
+Greenvale, without a smithy, becomes the breadbasket with the lowest score and buys
+its sickles from the smiths. Timberwick builds the most (more mills and bakeries,
+and its own smithy). Level-3 longswords stay rare. The sword towns field the
+largest squads and raid their neighbors every year or two, mostly successfully.
 
-Performance on one core: about 1.5 ms per tick at 1,400 agents and 14 ms at 12,000.
+Performance on one core: about 1.3 ms per tick at 2,400 agents and 33 ms at 18,500.
 
 ## Known limitations of this prototype
 
-- Wages are paid from the output's value, not by a buyer; money is created. Weapons
-  and tools accumulate in town armories as the only source of demand.
-- Buildings are pre-placed; construction recipes are not modeled yet.
-- Squads and combat do not exist yet; organizations are towns and guilds.
+- The town treasury is the only buyer of production; there are no private firms,
+  and weapons still pile up in town armories.
+- Prices are in fixed nominal terms, so a growing population with a fixed money
+  supply means lower wealth per person rather than lower prices.
+- Buildings never wear out or get demolished.
+- Raids are the only form of war: no sieges, conquest, captives or migration yet,
+  and a squad fights as one block with no tactical movement.
+- Towns still hit occasional food crunches as their population outgrows the land.
 - Agent slots are never reused, so memory grows with births.
-- The first year has some deaths while labor reallocates to food production.
 - `days_per_year` is 120 so generations are visible in short runs.
 
 See the roadmap document for the next phases.

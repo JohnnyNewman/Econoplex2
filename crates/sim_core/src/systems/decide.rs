@@ -7,7 +7,7 @@
 
 use super::streams;
 use super::work::{physique_bonus, state_factor};
-use crate::components::NaturalResource;
+use crate::components::{NaturalResource, Participants, Task};
 use crate::config::FEATURES;
 use crate::db::Db;
 use crate::store::{Activity, AgentStore};
@@ -15,6 +15,37 @@ use crate::world::{Decisions, Params, SimClock, SimSeed, Towns};
 use bevy_ecs::prelude::*;
 use rand::Rng;
 use sim_data::dims::*;
+
+/// How many more workers each recipe can absorb in `town` today, limited by the
+/// nature left to harvest and the inputs in stock. Jobs fill up as agents choose
+/// them, so the rest of the town spreads to other work instead of queueing.
+pub fn job_capacity(
+    db: &Db,
+    town: &crate::world::Town,
+    sites: &Query<&NaturalResource>,
+) -> Vec<f32> {
+    let mut nature_total = vec![0.0f32; db.content.nature.len()];
+    for &e in &town.nature_sites {
+        if let Ok(n) = sites.get(e) {
+            nature_total[n.kind as usize] += n.amount;
+        }
+    }
+    db.recipes
+        .iter()
+        .map(|m| {
+            // One worker does about 1/duration runs per day.
+            let mut cap = f32::INFINITY;
+            if let Some(k) = m.nature {
+                let out: f32 = m.outputs.iter().map(|o| o.1).sum();
+                cap = cap.min(nature_total[k as usize] / out * m.duration);
+            }
+            for &(p, q) in &m.inputs {
+                cap = cap.min(town.stock[p as usize] / q * m.duration);
+            }
+            cap
+        })
+        .collect()
+}
 
 /// Recipes a town can start right now (building, nature and inputs available).
 pub fn feasible_recipes(
@@ -72,12 +103,13 @@ pub fn preference_weights(params: &Params, mind: &MindVec, state: &StateVec) -> 
 #[allow(clippy::too_many_arguments)]
 pub fn decide(
     mut store: ResMut<AgentStore>,
-    towns: Res<Towns>,
+    mut towns: ResMut<Towns>,
     db: Res<Db>,
     params: Res<Params>,
     clock: Res<SimClock>,
     seed: Res<SimSeed>,
     sites: Query<&NaturalResource>,
+    tasks: Query<(&Task, &Participants)>,
     mut decisions: ResMut<Decisions>,
     mut log: ResMut<crate::world::WorkLog>,
 ) {
@@ -87,6 +119,52 @@ pub fn decide(
     let mastery = params.mastery();
 
     // Per-town context, computed once.
+    let mut capacity: Vec<Vec<f32>> = towns
+        .0
+        .iter()
+        .map(|t| job_capacity(&db, t, &sites))
+        .collect();
+    // Building slots: a building holds `slots` workers, including those on
+    // multi-day tasks. Only one crew at a time builds each building type.
+    let np = db.content.products.len();
+    let mut slots_total = vec![vec![f32::INFINITY; np]; towns.0.len()];
+    for (t, town) in towns.0.iter().enumerate() {
+        for (p, total) in slots_total[t].iter_mut().enumerate() {
+            let slots = db.content.products[p].slots;
+            if db.category(p as u32) == sim_data::Category::Building && slots > 0 {
+                *total = (slots as usize * town.building_count(p as u32)) as f32;
+            }
+        }
+    }
+    let mut slots_left = slots_total.clone();
+    for (task, parts) in tasks.iter() {
+        let m = &db.recipes[task.recipe as usize];
+        let t = task.town as usize;
+        if let Some(b) = m.building {
+            slots_left[t][b as usize] -= parts.workers.len() as f32;
+        }
+        if m.builds.is_some() {
+            capacity[t][task.recipe as usize] = 0.0;
+        }
+    }
+    for (t, town) in towns.0.iter().enumerate() {
+        for (r, m) in db.recipes.iter().enumerate() {
+            if let Some(b) = m.builds {
+                capacity[t][r] = if town.price[b as usize] > 0.0 {
+                    capacity[t][r].min(m.max_team as f32)
+                } else {
+                    0.0
+                };
+            }
+        }
+    }
+    let open = |slots_left: &[Vec<f32>], capacity: &[Vec<f32>], t: usize, r: u32| {
+        capacity[t][r as usize] >= 1.0
+            && db.recipes[r as usize]
+                .building
+                .is_none_or(|b| slots_left[t][b as usize] >= 1.0)
+    };
+
     let feasible: Vec<Vec<u32>> = towns
         .0
         .iter()
@@ -137,7 +215,11 @@ pub fn decide(
 
         // Candidate list: a random sample of feasible jobs plus the agent's habitual job.
         pool.clear();
-        pool.extend_from_slice(&feasible[t]);
+        pool.extend(
+            feasible[t]
+                .iter()
+                .filter(|&&r| open(&slots_left, &capacity, t, r)),
+        );
         let k = d.candidates.min(pool.len());
         for j in 0..k {
             let swap = rng.random_range(j..pool.len());
@@ -145,7 +227,10 @@ pub fn decide(
         }
         pool.truncate(k);
         if let Some(last) = store.last_recipe[i] {
-            if feasible[t].contains(&last) && !pool.contains(&last) {
+            if open(&slots_left, &capacity, t, last)
+                && feasible[t].contains(&last)
+                && !pool.contains(&last)
+            {
                 pool.push(last);
             }
         }
@@ -196,9 +281,27 @@ pub fn decide(
                 );
             }
             Some(r) => {
+                capacity[t][r as usize] -= 1.0;
+                if let Some(b) = db.recipes[r as usize].building {
+                    slots_left[t][b as usize] -= 1.0;
+                }
                 log.chosen[r as usize] += 1;
                 decisions.jobs.push((i as u32, r));
             }
+        }
+    }
+
+    // How full each building type has been lately (a month-long moving average):
+    // the signal for construction, smoothed so a busy week doesn't start a mill.
+    for (t, town) in towns.0.iter_mut().enumerate() {
+        for p in 0..np {
+            let total = slots_total[t][p];
+            let today = if total.is_finite() && total > 0.0 {
+                1.0 - slots_left[t][p] / total
+            } else {
+                0.0
+            };
+            town.building_load[p] += (today - town.building_load[p]) / 30.0;
         }
     }
 }

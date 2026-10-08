@@ -1,0 +1,8 @@
+// Military: soldiers learn Fighting by drilling and in battle. There is no recipe for
+// it; squads are mustered and paid by their town (see `military` in models.ron).
+// Longswords (30_metalworking.ron) are their weapons: power grows with tier and quality.
+(
+    skills: [
+        (id: "fighting", name: "Fighting", domain: "military"),
+    ],
+)

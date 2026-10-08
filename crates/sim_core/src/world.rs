@@ -78,6 +78,42 @@ pub struct Town {
     pub residents: Vec<u32>,
     pub produced_this_year: Vec<f32>,
     pub produced_last_year: Vec<f32>,
+    /// Share of each building type's slots in use, averaged over about a month
+    /// (indexed by product).
+    pub building_load: Vec<f32>,
+    /// Buildings put up by construction so far.
+    pub built: u32,
+    /// The town's squad organization and its soldiers (store indices).
+    pub squad_org: Entity,
+    pub squad: Vec<u32>,
+    pub raid: Option<Raid>,
+    /// No new raid before this tick.
+    pub raid_ready: u64,
+    pub war: WarCounters,
+}
+
+/// A squad on the march: out to `target`, battle on arrival, then home.
+#[derive(Debug, Clone)]
+pub struct Raid {
+    pub target: u16,
+    pub soldiers: Vec<u32>,
+    pub depart: u64,
+    pub arrive: u64,
+    pub home: u64,
+    pub fought: bool,
+    /// Goods carried home (indexed by product).
+    pub loot: Vec<f32>,
+}
+
+/// Military events since the last yearly report.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct WarCounters {
+    pub raids: u32,
+    pub raids_won: u32,
+    pub raids_lost: u32,
+    pub attacked: u32,
+    pub defended: u32,
+    pub fallen: u32,
 }
 
 impl Town {
@@ -86,6 +122,18 @@ impl Town {
             .iter()
             .map(|(p, f)| self.stock[*p as usize] * f)
             .sum()
+    }
+
+    pub fn building_count(&self, def: u32) -> usize {
+        self.buildings.iter().filter(|b| b.0 == def).count()
+    }
+
+    /// Where the next constructed building goes: rings outside the starting ones.
+    pub fn next_building_pos(&self) -> (f32, f32) {
+        let ring = (self.built / 8) as f32;
+        let a = (self.built % 8) as f32 / 8.0 * std::f32::consts::TAU + 0.39 * (ring + 1.0);
+        let r = 105.0 + 30.0 * ring;
+        (self.pos.0 + r * a.cos(), self.pos.1 + r * a.sin())
     }
 
     pub fn building(&self, def: u32) -> Option<(Entity, (f32, f32))> {
@@ -98,6 +146,16 @@ impl Town {
 
 #[derive(Resource, Default)]
 pub struct Towns(pub Vec<Town>);
+
+/// All money in the world: agents' wealth plus town treasuries. Every transfer
+/// moves money between these, so this stays constant over a run.
+pub fn total_money(store: &AgentStore, towns: &Towns) -> f64 {
+    let agents: f64 = (0..store.len())
+        .filter(|&i| store.alive[i])
+        .map(|i| store.wealth[i] as f64)
+        .sum();
+    agents + towns.0.iter().map(|t| t.treasury as f64).sum::<f64>()
+}
 
 /// Choices made in the decide step, consumed by assign.
 #[derive(Resource, Default)]
@@ -255,7 +313,48 @@ pub fn setup(world: &mut World, db: Db, params: ModelParams, scenario: &Scenario
             residents: Vec::new(),
             produced_this_year: vec![0.0; np],
             produced_last_year: vec![0.0; np],
+            building_load: vec![0.0; np],
+            built: 0,
+            squad_org: world
+                .spawn((
+                    Organization {
+                        kind: OrgKind::Squad,
+                        name: format!("{} squad", spec.name),
+                        domain: None,
+                    },
+                    TownId(t),
+                ))
+                .id(),
+            squad: Vec::new(),
+            raid: None,
+            raid_ready: 0,
+            war: WarCounters::default(),
         });
+
+        // Starting trades follow what the town can actually run, with food work weighted
+        // up so a new town can feed itself while the labor market finds its balance.
+        let trade_weights: Vec<f32> = db
+            .recipes
+            .iter()
+            .map(|m| {
+                let has_building = m.building.is_none_or(|b| {
+                    spec.buildings
+                        .iter()
+                        .any(|n| db.content.product(n) == Some(b))
+                });
+                let has_nature = m.nature.is_none_or(|k| {
+                    spec.nature
+                        .iter()
+                        .any(|(n, c)| *c > 0 && db.content.nature_kind(n) == Some(k))
+                });
+                if has_building && has_nature {
+                    1.0 + params.life.starting_food_bias * m.food_out
+                } else {
+                    0.1
+                }
+            })
+            .collect();
+        let weight_sum: f32 = trade_weights.iter().sum();
 
         for _ in 0..spec.population {
             let age_years = rng.random_range(0.0..50.0f32);
@@ -274,7 +373,12 @@ pub fn setup(world: &mut World, db: Db, params: ModelParams, scenario: &Scenario
             }
             // Adults start with some experience in one family trade.
             if age_years >= params.life.adult_age {
-                let r = rng.random_range(0..db.recipes.len());
+                let mut x = rng.random::<f32>() * weight_sum;
+                let mut r = 0;
+                while r + 1 < trade_weights.len() && x >= trade_weights[r] {
+                    x -= trade_weights[r];
+                    r += 1;
+                }
                 let amount = rng.random_range(0.2..0.6f32) * (age_years / 40.0).min(1.0);
                 for k in 0..CAP_DIM {
                     cap[k] += amount * db.recipes[r].skill[k];
