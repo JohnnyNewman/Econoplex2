@@ -32,6 +32,7 @@ pub struct TownStats {
     pub swords: [u32; 3],
     pub tools_in_use: usize,
     pub treasury: f32,
+    pub buildings: usize,
     /// Mean wealth of residents.
     pub mean_wealth: f32,
 }
@@ -224,6 +225,7 @@ pub fn record(
         }
         let n = s.population.max(1) as f32;
         s.treasury = town.treasury;
+        s.buildings = town.buildings.len();
         s.mean_wealth = town
             .residents
             .iter()

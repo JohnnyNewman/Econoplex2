@@ -103,6 +103,9 @@
         public_spending: 2.0,
         food_spoilage: 0.5,
         tool_credit: 40.0,
+        // Construction: a town pays for a new building when the ones it has are this full.
+        build_threshold: 0.75,
+        new_building_appeal: 0.3,
     ),
 
     organize: (interval: 20, guild_threshold: 0.55, master_threshold: 1.05),

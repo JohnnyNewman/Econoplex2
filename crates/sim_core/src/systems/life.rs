@@ -51,24 +51,32 @@ fn inherit<const N: usize>(
     })
 }
 
-/// A dead agent's wealth goes to the partner, else split among living children,
+/// Dead agents' wealth goes to the partner, else split among living children,
 /// else to the town treasury, so money never leaves the economy.
-fn bequeath(store: &mut AgentStore, towns: &mut Towns, i: usize) {
-    let w = std::mem::take(&mut store.wealth[i]);
-    if let Some(p) = store.partner[i].filter(|&p| store.alive[p as usize]) {
-        store.wealth[p as usize] += w;
-        return;
+fn bequeath(store: &mut AgentStore, towns: &mut Towns, dead: &[usize]) {
+    let mut children: std::collections::BTreeMap<u32, Vec<usize>> = Default::default();
+    if dead.iter().any(|&i| store.partner[i].is_none()) {
+        for c in 0..store.len() {
+            if let (true, Some((a, b))) = (store.alive[c], store.parents[c]) {
+                children.entry(a).or_default().push(c);
+                children.entry(b).or_default().push(c);
+            }
+        }
     }
-    let me = i as u32;
-    let children: Vec<usize> = (0..store.len())
-        .filter(|&c| store.alive[c] && store.parents[c].is_some_and(|(a, b)| a == me || b == me))
-        .collect();
-    if children.is_empty() {
-        towns.0[store.town[i] as usize].treasury += w;
-    } else {
-        let share = w / children.len() as f32;
-        for c in children {
-            store.wealth[c] += share;
+    for &i in dead {
+        let w = std::mem::take(&mut store.wealth[i]);
+        if let Some(p) = store.partner[i].filter(|&p| store.alive[p as usize]) {
+            store.wealth[p as usize] += w;
+            continue;
+        }
+        match children.get(&(i as u32)) {
+            Some(kids) if !kids.is_empty() => {
+                let share = w / kids.len() as f32;
+                for &c in kids {
+                    store.wealth[c] += share;
+                }
+            }
+            _ => towns.0[store.town[i] as usize].treasury += w,
         }
     }
 }
@@ -90,6 +98,7 @@ pub fn lifecycle(
     let n = store.len();
 
     // --- aging and death
+    let mut dead = Vec::new();
     for i in 0..n {
         if !store.alive[i] {
             continue;
@@ -103,7 +112,7 @@ pub fn lifecycle(
         if store.state[i][state::HEALTH] <= 0.0 || rng.random::<f32>() < hazard {
             store.alive[i] = false;
             commands.entity(store.entity[i]).despawn();
-            bequeath(store, &mut towns, i);
+            dead.push(i);
             if let Some(g) = store.guild[i].take() {
                 commands.entity(g.membership).despawn();
             }
@@ -111,9 +120,13 @@ pub fn lifecycle(
                 commands.entity(tool).remove::<EquippedBy>().insert(Stored);
                 towns.0[store.town[i] as usize].armory.push(tool);
             }
-            if let Some(p) = store.partner[i].take() {
-                store.partner[p as usize] = None;
-            }
+        }
+    }
+    // Bequests read partners, so they run before the partner links are cleared.
+    bequeath(store, &mut towns, &dead);
+    for &i in &dead {
+        if let Some(p) = store.partner[i].take() {
+            store.partner[p as usize] = None;
         }
     }
 

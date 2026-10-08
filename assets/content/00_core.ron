@@ -8,10 +8,10 @@
         (id: "field",    name: "Field",    regrowth: 40.0, capacity: 200.0),
     ],
     products: [
-        (id: "workshop", name: "Workshop", category: Building, base_price: 200.0),
-        (id: "mill",     name: "Mill",     category: Building, base_price: 250.0),
-        (id: "bakery",   name: "Bakery",   category: Building, base_price: 250.0),
-        (id: "furnace",  name: "Furnace",  category: Building, base_price: 300.0),
-        (id: "smithy",   name: "Smithy",   category: Building, base_price: 350.0),
+        (id: "workshop", name: "Workshop", category: Building, base_price: 200.0, slots: 16),
+        (id: "mill",     name: "Mill",     category: Building, base_price: 250.0, slots: 16),
+        (id: "bakery",   name: "Bakery",   category: Building, base_price: 250.0, slots: 16),
+        (id: "furnace",  name: "Furnace",  category: Building, base_price: 300.0, slots: 12),
+        (id: "smithy",   name: "Smithy",   category: Building, base_price: 350.0, slots: 12),
     ],
 )

@@ -164,7 +164,7 @@ fn print_year(y: &sim_core::metrics::YearStats) {
         y.total_money
     );
     println!(
-        "  {:<11} {:>5} {:>6} {:>4} {:>6} {:>6} {:>6} {:>7} {:>5}  {:>11} {:>8} {:>6}",
+        "  {:<11} {:>5} {:>6} {:>4} {:>6} {:>6} {:>6} {:>7} {:>5}  {:>11} {:>8} {:>6} {:>4}",
         "town",
         "pop",
         "food",
@@ -176,11 +176,12 @@ fn print_year(y: &sim_core::metrics::YearStats) {
         "tools",
         "swords 1/2/3",
         "treasury",
-        "wealth"
+        "wealth",
+        "bldg"
     );
     for t in &y.towns {
         println!(
-            "  {:<11} {:>5} {:>6.1} {:>4} {:>6.2} {:>6.2} {:>6.2} {:>7} {:>5}  {:>3}/{:>3}/{:>3} {:>8.0} {:>6.1}",
+            "  {:<11} {:>5} {:>6.1} {:>4} {:>6.2} {:>6.2} {:>6.2} {:>7} {:>5}  {:>3}/{:>3}/{:>3} {:>8.0} {:>6.1} {:>4}",
             t.name,
             t.population,
             t.food_per_capita,
@@ -194,7 +195,8 @@ fn print_year(y: &sim_core::metrics::YearStats) {
             t.swords[1],
             t.swords[2],
             t.treasury,
-            t.mean_wealth
+            t.mean_wealth,
+            t.buildings
         );
     }
 }
@@ -244,6 +246,27 @@ fn print_final(sim: &Simulation) {
     }
 
     let log = sim.world.resource::<sim_core::world::WorkLog>();
+    println!("\nBuildings (started with + built):");
+    for town in &towns.0 {
+        let mut kinds: Vec<(u32, usize)> = Vec::new();
+        for b in &town.buildings {
+            match kinds.iter_mut().find(|k| k.0 == b.0) {
+                Some(k) => k.1 += 1,
+                None => kinds.push((b.0, 1)),
+            }
+        }
+        let list: Vec<String> = kinds
+            .iter()
+            .map(|(d, n)| format!("{} {n}", db.content.products[*d as usize].name))
+            .collect();
+        println!(
+            "  {:<11} {} (built {})",
+            town.name,
+            list.join(", "),
+            town.built
+        );
+    }
+
     println!("\nJobs over the whole run (times chosen / runs completed):");
     for (r, m) in db.recipes.iter().enumerate() {
         println!("  {:<26} {:>8} / {:>8}", m.name, log.chosen[r], log.runs[r]);
@@ -297,15 +320,15 @@ fn write_csv(path: &std::path::Path, m: &Metrics) -> std::io::Result<()> {
     let mut f = std::fs::File::create(path)?;
     writeln!(
         f,
-        "year,town,population,adults,food_per_capita,diversity,rca_products,eci,specialization,mean_top_skill,masters,guild_members,tools_in_use,swords_1,swords_2,swords_3,treasury,mean_wealth,tradition,faith,liberty,ideology_spread"
+        "year,town,population,adults,food_per_capita,diversity,rca_products,eci,specialization,mean_top_skill,masters,guild_members,tools_in_use,swords_1,swords_2,swords_3,treasury,mean_wealth,buildings,tradition,faith,liberty,ideology_spread"
     )?;
     for y in &m.years {
         for t in &y.towns {
             writeln!(
                 f,
-                "{},{},{},{},{:.3},{},{},{:.3},{:.4},{:.4},{},{},{},{},{},{},{:.1},{:.2},{:.4},{:.4},{:.4},{:.4}",
+                "{},{},{},{},{:.3},{},{},{:.3},{:.4},{:.4},{},{},{},{},{},{},{:.1},{:.2},{},{:.4},{:.4},{:.4},{:.4}",
                 y.year, t.name, t.population, t.adults, t.food_per_capita, t.diversity, t.rca_products, t.eci, t.specialization,
-                t.mean_top_skill, t.masters, t.guild_members, t.tools_in_use, t.swords[0], t.swords[1], t.swords[2], t.treasury, t.mean_wealth,
+                t.mean_top_skill, t.masters, t.guild_members, t.tools_in_use, t.swords[0], t.swords[1], t.swords[2], t.treasury, t.mean_wealth, t.buildings,
                 t.ideology[0], t.ideology[1], t.ideology[2], t.ideology_spread
             )?;
         }

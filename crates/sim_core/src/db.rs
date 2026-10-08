@@ -26,6 +26,8 @@ pub struct RecipeMeta {
     /// Hunger one run's outputs can eventually remove, counting outputs that
     /// feed into food recipes (grain and flour lead to bread).
     pub food_out: f32,
+    /// Construction recipes: the building this recipe puts up.
+    pub builds: Option<u32>,
 }
 
 #[derive(Resource)]
@@ -108,12 +110,16 @@ impl Db {
                         .iter()
                         .map(|(p, q)| (content.product(p).unwrap(), *q as f32))
                         .collect(),
-                    outputs,
+                    outputs: outputs.clone(),
                     nature: r.nature.as_ref().map(|n| content.nature_kind(n).unwrap()),
                     building: r.building.as_ref().map(|b| content.product(b).unwrap()),
                     duration: r.duration,
                     max_team: r.max_team.max(1) as usize,
                     food_out,
+                    builds: outputs
+                        .iter()
+                        .map(|o| o.0)
+                        .find(|&p| content.products[p as usize].category == Category::Building),
                 }
             })
             .collect();

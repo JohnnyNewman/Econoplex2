@@ -97,24 +97,12 @@ pub fn spawn_camera(mut commands: Commands) {
     commands.spawn((Camera2d, Transform::from_scale(Vec3::new(1.6, 1.6, 1.0))));
 }
 
-pub fn spawn_static(
+/// Sprites and labels for buildings, including ones constructed during play.
+pub fn attach_building_sprites(
     mut commands: Commands,
     db: Res<Db>,
-    towns: Res<Towns>,
-    buildings: Query<(Entity, &Product, &Pos), With<Structure>>,
-    nature: Query<(Entity, &NaturalResource, &Pos)>,
+    buildings: Query<(Entity, &Product, &Pos), Added<Structure>>,
 ) {
-    for town in &towns.0 {
-        commands.spawn((
-            Text2d::new(town.name.clone()),
-            TextFont {
-                font_size: FontSize::Px(22.0),
-                ..default()
-            },
-            TextColor(Color::srgb(0.95, 0.92, 0.8)),
-            Transform::from_xyz(town.pos.0, town.pos.1 + 120.0, 5.0),
-        ));
-    }
     for (e, product, pos) in &buildings {
         commands.entity(e).insert((
             Sprite::from_color(Color::srgb(0.55, 0.42, 0.3), Vec2::splat(26.0)),
@@ -128,6 +116,25 @@ pub fn spawn_static(
             },
             TextColor(Color::srgb(0.85, 0.8, 0.7)),
             Transform::from_xyz(pos.x, pos.y - 22.0, 5.0),
+        ));
+    }
+}
+
+pub fn spawn_static(
+    mut commands: Commands,
+    db: Res<Db>,
+    towns: Res<Towns>,
+    nature: Query<(Entity, &NaturalResource, &Pos)>,
+) {
+    for town in &towns.0 {
+        commands.spawn((
+            Text2d::new(town.name.clone()),
+            TextFont {
+                font_size: FontSize::Px(22.0),
+                ..default()
+            },
+            TextColor(Color::srgb(0.95, 0.92, 0.8)),
+            Transform::from_xyz(town.pos.0, town.pos.1 + 120.0, 5.0),
         ));
     }
     for (e, n, pos) in &nature {

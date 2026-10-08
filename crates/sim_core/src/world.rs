@@ -78,6 +78,11 @@ pub struct Town {
     pub residents: Vec<u32>,
     pub produced_this_year: Vec<f32>,
     pub produced_last_year: Vec<f32>,
+    /// Share of each building type's slots in use, averaged over about a month
+    /// (indexed by product).
+    pub building_load: Vec<f32>,
+    /// Buildings put up by construction so far.
+    pub built: u32,
 }
 
 impl Town {
@@ -86,6 +91,18 @@ impl Town {
             .iter()
             .map(|(p, f)| self.stock[*p as usize] * f)
             .sum()
+    }
+
+    pub fn building_count(&self, def: u32) -> usize {
+        self.buildings.iter().filter(|b| b.0 == def).count()
+    }
+
+    /// Where the next constructed building goes: rings outside the starting ones.
+    pub fn next_building_pos(&self) -> (f32, f32) {
+        let ring = (self.built / 8) as f32;
+        let a = (self.built % 8) as f32 / 8.0 * std::f32::consts::TAU + 0.39 * (ring + 1.0);
+        let r = 105.0 + 30.0 * ring;
+        (self.pos.0 + r * a.cos(), self.pos.1 + r * a.sin())
     }
 
     pub fn building(&self, def: u32) -> Option<(Entity, (f32, f32))> {
@@ -265,6 +282,8 @@ pub fn setup(world: &mut World, db: Db, params: ModelParams, scenario: &Scenario
             residents: Vec::new(),
             produced_this_year: vec![0.0; np],
             produced_last_year: vec![0.0; np],
+            building_load: vec![0.0; np],
+            built: 0,
         });
 
         // Starting trades follow what the town can actually run, with food work weighted

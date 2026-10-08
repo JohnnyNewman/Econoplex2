@@ -24,6 +24,32 @@ pub fn settle(
         let pop = town.residents.len().max(1) as f32;
         for p in 0..np {
             if db.category(p as u32) == Category::Building {
+                // A building is worth paying for when the ones the town has are nearly
+                // full, or, at a discount, when it has none (a new line of work).
+                // Only while what it makes is scarce: its goods sell above base price.
+                let base = db.base_price[p];
+                let scarcity = db
+                    .recipes
+                    .iter()
+                    .filter(|m| m.building == Some(p as u32))
+                    .map(|m| {
+                        let (now, normal) = m.outputs.iter().fold((0.0, 0.0), |acc, &(o, q)| {
+                            (
+                                acc.0 + town.price[o as usize] * q,
+                                acc.1 + db.base_price[o as usize] * q,
+                            )
+                        });
+                        now / normal.max(1e-6)
+                    })
+                    .fold(0.0f32, f32::max);
+                let demand = (scarcity - 1.0).clamp(0.0, 1.0);
+                town.price[p] = if town.building_count(p as u32) == 0 {
+                    base * mp.new_building_appeal
+                } else {
+                    let excess = (town.building_load[p] - mp.build_threshold)
+                        / (1.0 - mp.build_threshold).max(1e-3);
+                    base * excess.clamp(0.0, 1.0) * demand
+                };
                 continue;
             }
             let per_capita = if db.is_food[p] {

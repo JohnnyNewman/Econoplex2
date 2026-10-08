@@ -77,6 +77,16 @@ pub fn validate(c: &Content) -> Report {
                 ));
             }
         }
+        let builds = rec.outputs.iter().filter(|(p, _)| {
+            c.product(p)
+                .is_some_and(|i| c.products[i as usize].category == Category::Building)
+        });
+        if builds.count() > 0 && (rec.outputs.len() != 1 || rec.outputs[0].1 != 1) {
+            r.errors.push(format!(
+                "recipe `{}`: a construction recipe must output exactly one building",
+                rec.id
+            ));
+        }
         if rec.outputs.is_empty() {
             r.errors.push(format!("recipe `{}` has no outputs", rec.id));
         }

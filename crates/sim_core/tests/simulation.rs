@@ -99,3 +99,24 @@ fn first_year_has_no_famine() {
         "population fell from {start} to {end} in the first year"
     );
 }
+
+#[test]
+fn towns_construct_buildings() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let mut s = Simulation::from_paths(&AssetPaths::from_root(&root)).unwrap();
+    let dpy = s.world.resource::<sim_core::SimClock>().days_per_year;
+    for _ in 0..10 * dpy {
+        s.step();
+    }
+    let towns = s.world.resource::<sim_core::Towns>();
+    let built: u32 = towns.0.iter().map(|t| t.built).sum();
+    assert!(built > 0, "no building was constructed in 10 years");
+    for t in &towns.0 {
+        assert!(
+            t.buildings.len() <= 40,
+            "{} overbuilt: {} buildings",
+            t.name,
+            t.buildings.len()
+        );
+    }
+}

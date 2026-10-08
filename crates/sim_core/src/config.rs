@@ -224,6 +224,10 @@ pub struct MarketParams {
     pub food_spoilage: f32,
     /// Guild members may buy a tool on credit until their wealth reaches minus this.
     pub tool_credit: f32,
+    /// Share of a building type's slots in use above which the town wants another.
+    pub build_threshold: f32,
+    /// Price, as a share of base price, a town offers for a building type it lacks.
+    pub new_building_appeal: f32,
 }
 
 #[derive(Debug, Clone, Deserialize)]

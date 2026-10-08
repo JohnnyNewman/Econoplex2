@@ -10,6 +10,7 @@ use crate::world::{Decisions, Params, SimClock, SimSeed, Towns, WorkEvent, WorkL
 use bevy_ecs::prelude::*;
 use rand::Rng;
 use sim_data::dims::*;
+use sim_data::Category;
 use std::collections::BTreeMap;
 
 /// Physique contribution to effective proficiency: demand-weighted deviation from average build.
@@ -61,13 +62,18 @@ pub fn assign(
             .push(a);
     }
 
-    // Scarce inputs go to the most profitable work first, as if those teams outbid
-    // the others at the market.
+    // Scarce inputs go to construction first (the town commissioned it), then to the
+    // most profitable work, as if those teams outbid the others at the market.
     let mut groups: Vec<((u16, u32), Vec<u32>)> = groups.into_iter().collect();
     groups.sort_by(|((ta, ra), _), ((tb, rb), _)| {
         let pa = super::decide::profit_per_day(&db, &towns.0[*ta as usize], *ra as usize);
         let pb = super::decide::profit_per_day(&db, &towns.0[*tb as usize], *rb as usize);
-        ta.cmp(tb).then(pb.total_cmp(&pa)).then(ra.cmp(rb))
+        let build_a = db.recipes[*ra as usize].builds.is_some();
+        let build_b = db.recipes[*rb as usize].builds.is_some();
+        ta.cmp(tb)
+            .then(build_b.cmp(&build_a))
+            .then(pb.total_cmp(&pa))
+            .then(ra.cmp(rb))
     });
 
     let mut pending: Vec<PendingTask> = Vec::new();
@@ -256,7 +262,9 @@ pub fn produce(
             .sum::<f32>()
             / n as f32;
         let eff = (prof + pb) * sf;
-        let success = rng.random::<f32>() < models.success.probability(eff, m.difficulty);
+        // A building always goes up once the work is done; skill shows in its quality.
+        let success = m.builds.is_some()
+            || rng.random::<f32>() < models.success.probability(eff, m.difficulty);
         let quality = models.quality.combine(
             models.quality.step_quality(eff, m.difficulty),
             task.input_quality,
@@ -277,6 +285,27 @@ pub fn produce(
                 town.quality[pi] = (old * town.quality[pi] + q * quality) / (old + q).max(1e-6);
                 town.stock[pi] += q;
                 town.produced_this_year[pi] += q;
+                if db.category(p) == Category::Building {
+                    // The finished building becomes a workplace (stock tracks nothing here).
+                    town.stock[pi] -= q;
+                    let pos = town.next_building_pos();
+                    town.built += 1;
+                    let e = commands
+                        .spawn((
+                            Product { def: p, quality },
+                            Structure {
+                                footprint: (24.0, 24.0),
+                            },
+                            TownId(task.town),
+                            Pos { x: pos.0, y: pos.1 },
+                        ))
+                        .id();
+                    town.buildings.push((p, e, pos));
+                    // The new building's slots dilute the load.
+                    let n = town.building_count(p) as f32;
+                    town.building_load[pi] *= (n - 1.0) / n;
+                    town.price[pi] = 0.0;
+                }
                 if db.category(p).is_item() {
                     let durability = db.content.products[pi]
                         .equip
