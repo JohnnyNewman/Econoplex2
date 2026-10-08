@@ -15,15 +15,71 @@ use crate::world::{Decisions, Params, SimClock, SimSeed, Towns};
 use bevy_ecs::prelude::*;
 use rand::Rng;
 use sim_data::dims::*;
+use sim_data::Category;
+
+/// Whether a town already holds `glut_factor` times its target stock of a good,
+/// so making more of it only piles it up.
+pub fn glutted(db: &Db, town: &crate::world::Town, params: &Params, p: usize) -> bool {
+    let mp = &params.market;
+    let per_capita = if db.is_food[p] {
+        mp.food_target_per_capita
+    } else {
+        mp.target_per_capita
+    };
+    let target = (per_capita * town.residents.len() as f32).max(1.0);
+    town.stock[p] > mp.glut_factor * target
+}
+
+/// Whether a recipe feeds people: it makes more food than its inputs hold,
+/// counting outputs that lead to food (grain to flour to bread).
+pub fn makes_food(db: &Db, r: usize) -> bool {
+    let m = &db.recipes[r];
+    let in_food: f32 = m
+        .inputs
+        .iter()
+        .map(|&(p, q)| db.content.products[p as usize].food * q)
+        .sum();
+    m.food_out > in_food
+}
+
+/// Inputs held back for `food_reserve_days` of the food the town needs, made along each food
+/// chain (grain for the mills, flour and wood for the bakeries). Hungry people don't
+/// eat the grain the mills need, and other trades don't take the wood the bakeries
+/// need, but anything beyond that is free for other work. A recipe whose
+/// output is already piling up reserves nothing.
+pub fn food_reserve(db: &Db, town: &crate::world::Town, params: &Params) -> Vec<f32> {
+    let need = town.residents.len() as f32
+        * params.needs.hunger_per_day
+        * params.market.food_reserve_days;
+    let mut r = vec![0.0; db.content.products.len()];
+    for (k, m) in db.recipes.iter().enumerate() {
+        if !makes_food(db, k)
+            || m.outputs
+                .iter()
+                .all(|&(o, _)| glutted(db, town, params, o as usize))
+        {
+            continue;
+        }
+        let runs = need / m.food_out.max(1e-6);
+        for &(p, q) in &m.inputs {
+            r[p as usize] += q * runs;
+        }
+    }
+    r
+}
 
 /// How many more workers each recipe can absorb in `town` today, limited by the
 /// nature left to harvest and the inputs in stock. Jobs fill up as agents choose
 /// them, so the rest of the town spreads to other work instead of queueing.
+/// Nobody makes a good the town is glutted with, and trades that don't feed
+/// anyone only use inputs beyond the food reserve.
 pub fn job_capacity(
     db: &Db,
     town: &crate::world::Town,
+    params: &Params,
     sites: &Query<&NaturalResource>,
 ) -> Vec<f32> {
+    let reserve = food_reserve(db, town, params);
     let mut nature_total = vec![0.0f32; db.content.nature.len()];
     for &e in &town.nature_sites {
         if let Ok(n) = sites.get(e) {
@@ -32,7 +88,17 @@ pub fn job_capacity(
     }
     db.recipes
         .iter()
-        .map(|m| {
+        .enumerate()
+        .map(|(r, m)| {
+            let goods = m
+                .outputs
+                .iter()
+                .filter(|o| db.category(o.0) != Category::Building);
+            let mut goods = goods.peekable();
+            if goods.peek().is_some() && goods.all(|o| glutted(db, town, params, o.0 as usize)) {
+                return 0.0;
+            }
+            let food = makes_food(db, r);
             // One worker does about 1/duration runs per day.
             let mut cap = f32::INFINITY;
             if let Some(k) = m.nature {
@@ -40,7 +106,8 @@ pub fn job_capacity(
                 cap = cap.min(nature_total[k as usize] / out * m.duration);
             }
             for &(p, q) in &m.inputs {
-                cap = cap.min(town.stock[p as usize] / q * m.duration);
+                let held = if food { 0.0 } else { reserve[p as usize] };
+                cap = cap.min((town.stock[p as usize] - held).max(0.0) / q * m.duration);
             }
             cap
         })
@@ -122,7 +189,7 @@ pub fn decide(
     let mut capacity: Vec<Vec<f32>> = towns
         .0
         .iter()
-        .map(|t| job_capacity(&db, t, &sites))
+        .map(|t| job_capacity(&db, t, &params, &sites))
         .collect();
     // Building slots: a building holds `slots` workers, including those on
     // multi-day tasks. Only one crew at a time builds each building type.

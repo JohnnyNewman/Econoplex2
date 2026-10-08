@@ -88,7 +88,7 @@ nonnegative.
 
 | Step | What happens |
 | --- | --- |
-| sense | Hunger rises; agents buy and eat the best food in their town, leaving a day's grain for the mills; health, fatigue and happiness update |
+| sense | Hunger rises; agents buy and eat the best food in their town, leaving the mills' grain reserve alone; health, fatigue and happiness update |
 | decide | Each idle adult scores a sample of open jobs and resting: utility = (bias + Wm·mind + Ws·state) · features, softmax with temperature. Jobs fill up: nature, inputs and building slots limit how many can take each one |
 | assign | Agents choosing the same job form teams; inputs and nature are reserved; task entities spawn; children join a working parent |
 | produce | Teams pool capabilities (element-wise max minus coordination cost); success = sigmoid(k·(effective − difficulty)); quality is the weakest link of step and inputs. The town buys the output and pays wages from its treasury; finished construction becomes a new building |
@@ -126,6 +126,25 @@ treasuries:
 
 When a treasury runs dry, wages for that day are cut, so pay follows what people
 actually spend. All rates are in the `market` section of `models.ron`.
+
+### Food
+
+Grain becomes flour in the mills, and flour and wood become bread in the bakeries.
+Eaten as bread, a harvest feeds about six times as many people as eaten raw. Fields
+and forests regrow at a fixed rate, so every town has a ceiling. Three rules keep
+towns from crashing into it:
+
+- **Gluts stop production.** Nobody makes a good once the town holds `glut_factor`
+  times its target stock. Mills stop turning edible grain into flour the bakeries
+  can't use.
+- **Food comes first.** Grain, flour and wood for `food_reserve_days` of the town's
+  food need are held back. Hungry people don't eat the mills' grain, and charcoal
+  burners and carpenters only get wood beyond what the bakeries need.
+- **Births look ahead.** Parents judge the food stock `food_foresight_days` ahead at
+  its recent trend. Births slow while the stores are still full but shrinking, so the
+  population levels off near what the land can feed instead of overshooting it.
+
+The CLI's `starve` column is the share of residents' days spent starving.
 
 ### Construction
 
@@ -192,8 +211,10 @@ seed, same state hash (`econoplex-sim --hash`, and the `same_seed_same_state` te
 
 ## What a 30-year run shows
 
-With the default scenario (four towns, 1,200 agents), nobody starves in the first year
-and the population roughly doubles over 30 years while the money supply stays fixed.
+With the default scenario (four towns, 1,200 agents), the population roughly doubles
+over 30 years and levels off near 3,000 by year 40, while the money supply stays fixed.
+Starvation is rare. Over 40-year runs on eight seeds, fewer than 0.1% of person-days
+were spent starving, mostly in a town at its land limit in the last few years.
 Towns specialize differently from identical rules: Ironhold and Brassmoor, with ore, a
 furnace and a smithy, become sword makers with the highest complexity scores.
 Greenvale, without a smithy, becomes the breadbasket with the lowest score and buys
@@ -215,7 +236,9 @@ Performance on one core: about 1.3 ms per tick at 2,400 agents and 33 ms at 18,5
 - Raids are the only form of war: no sieges or conquest, and a squad fights as one
   block with no tactical movement. Captives become ordinary townspeople at once.
 - Migration only looks at the agent's latest trade, not at everything they could do.
-- Towns still hit occasional food crunches as their population outgrows the land.
+- Land is fixed. Towns can't clear new fields or plant forests, so a town at its limit
+  still sees the odd hungry year. Wood is the tightest limit, and bread and charcoal
+  compete for it.
 - Agent slots are never reused, so memory grows with births.
 - `days_per_year` is 120 so generations are visible in short runs.
 

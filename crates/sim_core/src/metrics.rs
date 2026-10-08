@@ -13,6 +13,8 @@ pub struct TownStats {
     pub population: usize,
     pub adults: usize,
     pub food_per_capita: f32,
+    /// Share of residents' days spent starving this year.
+    pub starving: f32,
     /// Products made last year.
     pub diversity: usize,
     /// Products with revealed comparative advantage >= 1.
@@ -232,6 +234,8 @@ pub fn record(
         s.soldiers = town.squad.len();
         s.war = town.war;
         s.moves = town.moves;
+        s.starving =
+            town.starving as f32 / (s.population.max(1) * clock.days_per_year as usize) as f32;
         s.mean_wealth = town
             .residents
             .iter()
@@ -267,6 +271,7 @@ pub fn record(
     for t in towns.0.iter_mut() {
         t.war = Default::default();
         t.moves = Default::default();
+        t.starving = 0;
     }
 }
 
