@@ -13,6 +13,7 @@ pub mod models;
 pub mod profile;
 pub mod store;
 pub mod systems;
+pub mod trust;
 pub mod world;
 
 use bevy_ecs::prelude::*;
@@ -183,6 +184,10 @@ pub fn state_hash(world: &World) -> u64 {
         s.phys[i].iter().for_each(|x| f(*x));
         s.state[i].iter().for_each(|x| f(*x));
         f(s.wealth[i]);
+        s.ties[i].iter().for_each(|t| {
+            f(t.value);
+            f(f32::from_bits(t.other));
+        });
     }
     for t in &world.resource::<Towns>().0 {
         t.stock.iter().for_each(|x| f(*x));

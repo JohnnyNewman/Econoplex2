@@ -38,6 +38,18 @@ pub fn fighter_power(store: &AgentStore, i: usize, fight: &CapVec) -> f32 {
     (0.3 + skill) * (0.5 + build) * (1.0 + store.weapon_power[i]) * (0.5 + 0.5 * health)
 }
 
+/// Fighting strength of a group of soldiers: their own power, raised when they
+/// trust each other (`loyalty` is the extra share at full cohesion).
+pub fn squad_power(store: &AgentStore, members: &[u32], fight: &CapVec, loyalty: f32) -> f32 {
+    let sum: f32 = members
+        .iter()
+        .map(|&s| fighter_power(store, s as usize, fight))
+        .sum();
+    let mut sorted = members.to_vec();
+    sorted.sort_unstable();
+    sum * (1.0 + loyalty * store.cohesion(members, &sorted))
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn military(
     mut commands: Commands,
@@ -51,6 +63,7 @@ pub fn military(
     weapons: Query<&Product, With<Stored>>,
 ) {
     let mp = &params.military;
+    let loyalty = params.trust.loyalty;
     let Some(fight_idx) = db.content.skill("fighting") else {
         return;
     };
@@ -145,11 +158,7 @@ pub fn military(
         let hold: Vec<f32> = (0..n_towns)
             .map(|r| {
                 let held = towns.0.iter().filter(|o| o.ruler == Some(r as u16)).count();
-                let squad: f32 = towns.0[r]
-                    .squad
-                    .iter()
-                    .map(|&s| fighter_power(store, s as usize, &fight))
-                    .sum();
+                let squad = squad_power(store, &towns.0[r].squad, &fight, loyalty);
                 squad * mp.garrison_strength / held.max(1) as f32
             })
             .collect();
@@ -157,7 +166,7 @@ pub fn military(
             let Some(r) = towns.0[t].ruler else { continue };
             let r = r as usize;
             // A tributary whose soldiers can outfight the ruler's hold on it rises up.
-            if home_power(store, &towns.0[t], &fight) > hold[r] {
+            if home_power(store, &towns.0[t], &fight, loyalty) > hold[r] {
                 towns.0[t].ruler = None;
                 towns.0[t].war.revolts += 1;
                 continue;
@@ -258,11 +267,7 @@ pub fn military(
         {
             continue;
         }
-        let attack: f32 = town
-            .squad
-            .iter()
-            .map(|&s| fighter_power(store, s as usize, &fight))
-            .sum();
+        let attack = squad_power(store, &town.squad, &fight, loyalty);
         // The richest neighbor the squad can beat with a clear margin.
         let mut best: Option<(usize, f32)> = None;
         for (o, other) in towns.0.iter().enumerate() {
@@ -272,7 +277,7 @@ pub fn military(
             if o == t || ruled {
                 continue;
             }
-            let defense = total_defense(store, &towns, o, &fight, mp);
+            let defense = total_defense(store, &towns, o, &fight, mp, loyalty);
             if attack < mp.raid_margin * defense {
                 continue;
             }
@@ -341,22 +346,28 @@ fn total_defense(
     t: usize,
     fight: &CapVec,
     mp: &crate::config::MilitaryParams,
+    loyalty: f32,
 ) -> f32 {
-    let own = defense_power(store, &towns.0[t], fight, mp.militia_power);
+    let own = defense_power(store, &towns.0[t], fight, mp.militia_power, loyalty);
     let aid = towns.0[t].ruler.map_or(0.0, |r| {
-        home_power(store, &towns.0[r as usize], fight) * mp.ruler_aid
+        home_power(store, &towns.0[r as usize], fight, loyalty) * mp.ruler_aid
     });
     own + aid
 }
 
 /// Fighting strength of a town's soldiers who are not away on a raid.
-fn home_power(store: &AgentStore, town: &crate::world::Town, fight: &CapVec) -> f32 {
+fn home_power(store: &AgentStore, town: &crate::world::Town, fight: &CapVec, loyalty: f32) -> f32 {
+    squad_power(store, &at_home(town), fight, loyalty)
+}
+
+/// The squad minus those away on a raid.
+fn at_home(town: &crate::world::Town) -> Vec<u32> {
     let away: &[u32] = town.raid.as_ref().map_or(&[], |r| &r.soldiers);
     town.squad
         .iter()
+        .copied()
         .filter(|s| !away.contains(s))
-        .map(|&s| fighter_power(store, s as usize, fight))
-        .sum()
+        .collect()
 }
 
 /// Soldiers at home plus the militia of everyone else.
@@ -365,14 +376,9 @@ fn defense_power(
     town: &crate::world::Town,
     fight: &CapVec,
     militia: f32,
+    loyalty: f32,
 ) -> f32 {
-    let away: &[u32] = town.raid.as_ref().map_or(&[], |r| &r.soldiers);
-    let squad: f32 = town
-        .squad
-        .iter()
-        .filter(|s| !away.contains(s))
-        .map(|&s| fighter_power(store, s as usize, fight))
-        .sum();
+    let squad = home_power(store, town, fight, loyalty);
     let civilians = town
         .residents
         .iter()
@@ -398,13 +404,10 @@ fn battle(
     rng: &mut ChaCha8Rng,
 ) {
     let mp = &params.military;
+    let loyalty = params.trust.loyalty;
     let d = raid.target as usize;
-    let attack: f32 = raid
-        .soldiers
-        .iter()
-        .map(|&s| fighter_power(store, s as usize, fight))
-        .sum();
-    let defense = total_defense(store, towns, d, fight, mp);
+    let attack = squad_power(store, &raid.soldiers, fight, loyalty);
+    let defense = total_defense(store, towns, d, fight, mp, loyalty);
     let k = mp.battle_steepness;
     let p_win = attack.powf(k) / (attack.powf(k) + defense.powf(k)).max(1e-6);
     let won = rng.random::<f32>() < p_win;

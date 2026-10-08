@@ -312,3 +312,51 @@ fn tributaries_pay_their_ruler() {
         "money changed from {before} to {after}"
     );
 }
+
+#[test]
+fn coworkers_come_to_trust_each_other() {
+    let mut s = sim(9);
+    let days = s
+        .world
+        .resource::<sim_core::world::Params>()
+        .life
+        .days_per_year;
+    for _ in 0..days {
+        s.step();
+    }
+    let store = s.world.resource::<sim_core::AgentStore>();
+    let towns = s.world.resource::<sim_core::world::Towns>();
+    let (mut ties, mut trusted, mut same_town) = (0, 0, 0);
+    for i in 0..store.len() {
+        if !store.alive[i] {
+            continue;
+        }
+        for t in store.ties[i].iter().filter(|t| t.other != u32::MAX) {
+            ties += 1;
+            assert!((-1.0..=1.0).contains(&t.value));
+            if t.value > 0.2 {
+                trusted += 1;
+            }
+            if store.town[t.other as usize] == store.town[i] {
+                same_town += 1;
+            }
+        }
+    }
+    assert!(
+        ties > 0 && trusted * 4 > ties,
+        "{trusted} strong ties of {ties}"
+    );
+    // Ties form at work and in town, so nearly all stay within one town.
+    assert!(
+        same_town * 10 > ties * 8,
+        "{same_town} of {ties} ties in town"
+    );
+    let stats = &s
+        .world
+        .resource::<sim_core::metrics::Metrics>()
+        .latest()
+        .unwrap()
+        .towns;
+    assert!(stats.iter().all(|t| t.trust > 0.0));
+    assert_eq!(stats.len(), towns.0.len());
+}

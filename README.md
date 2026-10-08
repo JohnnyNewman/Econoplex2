@@ -221,6 +221,32 @@ and join the guild of their new town, so a trade that is better paid elsewhere d
 its practitioners there. The settings are in the `migration` section of `models.ron`,
 and the CLI reports arrivals and departures per town each year.
 
+### Trust
+
+Every agent keeps up to eight personal ties, each a trust value between -1 and 1.
+Each finished job raises trust between all its coworkers by `cowork_gain`, or by
+`failure_factor` of that if the job failed. Chance meetings in town raise trust
+between people with similar views and lower it between people far apart. Ties fade
+by `fade` a day without contact, and a stronger new tie pushes out the weakest one.
+Trust then works back on the economy:
+
+- **Teams** form around the first person to pick a job, who brings the coworkers they
+  trust most. A team's proficiency rises by up to `team_bonus` with its cohesion,
+  which is the mean trust members place in each other.
+- **Teaching:** an apprentice or junior coworker learns up to `1 + teaching_bonus`
+  times faster from a master they trust.
+- **Squads** fight up to `loyalty` harder at full cohesion. This counts in raids, in
+  defense and in a ruler's hold on its tributaries.
+- **Migration:** trusted people in a town count toward its appeal, so households tend
+  to stay near their friends or follow them.
+
+Ties form mostly at work, so about four in five of them link members of the same
+guild, and cultural groups turn into groups of skill. Over 30-year runs on eight
+seeds, trust gives about 5% more masters, fewer raids and conquests, and
+about a third as many moves as the same rules with every trust effect set to zero. The
+CLI shows each town's mean trust per adult and that same-guild share as
+`trust/trade`. The settings are in the `trust` section of `models.ron`.
+
 ### Swapping a formula
 
 Every model is a trait in `crates/sim_core/src/models.rs` (`TeamPooling`,
