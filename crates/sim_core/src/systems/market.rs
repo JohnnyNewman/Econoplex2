@@ -23,6 +23,10 @@ pub fn settle(
     for town in towns.0.iter_mut() {
         let pop = town.residents.len().max(1) as f32;
         for p in 0..np {
+            if let Some(kind) = db.opens[p] {
+                town.price[p] = land_price(&db, town, mp, p, kind, &sites);
+                continue;
+            }
             if db.category(p as u32) == Category::Building {
                 // A building is worth paying for when the ones the town has are nearly
                 // full, or, at a discount, when it has none (a new line of work).
@@ -162,6 +166,43 @@ pub fn settle(
     for mut n in sites.iter_mut() {
         n.amount = (n.amount + n.regrowth).min(n.capacity);
     }
+}
+
+/// New land is worth opening while the town's sites of that kind are worn down
+/// (harvested faster than they regrow) and what they yield sells above base
+/// price; at a discount when the town has none yet; never once its land is used up.
+fn land_price(
+    db: &Db,
+    town: &crate::world::Town,
+    mp: &crate::config::MarketParams,
+    p: usize,
+    kind: u32,
+    sites: &Query<&mut NaturalResource>,
+) -> f32 {
+    if town.free_land == 0 {
+        return 0.0;
+    }
+    let (amount, capacity) = town
+        .nature_sites
+        .iter()
+        .filter_map(|&e| sites.get(e).ok())
+        .filter(|n| n.kind == kind)
+        .fold((0.0, 0.0), |acc, n| (acc.0 + n.amount, acc.1 + n.capacity));
+    let base = db.base_price[p];
+    if capacity <= 0.0 {
+        return base * mp.new_building_appeal;
+    }
+    let scarcity = db
+        .recipes
+        .iter()
+        .filter(|m| m.nature == Some(kind))
+        .flat_map(|m| m.outputs.iter())
+        .map(|&(o, _)| town.price[o as usize] / db.base_price[o as usize].max(1e-6))
+        .fold(0.0f32, f32::max);
+    let demand = (scarcity - 1.0).clamp(0.0, 1.0);
+    let worn = 1.0 - amount / capacity;
+    let excess = (worn - mp.land_threshold) / (1.0 - mp.land_threshold).max(1e-3);
+    base * excess.clamp(0.0, 1.0) * demand
 }
 
 fn armory_count(

@@ -146,6 +146,17 @@ towns from crashing into it:
 
 The CLI's `starve` column is the share of residents' days spent starving.
 
+### Land
+
+Towns can raise their ceiling. A cleared field and a woodlot are buildings
+(`45_land.ron`) whose product `opens` a nature kind: when the crew finishes, the town
+gains a new field or forest site instead of a workplace. The site starts bare and grows
+in at the normal regrowth rate. Land is priced like any other building: it is worth
+opening while the town's sites of that kind are worn down past `land_threshold` and
+what they yield sells above base price. Each town has `free_land` plots (6 by default),
+and the CLI lists every town's sites and how many plots are left. Land is short from the
+start, so towns use most of their free plots within the first few years.
+
 ### Construction
 
 Buildings are products with `slots`: how many people can work in one at a time. When a
@@ -212,9 +223,9 @@ seed, same state hash (`econoplex-sim --hash`, and the `same_seed_same_state` te
 ## What a 30-year run shows
 
 With the default scenario (four towns, 1,200 agents), the population roughly doubles
-over 30 years and levels off near 3,000 by year 40, while the money supply stays fixed.
-Starvation is rare. Over 40-year runs on eight seeds, fewer than 0.1% of person-days
-were spent starving, mostly in a town at its land limit in the last few years.
+over 30 years and keeps growing to about 3,500 by year 40, while the money supply stays
+fixed. Over 40-year runs on eight seeds, nobody starved after the towns cleared their
+free land.
 Towns specialize differently from identical rules: Ironhold and Brassmoor, with ore, a
 furnace and a smithy, become sword makers with the highest complexity scores.
 Greenvale, without a smithy, becomes the breadbasket with the lowest score and buys
@@ -236,9 +247,9 @@ Performance on one core: about 1.3 ms per tick at 2,400 agents and 33 ms at 18,5
 - Raids are the only form of war: no sieges or conquest, and a squad fights as one
   block with no tactical movement. Captives become ordinary townspeople at once.
 - Migration only looks at the agent's latest trade, not at everything they could do.
-- Land is fixed. Towns can't clear new fields or plant forests, so a town at its limit
-  still sees the odd hungry year. Wood is the tightest limit, and bread and charcoal
-  compete for it.
+- Each town's land is a fixed budget of plots that it uses up early. Opening land does
+  not yet follow population growth, and towns never turn forest into fields or the
+  other way round.
 - Agent slots are never reused, so memory grows with births.
 - `days_per_year` is 120 so generations are visible in short runs.
 

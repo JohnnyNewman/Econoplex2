@@ -1,0 +1,17 @@
+// Land: towns clear new fields and plant woodlots when the ones they have are worn
+// down. Each town has a limited amount of free land (`free_land` in models.ron).
+// A new site starts bare and grows in at its normal regrowth rate.
+(
+    products: [
+        (id: "field_plot", name: "Cleared field", category: Building, base_price: 150.0, opens: Some("field")),
+        (id: "woodlot",    name: "Woodlot",       category: Building, base_price: 100.0, opens: Some("forest")),
+    ],
+    recipes: [
+        (id: "clear_field", name: "Clear field", skill: "farming", difficulty: 0.20,
+            outputs: [("field_plot", 1)], duration: 30.0, max_team: 6,
+            physique: [("strength", 0.3), ("endurance", 0.3)]),
+        (id: "plant_woodlot", name: "Plant woodlot", skill: "woodcutting", difficulty: 0.20,
+            outputs: [("woodlot", 1)], duration: 20.0, max_team: 4,
+            physique: [("endurance", 0.3)]),
+    ],
+)

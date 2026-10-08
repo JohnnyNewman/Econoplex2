@@ -83,6 +83,9 @@ pub struct Town {
     pub building_load: Vec<f32>,
     /// Buildings put up by construction so far.
     pub built: u32,
+    /// Plots of land still free to clear or plant, and plots opened so far.
+    pub free_land: u32,
+    pub cleared: u32,
     /// The town's squad organization and its soldiers (store indices).
     pub squad_org: Entity,
     pub squad: Vec<u32>,
@@ -334,6 +337,8 @@ pub fn setup(world: &mut World, db: Db, params: ModelParams, scenario: &Scenario
             produced_last_year: vec![0.0; np],
             building_load: vec![0.0; np],
             built: 0,
+            free_land: params.market.free_land,
+            cleared: 0,
             squad_org: world
                 .spawn((
                     Organization {

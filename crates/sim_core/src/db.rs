@@ -43,6 +43,8 @@ pub struct Db {
     pub foods: Vec<(u32, f32)>,
     pub base_price: Vec<f32>,
     pub is_food: Vec<bool>,
+    /// Land products: the nature kind each one opens.
+    pub opens: Vec<Option<u32>>,
 }
 
 impl Db {
@@ -134,6 +136,11 @@ impl Db {
         foods.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
         let base_price = content.products.iter().map(|p| p.base_price).collect();
         let is_food = content.products.iter().map(|p| p.food > 0.0).collect();
+        let opens = content
+            .products
+            .iter()
+            .map(|p| p.opens.as_ref().and_then(|n| content.nature_kind(n)))
+            .collect();
 
         Db {
             content,
@@ -145,6 +152,7 @@ impl Db {
             foods,
             base_price,
             is_food,
+            opens,
         }
     }
 

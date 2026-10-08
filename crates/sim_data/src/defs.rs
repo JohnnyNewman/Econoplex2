@@ -71,6 +71,10 @@ pub struct ProductDef {
     /// Buildings: how many people can work in one at a time (0 = unlimited).
     #[serde(default)]
     pub slots: u32,
+    /// Land: finishing this "building" opens a new nature site of this kind (a
+    /// cleared field, a planted woodlot) instead of putting up a workplace.
+    #[serde(default)]
+    pub opens: Option<String>,
 }
 
 /// One production step. A product such as a level-3 longsword is the end of a chain of steps.

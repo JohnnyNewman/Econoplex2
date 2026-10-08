@@ -75,6 +75,7 @@ fn main() {
                 view::camera_controls,
                 view::attach_agent_sprites,
                 view::attach_building_sprites,
+                view::attach_nature_sprites,
                 view::animate_agents,
                 view::draw_world,
                 view::update_skill_labels,

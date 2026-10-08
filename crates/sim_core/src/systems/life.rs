@@ -188,7 +188,9 @@ pub fn lifecycle(
             let stock = t.food_stock(&db);
             t.food_trend += (stock - t.food_last - t.food_trend) / 60.0;
             t.food_last = stock;
-            let ahead = stock + t.food_trend * lp.food_foresight_days;
+            // A shrinking stock can at most halve what parents count on, so a one-off
+            // loss (a raid's plunder, spoilage of a huge pile) doesn't stop all births.
+            let ahead = stock + (t.food_trend * lp.food_foresight_days).max(-0.5 * stock);
             (ahead / t.residents.len().max(1) as f32 / lp.food_for_births).clamp(0.0, 1.0)
         })
         .collect();

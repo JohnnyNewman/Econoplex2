@@ -27,6 +27,18 @@ pub fn validate(c: &Content) -> Report {
     }
 
     for p in &c.products {
+        if let Some(n) = &p.opens {
+            if c.nature_kind(n).is_none() {
+                r.errors
+                    .push(format!("product `{}` opens unknown nature `{n}`", p.id));
+            }
+            if p.category != Category::Building {
+                r.errors.push(format!(
+                    "product `{}` opens land but is not a building",
+                    p.id
+                ));
+            }
+        }
         if let Some(e) = &p.equip {
             if c.domain(&e.domain).is_none() {
                 r.errors.push(format!(
