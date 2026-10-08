@@ -97,7 +97,8 @@ nonnegative.
 | body | Norm budget and forgetting on capability; physique trains toward the genetic potential |
 | settle | Prices follow stock vs. per-capita targets; buildings are priced by how full they are; food spoils; wealth tax and public spending; caravans trade goods and tools between towns; nature regrows |
 | organize | Guild membership and roles from domain proficiency; guild members buy matching tools (on credit if needed) |
-| military | Musters (recruit, release, arm with longswords), soldier pay and drill, raids and battles |
+| military | Musters (recruit, release, arm with longswords), soldier pay and drill, raids, battles and captives |
+| migrate | Every month some idle adults compare towns; households move where they are better off |
 | lifecycle | Aging and Gompertz mortality, bequests, partnering by mind affinity, births with genetic inheritance |
 | metrics | Yearly: diversity, RCA, economic complexity index, specialization, culture |
 
@@ -148,9 +149,23 @@ soldiers at home plus a small militia strength per adult) may raid it, more ofte
 when its soldiers are ambitious and risk-loving. The squad marches across the map,
 fights on arrival (win chance A^k / (A^k + D^k)), and both sides lose fighters in
 proportion to the enemy's strength. A winning raid takes `loot_share` of the
-defender's treasury at once and carries the same share of its stores home. Fallen
-fighters die, so their skills die with them. All of this is in the `military`
-section of `models.ron`.
+defender's treasury at once and carries the same share of its stores home. It also
+takes `captive_share` of the defender's idle adults (at most `captives_per_soldier`
+per surviving soldier), who march home with the squad and then live and work in the
+captor's town. Fallen fighters die, so their skills die with them; captives take
+theirs to the winner. All of this is in the `military` section of `models.ron`.
+
+### Migration
+
+Every `interval` days, each idle adult has a `consider` chance to weigh the other
+towns. A town's appeal adds up food per head, what the agent's own trade sells for
+there compared with the average over towns, how close its people are in outlook, and
+a penalty if it was raided this year; the road costs `distance_cost` per 1000 map
+units. When another town beats home by `min_gain`, the household moves: the agent,
+an idle partner and their young children. They keep their skills, wealth and tools
+and join the guild of their new town, so a trade that is better paid elsewhere draws
+its practitioners there. The settings are in the `migration` section of `models.ron`,
+and the CLI reports arrivals and departures per town each year.
 
 ### Swapping a formula
 
@@ -184,7 +199,9 @@ furnace and a smithy, become sword makers with the highest complexity scores.
 Greenvale, without a smithy, becomes the breadbasket with the lowest score and buys
 its sickles from the smiths. Timberwick builds the most (more mills and bakeries,
 and its own smithy). Level-3 longswords stay rare. The sword towns field the
-largest squads and raid their neighbors every year or two, mostly successfully.
+largest squads and raid their neighbors every year or two, mostly successfully, and
+carry off a few captives each time. A few percent of each town's people move every
+year, more of them toward towns with food to spare.
 
 Performance on one core: about 1.3 ms per tick at 2,400 agents and 33 ms at 18,500.
 
@@ -195,8 +212,9 @@ Performance on one core: about 1.3 ms per tick at 2,400 agents and 33 ms at 18,5
 - Prices are in fixed nominal terms, so a growing population with a fixed money
   supply means lower wealth per person rather than lower prices.
 - Buildings never wear out or get demolished.
-- Raids are the only form of war: no sieges, conquest, captives or migration yet,
-  and a squad fights as one block with no tactical movement.
+- Raids are the only form of war: no sieges or conquest, and a squad fights as one
+  block with no tactical movement. Captives become ordinary townspeople at once.
+- Migration only looks at the agent's latest trade, not at everything they could do.
 - Towns still hit occasional food crunches as their population outgrows the land.
 - Agent slots are never reused, so memory grows with births.
 - `days_per_year` is 120 so generations are visible in short runs.

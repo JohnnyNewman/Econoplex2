@@ -128,12 +128,63 @@ fn sword_towns_raise_squads_and_raid() {
     let dpy = s.world.resource::<sim_core::SimClock>().days_per_year;
     let mut raids = 0;
     let mut soldiers = 0;
+    // Captives and the town that took them.
+    let mut taken: Vec<(u32, u16)> = Vec::new();
     for _ in 0..20 * dpy {
         s.step();
         let towns = s.world.resource::<sim_core::Towns>();
         raids += towns.0.iter().filter(|t| t.raid.is_some()).count();
         soldiers = soldiers.max(towns.0.iter().map(|t| t.squad.len()).sum());
+        for (t, town) in towns.0.iter().enumerate() {
+            for &c in town.raid.iter().flat_map(|r| &r.captives) {
+                if !taken.iter().any(|x| x.0 == c) {
+                    taken.push((c, t as u16));
+                }
+            }
+        }
     }
     assert!(soldiers > 0, "no town raised a squad");
     assert!(raids > 0, "no raid in 20 years");
+    assert!(
+        !taken.is_empty(),
+        "no winning raid took captives in 20 years"
+    );
+    // Captives were moved to the captor's town (until they choose to migrate).
+    let store = s.world.resource::<sim_core::AgentStore>();
+    let settled = taken
+        .iter()
+        .filter(|&&(c, t)| store.alive[c as usize] && store.town[c as usize] == t)
+        .count();
+    assert!(settled > 0, "no captive lives in the captor's town");
+}
+
+#[test]
+fn households_migrate_and_carry_their_skills() {
+    let mut s = sim(7);
+    let dpy = s.world.resource::<sim_core::SimClock>().days_per_year;
+    let before: Vec<u16> = s.world.resource::<sim_core::AgentStore>().town.clone();
+    for _ in 0..5 * dpy {
+        s.step();
+    }
+    let m = s.world.resource::<sim_core::metrics::Metrics>();
+    let arrived: u32 = m
+        .years
+        .iter()
+        .flat_map(|y| &y.towns)
+        .map(|t| t.moves.arrived)
+        .sum();
+    let left: u32 = m
+        .years
+        .iter()
+        .flat_map(|y| &y.towns)
+        .map(|t| t.moves.left)
+        .sum();
+    assert!(arrived > 0, "nobody migrated in 5 years");
+    assert_eq!(arrived, left, "every arrival leaves somewhere");
+    // Movers are founders who now live in another town; their skills came with them.
+    let store = s.world.resource::<sim_core::AgentStore>();
+    let movers = (0..before.len())
+        .filter(|&i| store.alive[i] && store.town[i] != before[i])
+        .count();
+    assert!(movers > 0, "no founder lives in a different town");
 }

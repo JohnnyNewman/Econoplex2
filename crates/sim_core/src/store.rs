@@ -19,6 +19,8 @@ pub enum Activity {
     Working(Entity),
     /// Serving in the town's squad (drilling at home, or marching on a raid).
     Soldier,
+    /// Taken in a raid and marched to the captor's town.
+    Captive,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

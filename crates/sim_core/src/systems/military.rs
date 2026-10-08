@@ -5,9 +5,12 @@
 //! and are paid from the treasury, so an army is a running cost the economy has
 //! to carry. A town whose squad clearly outmatches a neighbor's defense may raid
 //! it: the squad marches over, fights, and on a win carries off part of the
-//! defender's treasury and stores. Fallen fighters die through the normal
-//! lifecycle (their health drops to zero), so their skills are lost with them.
+//! defender's treasury and stores, and takes some of its people captive. Captives
+//! march home with the squad and then live and work in the captor's town, so the
+//! skills they carry change hands with them. Fallen fighters die through the
+//! normal lifecycle (their health drops to zero), so their skills are lost with them.
 
+use super::migrate::relocate;
 use super::streams;
 use crate::components::*;
 use crate::db::Db;
@@ -158,7 +161,16 @@ pub fn military(
         if now >= raid.arrive && !raid.fought {
             raid.fought = true;
             battle(
-                &mut raid, t, &mut towns, store, &db, &models, &params, &fight, &mut rng,
+                &mut commands,
+                &mut raid,
+                t,
+                &mut towns,
+                store,
+                &db,
+                &models,
+                &params,
+                &fight,
+                &mut rng,
             );
         }
         if now >= raid.home || raid.soldiers.is_empty() {
@@ -167,6 +179,11 @@ pub fn military(
                 town.stock[p] += q;
             }
             town.raid_ready = now + mp.raid_cooldown as u64;
+            for &c in &raid.captives {
+                if store.alive[c as usize] {
+                    store.activity[c as usize] = Activity::Idle;
+                }
+            }
             continue;
         }
         // Positions along the road: out until arrival, back afterwards.
@@ -177,7 +194,7 @@ pub fn military(
         };
         let x = home_pos.0 + (target_pos.0 - home_pos.0) * f;
         let y = home_pos.1 + (target_pos.1 - home_pos.1) * f;
-        for &s in &raid.soldiers {
+        for &s in raid.soldiers.iter().chain(&raid.captives) {
             store.target[s as usize] = (
                 x + rng.random_range(-15.0..15.0f32),
                 y + rng.random_range(-15.0..15.0f32),
@@ -247,6 +264,7 @@ pub fn military(
             arrive: clock.tick + days,
             home: clock.tick + 2 * days,
             fought: false,
+            captives: Vec::new(),
             loot: vec![0.0; np],
         });
     }
@@ -286,7 +304,7 @@ fn defense_power(
         .iter()
         .filter(|&&i| {
             let a = store.activity[i as usize];
-            a != Activity::Child && a != Activity::Soldier
+            a != Activity::Child && a != Activity::Soldier && a != Activity::Captive
         })
         .count();
     squad + militia * civilians as f32
@@ -294,6 +312,7 @@ fn defense_power(
 
 #[allow(clippy::too_many_arguments)]
 fn battle(
+    commands: &mut Commands,
     raid: &mut Raid,
     attacker: usize,
     towns: &mut Towns,
@@ -384,6 +403,46 @@ fn battle(
             raid.loot[p] += q;
         }
         towns.0[attacker].war.raids_won += 1;
+
+        // Captives: idle adults of the defeated town, a few per surviving soldier.
+        let survivors = raid
+            .soldiers
+            .iter()
+            .filter(|&&s| store.state[s as usize][state::HEALTH] > 0.0)
+            .count();
+        let mut pool: Vec<(f32, u32)> = towns.0[d]
+            .residents
+            .iter()
+            .copied()
+            .filter(|&i| {
+                let i = i as usize;
+                store.alive[i]
+                    && store.state[i][state::HEALTH] > 0.0
+                    && matches!(store.activity[i], Activity::Idle | Activity::Resting)
+            })
+            .map(|i| (rng.random::<f32>(), i))
+            .collect();
+        let n = ((pool.len() as f32 * mp.captive_share) as usize)
+            .min((survivors as f32 * mp.captives_per_soldier) as usize);
+        pool.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        let home = towns.0[attacker].pos;
+        for &(_, c) in pool.iter().take(n) {
+            let i = c as usize;
+            store.activity[i] = Activity::Captive;
+            if let Some(p) = store.partner[i].take() {
+                store.partner[p as usize] = None;
+            }
+            let st = &mut store.state[i];
+            st[state::HAPPINESS] = (st[state::HAPPINESS] - 0.3).max(0.0);
+            let jitter = (
+                rng.random_range(-40.0..40.0f32),
+                rng.random_range(-40.0..40.0f32),
+            );
+            relocate(commands, store, i, attacker as u16, home, jitter);
+            raid.captives.push(c);
+        }
+        towns.0[attacker].war.captives_taken += n as u32;
+        towns.0[d].war.captives_lost += n as u32;
     } else {
         towns.0[attacker].war.raids_lost += 1;
         towns.0[d].war.defended += 1;

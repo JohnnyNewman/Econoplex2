@@ -90,6 +90,8 @@ pub struct Town {
     /// No new raid before this tick.
     pub raid_ready: u64,
     pub war: WarCounters,
+    /// People who moved in or out since the last yearly report.
+    pub moves: MoveCounters,
 }
 
 /// A squad on the march: out to `target`, battle on arrival, then home.
@@ -101,6 +103,8 @@ pub struct Raid {
     pub arrive: u64,
     pub home: u64,
     pub fought: bool,
+    /// People taken in battle, marched home with the squad.
+    pub captives: Vec<u32>,
     /// Goods carried home (indexed by product).
     pub loot: Vec<f32>,
 }
@@ -114,6 +118,16 @@ pub struct WarCounters {
     pub attacked: u32,
     pub defended: u32,
     pub fallen: u32,
+    /// People this town carried off, and people carried off from it.
+    pub captives_taken: u32,
+    pub captives_lost: u32,
+}
+
+/// Migration since the last yearly report.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct MoveCounters {
+    pub arrived: u32,
+    pub left: u32,
 }
 
 impl Town {
@@ -329,6 +343,7 @@ pub fn setup(world: &mut World, db: Db, params: ModelParams, scenario: &Scenario
             raid: None,
             raid_ready: 0,
             war: WarCounters::default(),
+            moves: MoveCounters::default(),
         });
 
         // Starting trades follow what the town can actually run, with food work weighted

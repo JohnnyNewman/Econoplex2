@@ -132,5 +132,21 @@
         battle_steepness: 2.0,
         casualty_rate: 0.3,
         loot_share: 0.3,
+        captive_share: 0.05,
+        captives_per_soldier: 0.5,
+    ),
+    // Households move to towns where their trade sells better, food is plentiful,
+    // people think alike and no raids come, so skills follow demand between towns.
+    migration: (
+        interval: 30,
+        consider: 0.05,
+        min_gain: 0.6,
+        max_age: 50.0,
+        food_weight: 0.5,
+        food_reference: 3.0,
+        trade_weight: 0.6,
+        ideology_weight: 1.0,
+        danger_weight: 0.3,
+        distance_cost: 0.2,
     ),
 )
