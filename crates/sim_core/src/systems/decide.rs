@@ -266,6 +266,19 @@ pub fn decide(
         })
         .collect();
 
+    // Jobs each town can still take people for, in `feasible` order; shrinks as
+    // choices fill capacity and building slots, instead of re-filtering per agent.
+    let mut open_jobs: Vec<Vec<u32>> = feasible
+        .iter()
+        .enumerate()
+        .map(|(t, f)| {
+            f.iter()
+                .copied()
+                .filter(|&r| open(&slots_left, &capacity, t, r))
+                .collect()
+        })
+        .collect();
+
     let mut options: Vec<(Option<u32>, f32)> = Vec::with_capacity(d.candidates + 2);
     let mut pool: Vec<u32> = Vec::new();
     let store = &mut *store;
@@ -281,11 +294,7 @@ pub fn decide(
 
         // Candidate list: a random sample of feasible jobs plus the agent's habitual job.
         pool.clear();
-        pool.extend(
-            feasible[t]
-                .iter()
-                .filter(|&&r| open(&slots_left, &capacity, t, r)),
-        );
+        pool.extend_from_slice(&open_jobs[t]);
         let k = d.candidates.min(pool.len());
         for j in 0..k {
             let swap = rng.random_range(j..pool.len());
@@ -348,8 +357,14 @@ pub fn decide(
             }
             Some(r) => {
                 capacity[t][r as usize] -= 1.0;
-                if let Some(b) = db.recipes[r as usize].building {
+                let building = db.recipes[r as usize].building;
+                if let Some(b) = building {
                     slots_left[t][b as usize] -= 1.0;
+                }
+                if capacity[t][r as usize] < 1.0
+                    || building.is_some_and(|b| slots_left[t][b as usize] < 1.0)
+                {
+                    open_jobs[t].retain(|&q| open(&slots_left, &capacity, t, q));
                 }
                 log.chosen[r as usize] += 1;
                 decisions.jobs.push((i as u32, r));

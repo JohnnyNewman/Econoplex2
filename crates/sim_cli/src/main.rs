@@ -2,8 +2,15 @@
 //!
 //! ```text
 //! econoplex-sim [--years N] [--seed S] [--scale F] [--assets DIR] [--csv FILE]
-//!               [--embedding] [--hash] [--quiet]
+//!               [--set path=value]... [--sweep path=v1,v2,...]... [--seeds N]
+//!               [--embedding] [--hash] [--profile] [--quiet]
 //! ```
+//!
+//! With `--sweep` or `--seeds` above 1 the runner switches to batch mode: every
+//! combination of swept values is run on every seed, in parallel, and each run
+//! is reduced to one summary row (see `sweep.rs`).
+
+mod sweep;
 
 use sim_core::metrics::Metrics;
 use sim_core::{AssetPaths, Simulation};
@@ -20,6 +27,11 @@ struct Args {
     embedding: bool,
     hash: bool,
     quiet: bool,
+    profile: bool,
+    /// Parameter overrides applied to models.ron, as (dotted.path, value).
+    sets: Vec<(String, String)>,
+    sweeps: Vec<(String, Vec<String>)>,
+    seeds: u64,
 }
 
 fn parse_args() -> Args {
@@ -32,6 +44,10 @@ fn parse_args() -> Args {
         embedding: false,
         hash: false,
         quiet: false,
+        profile: false,
+        sets: Vec::new(),
+        sweeps: Vec::new(),
+        seeds: 1,
     };
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
@@ -59,9 +75,30 @@ fn parse_args() -> Args {
             }
             "--assets" => a.assets = Some(PathBuf::from(val())),
             "--csv" => a.csv = Some(PathBuf::from(val())),
+            "--set" => {
+                let v = val();
+                let (k, x) = v
+                    .split_once('=')
+                    .unwrap_or_else(|| die("--set expects path=value"));
+                a.sets.push((k.to_string(), x.to_string()));
+            }
+            "--sweep" => {
+                let v = val();
+                let (k, x) = v
+                    .split_once('=')
+                    .unwrap_or_else(|| die("--sweep expects path=v1,v2,..."));
+                a.sweeps
+                    .push((k.to_string(), x.split(',').map(str::to_string).collect()));
+            }
+            "--seeds" => {
+                a.seeds = val()
+                    .parse()
+                    .unwrap_or_else(|_| die("--seeds expects a number"))
+            }
             "--embedding" => a.embedding = true,
             "--hash" => a.hash = true,
             "--quiet" => a.quiet = true,
+            "--profile" => a.profile = true,
             "-h" | "--help" => {
                 println!(
                     "econoplex-sim: run the Econoplex economy headless\n\n\
@@ -69,9 +106,13 @@ fn parse_args() -> Args {
                      --seed S       override the scenario seed\n\
                      --scale F      multiply every town's population and land (e.g. 10 for ~12,000 agents)\n\
                      --assets DIR   assets folder (default: discovered)\n\
-                     --csv FILE     write per-town yearly metrics as CSV\n\
+                     --csv FILE     write per-town yearly metrics as CSV (batch mode: one row per run)\n\
+                     --set P=V      override a parameter in models.ron, e.g. military.tribute_share=0.3\n\
+                     --sweep P=A,B  run once per value (repeat for a grid); implies batch mode\n\
+                     --seeds N      run N consecutive seeds from the scenario seed; implies batch mode\n\
                      --embedding    print the skill embedding (product space) report and exit\n\
                      --hash         print the final state hash (determinism check)\n\
+                     --profile      print wall-clock time per system\n\
                      --quiet        only print the summary"
                 );
                 std::process::exit(0);
@@ -94,7 +135,8 @@ fn main() {
         .as_deref()
         .map(AssetPaths::from_root)
         .unwrap_or_else(AssetPaths::discover);
-    let (db, params, mut scenario) = sim_core::load(&paths).unwrap_or_else(|e| die(&e.to_string()));
+    let (db, params, mut scenario) =
+        sim_core::load_with(&paths, &args.sets).unwrap_or_else(|e| die(&e.to_string()));
 
     if args.embedding {
         print_embedding(&db);
@@ -112,6 +154,19 @@ fn main() {
         for n in &mut t.nature {
             n.1 = ((n.1 as f32 * args.scale).round() as u32).max(1);
         }
+    }
+
+    if !args.sweeps.is_empty() || args.seeds > 1 {
+        let plan = sweep::Plan {
+            paths,
+            sets: args.sets,
+            sweeps: args.sweeps,
+            seeds: args.seeds,
+            scenario,
+            years: args.years,
+        };
+        sweep::run(&plan, args.csv.as_deref()).unwrap_or_else(|e| die(&e.to_string()));
+        return;
     }
 
     let dpy = params.life.days_per_year as u64;
@@ -145,6 +200,9 @@ fn main() {
         agents
     );
     print_final(&sim);
+    if args.profile {
+        print_profile(sim.world.resource::<sim_core::profile::Profile>(), ticks);
+    }
     if args.hash {
         println!("state hash: {:016x}", sim.state_hash());
     }
@@ -334,6 +392,20 @@ fn print_final(sim: &Simulation) {
             })
             .collect();
         println!("  {:<11} {}", town.name, top.join(", "));
+    }
+}
+
+fn print_profile(p: &sim_core::profile::Profile, ticks: u64) {
+    let total: f64 = p.total.iter().map(|d| d.as_secs_f64()).sum();
+    println!("\nTime per system (ms per tick, share):");
+    for (name, d) in sim_core::profile::SYSTEMS.iter().zip(&p.total) {
+        let s = d.as_secs_f64();
+        println!(
+            "  {:<10} {:>8.2} {:>5.1}%",
+            name,
+            s * 1000.0 / ticks.max(1) as f64,
+            100.0 * s / total.max(1e-12)
+        );
     }
 }
 

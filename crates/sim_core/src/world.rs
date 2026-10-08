@@ -462,6 +462,7 @@ pub fn setup(world: &mut World, db: Db, params: ModelParams, scenario: &Scenario
     world.insert_resource(db);
     world.insert_resource(models);
     world.insert_resource(Params(params));
+    world.insert_resource(crate::profile::Profile::default());
     world.insert_resource(SimClock {
         tick: 0,
         days_per_year: dpy,

@@ -22,6 +22,13 @@ cargo run --release -p sim_cli -- --years 30
 # Bigger world (~12,000 agents), CSV export
 cargo run --release -p sim_cli -- --years 20 --scale 10 --csv metrics.csv
 
+# Change a parameter for one run, and see where the time goes
+cargo run --release -p sim_cli -- --years 20 --set military.tribute_share=0.3 --profile
+
+# Parameter sweep: every value on 8 seeds, in parallel, one summary row per setting
+cargo run --release -p sim_cli -- --years 30 --seeds 8 \
+    --sweep military.tribute_share=0.1,0.2,0.4 --sweep market.free_land=3,6 --csv sweep.csv
+
 # The product space derived from the skill graph
 cargo run --release -p sim_cli -- --embedding
 
@@ -231,6 +238,17 @@ to
 team_pooling: LeaderPlusAssistants(assist: 0.2, coordination_cost: 0.04),
 ```
 
+### Sweeps
+
+`--set path=value` overrides any value in `models.ron` by its dotted path, including
+fields of a selected formula (`success.steepness`). `--sweep path=a,b,c` runs every
+value, and several sweeps form a grid; `--seeds N` repeats each setting on N
+consecutive seeds. Runs go out to all cores and each comes back as one row:
+population, starvation, food, diversity, the ECI range between towns, specialization,
+masters, swords, wealth and its Gini between towns, raids, conquests, revolts, the
+share of town-years under a ruler, migrants and milliseconds per tick. The table shows
+the mean and spread per setting; `--csv` writes every run.
+
 ### Determinism
 
 The tick schedule runs single-threaded in a fixed order, every system draws from its
@@ -253,7 +271,11 @@ carry off a few captives each time. Crushing wins make tributaries, which
 usually rise up again within a few years; one town rarely rules all the others. A few percent of each town's people move every
 year, more of them toward towns with food to spare.
 
-Performance on one core: about 1.3 ms per tick at 2,400 agents and 33 ms at 18,500.
+Performance on one core: about 1.7 ms per tick at 2,000 agents. With `--scale 42`
+(50,400 agents at the start, 63,000 after 15 years) a tick takes 40 ms in the first
+years and 55 ms on average over 15 years, well inside the 250 ms a 4 Hz game needs.
+`--profile` shows the split: choosing jobs takes about a quarter, forming teams,
+producing and the yearly life cycle about an eighth each.
 
 ## Known limitations of this prototype
 
