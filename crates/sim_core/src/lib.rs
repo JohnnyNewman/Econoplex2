@@ -10,6 +10,7 @@ pub mod config;
 pub mod db;
 pub mod metrics;
 pub mod models;
+pub mod profile;
 pub mod store;
 pub mod systems;
 pub mod world;
@@ -37,19 +38,39 @@ pub fn build_schedule() -> Schedule {
     schedule.set_executor(SingleThreadedExecutor::new());
     schedule.add_systems(
         (
-            needs::sense,
-            decide::decide,
-            work::assign,
-            work::produce,
-            work::learn,
-            social::socialize,
-            body::body,
-            market::settle,
-            organize::organize,
-            military::military,
-            migrate::migrate,
-            life::lifecycle,
-            metrics::record,
+            (
+                profile::start,
+                needs::sense,
+                profile::mark::<0>,
+                decide::decide,
+                profile::mark::<1>,
+                work::assign,
+                profile::mark::<2>,
+                work::produce,
+                profile::mark::<3>,
+                work::learn,
+                profile::mark::<4>,
+                social::socialize,
+                profile::mark::<5>,
+                body::body,
+                profile::mark::<6>,
+            )
+                .chain(),
+            (
+                market::settle,
+                profile::mark::<7>,
+                organize::organize,
+                profile::mark::<8>,
+                military::military,
+                profile::mark::<9>,
+                migrate::migrate,
+                profile::mark::<10>,
+                life::lifecycle,
+                profile::mark::<11>,
+                metrics::record,
+                profile::mark::<12>,
+            )
+                .chain(),
         )
             .chain(),
     );
@@ -89,8 +110,23 @@ impl AssetPaths {
 }
 
 pub fn load(paths: &AssetPaths) -> Result<(Db, ModelParams, Scenario), Box<dyn std::error::Error>> {
+    load_with(paths, &[])
+}
+
+/// Like [`load`], with `(dotted.path, value)` overrides applied to the model
+/// parameters, e.g. `("military.tribute_share", "0.3")`.
+pub fn load_with(
+    paths: &AssetPaths,
+    overrides: &[(String, String)],
+) -> Result<(Db, ModelParams, Scenario), Box<dyn std::error::Error>> {
     let content = sim_data::Content::load_dir(&paths.content)?;
-    let params: ModelParams = config::load_ron(&paths.models)?;
+    let mut text = std::fs::read_to_string(&paths.models)
+        .map_err(|e| format!("cannot read {}: {e}", paths.models.display()))?;
+    for (path, value) in overrides {
+        text = config::set_ron_field(&text, path, value)?;
+    }
+    let params: ModelParams = ron::from_str(&text)
+        .map_err(|e| format!("cannot parse {}: {e}", paths.models.display()))?;
     params.validate()?;
     let scenario: Scenario = config::load_ron(&paths.scenario)?;
     let db = Db::build(
