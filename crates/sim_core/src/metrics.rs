@@ -31,6 +31,9 @@ pub struct TownStats {
     /// Longswords in the armory by level 1, 2, 3.
     pub swords: [u32; 3],
     pub tools_in_use: usize,
+    pub treasury: f32,
+    /// Mean wealth of residents.
+    pub mean_wealth: f32,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -38,6 +41,8 @@ pub struct YearStats {
     pub year: u64,
     pub population: usize,
     pub success_rate: f32,
+    /// Agents' wealth plus treasuries; constant when the money loop is closed.
+    pub total_money: f64,
     pub towns: Vec<TownStats>,
 }
 
@@ -128,6 +133,7 @@ pub fn economic_complexity(x: &[Vec<f32>]) -> (Vec<Vec<bool>>, Vec<f32>) {
     (m, eci)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn record(
     store: Res<AgentStore>,
     mut towns: ResMut<Towns>,
@@ -217,6 +223,13 @@ pub fn record(
             top_sum += profile.iter().copied().fold(0.0, f32::max);
         }
         let n = s.population.max(1) as f32;
+        s.treasury = town.treasury;
+        s.mean_wealth = town
+            .residents
+            .iter()
+            .map(|&i| store.wealth[i as usize])
+            .sum::<f32>()
+            / n;
         s.ideology = ideo_sum.map(|v| v / n);
         let mut spread = 0.0;
         for &i in &town.residents {
@@ -240,6 +253,7 @@ pub fn record(
         ys.population += s.population;
         ys.towns.push(s);
     }
+    ys.total_money = crate::world::total_money(&store, &towns);
     metrics.years.push(ys);
 }
 

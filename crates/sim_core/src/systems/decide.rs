@@ -16,6 +16,37 @@ use bevy_ecs::prelude::*;
 use rand::Rng;
 use sim_data::dims::*;
 
+/// How many more workers each recipe can absorb in `town` today, limited by the
+/// nature left to harvest and the inputs in stock. Jobs fill up as agents choose
+/// them, so the rest of the town spreads to other work instead of queueing.
+pub fn job_capacity(
+    db: &Db,
+    town: &crate::world::Town,
+    sites: &Query<&NaturalResource>,
+) -> Vec<f32> {
+    let mut nature_total = vec![0.0f32; db.content.nature.len()];
+    for &e in &town.nature_sites {
+        if let Ok(n) = sites.get(e) {
+            nature_total[n.kind as usize] += n.amount;
+        }
+    }
+    db.recipes
+        .iter()
+        .map(|m| {
+            // One worker does about 1/duration runs per day.
+            let mut cap = f32::INFINITY;
+            if let Some(k) = m.nature {
+                let out: f32 = m.outputs.iter().map(|o| o.1).sum();
+                cap = cap.min(nature_total[k as usize] / out * m.duration);
+            }
+            for &(p, q) in &m.inputs {
+                cap = cap.min(town.stock[p as usize] / q * m.duration);
+            }
+            cap
+        })
+        .collect()
+}
+
 /// Recipes a town can start right now (building, nature and inputs available).
 pub fn feasible_recipes(
     db: &Db,
@@ -87,6 +118,11 @@ pub fn decide(
     let mastery = params.mastery();
 
     // Per-town context, computed once.
+    let mut capacity: Vec<Vec<f32>> = towns
+        .0
+        .iter()
+        .map(|t| job_capacity(&db, t, &sites))
+        .collect();
     let feasible: Vec<Vec<u32>> = towns
         .0
         .iter()
@@ -137,7 +173,11 @@ pub fn decide(
 
         // Candidate list: a random sample of feasible jobs plus the agent's habitual job.
         pool.clear();
-        pool.extend_from_slice(&feasible[t]);
+        pool.extend(
+            feasible[t]
+                .iter()
+                .filter(|&&r| capacity[t][r as usize] >= 1.0),
+        );
         let k = d.candidates.min(pool.len());
         for j in 0..k {
             let swap = rng.random_range(j..pool.len());
@@ -145,7 +185,10 @@ pub fn decide(
         }
         pool.truncate(k);
         if let Some(last) = store.last_recipe[i] {
-            if feasible[t].contains(&last) && !pool.contains(&last) {
+            if capacity[t][last as usize] >= 1.0
+                && feasible[t].contains(&last)
+                && !pool.contains(&last)
+            {
                 pool.push(last);
             }
         }
@@ -196,6 +239,7 @@ pub fn decide(
                 );
             }
             Some(r) => {
+                capacity[t][r as usize] -= 1.0;
                 log.chosen[r as usize] += 1;
                 decisions.jobs.push((i as u32, r));
             }

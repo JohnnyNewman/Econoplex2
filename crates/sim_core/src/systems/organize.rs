@@ -86,7 +86,9 @@ pub fn organize(
             let Some(eq) = &db.content.products[prod.def as usize].equip else {
                 continue;
             };
+            let cost = town.price[prod.def as usize] * (0.5 + prod.quality);
             if db.content.domain(&eq.domain) == Some(g.domain)
+                && cost <= store.wealth[i] + params.market.tool_credit
                 && best.is_none_or(|b| prod.quality > b.1)
             {
                 best = Some((k, prod.quality));
@@ -95,6 +97,10 @@ pub fn organize(
         if let Some((k, _)) = best {
             let e = town.armory.swap_remove(k);
             let prod = items.get(e).unwrap();
+            // Tools are bought from the town, on credit if need be; wages repay it.
+            let cost = town.price[prod.def as usize] * (0.5 + prod.quality);
+            store.wealth[i] -= cost;
+            town.treasury += cost;
             let bonus = db.content.products[prod.def as usize]
                 .equip
                 .as_ref()

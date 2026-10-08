@@ -61,6 +61,15 @@ pub fn assign(
             .push(a);
     }
 
+    // Scarce inputs go to the most profitable work first, as if those teams outbid
+    // the others at the market.
+    let mut groups: Vec<((u16, u32), Vec<u32>)> = groups.into_iter().collect();
+    groups.sort_by(|((ta, ra), _), ((tb, rb), _)| {
+        let pa = super::decide::profit_per_day(&db, &towns.0[*ta as usize], *ra as usize);
+        let pb = super::decide::profit_per_day(&db, &towns.0[*tb as usize], *rb as usize);
+        ta.cmp(tb).then(pb.total_cmp(&pa)).then(ra.cmp(rb))
+    });
+
     let mut pending: Vec<PendingTask> = Vec::new();
     for ((t, r), agents) in groups {
         let m = &db.recipes[r as usize];
@@ -286,7 +295,17 @@ pub fn produce(
                     }
                 }
             }
-            let wage = params.work.wage_share * value / n as f32;
+            // The town market buys the output and pays the team its share of the value
+            // added, out of its treasury: money moves, it is never created.
+            let input_cost: f32 = m
+                .inputs
+                .iter()
+                .map(|&(p, q)| town.price[p as usize] * q * task.batches as f32)
+                .sum();
+            let pay =
+                (params.work.wage_share * (value - input_cost)).clamp(0.0, town.treasury.max(0.0));
+            town.treasury -= pay;
+            let wage = pay / n as f32;
             for &w in &workers {
                 store.wealth[w as usize] += wage;
                 let st = &mut store.state[w as usize];

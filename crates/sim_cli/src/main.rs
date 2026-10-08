@@ -157,18 +157,30 @@ fn main() {
 
 fn print_year(y: &sim_core::metrics::YearStats) {
     println!(
-        "\nYear {:>3}  population {:>6}  step success {:>4.0}%",
+        "\nYear {:>3}  population {:>6}  step success {:>4.0}%  money {:>9.0}",
         y.year,
         y.population,
-        y.success_rate * 100.0
+        y.success_rate * 100.0,
+        y.total_money
     );
     println!(
-        "  {:<11} {:>5} {:>6} {:>4} {:>6} {:>6} {:>6} {:>7} {:>5}  {:>11}",
-        "town", "pop", "food", "div", "ECI", "spec", "top", "masters", "tools", "swords 1/2/3"
+        "  {:<11} {:>5} {:>6} {:>4} {:>6} {:>6} {:>6} {:>7} {:>5}  {:>11} {:>8} {:>6}",
+        "town",
+        "pop",
+        "food",
+        "div",
+        "ECI",
+        "spec",
+        "top",
+        "masters",
+        "tools",
+        "swords 1/2/3",
+        "treasury",
+        "wealth"
     );
     for t in &y.towns {
         println!(
-            "  {:<11} {:>5} {:>6.1} {:>4} {:>6.2} {:>6.2} {:>6.2} {:>7} {:>5}  {:>3}/{:>3}/{:>3}",
+            "  {:<11} {:>5} {:>6.1} {:>4} {:>6.2} {:>6.2} {:>6.2} {:>7} {:>5}  {:>3}/{:>3}/{:>3} {:>8.0} {:>6.1}",
             t.name,
             t.population,
             t.food_per_capita,
@@ -180,7 +192,9 @@ fn print_year(y: &sim_core::metrics::YearStats) {
             t.tools_in_use,
             t.swords[0],
             t.swords[1],
-            t.swords[2]
+            t.swords[2],
+            t.treasury,
+            t.mean_wealth
         );
     }
 }
@@ -283,15 +297,15 @@ fn write_csv(path: &std::path::Path, m: &Metrics) -> std::io::Result<()> {
     let mut f = std::fs::File::create(path)?;
     writeln!(
         f,
-        "year,town,population,adults,food_per_capita,diversity,rca_products,eci,specialization,mean_top_skill,masters,guild_members,tools_in_use,swords_1,swords_2,swords_3,tradition,faith,liberty,ideology_spread"
+        "year,town,population,adults,food_per_capita,diversity,rca_products,eci,specialization,mean_top_skill,masters,guild_members,tools_in_use,swords_1,swords_2,swords_3,treasury,mean_wealth,tradition,faith,liberty,ideology_spread"
     )?;
     for y in &m.years {
         for t in &y.towns {
             writeln!(
                 f,
-                "{},{},{},{},{:.3},{},{},{:.3},{:.4},{:.4},{},{},{},{},{},{},{:.4},{:.4},{:.4},{:.4}",
+                "{},{},{},{},{:.3},{},{},{:.3},{:.4},{:.4},{},{},{},{},{},{},{:.1},{:.2},{:.4},{:.4},{:.4},{:.4}",
                 y.year, t.name, t.population, t.adults, t.food_per_capita, t.diversity, t.rca_products, t.eci, t.specialization,
-                t.mean_top_skill, t.masters, t.guild_members, t.tools_in_use, t.swords[0], t.swords[1], t.swords[2],
+                t.mean_top_skill, t.masters, t.guild_members, t.tools_in_use, t.swords[0], t.swords[1], t.swords[2], t.treasury, t.mean_wealth,
                 t.ideology[0], t.ideology[1], t.ideology[2], t.ideology_spread
             )?;
         }

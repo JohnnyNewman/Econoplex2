@@ -63,3 +63,39 @@ fn economy_produces_and_people_learn() {
         st.alive_count()
     );
 }
+
+#[test]
+fn money_is_conserved() {
+    let mut s = sim(4);
+    let money = |s: &Simulation| {
+        sim_core::world::total_money(
+            s.world.resource::<sim_core::AgentStore>(),
+            s.world.resource::<sim_core::Towns>(),
+        )
+    };
+    let before = money(&s);
+    for _ in 0..600 {
+        s.step();
+    }
+    let after = money(&s);
+    assert!(
+        ((after - before) / before).abs() < 1e-3,
+        "money changed from {before} to {after}"
+    );
+}
+
+#[test]
+fn first_year_has_no_famine() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let mut s = Simulation::from_paths(&AssetPaths::from_root(&root)).unwrap();
+    let start = s.world.resource::<sim_core::AgentStore>().alive_count();
+    let dpy = s.world.resource::<sim_core::SimClock>().days_per_year;
+    for _ in 0..dpy {
+        s.step();
+    }
+    let end = s.world.resource::<sim_core::AgentStore>().alive_count();
+    assert!(
+        end as f32 >= 0.97 * start as f32,
+        "population fell from {start} to {end} in the first year"
+    );
+}

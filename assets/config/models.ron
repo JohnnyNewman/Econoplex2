@@ -83,6 +83,7 @@
         partner_min_score: 0.6,
         partner_interval: 10,
         food_for_births: 2.0,
+        starting_food_bias: 1.0,
     ),
 
     market: (
@@ -94,6 +95,14 @@
         trade_interval: 10,
         trade_amount: 6.0,
         transport_cost: 0.25,
+        // Money circulates: wages come out of the town treasury, which is refilled by
+        // food and tool purchases, trade, a wealth tax, and bequests.
+        wealth_tax: 0.5,
+        tax_free_wealth: 10.0,
+        treasury_reserve_per_capita: 3.0,
+        public_spending: 2.0,
+        food_spoilage: 0.5,
+        tool_credit: 40.0,
     ),
 
     organize: (interval: 20, guild_threshold: 0.55, master_threshold: 1.05),

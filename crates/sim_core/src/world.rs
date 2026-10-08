@@ -99,6 +99,16 @@ impl Town {
 #[derive(Resource, Default)]
 pub struct Towns(pub Vec<Town>);
 
+/// All money in the world: agents' wealth plus town treasuries. Every transfer
+/// moves money between these, so this stays constant over a run.
+pub fn total_money(store: &AgentStore, towns: &Towns) -> f64 {
+    let agents: f64 = (0..store.len())
+        .filter(|&i| store.alive[i])
+        .map(|i| store.wealth[i] as f64)
+        .sum();
+    agents + towns.0.iter().map(|t| t.treasury as f64).sum::<f64>()
+}
+
 /// Choices made in the decide step, consumed by assign.
 #[derive(Resource, Default)]
 pub struct Decisions {
@@ -257,6 +267,31 @@ pub fn setup(world: &mut World, db: Db, params: ModelParams, scenario: &Scenario
             produced_last_year: vec![0.0; np],
         });
 
+        // Starting trades follow what the town can actually run, with food work weighted
+        // up so a new town can feed itself while the labor market finds its balance.
+        let trade_weights: Vec<f32> = db
+            .recipes
+            .iter()
+            .map(|m| {
+                let has_building = m.building.is_none_or(|b| {
+                    spec.buildings
+                        .iter()
+                        .any(|n| db.content.product(n) == Some(b))
+                });
+                let has_nature = m.nature.is_none_or(|k| {
+                    spec.nature
+                        .iter()
+                        .any(|(n, c)| *c > 0 && db.content.nature_kind(n) == Some(k))
+                });
+                if has_building && has_nature {
+                    1.0 + params.life.starting_food_bias * m.food_out
+                } else {
+                    0.1
+                }
+            })
+            .collect();
+        let weight_sum: f32 = trade_weights.iter().sum();
+
         for _ in 0..spec.population {
             let age_years = rng.random_range(0.0..50.0f32);
             let female = rng.random_bool(0.5);
@@ -274,7 +309,12 @@ pub fn setup(world: &mut World, db: Db, params: ModelParams, scenario: &Scenario
             }
             // Adults start with some experience in one family trade.
             if age_years >= params.life.adult_age {
-                let r = rng.random_range(0..db.recipes.len());
+                let mut x = rng.random::<f32>() * weight_sum;
+                let mut r = 0;
+                while r + 1 < trade_weights.len() && x >= trade_weights[r] {
+                    x -= trade_weights[r];
+                    r += 1;
+                }
                 let amount = rng.random_range(0.2..0.6f32) * (age_years / 40.0).min(1.0);
                 for k in 0..CAP_DIM {
                     cap[k] += amount * db.recipes[r].skill[k];

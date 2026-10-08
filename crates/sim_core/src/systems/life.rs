@@ -51,6 +51,28 @@ fn inherit<const N: usize>(
     })
 }
 
+/// A dead agent's wealth goes to the partner, else split among living children,
+/// else to the town treasury, so money never leaves the economy.
+fn bequeath(store: &mut AgentStore, towns: &mut Towns, i: usize) {
+    let w = std::mem::take(&mut store.wealth[i]);
+    if let Some(p) = store.partner[i].filter(|&p| store.alive[p as usize]) {
+        store.wealth[p as usize] += w;
+        return;
+    }
+    let me = i as u32;
+    let children: Vec<usize> = (0..store.len())
+        .filter(|&c| store.alive[c] && store.parents[c].is_some_and(|(a, b)| a == me || b == me))
+        .collect();
+    if children.is_empty() {
+        towns.0[store.town[i] as usize].treasury += w;
+    } else {
+        let share = w / children.len() as f32;
+        for c in children {
+            store.wealth[c] += share;
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn lifecycle(
     mut commands: Commands,
@@ -81,6 +103,7 @@ pub fn lifecycle(
         if store.state[i][state::HEALTH] <= 0.0 || rng.random::<f32>() < hazard {
             store.alive[i] = false;
             commands.entity(store.entity[i]).despawn();
+            bequeath(store, &mut towns, i);
             if let Some(g) = store.guild[i].take() {
                 commands.entity(g.membership).despawn();
             }

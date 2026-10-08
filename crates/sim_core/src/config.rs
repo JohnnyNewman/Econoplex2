@@ -197,6 +197,8 @@ pub struct LifeParams {
     pub partner_interval: u32,
     /// Food stock per capita at which births run at full rate.
     pub food_for_births: f32,
+    /// How much more likely founders start in a trade per unit of its food output.
+    pub starting_food_bias: f32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -210,6 +212,18 @@ pub struct MarketParams {
     pub trade_amount: f32,
     /// Fraction of price lost per unit traded (transport cost).
     pub transport_cost: f32,
+    /// Yearly tax on each agent's wealth above `tax_free_wealth`, paid to the town
+    /// treasury. It returns savings to the market so wages can keep flowing.
+    pub wealth_tax: f32,
+    pub tax_free_wealth: f32,
+    /// Treasury a town keeps per resident; above it, `public_spending` of the excess
+    /// per year is paid out to residents, so towns don't hoard money either.
+    pub treasury_reserve_per_capita: f32,
+    pub public_spending: f32,
+    /// Fraction of food stock that spoils per year.
+    pub food_spoilage: f32,
+    /// Guild members may buy a tool on credit until their wealth reaches minus this.
+    pub tool_credit: f32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
