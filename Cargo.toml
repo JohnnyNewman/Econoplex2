@@ -1,0 +1,25 @@
+[workspace]
+resolver = "2"
+members = ["crates/sim_data", "crates/sim_core", "crates/sim_cli", "crates/game"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+sim_data = { path = "crates/sim_data" }
+sim_core = { path = "crates/sim_core" }
+bevy = { version = "0.19.1", default-features = false }
+bevy_ecs = "0.19.1"
+serde = { version = "1", features = ["derive"] }
+ron = "0.12"
+rand = "0.9"
+rand_chacha = "0.9"
+
+# Fast iteration: optimize dependencies even in debug builds, keep our own code quick to compile.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3

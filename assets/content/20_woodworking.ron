@@ -1,0 +1,31 @@
+// Forestry and woodworking: wood, planks, hilts and charcoal.
+(
+    skills: [
+        (id: "woodcutting",      name: "Woodcutting",      domain: "forestry"),
+        (id: "charcoal_burning", name: "Charcoal burning", domain: "forestry",    prereqs: ["woodcutting"]),
+        (id: "carpentry",        name: "Carpentry",        domain: "woodworking", prereqs: ["woodcutting"]),
+        (id: "hilt_making",      name: "Hilt making",      domain: "woodworking", prereqs: ["carpentry"]),
+    ],
+    products: [
+        (id: "wood",     name: "Wood",     category: Raw,      base_price: 1.0),
+        (id: "plank",    name: "Plank",    category: Material, base_price: 1.5),
+        (id: "charcoal", name: "Charcoal", category: Material, base_price: 3.0),
+        (id: "hilt",     name: "Hilt",     category: Material, base_price: 6.0),
+        (id: "axe", name: "Axe", category: Tool, base_price: 25.0,
+            equip: Some((domain: "forestry", bonus: 0.25))),
+    ],
+    recipes: [
+        (id: "chop_wood", name: "Chop wood", skill: "woodcutting", difficulty: 0.10,
+            outputs: [("wood", 3)], nature: Some("forest"), duration: 1.0, max_team: 4,
+            physique: [("strength", 0.3), ("endurance", 0.2)]),
+        (id: "burn_charcoal", name: "Burn charcoal", skill: "charcoal_burning", difficulty: 0.30,
+            inputs: [("wood", 3)], outputs: [("charcoal", 2)], building: Some("furnace"), duration: 1.0,
+            physique: [("endurance", 0.2)]),
+        (id: "saw_planks", name: "Saw planks", skill: "carpentry", difficulty: 0.30,
+            inputs: [("wood", 2)], outputs: [("plank", 3)], building: Some("workshop"), duration: 1.0,
+            physique: [("strength", 0.2), ("dexterity", 0.1)]),
+        (id: "carve_hilt", name: "Carve hilt", skill: "hilt_making", difficulty: 0.45,
+            inputs: [("plank", 1)], outputs: [("hilt", 1)], building: Some("workshop"), duration: 1.0,
+            max_team: 2, physique: [("dexterity", 0.3)]),
+    ],
+)

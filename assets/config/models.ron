@@ -1,0 +1,102 @@
+// Econoplex model parameters. Every formula reads its constants from here.
+// Enum-valued entries select the model implementation (see crates/sim_core/src/models.rs).
+//
+// Vector layouts:
+//   mind     = [ambition, diligence, curiosity, sociability, risk, tradition, faith, liberty]
+//   state    = [hunger, fatigue, happiness, health]
+//   features = [value, skill, effort, novelty, social, need]
+(
+    embedding: (ancestor_decay: 0.5, method: "Auto"),
+
+    team_pooling: ElementwiseMax(coordination_cost: 0.04),
+    success: Sigmoid(steepness: 8.0),
+    quality: Margin(steepness: 4.0, offset: 0.0, combine: Min),
+    learning: Diminishing(rate: 0.02, mastery: 1.5, failure_factor: 0.4),
+    diffusion: AlongSkill(rate: 0.03, teacher_gain: 0.002),
+    capacity: NormBudget(budget: 2.0, forgetting: 0.0015),
+
+    decision: (
+        temperature: 0.25,
+        value_scale: 8.0,
+        candidates: 6,
+        //       value  skill  effort novelty social need
+        bias: [  1.2,   0.4,   0.4,   0.0,    0.15,  1.0 ],
+        mind_weights: [
+            //  amb   dil   cur   soc   risk  trad  faith lib
+            [   1.0,  0.0,  0.0,  0.0,  0.2,  0.0,  0.0,  0.0 ],  // value
+            [   0.0,  0.6,  0.0,  0.0, -0.4,  0.3,  0.0,  0.0 ],  // skill
+            [   0.0, -0.3,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0 ],  // effort
+            [   0.0,  0.0,  1.2,  0.0,  0.0, -0.3,  0.0,  0.3 ],  // novelty
+            [   0.0,  0.0,  0.0,  0.4,  0.0,  0.2,  0.0,  0.0 ],  // social
+            [   0.0,  0.2,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0 ],  // need
+        ],
+        state_weights: [
+            //  hunger fatigue happy health
+            [   0.0,   0.0,    0.0,  0.0 ],  // value
+            [   0.0,   0.0,    0.0,  0.0 ],  // skill
+            [   0.0,   1.5,    0.0,  0.0 ],  // effort
+            [   0.0,  -0.5,    0.3,  0.0 ],  // novelty
+            [   0.0,   0.0,    0.2,  0.0 ],  // social
+            [   3.0,   0.0,    0.0,  0.0 ],  // need
+        ],
+    ),
+
+    social: BoundedConfidence(
+        rate: 0.1, confidence: 0.25, repulsion_distance: 0.7, repulsion: 0.01,
+        noise: 0.01, daily_contacts: 0.2,
+    ),
+
+    needs: (
+        hunger_per_day: 0.12,
+        eat_threshold: 0.5,
+        starvation_damage: 0.02,
+        health_regen: 0.01,
+        fatigue_per_work_day: 0.12,
+        fatigue_rest_recovery: 0.4,
+        fatigue_idle_recovery: 0.05,
+        happiness_rate: 0.05,
+        fatigue_penalty: 0.5,
+    ),
+
+    physique: (
+        weight: 0.4,
+        train_rate: 0.01,
+        disuse_rate: 0.002,
+        untrained_level: 0.6,
+        peak_age: 20.0,
+        decline_age: 40.0,
+        decline_per_year: 0.015,
+    ),
+
+    genetics: (heritability: 0.6, mutation: 0.05),
+
+    life: (
+        // Prototype setting: 120 days per year keeps generations visible in short runs.
+        days_per_year: 120,
+        adult_age: 14.0,
+        apprentice_age: 10.0,
+        min_birth_age: 17.0,
+        max_birth_age: 42.0,
+        births_per_year: 0.3,
+        mortality_a: 0.002,
+        mortality_b: 0.075,
+        partner_min_score: 0.6,
+        partner_interval: 10,
+        food_for_births: 2.0,
+    ),
+
+    market: (
+        price_adjust: 0.05,
+        target_per_capita: 0.3,
+        food_target_per_capita: 3.0,
+        min_price_factor: 0.2,
+        max_price_factor: 5.0,
+        trade_interval: 10,
+        trade_amount: 6.0,
+        transport_cost: 0.25,
+    ),
+
+    organize: (interval: 20, guild_threshold: 0.55, master_threshold: 1.05),
+
+    work: (work_exponent: 0.85, wage_share: 0.5),
+)

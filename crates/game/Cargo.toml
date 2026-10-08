@@ -1,0 +1,29 @@
+[package]
+name = "game"
+description = "Econoplex: Bevy 2D view of the economic simulation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "econoplex"
+path = "src/main.rs"
+
+[dependencies]
+sim_core.workspace = true
+sim_data.workspace = true
+bevy = { workspace = true, features = [
+    "default_app",
+    "std",
+    "multi_threaded",
+    "bevy_winit",
+    "default_font",
+    "2d_api",
+    "2d_bevy_render",
+    "ui_api",
+    "ui_bevy_render",
+] }
+
+# Linux needs a windowing backend feature; Windows and macOS use their native one.
+[target.'cfg(target_os = "linux")'.dependencies]
+bevy = { workspace = true, features = ["x11"] }

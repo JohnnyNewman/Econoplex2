@@ -1,0 +1,30 @@
+// Starting world: four towns with different natural endowments.
+(
+    seed: 42,
+    towns: [
+        (
+            name: "Ironhold", position: (-450.0, 250.0), population: 300,
+            nature: [("ore_vein", 4), ("forest", 3), ("field", 3)],
+            buildings: ["furnace", "smithy", "workshop", "mill", "bakery"],
+            stock: [("bread", 900.0), ("wood", 30.0)],
+        ),
+        (
+            name: "Greenvale", position: (450.0, 250.0), population: 300,
+            nature: [("field", 6), ("forest", 4)],
+            buildings: ["mill", "bakery", "workshop"],
+            stock: [("bread", 900.0), ("wood", 30.0)],
+        ),
+        (
+            name: "Timberwick", position: (-450.0, -250.0), population: 300,
+            nature: [("forest", 6), ("field", 3), ("ore_vein", 1)],
+            buildings: ["workshop", "furnace", "mill", "bakery"],
+            stock: [("bread", 900.0), ("wood", 30.0)],
+        ),
+        (
+            name: "Brassmoor", position: (450.0, -250.0), population: 300,
+            nature: [("ore_vein", 2), ("field", 4), ("forest", 2)],
+            buildings: ["furnace", "smithy", "mill", "bakery", "workshop"],
+            stock: [("bread", 900.0), ("wood", 30.0)],
+        ),
+    ],
+)

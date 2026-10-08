@@ -1,0 +1,10 @@
+[package]
+name = "sim_data"
+description = "Econoplex content definitions: skills, products, recipes, nature; validation and skill embedding"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+ron.workspace = true

@@ -1,0 +1,14 @@
+[package]
+name = "sim_core"
+description = "Econoplex headless economic simulation: agents as latent vectors, built on bevy_ecs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+sim_data.workspace = true
+bevy_ecs.workspace = true
+serde.workspace = true
+ron.workspace = true
+rand.workspace = true
+rand_chacha.workspace = true

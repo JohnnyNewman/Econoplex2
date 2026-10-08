@@ -1,0 +1,17 @@
+// Core content: natural resources and buildings.
+// Files in this folder load alphabetically; later files can add entries or override
+// earlier ones with the same id.
+(
+    nature: [
+        (id: "forest",   name: "Forest",   regrowth: 8.0,  capacity: 150.0),
+        (id: "ore_vein", name: "Ore vein", regrowth: 6.0,  capacity: 200.0),
+        (id: "field",    name: "Field",    regrowth: 40.0, capacity: 200.0),
+    ],
+    products: [
+        (id: "workshop", name: "Workshop", category: Building, base_price: 200.0),
+        (id: "mill",     name: "Mill",     category: Building, base_price: 250.0),
+        (id: "bakery",   name: "Bakery",   category: Building, base_price: 250.0),
+        (id: "furnace",  name: "Furnace",  category: Building, base_price: 300.0),
+        (id: "smithy",   name: "Smithy",   category: Building, base_price: 350.0),
+    ],
+)
