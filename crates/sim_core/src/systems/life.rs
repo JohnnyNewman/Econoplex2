@@ -183,10 +183,13 @@ pub fn lifecycle(
     // --- births
     let food_factor: Vec<f32> = towns
         .0
-        .iter()
+        .iter_mut()
         .map(|t| {
-            (t.food_stock(&db) / t.residents.len().max(1) as f32 / lp.food_for_births)
-                .clamp(0.0, 1.0)
+            let stock = t.food_stock(&db);
+            t.food_trend += (stock - t.food_last - t.food_trend) / 60.0;
+            t.food_last = stock;
+            let ahead = stock + t.food_trend * lp.food_foresight_days;
+            (ahead / t.residents.len().max(1) as f32 / lp.food_for_births).clamp(0.0, 1.0)
         })
         .collect();
     let gp = &params.genetics;

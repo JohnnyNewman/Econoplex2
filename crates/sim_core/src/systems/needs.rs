@@ -23,30 +23,7 @@ pub fn sense(
     let reserve: Vec<Vec<f32>> = towns
         .0
         .iter()
-        .map(|town| {
-            let mut r = vec![0.0; db.content.products.len()];
-            for m in &db.recipes {
-                let in_food: f32 = m
-                    .inputs
-                    .iter()
-                    .map(|&(p, q)| db.content.products[p as usize].food * q)
-                    .sum();
-                if m.food_out <= in_food {
-                    continue;
-                }
-                let workers = match m.building {
-                    Some(b) => {
-                        (db.content.products[b as usize].slots as usize * town.building_count(b))
-                            as f32
-                    }
-                    None => 0.0,
-                };
-                for &(p, q) in &m.inputs {
-                    r[p as usize] += q * workers / m.duration;
-                }
-            }
-            r
-        })
+        .map(|town| super::decide::food_reserve(&db, town, &params))
         .collect();
 
     for i in 0..store.len() {
@@ -72,6 +49,7 @@ pub fn sense(
             }
         }
         if st[HUNGER] > 1.0 {
+            towns.0[store.town[i] as usize].starving += 1;
             st[HUNGER] = st[HUNGER].min(1.5);
             st[HEALTH] -= p.starvation_damage;
         } else if st[HUNGER] < 0.6 {

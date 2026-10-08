@@ -89,6 +89,11 @@ pub struct Town {
     pub raid: Option<Raid>,
     /// No new raid before this tick.
     pub raid_ready: u64,
+    /// Food stock yesterday and its daily change, averaged over about two months.
+    pub food_last: f32,
+    pub food_trend: f32,
+    /// Person-days spent starving since the last yearly report.
+    pub starving: u32,
     pub war: WarCounters,
     /// People who moved in or out since the last yearly report.
     pub moves: MoveCounters,
@@ -342,6 +347,9 @@ pub fn setup(world: &mut World, db: Db, params: ModelParams, scenario: &Scenario
             squad: Vec::new(),
             raid: None,
             raid_ready: 0,
+            food_last: 0.0,
+            food_trend: 0.0,
+            starving: 0,
             war: WarCounters::default(),
             moves: MoveCounters::default(),
         });

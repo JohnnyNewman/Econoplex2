@@ -199,6 +199,9 @@ pub struct LifeParams {
     pub partner_interval: u32,
     /// Food stock per capita at which births run at full rate.
     pub food_for_births: f32,
+    /// Parents judge the food stock this many days ahead at its recent trend, so
+    /// births slow while stores are still full but shrinking.
+    pub food_foresight_days: f32,
     /// How much more likely founders start in a trade per unit of its food output.
     pub starting_food_bias: f32,
 }
@@ -208,6 +211,11 @@ pub struct MarketParams {
     pub price_adjust: f32,
     pub target_per_capita: f32,
     pub food_target_per_capita: f32,
+    /// Nobody makes a good once the town holds this many times its target stock.
+    pub glut_factor: f32,
+    /// Days of the town's food need whose inputs (grain, flour, wood) are kept for
+    /// the mills and bakeries, out of reach of eating and of other trades.
+    pub food_reserve_days: f32,
     pub min_price_factor: f32,
     pub max_price_factor: f32,
     pub trade_interval: u32,

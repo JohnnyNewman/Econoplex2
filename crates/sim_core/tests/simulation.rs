@@ -188,3 +188,49 @@ fn households_migrate_and_carry_their_skills() {
         .count();
     assert!(movers > 0, "no founder lives in a different town");
 }
+
+#[test]
+fn food_comes_first_and_gluts_stop_production() {
+    let mut s = sim(3);
+    let dpy = s.world.resource::<sim_core::SimClock>().days_per_year;
+    for _ in 0..dpy {
+        s.step();
+    }
+    let (flour, wood, bread, mill, bake, charcoal, planks) = {
+        let db = s.world.resource::<sim_core::Db>();
+        let p = |id: &str| db.content.products.iter().position(|x| x.id == id).unwrap();
+        let r = |id: &str| db.content.recipes.iter().position(|x| x.id == id).unwrap();
+        (
+            p("flour"),
+            p("wood"),
+            p("bread"),
+            r("mill_flour"),
+            r("bake_bread"),
+            r("burn_charcoal"),
+            r("saw_planks"),
+        )
+    };
+    // Mountains of flour and a little wood, no bread: bakers get the wood, and
+    // nobody mills more flour.
+    for t in &mut s.world.resource_mut::<sim_core::Towns>().0 {
+        t.stock[flour] = 1e6;
+        t.stock[wood] = 2.0;
+        t.stock[bread] = 0.0;
+    }
+    let before = s.world.resource::<sim_core::world::WorkLog>().runs.clone();
+    for _ in 0..5 {
+        for t in &mut s.world.resource_mut::<sim_core::Towns>().0 {
+            t.stock[wood] = t.stock[wood].min(2.0);
+        }
+        s.step();
+    }
+    let after = &s.world.resource::<sim_core::world::WorkLog>().runs;
+    let ran = |r: usize| after[r] - before[r];
+    assert_eq!(ran(mill), 0, "mills kept making flour nobody needs");
+    assert!(ran(bake) > 0, "no bread was baked");
+    assert_eq!(
+        ran(charcoal) + ran(planks),
+        0,
+        "other trades took the bakeries' wood"
+    );
+}

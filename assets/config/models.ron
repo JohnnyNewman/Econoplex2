@@ -83,6 +83,7 @@
         partner_min_score: 0.6,
         partner_interval: 10,
         food_for_births: 2.0,
+        food_foresight_days: 365.0,
         starting_food_bias: 1.0,
     ),
 
@@ -90,6 +91,8 @@
         price_adjust: 0.05,
         target_per_capita: 0.3,
         food_target_per_capita: 3.0,
+        glut_factor: 10.0,
+        food_reserve_days: 1.0,
         min_price_factor: 0.2,
         max_price_factor: 5.0,
         trade_interval: 10,
