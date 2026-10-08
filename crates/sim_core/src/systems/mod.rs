@@ -10,13 +10,15 @@
 //! 8. `market::settle`      prices, trade between towns, nature regrowth
 //! 9. `organize::organize`  guild membership and roles, tool equipment
 //! 10. `military::military` musters, soldier pay and drill, raids and battles
-//! 11. `life::lifecycle`    aging, death, partnering, births with genetics
-//! 12. `metrics::record`    yearly statistics, economic complexity
+//! 11. `migrate::migrate`   households move to towns that suit them better
+//! 12. `life::lifecycle`    aging, death, partnering, births with genetics
+//! 13. `metrics::record`    yearly statistics, economic complexity
 
 pub mod body;
 pub mod decide;
 pub mod life;
 pub mod market;
+pub mod migrate;
 pub mod military;
 pub mod needs;
 pub mod organize;
@@ -33,4 +35,5 @@ pub mod streams {
     pub const LIFE: u64 = 6;
     pub const ORGANIZE: u64 = 7;
     pub const MILITARY: u64 = 8;
+    pub const MIGRATE: u64 = 9;
 }

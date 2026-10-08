@@ -83,7 +83,7 @@ pub fn sense(
                 st[FATIGUE] = (st[FATIGUE] - p.fatigue_rest_recovery).max(0.0);
                 store.activity[i] = Activity::Idle;
             }
-            Activity::Idle | Activity::Child | Activity::Soldier => {
+            Activity::Idle | Activity::Child | Activity::Soldier | Activity::Captive => {
                 st[FATIGUE] = (st[FATIGUE] - p.fatigue_idle_recovery).max(0.0)
             }
             Activity::Working(_) => {}

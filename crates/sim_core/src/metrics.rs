@@ -35,6 +35,7 @@ pub struct TownStats {
     pub buildings: usize,
     pub soldiers: usize,
     pub war: crate::world::WarCounters,
+    pub moves: crate::world::MoveCounters,
     /// Mean wealth of residents.
     pub mean_wealth: f32,
 }
@@ -230,6 +231,7 @@ pub fn record(
         s.buildings = town.buildings.len();
         s.soldiers = town.squad.len();
         s.war = town.war;
+        s.moves = town.moves;
         s.mean_wealth = town
             .residents
             .iter()
@@ -264,6 +266,7 @@ pub fn record(
     metrics.years.push(ys);
     for t in towns.0.iter_mut() {
         t.war = Default::default();
+        t.moves = Default::default();
     }
 }
 

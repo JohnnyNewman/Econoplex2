@@ -31,6 +31,7 @@ pub struct ModelParams {
     pub organize: OrganizeParams,
     pub work: WorkParams,
     pub military: MilitaryParams,
+    pub migration: MigrationParams,
 }
 
 impl ModelParams {
@@ -270,6 +271,34 @@ pub struct MilitaryParams {
     pub casualty_rate: f32,
     /// Share of the defender's treasury and stores a winning raid carries off.
     pub loot_share: f32,
+    /// Share of the defender's idle adults a winning raid takes captive,
+    /// at most `captives_per_soldier` per surviving soldier.
+    pub captive_share: f32,
+    pub captives_per_soldier: f32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct MigrationParams {
+    /// Days between migration rounds.
+    pub interval: u32,
+    /// Chance an idle adult weighs moving in a round.
+    pub consider: f32,
+    /// Utility a better town must offer before anyone leaves home.
+    pub min_gain: f32,
+    /// Oldest age at which people still move.
+    pub max_age: f32,
+    /// Weight of food per capita (relative to `food_reference`, capped at 2).
+    pub food_weight: f32,
+    pub food_reference: f32,
+    /// Weight of what the agent's own trade sells for there, relative to the
+    /// average over towns.
+    pub trade_weight: f32,
+    /// Weight of ideological closeness to the town's mean.
+    pub ideology_weight: f32,
+    /// Utility lost for a town raided this year.
+    pub danger_weight: f32,
+    /// Utility lost per 1000 map units of road.
+    pub distance_cost: f32,
 }
 
 #[derive(Debug, Clone, Deserialize)]

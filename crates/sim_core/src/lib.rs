@@ -47,6 +47,7 @@ pub fn build_schedule() -> Schedule {
             market::settle,
             organize::organize,
             military::military,
+            migrate::migrate,
             life::lifecycle,
             metrics::record,
         )
