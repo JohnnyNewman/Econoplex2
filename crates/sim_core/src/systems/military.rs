@@ -9,6 +9,12 @@
 //! march home with the squad and then live and work in the captor's town, so the
 //! skills they carry change hands with them. Fallen fighters die through the
 //! normal lifecycle (their health drops to zero), so their skills are lost with them.
+//!
+//! A crushing win conquers the defender. A conquered town pays its ruler tribute
+//! from its treasury, may keep only a small squad, and is defended by its ruler's
+//! soldiers. Rulers don't raid their own tributaries, and tributaries don't raid
+//! each other. A tributary is free again when it beats its ruler in battle, or with
+//! a small chance every year as the ruler's grip loosens.
 
 use super::migrate::relocate;
 use super::streams;
@@ -69,7 +75,12 @@ pub fn military(
                 .count();
             // Keep enough in the treasury for a month of pay.
             let affordable = (town.treasury.max(0.0) / (mp.soldier_pay * 30.0).max(1e-6)) as usize;
-            let want = ((adults as f32 * mp.soldier_share) as usize).min(affordable);
+            let share = if town.ruler.is_some() {
+                mp.vassal_soldier_share
+            } else {
+                mp.soldier_share
+            };
+            let want = ((adults as f32 * share) as usize).min(affordable);
             let at_home = town.raid.is_none();
 
             if town.squad.len() < want && at_home {
@@ -123,6 +134,41 @@ pub fn military(
                     .entity(e)
                     .remove::<Stored>()
                     .insert(EquippedBy(i as u32));
+            }
+        }
+    }
+
+    // --- tribute, uprisings and peaceful independence
+    if mp.tribute_interval > 0 && clock.tick.is_multiple_of(mp.tribute_interval as u64) {
+        let chance = mp.independence_rate * mp.tribute_interval as f32 / dpy as f32;
+        // A ruler's whole squad holds all its tributaries at once.
+        let hold: Vec<f32> = (0..n_towns)
+            .map(|r| {
+                let held = towns.0.iter().filter(|o| o.ruler == Some(r as u16)).count();
+                let squad: f32 = towns.0[r]
+                    .squad
+                    .iter()
+                    .map(|&s| fighter_power(store, s as usize, &fight))
+                    .sum();
+                squad * mp.garrison_strength / held.max(1) as f32
+            })
+            .collect();
+        for t in 0..n_towns {
+            let Some(r) = towns.0[t].ruler else { continue };
+            let r = r as usize;
+            // A tributary whose soldiers can outfight the ruler's hold on it rises up.
+            if home_power(store, &towns.0[t], &fight) > hold[r] {
+                towns.0[t].ruler = None;
+                towns.0[t].war.revolts += 1;
+                continue;
+            }
+            let pay = towns.0[t].treasury.max(0.0) * mp.tribute_share;
+            towns.0[t].treasury -= pay;
+            towns.0[t].war.tribute_paid += pay;
+            towns.0[r].treasury += pay;
+            towns.0[r].war.tribute_received += pay;
+            if rng.random::<f32>() < chance {
+                towns.0[t].ruler = None;
             }
         }
     }
@@ -220,10 +266,13 @@ pub fn military(
         // The richest neighbor the squad can beat with a clear margin.
         let mut best: Option<(usize, f32)> = None;
         for (o, other) in towns.0.iter().enumerate() {
-            if o == t {
+            // Rulers protect their tributaries; tributaries of one ruler keep the peace.
+            let ruled = other.ruler == Some(t as u16)
+                || (town.ruler.is_some() && other.ruler == town.ruler);
+            if o == t || ruled {
                 continue;
             }
-            let defense = defense_power(store, other, &fight, mp.militia_power);
+            let defense = total_defense(store, &towns, o, &fight, mp);
             if attack < mp.raid_margin * defense {
                 continue;
             }
@@ -285,6 +334,31 @@ fn release(commands: &mut Commands, store: &mut AgentStore, armory: &mut Vec<Ent
     }
 }
 
+/// A town's own defense plus help from its ruler's soldiers at home.
+fn total_defense(
+    store: &AgentStore,
+    towns: &Towns,
+    t: usize,
+    fight: &CapVec,
+    mp: &crate::config::MilitaryParams,
+) -> f32 {
+    let own = defense_power(store, &towns.0[t], fight, mp.militia_power);
+    let aid = towns.0[t].ruler.map_or(0.0, |r| {
+        home_power(store, &towns.0[r as usize], fight) * mp.ruler_aid
+    });
+    own + aid
+}
+
+/// Fighting strength of a town's soldiers who are not away on a raid.
+fn home_power(store: &AgentStore, town: &crate::world::Town, fight: &CapVec) -> f32 {
+    let away: &[u32] = town.raid.as_ref().map_or(&[], |r| &r.soldiers);
+    town.squad
+        .iter()
+        .filter(|s| !away.contains(s))
+        .map(|&s| fighter_power(store, s as usize, fight))
+        .sum()
+}
+
 /// Soldiers at home plus the militia of everyone else.
 fn defense_power(
     store: &AgentStore,
@@ -330,7 +404,7 @@ fn battle(
         .iter()
         .map(|&s| fighter_power(store, s as usize, fight))
         .sum();
-    let defense = defense_power(store, &towns.0[d], fight, mp.militia_power);
+    let defense = total_defense(store, towns, d, fight, mp);
     let k = mp.battle_steepness;
     let p_win = attack.powf(k) / (attack.powf(k) + defense.powf(k)).max(1e-6);
     let won = rng.random::<f32>() < p_win;
@@ -443,6 +517,22 @@ fn battle(
         }
         towns.0[attacker].war.captives_taken += n as u32;
         towns.0[d].war.captives_lost += n as u32;
+
+        // Beating its ruler frees a tributary; a crushing win over anyone else
+        // conquers them, and their own tributaries go free.
+        if towns.0[attacker].ruler == Some(d as u16) {
+            towns.0[attacker].ruler = None;
+            towns.0[attacker].war.revolts += 1;
+        } else if attack >= mp.conquest_margin * defense {
+            for town in towns.0.iter_mut() {
+                if town.ruler == Some(d as u16) {
+                    town.ruler = None;
+                }
+            }
+            towns.0[d].ruler = Some(attacker as u16);
+            towns.0[attacker].war.conquests += 1;
+            towns.0[d].war.conquered += 1;
+        }
     } else {
         towns.0[attacker].war.raids_lost += 1;
         towns.0[d].war.defended += 1;

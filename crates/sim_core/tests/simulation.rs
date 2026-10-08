@@ -128,6 +128,7 @@ fn sword_towns_raise_squads_and_raid() {
     let dpy = s.world.resource::<sim_core::SimClock>().days_per_year;
     let mut raids = 0;
     let mut soldiers = 0;
+    let mut conquered = false;
     // Captives and the town that took them.
     let mut taken: Vec<(u32, u16)> = Vec::new();
     for _ in 0..20 * dpy {
@@ -135,6 +136,7 @@ fn sword_towns_raise_squads_and_raid() {
         let towns = s.world.resource::<sim_core::Towns>();
         raids += towns.0.iter().filter(|t| t.raid.is_some()).count();
         soldiers = soldiers.max(towns.0.iter().map(|t| t.squad.len()).sum());
+        conquered |= towns.0.iter().any(|t| t.ruler.is_some());
         for (t, town) in towns.0.iter().enumerate() {
             for &c in town.raid.iter().flat_map(|r| &r.captives) {
                 if !taken.iter().any(|x| x.0 == c) {
@@ -145,6 +147,7 @@ fn sword_towns_raise_squads_and_raid() {
     }
     assert!(soldiers > 0, "no town raised a squad");
     assert!(raids > 0, "no raid in 20 years");
+    assert!(conquered, "no town was conquered in 20 years");
     assert!(
         !taken.is_empty(),
         "no winning raid took captives in 20 years"
@@ -270,4 +273,42 @@ fn towns_clear_new_land_up_to_their_limit() {
             "every opened plot is a new site"
         );
     }
+}
+
+#[test]
+fn tributaries_pay_their_ruler() {
+    let mut s = sim(6);
+    let interval = s
+        .world
+        .resource::<sim_core::world::Params>()
+        .military
+        .tribute_interval as u64;
+    let money = |s: &Simulation| {
+        sim_core::world::total_money(
+            s.world.resource::<sim_core::AgentStore>(),
+            s.world.resource::<sim_core::Towns>(),
+        )
+    };
+    let before = money(&s);
+    {
+        let mut towns = s.world.resource_mut::<sim_core::Towns>();
+        towns.0[1].ruler = Some(0);
+        towns.0[1].treasury += 500.0;
+        towns.0[0].treasury -= 500.0;
+    }
+    for _ in 0..2 * interval {
+        s.step();
+    }
+    let towns = s.world.resource::<sim_core::Towns>();
+    assert!(towns.0[1].war.tribute_paid > 0.0, "no tribute was paid");
+    assert_eq!(towns.0[1].war.tribute_paid, towns.0[0].war.tribute_received);
+    // Nobody else rules or pays.
+    for t in [0, 2, 3] {
+        assert_eq!(towns.0[t].war.tribute_paid, 0.0);
+    }
+    let after = money(&s);
+    assert!(
+        ((after - before) / before).abs() < 1e-3,
+        "money changed from {before} to {after}"
+    );
 }

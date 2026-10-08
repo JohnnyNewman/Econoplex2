@@ -287,6 +287,22 @@ pub struct MilitaryParams {
     /// at most `captives_per_soldier` per surviving soldier.
     pub captive_share: f32,
     pub captives_per_soldier: f32,
+    /// A winning raid conquers the defender when the attackers were this many
+    /// times stronger than the defense.
+    pub conquest_margin: f32,
+    /// Days between tribute payments, and the share of its treasury a conquered
+    /// town pays its ruler each time.
+    pub tribute_interval: u32,
+    pub tribute_share: f32,
+    /// Share of its adults a conquered town may keep under arms.
+    pub vassal_soldier_share: f32,
+    /// Strength of the ruler's soldiers at home that helps defend a conquered town.
+    pub ruler_aid: f32,
+    /// A tributary rises up when its own defense beats its ruler's squad strength
+    /// times this, shared among all the ruler's tributaries.
+    pub garrison_strength: f32,
+    /// Yearly chance a conquered town regains its independence peacefully.
+    pub independence_rate: f32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
