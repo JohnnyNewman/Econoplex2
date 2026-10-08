@@ -1,6 +1,8 @@
 // Starting world: four towns with different natural endowments.
 (
     seed: 42,
+    // The town the player governs in the game; the headless runner ignores it.
+    player: Some("Greenvale"),
     towns: [
         (
             name: "Ironhold", position: (-450.0, 250.0), population: 300,

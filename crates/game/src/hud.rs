@@ -90,6 +90,7 @@ pub fn spawn_hud(mut commands: Commands, db: Res<Db>) {
     });
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn update_hud(
     mut text: Single<&mut Text, With<HudText>>,
     clock: Res<SimClock>,
@@ -98,6 +99,7 @@ pub fn update_hud(
     towns: Res<Towns>,
     db: Res<Db>,
     metrics: Res<Metrics>,
+    player: Res<sim_core::policy::PlayerTown>,
 ) {
     let mut s = format!(
         "ECONOPLEX   year {}  day {:>3}   {}{} days/s\npopulation {}\n",
@@ -133,9 +135,14 @@ pub fn update_hud(
             Some(r) => format!("{army} (ruled by {})", towns.0[r as usize].name),
             None => army,
         };
+        let name = if player.0 == Some(t as u16) {
+            format!("{}*", town.name)
+        } else {
+            town.name.clone()
+        };
         s.push_str(&format!(
             "{:<11} {:>5} {:>6.1} {} {:>4}  {}/{}/{}  {}\n",
-            town.name,
+            name,
             town.residents.len(),
             food,
             eci,
@@ -145,6 +152,9 @@ pub fn update_hud(
             swords[2],
             army
         ));
+    }
+    if player.0.is_some() {
+        s.push_str("* your town\n");
     }
     if latest.is_none() {
         s.push_str("(complexity and swords appear after the first year)\n");

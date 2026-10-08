@@ -33,6 +33,7 @@ pub struct ModelParams {
     pub military: MilitaryParams,
     pub migration: MigrationParams,
     pub trust: TrustParams,
+    pub policy: PolicyParams,
 }
 
 impl ModelParams {
@@ -306,6 +307,27 @@ pub struct MilitaryParams {
     pub independence_rate: f32,
 }
 
+/// Player levers (`policy.rs`).
+#[derive(Debug, Clone, Deserialize)]
+pub struct PolicyParams {
+    /// Highest subsidy, as a share of the product's market value.
+    pub max_subsidy: f32,
+    /// Children this old and up to `life.apprentice_age` go to school.
+    pub school_age: f32,
+    /// Speed of school learning relative to learning on the job from a master.
+    pub school_rate: f32,
+    /// Paid by the treasury to the teacher per pupil and day.
+    pub school_fee: f32,
+    /// Pull of a chartered guild's trade in job choice (as being a member is 1).
+    pub charter_pull: f32,
+    /// Extra teaching speed of a chartered guild's masters (1.0 doubles it).
+    pub charter_teaching: f32,
+    /// Appeal a town with encouraged immigration adds for migrants.
+    pub immigration_bonus: f32,
+    /// Paid by the treasury to each newcomer under encouraged immigration.
+    pub settlement_grant: f32,
+}
+
 /// Personal ties between agents (`trust.rs`).
 #[derive(Debug, Clone, Deserialize)]
 pub struct TrustParams {
@@ -362,6 +384,9 @@ pub struct WorkParams {
 #[derive(Debug, Clone, Deserialize)]
 pub struct Scenario {
     pub seed: u64,
+    /// The town the player governs; none for a pure simulation.
+    #[serde(default)]
+    pub player: Option<String>,
     pub towns: Vec<TownSpec>,
 }
 

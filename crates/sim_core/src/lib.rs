@@ -10,6 +10,7 @@ pub mod config;
 pub mod db;
 pub mod metrics;
 pub mod models;
+pub mod policy;
 pub mod profile;
 pub mod store;
 pub mod systems;
@@ -41,6 +42,7 @@ pub fn build_schedule() -> Schedule {
         (
             (
                 profile::start,
+                policy::apply_orders,
                 needs::sense,
                 profile::mark::<0>,
                 decide::decide,
@@ -165,6 +167,20 @@ impl Simulation {
 
     pub fn tick(&self) -> u64 {
         self.world.resource::<SimClock>().tick
+    }
+
+    /// Queue a text order (see [`policy::Order::parse`]) for the next tick.
+    pub fn order(&mut self, text: &str) -> Result<(), String> {
+        let order = policy::Order::parse(
+            text,
+            self.world.resource::<Db>(),
+            self.world.resource::<Towns>(),
+        )?;
+        self.world
+            .resource_mut::<policy::OrderQueue>()
+            .pending
+            .push(order);
+        Ok(())
     }
 
     pub fn state_hash(&self) -> u64 {

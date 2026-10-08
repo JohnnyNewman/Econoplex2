@@ -29,6 +29,10 @@ cargo run --release -p sim_cli -- --years 20 --set military.tribute_share=0.3 --
 cargo run --release -p sim_cli -- --years 30 --seeds 8 \
     --sweep military.tribute_share=0.1,0.2,0.4 --sweep market.free_land=3,6 --csv sweep.csv
 
+# Give player orders from the command line (day:order, repeatable)
+cargo run --release -p sim_cli -- --years 25 --order "0:immigration Greenvale encouraged" \
+    --order "0:school Greenvale woodworking 40"
+
 # The product space derived from the skill graph
 cargo run --release -p sim_cli -- --embedding
 
@@ -52,6 +56,12 @@ The first build compiles Bevy and takes a while.
 
 Agents are colored by their best skill domain; brightness shows how good they are.
 Children are grey and follow a working parent as apprentices.
+
+You govern Greenvale (marked `*`; set `player` in `scenario.ron` to pick another
+town). The panel at the bottom right holds its levers: pick a product with `<` `>`
+and change its subsidy with `-` `+`, pick a school subject and add or remove seats
+in steps of 10, toggle a guild charter, and cycle immigration between open,
+encouraged and closed. Every click queues an order that takes effect the next day.
 
 ## Workspace
 
@@ -246,6 +256,43 @@ seeds, trust gives about 5% more masters, fewer raids and conquests, and
 about a third as many moves as the same rules with every trust effect set to zero. The
 CLI shows each town's mean trust per adult and that same-guild share as
 `trust/trade`. The settings are in the `trust` section of `models.ron`.
+
+### Player levers
+
+The player never changes the world directly. Orders go into a queue, and the first
+system of the next tick applies them in order and logs them with the tick, so a game
+can be replayed from its order log and later kept in lockstep over a network. The
+CLI's `--order` and the game's policy panel both use this queue. The levers act on a
+town's policy:
+
+- **Subsidy** (`subsidy TOWN PRODUCT SHARE`): makers of the product get a share of
+  its base price on top of the market price, paid from the treasury while it lasts.
+  The town also keeps buying the product up to a stock that much larger.
+- **School** (`school TOWN DOMAIN SEATS`, or `school TOWN off`): up to SEATS children
+  between `school_age` and the apprentice age practice the domain each day and learn
+  from the town's best teacher in it. The teacher is paid `school_fee` per pupil and
+  day from the treasury.
+- **Guild charter** (`charter TOWN DOMAIN on|off`): the domain's jobs draw people as
+  if they were already members of the guild (`charter_pull`), and its masters teach
+  `charter_teaching` faster.
+- **Immigration** (`immigration TOWN open|encouraged|closed`): closed borders turn
+  migrants away. Encouraged immigration adds `immigration_bonus` to the town's appeal
+  and pays each newcomer a `settlement_grant` from the treasury.
+
+Over 25 years on six seeds, applying one lever to Greenvale from day 0 changed its
+results this way:
+
+| Greenvale after 25 years | population | food per head | masters | arrivals |
+| --- | --- | --- | --- | --- |
+| no levers | 383 | 30.4 | 185 | 20 |
+| immigration encouraged | 640 | 23.0 | 317 | 96 |
+| immigration closed | 334 | 35.8 | 172 | 0 |
+| plank subsidy 50% | 421 | 34.5 | 212 | 17 |
+| woodworking school, 40 seats | 349 | 32.3 | 175 | 19 |
+
+A school changes what the next generation can do more than the town's totals: its
+pupils come out far better at the subject than other children, which the
+`a_school_teaches_its_subject_and_pays_the_teacher` test checks. The settings are in the `policy` section of `models.ron`.
 
 ### Swapping a formula
 

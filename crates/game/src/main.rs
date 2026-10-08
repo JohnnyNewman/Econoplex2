@@ -5,9 +5,11 @@
 //! agents toward where they work.
 //!
 //! Controls: Space pause · 1-5 speed · WASD/arrows pan · mouse wheel zoom ·
-//! left click select agent · Esc deselect · P product space overlay
+//! left click select agent · Esc deselect · P product space overlay ·
+//! policy panel (bottom right) for the player's town
 
 mod hud;
+mod policy_ui;
 mod view;
 
 use bevy::prelude::*;
@@ -57,6 +59,7 @@ fn main() {
         })
         .insert_resource(Selection::default())
         .insert_resource(view::Overlay::default())
+        .insert_resource(policy_ui::PolicyCursor::default())
         .insert_resource(ClearColor(Color::srgb(0.08, 0.09, 0.08)))
         .add_systems(
             Startup,
@@ -65,6 +68,7 @@ fn main() {
                 view::spawn_static,
                 view::spawn_skill_labels,
                 hud::spawn_hud,
+                policy_ui::spawn_policy_panel,
             ),
         )
         .add_systems(FixedUpdate, run_sim_tick)
@@ -83,6 +87,8 @@ fn main() {
                 hud::update_hud,
                 hud::update_inspector,
                 hud::update_legend,
+                policy_ui::policy_buttons,
+                policy_ui::update_policy_panel,
             ),
         );
     app.run();

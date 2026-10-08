@@ -180,4 +180,19 @@
         loyalty: 0.3,
         migration_weight: 0.5,
     ),
+
+    // Player levers. Subsidies top up a product's value from the treasury; a school
+    // teaches children one domain for a fee per pupil-day paid to the teacher; a
+    // guild charter draws people into a trade and speeds up its masters' teaching;
+    // encouraged immigration makes the town more appealing and pays newcomers.
+    policy: (
+        max_subsidy: 1.0,
+        school_age: 6.0,
+        school_rate: 0.5,
+        school_fee: 0.02,
+        charter_pull: 1.0,
+        charter_teaching: 0.5,
+        immigration_bonus: 0.5,
+        settlement_grant: 2.0,
+    ),
 )

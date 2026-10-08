@@ -27,7 +27,8 @@ pub fn glutted(db: &Db, town: &crate::world::Town, params: &Params, p: usize) ->
         mp.target_per_capita
     };
     let target = (per_capita * town.residents.len() as f32).max(1.0);
-    town.stock[p] > mp.glut_factor * target
+    // A subsidized good is bought up to a larger stock.
+    town.stock[p] > mp.glut_factor * target * (1.0 + town.policy.subsidy[p])
 }
 
 /// Whether a recipe feeds people: it makes more food than its inputs hold,
@@ -140,10 +141,14 @@ pub fn feasible_recipes(
 /// Expected profit per person-day of running recipe `r` in `town` at current prices.
 pub fn profit_per_day(db: &Db, town: &crate::world::Town, r: usize) -> f32 {
     let m = &db.recipes[r];
+    // Subsidies count as part of the value for whoever chooses the work.
     let out: f32 = m
         .outputs
         .iter()
-        .map(|&(p, q)| town.price[p as usize] * q)
+        .map(|&(p, q)| {
+            let p = p as usize;
+            (town.price[p] + town.policy.subsidy[p] * db.base_price[p]) * q
+        })
         .sum();
     let inp: f32 = m
         .inputs
@@ -279,6 +284,8 @@ pub fn decide(
         })
         .collect();
 
+    let charters: Vec<Vec<bool>> = towns.0.iter().map(|t| t.policy.charters.clone()).collect();
+
     let mut options: Vec<(Option<u32>, f32)> = Vec::with_capacity(d.candidates + 2);
     let mut pool: Vec<u32> = Vec::new();
     let store = &mut *store;
@@ -320,6 +327,14 @@ pub fn decide(
             let eff = (prof + physique_bonus(&store.phys[i], m, params.physique.weight)) * sf;
             let margin = eff - m.difficulty;
             let in_guild = store.guild[i].is_some_and(|g| g.domain == m.domain);
+            // A chartered guild draws people into its trade, members or not.
+            let guild_pull = if in_guild {
+                1.0
+            } else if charters[t][m.domain as usize] {
+                params.policy.charter_pull
+            } else {
+                0.0
+            };
             let f = [
                 ((profit[t][r as usize] - mean_profit[t]) / d.value_scale).tanh()
                     * crate::models::sigmoid(6.0 * margin),
@@ -327,7 +342,7 @@ pub fn decide(
                 crate::models::sigmoid(6.0 * margin) - 0.5,
                 -(0.3 + m.phys_total) * (0.5 + fatigue),
                 (1.0 - (prof / mastery).min(1.0)) * if margin > -0.3 { 1.0 } else { 0.2 },
-                if in_guild { 1.0 } else { 0.0 },
+                guild_pull,
                 m.food_out * 0.25 * scarcity[t] * (0.5 + st[state::HUNGER]),
             ];
             options.push((Some(r), dot(&w, &f)));

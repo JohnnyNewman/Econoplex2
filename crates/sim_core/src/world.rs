@@ -102,6 +102,8 @@ pub struct Town {
     pub ruler: Option<u16>,
     /// People who moved in or out since the last yearly report.
     pub moves: MoveCounters,
+    /// Levers the town's government has set (see `policy.rs`).
+    pub policy: crate::policy::Policy,
 }
 
 /// A squad on the march: out to `target`, battle on arrival, then home.
@@ -199,6 +201,7 @@ pub struct Decisions {
 #[derive(Debug, Clone)]
 pub struct WorkEvent {
     pub recipe: u32,
+    pub town: u16,
     pub workers: Vec<u32>,
     pub apprentices: Vec<u32>,
     pub success: bool,
@@ -367,6 +370,7 @@ pub fn setup(world: &mut World, db: Db, params: ModelParams, scenario: &Scenario
             war: WarCounters::default(),
             ruler: None,
             moves: MoveCounters::default(),
+            policy: crate::policy::Policy::new(db.content.products.len(), db.content.domains.len()),
         });
 
         // Starting trades follow what the town can actually run, with food work weighted
@@ -463,6 +467,17 @@ pub fn setup(world: &mut World, db: Db, params: ModelParams, scenario: &Scenario
     world.insert_resource(models);
     world.insert_resource(Params(params));
     world.insert_resource(crate::profile::Profile::default());
+    world.insert_resource(crate::policy::OrderQueue::default());
+    world.insert_resource(crate::policy::PlayerTown(scenario.player.as_ref().map(
+        |name| {
+            scenario
+                .towns
+                .iter()
+                .position(|t| &t.name == name)
+                .unwrap_or_else(|| panic!("scenario: player town `{name}` is not a town"))
+                as u16
+        },
+    )));
     world.insert_resource(SimClock {
         tick: 0,
         days_per_year: dpy,
