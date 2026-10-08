@@ -88,7 +88,7 @@ nonnegative.
 
 | Step | What happens |
 | --- | --- |
-| sense | Hunger rises; agents buy and eat the best food in their town; health, fatigue and happiness update |
+| sense | Hunger rises; agents buy and eat the best food in their town, leaving a day's grain for the mills; health, fatigue and happiness update |
 | decide | Each idle adult scores a sample of open jobs and resting: utility = (bias + Wm·mind + Ws·state) · features, softmax with temperature. Jobs fill up: nature, inputs and building slots limit how many can take each one |
 | assign | Agents choosing the same job form teams; inputs and nature are reserved; task entities spawn; children join a working parent |
 | produce | Teams pool capabilities (element-wise max minus coordination cost); success = sigmoid(k·(effective − difficulty)); quality is the weakest link of step and inputs. The town buys the output and pays wages from its treasury; finished construction becomes a new building |
@@ -97,6 +97,7 @@ nonnegative.
 | body | Norm budget and forgetting on capability; physique trains toward the genetic potential |
 | settle | Prices follow stock vs. per-capita targets; buildings are priced by how full they are; food spoils; wealth tax and public spending; caravans trade goods and tools between towns; nature regrows |
 | organize | Guild membership and roles from domain proficiency; guild members buy matching tools (on credit if needed) |
+| military | Musters (recruit, release, arm with longswords), soldier pay and drill, raids and battles |
 | lifecycle | Aging and Gompertz mortality, bequests, partnering by mind affinity, births with genetic inheritance |
 | metrics | Yearly: diversity, RCA, economic complexity index, specialization, culture |
 
@@ -135,6 +136,22 @@ town also offers a discounted price for a building type it lacks, which is how a
 can enter a new line of work. Construction recipes live in
 `assets/content/40_construction.ron`; one crew builds each building type at a time.
 
+### Squads and raids
+
+Every town keeps a squad of up to `soldier_share` of its adults, as many as its
+treasury can pay for a month. Recruits are the most ambitious, risk-loving and
+physically strong idle adults. Soldiers stop working, are paid `soldier_pay` a day,
+take the best longsword in the armory, and learn the Fighting skill by drilling.
+
+A town whose squad is `raid_margin` times stronger than a neighbor's defense (its
+soldiers at home plus a small militia strength per adult) may raid it, more often
+when its soldiers are ambitious and risk-loving. The squad marches across the map,
+fights on arrival (win chance A^k / (A^k + D^k)), and both sides lose fighters in
+proportion to the enemy's strength. A winning raid takes `loot_share` of the
+defender's treasury at once and carries the same share of its stores home. Fallen
+fighters die, so their skills die with them. All of this is in the `military`
+section of `models.ron`.
+
 ### Swapping a formula
 
 Every model is a trait in `crates/sim_core/src/models.rs` (`TeamPooling`,
@@ -166,7 +183,8 @@ Towns specialize differently from identical rules: Ironhold and Brassmoor, with 
 furnace and a smithy, become sword makers with the highest complexity scores.
 Greenvale, without a smithy, becomes the breadbasket with the lowest score and buys
 its sickles from the smiths. Timberwick builds the most (more mills and bakeries,
-and its own smithy). Level-3 longswords stay rare.
+and its own smithy). Level-3 longswords stay rare. The sword towns field the
+largest squads and raid their neighbors every year or two, mostly successfully.
 
 Performance on one core: about 1.3 ms per tick at 2,400 agents and 33 ms at 18,500.
 
@@ -177,7 +195,9 @@ Performance on one core: about 1.3 ms per tick at 2,400 agents and 33 ms at 18,5
 - Prices are in fixed nominal terms, so a growing population with a fixed money
   supply means lower wealth per person rather than lower prices.
 - Buildings never wear out or get demolished.
-- Squads and combat do not exist yet; organizations are towns and guilds.
+- Raids are the only form of war: no sieges, conquest, captives or migration yet,
+  and a squad fights as one block with no tactical movement.
+- Towns still hit occasional food crunches as their population outgrows the land.
 - Agent slots are never reused, so memory grows with births.
 - `days_per_year` is 120 so generations are visible in short runs.
 

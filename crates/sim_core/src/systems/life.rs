@@ -116,9 +116,12 @@ pub fn lifecycle(
             if let Some(g) = store.guild[i].take() {
                 commands.entity(g.membership).despawn();
             }
-            if let Some(tool) = store.equipped[i].take() {
-                commands.entity(tool).remove::<EquippedBy>().insert(Stored);
-                towns.0[store.town[i] as usize].armory.push(tool);
+            for item in [store.equipped[i].take(), store.weapon[i].take()]
+                .into_iter()
+                .flatten()
+            {
+                commands.entity(item).remove::<EquippedBy>().insert(Stored);
+                towns.0[store.town[i] as usize].armory.push(item);
             }
         }
     }

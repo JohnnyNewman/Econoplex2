@@ -164,7 +164,7 @@ fn print_year(y: &sim_core::metrics::YearStats) {
         y.total_money
     );
     println!(
-        "  {:<11} {:>5} {:>6} {:>4} {:>6} {:>6} {:>6} {:>7} {:>5}  {:>11} {:>8} {:>6} {:>4}",
+        "  {:<11} {:>5} {:>6} {:>4} {:>6} {:>6} {:>6} {:>7} {:>5}  {:>11} {:>8} {:>6} {:>4} {:>5} {:>9}",
         "town",
         "pop",
         "food",
@@ -177,11 +177,13 @@ fn print_year(y: &sim_core::metrics::YearStats) {
         "swords 1/2/3",
         "treasury",
         "wealth",
-        "bldg"
+        "bldg",
+        "army",
+        "raids w/l"
     );
     for t in &y.towns {
         println!(
-            "  {:<11} {:>5} {:>6.1} {:>4} {:>6.2} {:>6.2} {:>6.2} {:>7} {:>5}  {:>3}/{:>3}/{:>3} {:>8.0} {:>6.1} {:>4}",
+            "  {:<11} {:>5} {:>6.1} {:>4} {:>6.2} {:>6.2} {:>6.2} {:>7} {:>5}  {:>3}/{:>3}/{:>3} {:>8.0} {:>6.1} {:>4} {:>5} {:>4}/{:>4}",
             t.name,
             t.population,
             t.food_per_capita,
@@ -196,7 +198,10 @@ fn print_year(y: &sim_core::metrics::YearStats) {
             t.swords[2],
             t.treasury,
             t.mean_wealth,
-            t.buildings
+            t.buildings,
+            t.soldiers,
+            t.war.raids_won,
+            t.war.raids_lost
         );
     }
 }

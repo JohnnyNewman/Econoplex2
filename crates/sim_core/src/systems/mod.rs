@@ -9,13 +9,15 @@
 //! 7. `body::body`          capacity limits, forgetting, physique training and aging
 //! 8. `market::settle`      prices, trade between towns, nature regrowth
 //! 9. `organize::organize`  guild membership and roles, tool equipment
-//! 10. `life::lifecycle`    aging, death, partnering, births with genetics
-//! 11. `metrics::record`    yearly statistics, economic complexity
+//! 10. `military::military` musters, soldier pay and drill, raids and battles
+//! 11. `life::lifecycle`    aging, death, partnering, births with genetics
+//! 12. `metrics::record`    yearly statistics, economic complexity
 
 pub mod body;
 pub mod decide;
 pub mod life;
 pub mod market;
+pub mod military;
 pub mod needs;
 pub mod organize;
 pub mod social;
@@ -30,4 +32,5 @@ pub mod streams {
     pub const MARKET: u64 = 5;
     pub const LIFE: u64 = 6;
     pub const ORGANIZE: u64 = 7;
+    pub const MILITARY: u64 = 8;
 }

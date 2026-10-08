@@ -111,4 +111,26 @@
     organize: (interval: 20, guild_threshold: 0.55, master_threshold: 1.05),
 
     work: (work_exponent: 0.85, wage_share: 0.5),
+
+    // Squads and raids. Soldiers are paid from the treasury, armed with longswords from
+    // the armory, and learn Fighting by drilling. A town raids a weaker neighbor to
+    // carry off part of its treasury and stores.
+    military: (
+        muster_interval: 10,
+        soldier_share: 0.06,
+        soldier_pay: 0.8,
+        max_recruit_age: 45.0,
+        drill_rate: 0.5,
+        battle_learning: 3.0,
+        weapon_power: 0.5,
+        militia_power: 0.03,
+        march_speed: 100.0,
+        raid_cooldown: 120,
+        raid_margin: 1.3,
+        raid_appetite: 0.02,
+        min_raid_squad: 5,
+        battle_steepness: 2.0,
+        casualty_rate: 0.3,
+        loot_share: 0.3,
+    ),
 )

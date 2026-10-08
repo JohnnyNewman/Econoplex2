@@ -120,3 +120,20 @@ fn towns_construct_buildings() {
         );
     }
 }
+
+#[test]
+fn sword_towns_raise_squads_and_raid() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let mut s = Simulation::from_paths(&AssetPaths::from_root(&root)).unwrap();
+    let dpy = s.world.resource::<sim_core::SimClock>().days_per_year;
+    let mut raids = 0;
+    let mut soldiers = 0;
+    for _ in 0..20 * dpy {
+        s.step();
+        let towns = s.world.resource::<sim_core::Towns>();
+        raids += towns.0.iter().filter(|t| t.raid.is_some()).count();
+        soldiers = soldiers.max(towns.0.iter().map(|t| t.squad.len()).sum());
+    }
+    assert!(soldiers > 0, "no town raised a squad");
+    assert!(raids > 0, "no raid in 20 years");
+}

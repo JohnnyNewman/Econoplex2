@@ -392,5 +392,9 @@ pub fn activity_label(
             Ok(t) => format!("working: {}", db.recipes[t.recipe as usize].name),
             Err(_) => "working".into(),
         },
+        Activity::Soldier => match store.weapon[i] {
+            Some(_) => "soldier (armed)".into(),
+            None => "soldier".into(),
+        },
     }
 }
