@@ -333,10 +333,12 @@ pub fn produce(
             log.successes += 1;
             let town = &mut towns.0[t];
             let mut value = 0.0;
+            let mut subsidy = 0.0;
             for &(p, q) in &m.outputs {
                 let q = q * task.batches as f32;
                 let pi = p as usize;
                 value += town.price[pi] * q * (0.5 + quality);
+                subsidy += town.policy.subsidy[pi] * db.base_price[pi] * q;
                 let old = town.stock[pi];
                 town.quality[pi] = (old * town.quality[pi] + q * quality) / (old + q).max(1e-6);
                 town.stock[pi] += q;
@@ -420,6 +422,10 @@ pub fn produce(
             let pay =
                 (params.work.wage_share * (value - input_cost)).clamp(0.0, town.treasury.max(0.0));
             town.treasury -= pay;
+            // A subsidized product earns its makers a top-up, while the treasury lasts.
+            let subsidy = subsidy.clamp(0.0, town.treasury.max(0.0));
+            town.treasury -= subsidy;
+            let pay = pay + subsidy;
             let wage = pay / n as f32;
             for &w in &workers {
                 store.wealth[w as usize] += wage;
@@ -452,6 +458,7 @@ pub fn produce(
 
         log.events.push(WorkEvent {
             recipe: r,
+            town: task.town,
             workers,
             apprentices: parts.apprentices.clone(),
             success,
@@ -462,16 +469,27 @@ pub fn produce(
 }
 
 /// Practice for every worker; diffusion from the team's best member to the others and to apprentices.
+#[allow(clippy::too_many_arguments)]
 pub fn learn(
     mut store: ResMut<AgentStore>,
+    mut towns: ResMut<Towns>,
     db: Res<Db>,
     models: Res<Models>,
     params: Res<Params>,
+    clock: Res<SimClock>,
     log: Res<WorkLog>,
 ) {
     let store = &mut *store;
     for ev in &log.events {
         let s = db.recipes[ev.recipe as usize].skill;
+        // Masters of a chartered guild teach faster.
+        let charter = if towns.0[ev.town as usize].policy.charters
+            [db.recipes[ev.recipe as usize].domain as usize]
+        {
+            1.0 + params.policy.charter_teaching
+        } else {
+            1.0
+        };
         for &w in &ev.workers {
             let i = w as usize;
             let mult = store.aptitude[i] * (0.5 + store.state[i][state::HAPPINESS]);
@@ -492,8 +510,9 @@ pub fn learn(
             if o != master && store.alive[o as usize] {
                 // A trusted master teaches more.
                 let o = o as usize;
-                let boost =
-                    1.0 + params.trust.teaching_bonus * store.trust(o, master as usize).max(0.0);
+                let boost = charter
+                    * (1.0
+                        + params.trust.teaching_bonus * store.trust(o, master as usize).max(0.0));
                 let before = store.cap[o];
                 let g = models.diffusion.diffuse(&mut store.cap[o], &master_cap, &s);
                 for (c, b) in store.cap[o].iter_mut().zip(before) {
@@ -506,5 +525,63 @@ pub fn learn(
         for k in 0..CAP_DIM {
             mc[k] += gain * s[k];
         }
+    }
+
+    // --- schools: children of school age practice the town's chosen domain and learn
+    // from its best teacher, who is paid per pupil and day out of the treasury.
+    let pp = &params.policy;
+    let dpy = clock.days_per_year;
+    for town in towns.0.iter_mut() {
+        let Some(school) = town.policy.school else {
+            continue;
+        };
+        let dir = db.domain_dirs[school.domain as usize];
+        let Some(teacher) = town
+            .residents
+            .iter()
+            .map(|&i| i as usize)
+            .filter(|&i| store.alive[i] && store.activity[i] != Activity::Child)
+            .max_by(|&a, &b| {
+                dot(&store.cap[a], &dir)
+                    .total_cmp(&dot(&store.cap[b], &dir))
+                    .then(b.cmp(&a))
+            })
+        else {
+            continue;
+        };
+        let affordable = (town.treasury.max(0.0) / pp.school_fee.max(1e-6)) as u32;
+        let seats = school.seats.min(affordable) as usize;
+        let pupils: Vec<usize> = town
+            .residents
+            .iter()
+            .map(|&i| i as usize)
+            .filter(|&i| {
+                let age = store.age_years(i, dpy);
+                store.alive[i]
+                    && store.activity[i] == Activity::Child
+                    && age >= pp.school_age
+                    && age < params.life.apprentice_age
+            })
+            .take(seats)
+            .collect();
+        let teacher_cap = store.cap[teacher];
+        for &c in &pupils {
+            // Lessons are practice at a share of the pace of real work, plus what
+            // the teacher passes on.
+            let mult = store.aptitude[c] * pp.school_rate;
+            models
+                .learning
+                .practice(&mut store.cap[c], &dir, mult, true);
+            let before = store.cap[c];
+            models
+                .diffusion
+                .diffuse(&mut store.cap[c], &teacher_cap, &dir);
+            for (x, b) in store.cap[c].iter_mut().zip(before) {
+                *x = b + (*x - b) * pp.school_rate;
+            }
+        }
+        let fee = pupils.len() as f32 * pp.school_fee;
+        town.treasury -= fee;
+        store.wealth[teacher] += fee;
     }
 }

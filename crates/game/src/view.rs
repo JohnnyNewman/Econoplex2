@@ -355,9 +355,11 @@ pub fn select_agent(
     window: Single<&Window, With<PrimaryWindow>>,
     camera: Single<(&Camera, &GlobalTransform), With<Camera2d>>,
     agents: Query<(&Agent, &Transform), With<AgentSprite>>,
+    buttons: Query<&Interaction, With<Button>>,
     mut selection: ResMut<Selection>,
 ) {
-    if !mouse.just_pressed(MouseButton::Left) {
+    // A click on a panel button is not a click on the map.
+    if !mouse.just_pressed(MouseButton::Left) || buttons.iter().any(|i| *i != Interaction::None) {
         return;
     }
     let Some(cursor) = window.cursor_position() else {

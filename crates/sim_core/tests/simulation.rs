@@ -360,3 +360,115 @@ fn coworkers_come_to_trust_each_other() {
     assert!(stats.iter().all(|t| t.trust > 0.0));
     assert_eq!(stats.len(), towns.0.len());
 }
+
+fn full(seed: u64) -> Simulation {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    scenario.seed = seed;
+    Simulation::new(db, params, &scenario)
+}
+
+fn run_years(s: &mut Simulation, years: u32) {
+    let days = s
+        .world
+        .resource::<sim_core::world::Params>()
+        .life
+        .days_per_year;
+    for _ in 0..years * days {
+        s.step();
+    }
+}
+
+#[test]
+fn orders_are_parsed_applied_and_logged() {
+    let mut s = sim(4);
+    assert!(s.order("subsidy Atlantis bread 0.3").is_err());
+    assert!(s.order("subsidy Greenvale gold 0.3").is_err());
+    assert!(s.order("charter Greenvale cooking on").is_err());
+    s.order("subsidy Greenvale bread 5").unwrap();
+    s.order("school greenvale woodworking 20").unwrap();
+    s.order("immigration Greenvale closed").unwrap();
+    s.order("charter Greenvale smithing on").unwrap();
+    s.step();
+    let db = s.world.resource::<sim_core::Db>();
+    let p = &s.world.resource::<sim_core::Towns>().0[1].policy;
+    let max = s
+        .world
+        .resource::<sim_core::world::Params>()
+        .policy
+        .max_subsidy;
+    assert_eq!(
+        p.subsidy[db.content.product("bread").unwrap() as usize],
+        max
+    );
+    assert_eq!(p.school.unwrap().seats, 20);
+    assert_eq!(p.immigration, sim_core::policy::Immigration::Closed);
+    assert!(p.charters[db.content.domain("smithing").unwrap() as usize]);
+    let queue = s.world.resource::<sim_core::policy::OrderQueue>();
+    assert!(queue.pending.is_empty());
+    assert_eq!(queue.log.len(), 4);
+    assert!(queue.log.iter().all(|(tick, _)| *tick == 0));
+}
+
+#[test]
+fn a_school_teaches_its_subject_and_pays_the_teacher() {
+    let proficiency = |order: Option<&str>| {
+        let mut s = full(5);
+        if let Some(o) = order {
+            s.order(o).unwrap();
+        }
+        run_years(&mut s, 3);
+        let store = s.world.resource::<sim_core::AgentStore>();
+        let db = s.world.resource::<sim_core::Db>();
+        let dir = db.domain_dirs[db.content.domain("woodworking").unwrap() as usize];
+        let kids: Vec<f32> = s.world.resource::<sim_core::Towns>().0[1]
+            .residents
+            .iter()
+            .map(|&i| i as usize)
+            .filter(|&i| store.activity[i] == sim_core::store::Activity::Child)
+            .map(|i| store.cap[i].iter().zip(dir).map(|(a, b)| a * b).sum())
+            .collect();
+        kids.iter().sum::<f32>() / kids.len().max(1) as f32
+    };
+    let without = proficiency(None);
+    let with = proficiency(Some("school Greenvale woodworking 40"));
+    assert!(
+        with > without + 0.1,
+        "school {with:.3} vs none {without:.3}"
+    );
+}
+
+#[test]
+fn closed_borders_keep_migrants_out_and_subsidies_draw_workers() {
+    let mut s = full(6);
+    s.order("immigration Greenvale closed").unwrap();
+    s.order("subsidy Timberwick plank 1.0").unwrap();
+    let mut base = full(6);
+    let mut arrived = 0;
+    let mut planks = [0.0f32; 2];
+    let plank = s
+        .world
+        .resource::<sim_core::Db>()
+        .content
+        .product("plank")
+        .unwrap() as usize;
+    for _ in 0..5 {
+        run_years(&mut s, 1);
+        run_years(&mut base, 1);
+        let y = s
+            .world
+            .resource::<sim_core::metrics::Metrics>()
+            .latest()
+            .unwrap();
+        arrived += y.towns[1].moves.arrived;
+        planks[0] += s.world.resource::<sim_core::Towns>().0[2].produced_last_year[plank];
+        planks[1] += base.world.resource::<sim_core::Towns>().0[2].produced_last_year[plank];
+    }
+    assert_eq!(arrived, 0);
+    assert!(
+        planks[0] > planks[1] * 1.2,
+        "subsidized {} vs {} planks",
+        planks[0],
+        planks[1]
+    );
+}

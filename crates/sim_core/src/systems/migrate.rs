@@ -11,6 +11,7 @@
 use super::streams;
 use crate::components::*;
 use crate::db::Db;
+use crate::policy::Immigration;
 use crate::store::{Activity, AgentStore};
 use crate::world::{Params, SimClock, SimSeed, Towns};
 use bevy_ecs::prelude::*;
@@ -137,11 +138,16 @@ pub fn migrate(
                 + mp.ideology_weight * closeness
                 + mp.trade_weight * sells
                 + params.trust.migration_weight * friends[t].min(1.0)
+                + if towns.0[t].policy.immigration == Immigration::Encouraged {
+                    params.policy.immigration_bonus
+                } else {
+                    0.0
+                }
         };
         let stay = utility(home);
         let mut best: Option<(usize, f32)> = None;
         for t in 0..n_towns {
-            if t == home {
+            if t == home || towns.0[t].policy.immigration == Immigration::Closed {
                 continue;
             }
             let u = utility(t) - mp.distance_cost * dist(home, t, &towns) / 1000.0;
@@ -183,6 +189,13 @@ pub fn migrate(
             moved[j] = true;
         }
         let n = household.len() as u32;
+        if towns.0[to].policy.immigration == Immigration::Encouraged {
+            // Settlement grant for each newcomer, paid to the household.
+            let grant = (params.policy.settlement_grant * n as f32)
+                .clamp(0.0, towns.0[to].treasury.max(0.0));
+            towns.0[to].treasury -= grant;
+            store.wealth[i] += grant;
+        }
         towns.0[home].moves.left += n;
         towns.0[to].moves.arrived += n;
     }

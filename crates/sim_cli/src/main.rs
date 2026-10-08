@@ -3,6 +3,7 @@
 //! ```text
 //! econoplex-sim [--years N] [--seed S] [--scale F] [--assets DIR] [--csv FILE]
 //!               [--set path=value]... [--sweep path=v1,v2,...]... [--seeds N]
+//!               [--order DAY:ORDER]...
 //!               [--embedding] [--hash] [--profile] [--quiet]
 //! ```
 //!
@@ -32,6 +33,8 @@ struct Args {
     sets: Vec<(String, String)>,
     sweeps: Vec<(String, Vec<String>)>,
     seeds: u64,
+    /// Player orders, by the day they are given.
+    orders: Vec<(u64, String)>,
 }
 
 fn parse_args() -> Args {
@@ -48,6 +51,7 @@ fn parse_args() -> Args {
         sets: Vec::new(),
         sweeps: Vec::new(),
         seeds: 1,
+        orders: Vec::new(),
     };
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
@@ -95,6 +99,17 @@ fn parse_args() -> Args {
                     .parse()
                     .unwrap_or_else(|_| die("--seeds expects a number"))
             }
+            "--order" => {
+                let v = val();
+                let (day, text) = v.split_once(':').unwrap_or_else(|| {
+                    die("--order expects DAY:ORDER, e.g. 0:subsidy Greenvale bread 0.3")
+                });
+                let day = day
+                    .trim()
+                    .parse()
+                    .unwrap_or_else(|_| die("--order expects DAY:ORDER with a day number"));
+                a.orders.push((day, text.trim().to_string()));
+            }
             "--embedding" => a.embedding = true,
             "--hash" => a.hash = true,
             "--quiet" => a.quiet = true,
@@ -112,6 +127,9 @@ fn parse_args() -> Args {
                      --seeds N      run N consecutive seeds from the scenario seed; implies batch mode\n\
                      --embedding    print the skill embedding (product space) report and exit\n\
                      --hash         print the final state hash (determinism check)\n\
+                     --order D:O    give a player order on day D (repeatable), e.g. 0:school Greenvale smithing 20\n\
+                                    orders: subsidy TOWN PRODUCT SHARE | school TOWN DOMAIN SEATS | school TOWN off\n\
+                                    immigration TOWN open|closed|encouraged | charter TOWN DOMAIN on|off\n\
                      --profile      print wall-clock time per system\n\
                      --quiet        only print the summary"
                 );
@@ -164,6 +182,7 @@ fn main() {
             seeds: args.seeds,
             scenario,
             years: args.years,
+            orders: args.orders,
         };
         sweep::run(&plan, args.csv.as_deref()).unwrap_or_else(|e| die(&e.to_string()));
         return;
@@ -181,7 +200,10 @@ fn main() {
 
     let start = Instant::now();
     let mut shown = 0;
-    for _ in 0..args.years * dpy {
+    for tick in 0..args.years * dpy {
+        for (_, text) in args.orders.iter().filter(|o| o.0 == tick) {
+            sim.order(text).unwrap_or_else(|e| die(&e));
+        }
         sim.step();
         let metrics = sim.world.resource::<Metrics>();
         if !args.quiet && metrics.years.len() > shown {

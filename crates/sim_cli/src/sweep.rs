@@ -20,6 +20,7 @@ pub struct Plan {
     pub seeds: u64,
     pub scenario: Scenario,
     pub years: u64,
+    pub orders: Vec<(u64, String)>,
 }
 
 /// What one run comes to.
@@ -182,7 +183,11 @@ pub fn run(plan: &Plan, csv: Option<&std::path::Path>) -> Result<(), Box<dyn std
     for combo in &settings {
         let mut sets = plan.sets.clone();
         sets.extend(combo.iter().cloned());
-        sim_core::load_with(&plan.paths, &sets)?;
+        let (db, params, _) = sim_core::load_with(&plan.paths, &sets)?;
+        let mut sim = Simulation::new(db, params, &plan.scenario);
+        for (_, text) in &plan.orders {
+            sim.order(text)?;
+        }
     }
     let jobs: Vec<(usize, u64)> = (0..settings.len())
         .flat_map(|c| (0..plan.seeds).map(move |k| (c, plan.scenario.seed + k)))
@@ -216,7 +221,11 @@ pub fn run(plan: &Plan, csv: Option<&std::path::Path>) -> Result<(), Box<dyn std
                 let ticks = plan.years * params.life.days_per_year as u64;
                 let mut sim = Simulation::new(db, params, &scenario);
                 let t0 = Instant::now();
-                for _ in 0..ticks {
+                for tick in 0..ticks {
+                    for (_, text) in plan.orders.iter().filter(|o| o.0 == tick) {
+                        sim.order(text)
+                            .expect("orders were checked before the threads started");
+                    }
                     sim.step();
                 }
                 let ms = t0.elapsed().as_secs_f64() * 1000.0 / ticks.max(1) as f64;
