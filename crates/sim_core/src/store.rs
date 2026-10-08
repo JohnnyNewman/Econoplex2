@@ -71,6 +71,8 @@ pub struct AgentStore {
     pub last_recipe: Vec<Option<u32>>,
     /// Where the agent is heading (world units). The view animates toward it.
     pub target: Vec<(f32, f32)>,
+    /// Personal ties: who this agent trusts, and how much (see `trust.rs`).
+    pub ties: Vec<[crate::trust::Tie; crate::trust::TIES]>,
 }
 
 /// Everything needed to create an agent.
@@ -133,6 +135,8 @@ impl AgentStore {
         self.worked_today.push(None);
         self.last_recipe.push(None);
         self.target.push(a.target);
+        self.ties
+            .push([crate::trust::Tie::NONE; crate::trust::TIES]);
         idx
     }
 

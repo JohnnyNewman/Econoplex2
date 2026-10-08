@@ -32,6 +32,7 @@ pub struct ModelParams {
     pub work: WorkParams,
     pub military: MilitaryParams,
     pub migration: MigrationParams,
+    pub trust: TrustParams,
 }
 
 impl ModelParams {
@@ -303,6 +304,27 @@ pub struct MilitaryParams {
     pub garrison_strength: f32,
     /// Yearly chance a conquered town regains its independence peacefully.
     pub independence_rate: f32,
+}
+
+/// Personal ties between agents (`trust.rs`).
+#[derive(Debug, Clone, Deserialize)]
+pub struct TrustParams {
+    /// Trust gained by each pair of coworkers when a job succeeds.
+    pub cowork_gain: f32,
+    /// Share of that gain when the job fails.
+    pub failure_factor: f32,
+    /// Trust change from a chance meeting: +gain between like minds, -gain between opposites.
+    pub meet_gain: f32,
+    /// Share of trust lost per day without contact.
+    pub fade: f32,
+    /// Added to a team's proficiency at full cohesion (lower coordination costs).
+    pub team_bonus: f32,
+    /// Extra learning from a fully trusted master (1.0 doubles it).
+    pub teaching_bonus: f32,
+    /// Extra fighting power of a squad at full cohesion.
+    pub loyalty: f32,
+    /// Weight in the migration utility of trusted people living in a town.
+    pub migration_weight: f32,
 }
 
 #[derive(Debug, Clone, Deserialize)]

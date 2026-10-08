@@ -42,6 +42,10 @@ pub struct TownStats {
     pub ruler: Option<u16>,
     /// Mean wealth of residents.
     pub mean_wealth: f32,
+    /// Mean total trust adults place in others (positive ties only).
+    pub trust: f32,
+    /// Share of adults' positive ties that are to members of their own guild.
+    pub trade_ties: f32,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -208,6 +212,7 @@ pub fn record(
         let mut ideo_sum = [0.0; MIND_DIM - mind::IDEOLOGY_START];
         let mut spec_sum = 0.0;
         let mut top_sum = 0.0;
+        let (mut trust_sum, mut ties, mut same_trade) = (0.0, 0u32, 0u32);
         for &i in &town.residents {
             let i = i as usize;
             for (k, v) in ideo_sum.iter_mut().enumerate() {
@@ -226,11 +231,25 @@ pub fn record(
                 continue;
             }
             s.adults += 1;
+            let my_guild = store.guild[i].map(|g| g.domain);
+            for tie in &store.ties[i] {
+                if tie.value <= 0.0 || tie.other == u32::MAX {
+                    continue;
+                }
+                trust_sum += tie.value;
+                ties += 1;
+                let theirs = store.guild[tie.other as usize].map(|g| g.domain);
+                if my_guild.is_some() && theirs == my_guild {
+                    same_trade += 1;
+                }
+            }
             let profile = db.skill_profile(&store.cap[i]);
             spec_sum += specialization(&profile);
             top_sum += profile.iter().copied().fold(0.0, f32::max);
         }
         let n = s.population.max(1) as f32;
+        s.trust = trust_sum / s.adults.max(1) as f32;
+        s.trade_ties = same_trade as f32 / ties.max(1) as f32;
         s.treasury = town.treasury;
         s.buildings = town.buildings.len();
         s.soldiers = town.squad.len();

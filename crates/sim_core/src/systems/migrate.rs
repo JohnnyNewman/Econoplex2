@@ -3,7 +3,7 @@
 //! Every few weeks some idle adults weigh the towns they could live in: how much
 //! food there is per head, what their own trade sells for there, how close the
 //! town's people are to them in outlook, whether it was raided this year, and how
-//! far the road is. When another town is clearly better, the household (the agent,
+//! far the road is, and where the people they trust live. When another town is clearly better, the household (the agent,
 //! an idle partner, and their young children) packs up and moves, carrying its
 //! skills, wealth and tools. Skills therefore follow demand between towns instead
 //! of staying where they were first learned.
@@ -117,6 +117,13 @@ pub fn migrate(
         let trade = store.last_recipe[i]
             .and_then(|r| db.recipes[r as usize].outputs.first())
             .map(|&(p, _)| p as usize);
+        // People this household trusts, by the town they live in.
+        let mut friends = vec![0.0f32; n_towns];
+        for tie in &store.ties[i] {
+            if tie.value > 0.0 && tie.other != u32::MAX && store.alive[tie.other as usize] {
+                friends[store.town[tie.other as usize] as usize] += tie.value;
+            }
+        }
         let utility = |t: usize| {
             let mut d2 = 0.0;
             for (k, m) in ideology[t].iter().enumerate() {
@@ -126,7 +133,10 @@ pub fn migrate(
             let sells = trade.map_or(0.0, |p| {
                 (towns.0[t].price[p] / mean_price[p].max(1e-6) - 1.0).clamp(-1.0, 2.0)
             });
-            base[t] + mp.ideology_weight * closeness + mp.trade_weight * sells
+            base[t]
+                + mp.ideology_weight * closeness
+                + mp.trade_weight * sells
+                + params.trust.migration_weight * friends[t].min(1.0)
         };
         let stay = utility(home);
         let mut best: Option<(usize, f32)> = None;

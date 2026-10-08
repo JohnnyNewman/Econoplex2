@@ -165,4 +165,19 @@
         danger_weight: 0.3,
         distance_cost: 0.2,
     ),
+
+    // Personal ties. Coworkers come to trust each other, chance meetings bring like
+    // minds closer and push opposites apart, and ties fade without contact. Trust
+    // forms teams, helps them work, speeds up teaching, steels squads and draws
+    // households after the people they trust.
+    trust: (
+        cowork_gain: 0.05,
+        failure_factor: 0.3,
+        meet_gain: 0.05,
+        fade: 0.005,
+        team_bonus: 0.1,
+        teaching_bonus: 1.0,
+        loyalty: 0.3,
+        migration_weight: 0.5,
+    ),
 )

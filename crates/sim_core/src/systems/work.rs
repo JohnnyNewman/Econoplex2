@@ -37,6 +37,57 @@ struct PendingTask {
     batches: u32,
 }
 
+/// Split the people who chose the same job into teams. Each team forms around the
+/// first person not yet placed, who brings the coworkers they trust most; the rest
+/// fill up in the order they chose.
+fn trusted_teams(
+    store: &AgentStore,
+    agents: &[u32],
+    size: usize,
+    place: &mut [u32],
+) -> Vec<Vec<u32>> {
+    const PLACED: u32 = u32::MAX - 1;
+    for (k, &a) in agents.iter().enumerate() {
+        place[a as usize] = k as u32;
+    }
+    let mut teams = Vec::new();
+    let mut next = 0;
+    for &lead in agents {
+        if place[lead as usize] == PLACED {
+            continue;
+        }
+        place[lead as usize] = PLACED;
+        let mut team = vec![lead];
+        let mut ties: Vec<_> = store.ties[lead as usize]
+            .iter()
+            .filter(|t| t.value > 0.0 && t.other != u32::MAX)
+            .filter(|t| place[t.other as usize] < PLACED)
+            .copied()
+            .collect();
+        ties.sort_by(|a, b| b.value.total_cmp(&a.value).then(a.other.cmp(&b.other)));
+        for t in ties {
+            if team.len() >= size {
+                break;
+            }
+            place[t.other as usize] = PLACED;
+            team.push(t.other);
+        }
+        while team.len() < size && next < agents.len() {
+            let a = agents[next];
+            next += 1;
+            if place[a as usize] != PLACED {
+                place[a as usize] = PLACED;
+                team.push(a);
+            }
+        }
+        teams.push(team);
+    }
+    for &a in agents {
+        place[a as usize] = u32::MAX;
+    }
+    teams
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn assign(
     mut commands: Commands,
@@ -77,10 +128,11 @@ pub fn assign(
     });
 
     let mut pending: Vec<PendingTask> = Vec::new();
+    let mut place = vec![u32::MAX; store.len()];
     for ((t, r), agents) in groups {
         let m = &db.recipes[r as usize];
         let town = &mut towns.0[t as usize];
-        for team in agents.chunks(m.max_team) {
+        for team in &trusted_teams(store, &agents, m.max_team, &mut place) {
             // A team's daily work covers several runs of a short recipe.
             let rate = (team.len() as f32).powf(params.work.work_exponent);
             let mut batches = ((rate / m.duration).floor() as u32).max(1);
@@ -123,7 +175,7 @@ pub fn assign(
             pending.push(PendingTask {
                 recipe: r,
                 town: t,
-                workers: team.to_vec(),
+                workers: team.clone(),
                 apprentices: Vec::new(),
                 input_quality,
                 pos,
@@ -250,7 +302,11 @@ pub fn produce(
             .map(|&w| store.effective_cap(w as usize))
             .collect();
         let team = models.pooling.pool(&caps);
-        let prof = dot(&team, &m.skill) - models.pooling.coordination_penalty(n);
+        let mut sorted = workers.clone();
+        sorted.sort_unstable();
+        // People who trust each other coordinate better.
+        let prof = dot(&team, &m.skill) - models.pooling.coordination_penalty(n)
+            + params.trust.team_bonus * store.cohesion(&workers, &sorted);
         let pb: f32 = workers
             .iter()
             .map(|&w| physique_bonus(&store.phys[w as usize], m, params.physique.weight))
@@ -406,7 +462,13 @@ pub fn produce(
 }
 
 /// Practice for every worker; diffusion from the team's best member to the others and to apprentices.
-pub fn learn(mut store: ResMut<AgentStore>, db: Res<Db>, models: Res<Models>, log: Res<WorkLog>) {
+pub fn learn(
+    mut store: ResMut<AgentStore>,
+    db: Res<Db>,
+    models: Res<Models>,
+    params: Res<Params>,
+    log: Res<WorkLog>,
+) {
     let store = &mut *store;
     for ev in &log.events {
         let s = db.recipes[ev.recipe as usize].skill;
@@ -428,9 +490,16 @@ pub fn learn(mut store: ResMut<AgentStore>, db: Res<Db>, models: Res<Models>, lo
         let mut gain = 0.0;
         for &o in ev.workers.iter().chain(ev.apprentices.iter()) {
             if o != master && store.alive[o as usize] {
-                gain += models
-                    .diffusion
-                    .diffuse(&mut store.cap[o as usize], &master_cap, &s);
+                // A trusted master teaches more.
+                let o = o as usize;
+                let boost =
+                    1.0 + params.trust.teaching_bonus * store.trust(o, master as usize).max(0.0);
+                let before = store.cap[o];
+                let g = models.diffusion.diffuse(&mut store.cap[o], &master_cap, &s);
+                for (c, b) in store.cap[o].iter_mut().zip(before) {
+                    *c = b + (*c - b) * boost;
+                }
+                gain += g * boost;
             }
         }
         let mc = &mut store.cap[master as usize];
