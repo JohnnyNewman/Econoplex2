@@ -38,6 +38,8 @@ pub struct TownStats {
     pub soldiers: usize,
     pub war: crate::world::WarCounters,
     pub moves: crate::world::MoveCounters,
+    /// The town this one pays tribute to at year end.
+    pub ruler: Option<u16>,
     /// Mean wealth of residents.
     pub mean_wealth: f32,
 }
@@ -234,6 +236,7 @@ pub fn record(
         s.soldiers = town.squad.len();
         s.war = town.war;
         s.moves = town.moves;
+        s.ruler = town.ruler;
         s.starving =
             town.starving as f32 / (s.population.max(1) * clock.days_per_year as usize) as f32;
         s.mean_wealth = town

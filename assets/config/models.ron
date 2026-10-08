@@ -140,6 +140,16 @@
         loot_share: 0.3,
         captive_share: 0.05,
         captives_per_soldier: 0.5,
+        // Conquest: a crushing win makes the defender a tributary of the attacker.
+        // It pays tribute, keeps a smaller squad, is defended by its ruler, and
+        // regains its freedom by beating its ruler in battle or, slowly, in peace.
+        conquest_margin: 3.0,
+        tribute_interval: 30,
+        tribute_share: 0.2,
+        vassal_soldier_share: 0.02,
+        ruler_aid: 0.5,
+        garrison_strength: 1.0,
+        independence_rate: 0.05,
     ),
     // Households move to towns where their trade sells better, food is plentiful,
     // people think alike and no raids come, so skills follow demand between towns.

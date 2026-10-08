@@ -97,7 +97,7 @@ nonnegative.
 | body | Norm budget and forgetting on capability; physique trains toward the genetic potential |
 | settle | Prices follow stock vs. per-capita targets; buildings are priced by how full they are; food spoils; wealth tax and public spending; caravans trade goods and tools between towns; nature regrows |
 | organize | Guild membership and roles from domain proficiency; guild members buy matching tools (on credit if needed) |
-| military | Musters (recruit, release, arm with longswords), soldier pay and drill, raids, battles and captives |
+| military | Musters (recruit, release, arm with longswords), soldier pay and drill, raids, battles, captives, conquest, tribute and uprisings |
 | migrate | Every month some idle adults compare towns; households move where they are better off |
 | lifecycle | Aging and Gompertz mortality, bequests, partnering by mind affinity, births with genetic inheritance |
 | metrics | Yearly: diversity, RCA, economic complexity index, specialization, culture |
@@ -185,6 +185,23 @@ per surviving soldier), who march home with the squad and then live and work in 
 captor's town. Fallen fighters die, so their skills die with them; captives take
 theirs to the winner. All of this is in the `military` section of `models.ron`.
 
+### Conquest
+
+A winning raid that was `conquest_margin` times stronger than the defense conquers the
+defender. Every `tribute_interval` days a conquered town pays its ruler
+`tribute_share` of its treasury. It may keep only `vassal_soldier_share` of its adults
+under arms, and its ruler's soldiers at home help defend it (`ruler_aid`). Rulers
+don't raid their tributaries, and tributaries of the same ruler don't raid each other.
+A tributary is free again when:
+- it beats its ruler in battle,
+- its own soldiers outmatch its share of the ruler's squad (`garrison_strength`, split
+  among all the ruler's tributaries), so a ruler with many tributaries or a beaten
+  army loses them, or
+- by chance, at `independence_rate` a year.
+
+Conquering a town frees the towns it ruled. The CLI shows each town's ruler at year
+end, and the CSV adds conquests, uprisings and tribute.
+
 ### Migration
 
 Every `interval` days, each idle adult has a `consider` chance to weigh the other
@@ -232,7 +249,8 @@ Greenvale, without a smithy, becomes the breadbasket with the lowest score and b
 its sickles from the smiths. Timberwick builds the most (more mills and bakeries,
 and its own smithy). Level-3 longswords stay rare. The sword towns field the
 largest squads and raid their neighbors every year or two, mostly successfully, and
-carry off a few captives each time. A few percent of each town's people move every
+carry off a few captives each time. Crushing wins make tributaries, which
+usually rise up again within a few years; one town rarely rules all the others. A few percent of each town's people move every
 year, more of them toward towns with food to spare.
 
 Performance on one core: about 1.3 ms per tick at 2,400 agents and 33 ms at 18,500.
@@ -244,8 +262,9 @@ Performance on one core: about 1.3 ms per tick at 2,400 agents and 33 ms at 18,5
 - Prices are in fixed nominal terms, so a growing population with a fixed money
   supply means lower wealth per person rather than lower prices.
 - Buildings never wear out or get demolished.
-- Raids are the only form of war: no sieges or conquest, and a squad fights as one
-  block with no tactical movement. Captives become ordinary townspeople at once.
+- War has raids and conquest but no sieges or occupation: a conquered town keeps its
+  own people and economy and only pays tribute. A squad fights as one block with no
+  tactical movement, and captives become ordinary townspeople at once.
 - Migration only looks at the agent's latest trade, not at everything they could do.
 - Each town's land is a fixed budget of plots that it uses up early. Opening land does
   not yet follow population growth, and towns never turn forest into fields or the

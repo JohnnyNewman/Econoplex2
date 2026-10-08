@@ -98,6 +98,8 @@ pub struct Town {
     /// Person-days spent starving since the last yearly report.
     pub starving: u32,
     pub war: WarCounters,
+    /// The town this one was conquered by and pays tribute to, if any.
+    pub ruler: Option<u16>,
     /// People who moved in or out since the last yearly report.
     pub moves: MoveCounters,
 }
@@ -129,6 +131,13 @@ pub struct WarCounters {
     /// People this town carried off, and people carried off from it.
     pub captives_taken: u32,
     pub captives_lost: u32,
+    /// Towns this one conquered, and times it was conquered.
+    pub conquests: u32,
+    pub conquered: u32,
+    /// Times this town threw off its ruler.
+    pub revolts: u32,
+    pub tribute_paid: f32,
+    pub tribute_received: f32,
 }
 
 /// Migration since the last yearly report.
@@ -356,6 +365,7 @@ pub fn setup(world: &mut World, db: Db, params: ModelParams, scenario: &Scenario
             food_trend: 0.0,
             starving: 0,
             war: WarCounters::default(),
+            ruler: None,
             moves: MoveCounters::default(),
         });
 

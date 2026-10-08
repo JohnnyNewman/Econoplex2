@@ -129,6 +129,10 @@ pub fn update_hud(
             ),
             None => town.squad.len().to_string(),
         };
+        let army = match town.ruler {
+            Some(r) => format!("{army} (ruled by {})", towns.0[r as usize].name),
+            None => army,
+        };
         s.push_str(&format!(
             "{:<11} {:>5} {:>6.1} {} {:>4}  {}/{}/{}  {}\n",
             town.name,

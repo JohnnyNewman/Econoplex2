@@ -164,7 +164,7 @@ fn print_year(y: &sim_core::metrics::YearStats) {
         y.total_money
     );
     println!(
-        "  {:<11} {:>5} {:>6} {:>6} {:>4} {:>6} {:>6} {:>6} {:>7} {:>5}  {:>11} {:>8} {:>6} {:>4} {:>5} {:>9} {:>9} {:>9}",
+        "  {:<11} {:>5} {:>6} {:>6} {:>4} {:>6} {:>6} {:>6} {:>7} {:>5}  {:>11} {:>8} {:>6} {:>4} {:>5} {:>9} {:>9} {:>9}  ruler",
         "town",
         "pop",
         "food",
@@ -186,7 +186,7 @@ fn print_year(y: &sim_core::metrics::YearStats) {
     );
     for t in &y.towns {
         println!(
-            "  {:<11} {:>5} {:>6.1} {:>5.1}% {:>4} {:>6.2} {:>6.2} {:>6.2} {:>7} {:>5}  {:>3}/{:>3}/{:>3} {:>8.0} {:>6.1} {:>4} {:>5} {:>4}/{:>4} {:>4}/{:>4} {:>4}/{:>4}",
+            "  {:<11} {:>5} {:>6.1} {:>5.1}% {:>4} {:>6.2} {:>6.2} {:>6.2} {:>7} {:>5}  {:>3}/{:>3}/{:>3} {:>8.0} {:>6.1} {:>4} {:>5} {:>4}/{:>4} {:>4}/{:>4} {:>4}/{:>4}  {}",
             t.name,
             t.population,
             t.food_per_capita,
@@ -209,7 +209,8 @@ fn print_year(y: &sim_core::metrics::YearStats) {
             t.moves.arrived,
             t.moves.left,
             t.war.captives_taken,
-            t.war.captives_lost
+            t.war.captives_lost,
+            t.ruler.map_or("-", |r| y.towns[r as usize].name.as_str())
         );
     }
 }
@@ -360,17 +361,18 @@ fn write_csv(path: &std::path::Path, m: &Metrics) -> std::io::Result<()> {
     let mut f = std::fs::File::create(path)?;
     writeln!(
         f,
-        "year,town,population,adults,food_per_capita,diversity,rca_products,eci,specialization,mean_top_skill,masters,guild_members,tools_in_use,swords_1,swords_2,swords_3,treasury,mean_wealth,buildings,tradition,faith,liberty,ideology_spread,starving,migrants_in,migrants_out,captives_taken,captives_lost"
+        "year,town,population,adults,food_per_capita,diversity,rca_products,eci,specialization,mean_top_skill,masters,guild_members,tools_in_use,swords_1,swords_2,swords_3,treasury,mean_wealth,buildings,tradition,faith,liberty,ideology_spread,starving,migrants_in,migrants_out,captives_taken,captives_lost,ruler,conquests,revolts,tribute_paid"
     )?;
     for y in &m.years {
         for t in &y.towns {
             writeln!(
                 f,
-                "{},{},{},{},{:.3},{},{},{:.3},{:.4},{:.4},{},{},{},{},{},{},{:.1},{:.2},{},{:.4},{:.4},{:.4},{:.4},{:.4},{},{},{},{}",
+                "{},{},{},{},{:.3},{},{},{:.3},{:.4},{:.4},{},{},{},{},{},{},{:.1},{:.2},{},{:.4},{:.4},{:.4},{:.4},{:.4},{},{},{},{},{},{},{},{:.1}",
                 y.year, t.name, t.population, t.adults, t.food_per_capita, t.diversity, t.rca_products, t.eci, t.specialization,
                 t.mean_top_skill, t.masters, t.guild_members, t.tools_in_use, t.swords[0], t.swords[1], t.swords[2], t.treasury, t.mean_wealth, t.buildings,
                 t.ideology[0], t.ideology[1], t.ideology[2], t.ideology_spread, t.starving,
-                t.moves.arrived, t.moves.left, t.war.captives_taken, t.war.captives_lost
+                t.moves.arrived, t.moves.left, t.war.captives_taken, t.war.captives_lost,
+                t.ruler.map_or("", |r| y.towns[r as usize].name.as_str()), t.war.conquests, t.war.revolts, t.war.tribute_paid
             )?;
         }
     }
