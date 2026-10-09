@@ -356,10 +356,14 @@ pub fn select_agent(
     camera: Single<(&Camera, &GlobalTransform), With<Camera2d>>,
     agents: Query<(&Agent, &Transform), With<AgentSprite>>,
     buttons: Query<&Interaction, With<Button>>,
+    placing: Res<crate::policy_ui::Placing>,
     mut selection: ResMut<Selection>,
 ) {
-    // A click on a panel button is not a click on the map.
-    if !mouse.just_pressed(MouseButton::Left) || buttons.iter().any(|i| *i != Interaction::None) {
+    // A click on a panel button, or one placing a building, is not a selection.
+    if !mouse.just_pressed(MouseButton::Left)
+        || placing.0.is_some()
+        || buttons.iter().any(|i| *i != Interaction::None)
+    {
         return;
     }
     let Some(cursor) = window.cursor_position() else {

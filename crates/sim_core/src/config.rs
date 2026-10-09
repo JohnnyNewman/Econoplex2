@@ -326,6 +326,8 @@ pub struct PolicyParams {
     pub immigration_bonus: f32,
     /// Paid by the treasury to each newcomer under encouraged immigration.
     pub settlement_grant: f32,
+    /// Highest share of adults a town may keep under arms.
+    pub max_army_share: f32,
 }
 
 /// Personal ties between agents (`trust.rs`).

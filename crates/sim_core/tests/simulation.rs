@@ -472,3 +472,60 @@ fn closed_borders_keep_migrants_out_and_subsidies_draw_workers() {
         planks[1]
     );
 }
+
+#[test]
+fn a_defending_town_marches_only_when_ordered() {
+    let mut s = full(7);
+    s.order("war Ironhold defend").unwrap();
+    s.order("army Ironhold 0.15").unwrap();
+    let raids = |s: &Simulation| -> u32 {
+        s.world
+            .resource::<sim_core::metrics::Metrics>()
+            .years
+            .iter()
+            .map(|y| y.towns[0].war.raids)
+            .sum()
+    };
+    run_years(&mut s, 3);
+    assert_eq!(raids(&s), 0, "a defending town raided on its own");
+    assert_eq!(
+        s.world.resource::<sim_core::Towns>().0[0].policy.army_share,
+        Some(0.15)
+    );
+    // The ordered raid waits until the squad is big enough, then marches.
+    s.order("raid Ironhold Brassmoor").unwrap();
+    let mut marched = None;
+    for _ in 0..3 * 120 {
+        s.step();
+        if let Some(r) = &s.world.resource::<sim_core::Towns>().0[0].raid {
+            marched = Some(r.target);
+            break;
+        }
+    }
+    assert_eq!(marched, Some(3));
+    assert_eq!(
+        s.world.resource::<sim_core::Towns>().0[0].policy.raid_order,
+        None
+    );
+}
+
+#[test]
+fn an_ordered_building_goes_up_where_it_was_placed() {
+    let mut s = full(8);
+    s.order("build Timberwick bakery -300 -100").unwrap();
+    assert!(s.order("build Timberwick bread").is_err());
+    let mut placed = false;
+    for _ in 0..240 {
+        s.step();
+        let t = &s.world.resource::<sim_core::Towns>().0[2];
+        if t.buildings.iter().any(|b| b.2 == (-300.0, -100.0)) {
+            assert!(t.policy.commissions.is_empty());
+            placed = true;
+            break;
+        }
+    }
+    assert!(
+        placed,
+        "the commissioned bakery was not built where ordered"
+    );
+}
