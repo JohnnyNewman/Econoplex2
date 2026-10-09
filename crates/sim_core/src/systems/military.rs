@@ -91,7 +91,7 @@ pub fn military(
             let share = if town.ruler.is_some() {
                 mp.vassal_soldier_share
             } else {
-                mp.soldier_share
+                town.policy.army_share.unwrap_or(mp.soldier_share)
             };
             let want = ((adults as f32 * share) as usize).min(affordable);
             let at_home = town.raid.is_none();
@@ -267,14 +267,22 @@ pub fn military(
         {
             continue;
         }
+        // A raid the town's government ordered goes ahead whatever the odds.
+        let ordered = town
+            .policy
+            .raid_order
+            .filter(|&o| (o as usize) < n_towns && towns.0[o as usize].ruler != Some(t as u16));
+        if ordered.is_none() && town.policy.war == crate::policy::War::Defend {
+            continue;
+        }
         let attack = squad_power(store, &town.squad, &fight, loyalty);
         // The richest neighbor the squad can beat with a clear margin.
-        let mut best: Option<(usize, f32)> = None;
+        let mut best: Option<(usize, f32)> = ordered.map(|o| (o as usize, 0.0));
         for (o, other) in towns.0.iter().enumerate() {
             // Rulers protect their tributaries; tributaries of one ruler keep the peace.
             let ruled = other.ruler == Some(t as u16)
                 || (town.ruler.is_some() && other.ruler == town.ruler);
-            if o == t || ruled {
+            if o == t || ruled || ordered.is_some() {
                 continue;
             }
             let defense = total_defense(store, &towns, o, &fight, mp, loyalty);
@@ -301,7 +309,7 @@ pub fn military(
             })
             .sum::<f32>()
             / town.squad.len() as f32;
-        if rng.random::<f32>() >= mp.raid_appetite * temper {
+        if ordered.is_none() && rng.random::<f32>() >= mp.raid_appetite * temper {
             continue;
         }
         let tp = towns.0[target].pos;
@@ -310,6 +318,7 @@ pub fn military(
         let soldiers = town.squad.clone();
         let np = db.content.products.len();
         let town = &mut towns.0[t];
+        town.policy.raid_order = None;
         town.war.raids += 1;
         town.raid = Some(Raid {
             target: target as u16,
