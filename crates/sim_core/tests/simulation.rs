@@ -529,3 +529,20 @@ fn an_ordered_building_goes_up_where_it_was_placed() {
         "the commissioned bakery was not built where ordered"
     );
 }
+
+#[test]
+fn the_river_makes_the_southern_road_longer() {
+    let s = sim(4);
+    let t = s.world.resource::<sim_core::terrain::Terrain>();
+    let towns = s.world.resource::<sim_core::Towns>();
+    let at = |name: &str| towns.0.iter().position(|t| t.name == name).unwrap();
+    let north = t.road(at("Ironhold"), at("Greenvale"));
+    let south = t.road(at("Timberwick"), at("Brassmoor"));
+    let same_bank = t.road(at("Ironhold"), at("Timberwick"));
+    println!("north {north:.0}  south {south:.0}  west bank {same_bank:.0}");
+    assert!(north.is_finite() && south.is_finite());
+    assert!(south > 1.2 * north, "north {north} south {south}");
+    // Towns stand on dry ground, and the river cannot be built on.
+    assert!(towns.0.iter().all(|town| t.buildable(town.pos)));
+    assert!(!t.buildable((-30.0, 0.0)));
+}

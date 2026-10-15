@@ -97,7 +97,8 @@
         max_price_factor: 5.0,
         trade_interval: 10,
         trade_amount: 6.0,
-        transport_cost: 0.25,
+        // Per 1000 units of road: the straight road between neighbors is about 900.
+        transport_cost: 0.28,
         // Money circulates: wages come out of the town treasury, which is refilled by
         // food and tool purchases, trade, a wealth tax, and bequests.
         wealth_tax: 0.5,

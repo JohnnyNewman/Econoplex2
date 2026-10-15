@@ -10,6 +10,7 @@
 
 mod hud;
 mod policy_ui;
+mod terrain_view;
 mod view;
 
 use bevy::prelude::*;
@@ -77,6 +78,7 @@ fn main() {
             (
                 view::spawn_camera,
                 view::spawn_static,
+                terrain_view::spawn_terrain,
                 view::spawn_skill_labels,
                 hud::spawn_hud,
                 policy_ui::spawn_policy_panel,

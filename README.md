@@ -235,6 +235,36 @@ and join the guild of their new town, so a trade that is better paid elsewhere d
 its practitioners there. The settings are in the `migration` section of `models.ron`,
 and the CLI reports arrivals and departures per town each year.
 
+### Terrain and roads
+
+The map is a grid of 20-unit cells, described in the `terrain` section of
+`scenario.ron`. Each cell has a travel cost per unit of distance: 1 on open ground,
+up to `1 + hill_cost` on the highest hills (deterministic value noise from the
+scenario seed), and impassable on a river except at its fords. Land around each
+town is level and dry. Leaving `terrain` out gives flat open ground.
+
+For every town one flow field is computed at the start (Dijkstra from the town over
+the grid): each cell holds the cost of the cheapest road from there to the town. A
+walker heading home steps to the neighboring cell with the lowest value, so any
+number of people share one field instead of each searching for a path. The same
+fields give the road between every pair of towns, and the simulation uses those
+roads instead of straight lines:
+
+- a raid marches `road / march_speed` days, along the road, and no squad sets out
+  for a town no road reaches;
+- migrants weigh the road, not the crow's flight;
+- caravans lose `transport_cost` of the price per 1000 units of road, so goods flow
+  easily between towns on the same bank and less across the river;
+- nothing can be built in the river.
+
+In the default scenario a river runs between the western and the eastern towns
+with one ford in the north and one far to the south. Ironhold and Greenvale are
+about 1050 apart by road, Timberwick and Brassmoor about 1600. Over 30 years on 8
+seeds, compared with the same towns on flat ground, households move a third less
+often (805 against 1197 arrivals) and fewer towns are conquered (4.1 against 5.8).
+The game draws the river, the fords and the hills, and agents walk along the flow
+fields around the water.
+
 ### Trust
 
 Every agent keeps up to eight personal ties, each a trust value between -1 and 1.
@@ -373,6 +403,7 @@ producing and the yearly life cycle about an eighth each.
   own people and economy and only pays tribute. A squad fights as one block with no
   tactical movement, and captives become ordinary townspeople at once.
 - Migration only looks at the agent's latest trade, not at everything they could do.
+- Terrain is fixed: roads are not built or improved, and rivers cannot be bridged.
 - Each town's land is a fixed budget of plots that it uses up early. Opening land does
   not yet follow population growth, and towns never turn forest into fields or the
   other way round.

@@ -263,6 +263,7 @@ pub fn apply_orders(
     mut towns: ResMut<Towns>,
     params: Res<crate::world::Params>,
     clock: Res<SimClock>,
+    terrain: Res<crate::terrain::Terrain>,
 ) {
     let max = params.policy.max_subsidy;
     let orders = std::mem::take(&mut queue.pending);
@@ -293,7 +294,13 @@ pub fn apply_orders(
             Order::Raid { town: t, target } => {
                 p.raid_order = (target != t).then_some(target);
             }
-            Order::Build { building, pos, .. } => p.commissions.push(Commission { building, pos }),
+            Order::Build { building, pos, .. } => {
+                // Nothing is built in a river or off the map.
+                if pos.is_some_and(|q| !terrain.buildable(q)) {
+                    continue;
+                }
+                p.commissions.push(Commission { building, pos })
+            }
         }
         queue.log.push((clock.tick, order));
     }

@@ -4,16 +4,19 @@
 use crate::components::{Item, NaturalResource, Product, TownId};
 use crate::db::Db;
 use crate::store::AgentStore;
+use crate::terrain::Terrain;
 use crate::world::{Params, SimClock, Towns};
 use bevy_ecs::prelude::*;
 use sim_data::Category;
 
+#[allow(clippy::too_many_arguments)]
 pub fn settle(
     mut towns: ResMut<Towns>,
     mut store: ResMut<AgentStore>,
     db: Res<Db>,
     params: Res<Params>,
     clock: Res<SimClock>,
+    terrain: Res<Terrain>,
     mut sites: Query<&mut NaturalResource>,
     mut items: Query<(&Product, &mut TownId), With<Item>>,
 ) {
@@ -129,7 +132,10 @@ pub fn settle(
                         continue;
                     }
                     let (pa, pb) = (towns.0[a].price[p], towns.0[b].price[p]);
-                    if pb <= pa * (1.0 + mp.transport_cost) {
+                    // Transport costs grow with the length of the road, around
+                    // rivers and over hills; no caravan goes where no road leads.
+                    let road = terrain.road(a, b);
+                    if !road.is_finite() || pb <= pa * (1.0 + mp.transport_cost * road / 1000.0) {
                         continue;
                     }
                     // The buyer pays the destination price; the margin over the source
