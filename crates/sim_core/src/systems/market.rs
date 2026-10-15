@@ -47,6 +47,16 @@ pub fn settle(
                     })
                     .fold(0.0f32, f32::max);
                 let demand = (scarcity - 1.0).clamp(0.0, 1.0);
+                // A building the government ordered is paid for at full price.
+                if town
+                    .policy
+                    .commissions
+                    .iter()
+                    .any(|c| c.building == p as u32)
+                {
+                    town.price[p] = base;
+                    continue;
+                }
                 town.price[p] = if town.building_count(p as u32) == 0 {
                     base * mp.new_building_appeal
                 } else {

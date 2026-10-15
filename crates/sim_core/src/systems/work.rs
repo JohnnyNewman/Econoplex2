@@ -376,7 +376,12 @@ pub fn produce(
                 } else if db.category(p) == Category::Building {
                     // The finished building becomes a workplace (stock tracks nothing here).
                     town.stock[pi] -= q;
-                    let pos = town.next_building_pos();
+                    // An ordered building goes where the order put it.
+                    let commission = town.policy.commissions.iter().position(|c| c.building == p);
+                    let pos = match commission.map(|k| town.policy.commissions.remove(k)) {
+                        Some(crate::policy::Commission { pos: Some(pos), .. }) => pos,
+                        _ => town.next_building_pos(),
+                    };
                     town.built += 1;
                     let e = commands
                         .spawn((

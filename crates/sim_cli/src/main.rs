@@ -130,6 +130,8 @@ fn parse_args() -> Args {
                      --order D:O    give a player order on day D (repeatable), e.g. 0:school Greenvale smithing 20\n\
                                     orders: subsidy TOWN PRODUCT SHARE | school TOWN DOMAIN SEATS | school TOWN off\n\
                                     immigration TOWN open|closed|encouraged | charter TOWN DOMAIN on|off\n\
+                                    army TOWN SHARE|auto | war TOWN auto|defend | raid TOWN TARGET\n\
+                                    build TOWN BUILDING [X Y]\n\
                      --profile      print wall-clock time per system\n\
                      --quiet        only print the summary"
                 );

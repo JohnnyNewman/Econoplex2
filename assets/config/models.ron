@@ -194,5 +194,6 @@
         charter_teaching: 0.5,
         immigration_bonus: 0.5,
         settlement_grant: 2.0,
+        max_army_share: 0.3,
     ),
 )

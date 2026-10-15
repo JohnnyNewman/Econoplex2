@@ -50,6 +50,16 @@ fn main() {
     }));
 
     sim_core::world::setup(app.world_mut(), db, params, &scenario);
+    // The player's squad marches only when ordered.
+    if let Some(town) = app.world().resource::<sim_core::policy::PlayerTown>().0 {
+        app.world_mut()
+            .resource_mut::<sim_core::policy::OrderQueue>()
+            .pending
+            .push(sim_core::policy::Order::War {
+                town,
+                war: sim_core::policy::War::Defend,
+            });
+    }
     app.add_schedule(sim_core::build_schedule());
 
     app.insert_resource(Time::<Fixed>::from_hz(SPEEDS[1]))
@@ -60,6 +70,7 @@ fn main() {
         .insert_resource(Selection::default())
         .insert_resource(view::Overlay::default())
         .insert_resource(policy_ui::PolicyCursor::default())
+        .insert_resource(policy_ui::Placing::default())
         .insert_resource(ClearColor(Color::srgb(0.08, 0.09, 0.08)))
         .add_systems(
             Startup,
@@ -89,6 +100,7 @@ fn main() {
                 hud::update_legend,
                 policy_ui::policy_buttons,
                 policy_ui::update_policy_panel,
+                policy_ui::place_building.after(view::select_agent),
             ),
         );
     app.run();

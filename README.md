@@ -61,7 +61,11 @@ You govern Greenvale (marked `*`; set `player` in `scenario.ron` to pick another
 town). The panel at the bottom right holds its levers: pick a product with `<` `>`
 and change its subsidy with `-` `+`, pick a school subject and add or remove seats
 in steps of 10, toggle a guild charter, and cycle immigration between open,
-encouraged and closed. Every click queues an order that takes effect the next day.
+encouraged and closed. Army sets the share of adults under arms and whether your
+squad raids on its own or only defends (it starts out defending). Raid picks a town
+and marches on it as soon as the squad is big enough. Build picks a building type;
+press place, then click the map where it should stand. Every click queues an order
+that takes effect the next day.
 
 ## Workspace
 
@@ -278,6 +282,14 @@ town's policy:
 - **Immigration** (`immigration TOWN open|encouraged|closed`): closed borders turn
   migrants away. Encouraged immigration adds `immigration_bonus` to the town's appeal
   and pays each newcomer a `settlement_grant` from the treasury.
+- **Army** (`army TOWN SHARE|auto`, `war TOWN auto|defend`): the share of adults the
+  town keeps under arms (up to `max_army_share`, and only as many as the treasury
+  can pay), and whether its squad raids on its own judgment or only when ordered.
+- **Raid** (`raid TOWN TARGET`): the squad marches on the target as soon as it is at
+  home, rested and at least `min_raid_squad` strong, whatever the odds.
+- **Construction** (`build TOWN BUILDING [X Y]`): the town pays full price for the
+  building, so builders take the job as soon as materials allow, and it goes up at
+  the given spot (or the next free one).
 
 Over 25 years on six seeds, applying one lever to Greenvale from day 0 changed its
 results this way:

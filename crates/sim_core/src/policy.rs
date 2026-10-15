@@ -15,6 +15,10 @@
 //!   adds to the town's appeal and pays newcomers a settlement grant.
 //! - **Guild charter**: a chartered guild draws people into its trade and its
 //!   masters teach faster.
+//! - **Army**: the share of adults kept under arms, and whether the squad raids on
+//!   its own judgment or only defends; a raid order sends it against a chosen town.
+//! - **Construction**: a commissioned building is paid for at full price whatever
+//!   the market thinks, and goes up where the order placed it.
 
 use crate::db::Db;
 use crate::world::{SimClock, Towns};
@@ -35,6 +39,23 @@ pub struct School {
     pub seats: u32,
 }
 
+/// Who decides when the squad marches.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum War {
+    /// The squad raids whenever it sees a good chance (the AI towns).
+    #[default]
+    Auto,
+    /// The squad only marches when ordered to.
+    Defend,
+}
+
+/// A building the town has ordered, and where to put it (`None`: the next free spot).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Commission {
+    pub building: u32,
+    pub pos: Option<(f32, f32)>,
+}
+
 /// A town's policy. Every town starts with no subsidies, no school, open borders
 /// and no charters.
 #[derive(Debug, Clone, Default)]
@@ -45,6 +66,13 @@ pub struct Policy {
     pub immigration: Immigration,
     /// Chartered guilds, by skill domain.
     pub charters: Vec<bool>,
+    /// Share of adults under arms; `None` keeps the default from `models.ron`.
+    pub army_share: Option<f32>,
+    pub war: War,
+    /// A raid ordered against this town, launched as soon as the squad can march.
+    pub raid_order: Option<u16>,
+    /// Buildings ordered and not yet built, in order.
+    pub commissions: Vec<Commission>,
 }
 
 impl Policy {
@@ -54,16 +82,48 @@ impl Policy {
             school: None,
             immigration: Immigration::Open,
             charters: vec![false; domains],
+            ..Default::default()
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Order {
-    Subsidy { town: u16, product: u32, share: f32 },
-    School { town: u16, school: Option<School> },
-    Immigration { town: u16, policy: Immigration },
-    Charter { town: u16, domain: u32, on: bool },
+    Subsidy {
+        town: u16,
+        product: u32,
+        share: f32,
+    },
+    School {
+        town: u16,
+        school: Option<School>,
+    },
+    Immigration {
+        town: u16,
+        policy: Immigration,
+    },
+    Charter {
+        town: u16,
+        domain: u32,
+        on: bool,
+    },
+    Army {
+        town: u16,
+        share: Option<f32>,
+    },
+    War {
+        town: u16,
+        war: War,
+    },
+    Raid {
+        town: u16,
+        target: u16,
+    },
+    Build {
+        town: u16,
+        building: u32,
+        pos: Option<(f32, f32)>,
+    },
 }
 
 impl Order {
@@ -72,7 +132,11 @@ impl Order {
             Order::Subsidy { town, .. }
             | Order::School { town, .. }
             | Order::Immigration { town, .. }
-            | Order::Charter { town, .. } => town,
+            | Order::Charter { town, .. }
+            | Order::Army { town, .. }
+            | Order::War { town, .. }
+            | Order::Raid { town, .. }
+            | Order::Build { town, .. } => town,
         }
     }
 
@@ -83,6 +147,10 @@ impl Order {
     /// school <town> <domain> <seats>         school <town> off
     /// immigration <town> open|closed|encouraged
     /// charter <town> <domain> on|off
+    /// army <town> <share>|auto               e.g. army Greenvale 0.1
+    /// war <town> auto|defend
+    /// raid <town> <target>
+    /// build <town> <building> [<x> <y>]
     /// ```
     pub fn parse(text: &str, db: &Db, towns: &Towns) -> Result<Order, String> {
         let w: Vec<&str> = text.split_whitespace().collect();
@@ -141,6 +209,38 @@ impl Order {
                 domain: domain(d)?,
                 on: *on == "on",
             }),
+            ["army", t, "auto"] => Ok(Order::Army {
+                town: town(t)?,
+                share: None,
+            }),
+            ["army", t, share] => Ok(Order::Army {
+                town: town(t)?,
+                share: Some(number(share)?),
+            }),
+            ["war", t, w @ ("auto" | "defend")] => Ok(Order::War {
+                town: town(t)?,
+                war: if *w == "auto" { War::Auto } else { War::Defend },
+            }),
+            ["raid", t, target] => Ok(Order::Raid {
+                town: town(t)?,
+                target: town(target)?,
+            }),
+            ["build", t, b, rest @ ..] if rest.is_empty() || rest.len() == 2 => {
+                let building = db
+                    .content
+                    .product(b)
+                    .filter(|&p| db.category(p) == sim_data::Category::Building)
+                    .ok_or_else(|| format!("no building `{b}`"))?;
+                let pos = match rest {
+                    [x, y] => Some((number(x)?, number(y)?)),
+                    _ => None,
+                };
+                Ok(Order::Build {
+                    town: town(t)?,
+                    building,
+                    pos,
+                })
+            }
             _ => Err(format!("cannot read order `{text}`")),
         }
     }
@@ -186,6 +286,14 @@ pub fn apply_orders(
                     *c = on;
                 }
             }
+            Order::Army { share, .. } => {
+                p.army_share = share.map(|s| s.clamp(0.0, params.policy.max_army_share));
+            }
+            Order::War { war, .. } => p.war = war,
+            Order::Raid { town: t, target } => {
+                p.raid_order = (target != t).then_some(target);
+            }
+            Order::Build { building, pos, .. } => p.commissions.push(Commission { building, pos }),
         }
         queue.log.push((clock.tick, order));
     }
