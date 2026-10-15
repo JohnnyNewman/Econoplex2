@@ -418,6 +418,7 @@ pub fn place_building(
     mut placing: ResMut<Placing>,
     mut queue: ResMut<OrderQueue>,
     player: Res<PlayerTown>,
+    terrain: Res<sim_core::terrain::Terrain>,
 ) {
     let (Some(building), Some(town)) = (placing.0, player.0) else {
         return;
@@ -436,6 +437,10 @@ pub fn place_building(
     let Ok(world) = cam.viewport_to_world_2d(cam_tf, cursor) else {
         return;
     };
+    // Nothing goes up in the river; keep placing until the click lands on dry ground.
+    if !terrain.buildable((world.x, world.y)) {
+        return;
+    }
     queue.pending.push(Order::Build {
         town,
         building,

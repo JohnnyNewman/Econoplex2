@@ -222,7 +222,7 @@ pub struct MarketParams {
     pub max_price_factor: f32,
     pub trade_interval: u32,
     pub trade_amount: f32,
-    /// Fraction of price lost per unit traded (transport cost).
+    /// Fraction of price lost per unit traded per 1000 units of road (transport cost).
     pub transport_cost: f32,
     /// Yearly tax on each agent's wealth above `tax_free_wealth`, paid to the town
     /// treasury. It returns savings to the market so wages can keep flowing.
@@ -390,6 +390,47 @@ pub struct Scenario {
     #[serde(default)]
     pub player: Option<String>,
     pub towns: Vec<TownSpec>,
+    /// Hills and rivers; flat open ground when left out.
+    #[serde(default)]
+    pub terrain: Option<TerrainSpec>,
+}
+
+/// The lay of the land (see [`crate::terrain`]).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct TerrainSpec {
+    /// Size of one grid cell.
+    pub cell: f32,
+    /// The map reaches at least this far from the origin; it always covers the towns.
+    pub half_size: (f32, f32),
+    /// Extra travel cost on the highest hills (1 = twice as slow).
+    pub hill_cost: f32,
+    /// Typical distance between hills.
+    pub hill_scale: f32,
+    pub rivers: Vec<RiverSpec>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RiverSpec {
+    /// The river's course, as a polyline.
+    pub points: Vec<(f32, f32)>,
+    pub width: f32,
+    /// Places where the river can be crossed.
+    #[serde(default)]
+    pub fords: Vec<(f32, f32)>,
+    #[serde(default = "default_ford_width")]
+    pub ford_width: f32,
+    /// Travel cost per unit of distance at a ford.
+    #[serde(default = "default_ford_cost")]
+    pub ford_cost: f32,
+}
+
+fn default_ford_width() -> f32 {
+    60.0
+}
+
+fn default_ford_cost() -> f32 {
+    3.0
 }
 
 #[derive(Debug, Clone, Deserialize)]

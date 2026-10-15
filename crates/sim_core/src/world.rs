@@ -466,6 +466,7 @@ pub fn setup(world: &mut World, db: Db, params: ModelParams, scenario: &Scenario
     world.insert_resource(db);
     world.insert_resource(models);
     world.insert_resource(Params(params));
+    world.insert_resource(crate::terrain::Terrain::build(scenario));
     world.insert_resource(crate::profile::Profile::default());
     world.insert_resource(crate::policy::OrderQueue::default());
     world.insert_resource(crate::policy::PlayerTown(scenario.player.as_ref().map(
