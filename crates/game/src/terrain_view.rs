@@ -53,6 +53,7 @@ pub fn spawn_terrain(
             ..default()
         },
         Transform::from_xyz(center.x, center.y, -1.0),
+        crate::view::WorldView,
     ));
 }
 

@@ -16,6 +16,9 @@ Requires Rust 1.85 or newer.
 # The game (Bevy 2D view)
 cargo run --release -p game
 
+# Start the game from a save (F5 quicksaves to saves/quicksave.ron, F9 loads it)
+cargo run --release -p game -- --load game.ron
+
 # Headless: 30 years, metrics per year
 cargo run --release -p sim_cli -- --years 30
 
@@ -57,6 +60,7 @@ The first build compiles Bevy and takes a while.
 | Left click | Inspect an agent (skills, mind, physique vs. genetic potential, state, guild, family) |
 | P | Product space overlay: skill graph, brightness = selected agent's (or average) proficiency |
 | Esc | Deselect |
+| F5 / F9 | Quicksave to `saves/quicksave.ron` / load it again |
 
 Agents are colored by their best skill domain; brightness shows how good they are.
 Children are grey and follow a working parent as apprentices.

@@ -15,6 +15,11 @@ pub struct Overlay {
     pub product_space: bool,
 }
 
+/// View entities drawn from the world's state (town names, building labels,
+/// terrain). They are despawned and rebuilt when a saved game is loaded.
+#[derive(Component)]
+pub struct WorldView;
+
 /// Skill name label for the product space overlay.
 #[derive(Component)]
 pub struct SkillLabel(pub usize);
@@ -116,6 +121,7 @@ pub fn attach_building_sprites(
             },
             TextColor(Color::srgb(0.85, 0.8, 0.7)),
             Transform::from_xyz(pos.x, pos.y - 22.0, 5.0),
+            WorldView,
         ));
     }
 }
@@ -130,6 +136,7 @@ pub fn spawn_static(mut commands: Commands, towns: Res<Towns>) {
             },
             TextColor(Color::srgb(0.95, 0.92, 0.8)),
             Transform::from_xyz(town.pos.0, town.pos.1 + 120.0, 5.0),
+            WorldView,
         ));
     }
 }

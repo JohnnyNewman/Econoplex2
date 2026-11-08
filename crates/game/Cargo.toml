@@ -22,6 +22,7 @@ bevy = { workspace = true, features = [
     "2d_bevy_render",
     "ui_api",
     "ui_bevy_render",
+    "png",
 ] }
 
 # Linux needs a windowing backend feature; Windows and macOS use their native one.

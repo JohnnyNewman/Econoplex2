@@ -83,7 +83,7 @@ pub fn spawn_hud(mut commands: Commands, db: Res<Db>) {
         });
     commands.spawn((panel(None, Some(8.0), None, Some(8.0)), BackgroundColor(PANEL))).with_children(|p| {
         p.spawn((
-            Text::new("Space pause | 1-5 speed | WASD pan | wheel zoom\nclick select | Esc deselect | P product space"),
+            Text::new("Space pause | 1-5 speed | WASD pan | wheel zoom\nclick select | Esc deselect | P product space | F5 save | F9 load"),
             font(12.0),
             TextColor(Color::srgb(0.8, 0.8, 0.8)),
         ));
@@ -100,6 +100,8 @@ pub fn update_hud(
     db: Res<Db>,
     metrics: Res<Metrics>,
     player: Res<sim_core::policy::PlayerTown>,
+    toast: Res<crate::saving::Toast>,
+    time: Res<Time>,
 ) {
     let mut s = format!(
         "ECONOPLEX   year {}  day {:>3}   {}{} days/s\npopulation {}\n",
@@ -158,6 +160,13 @@ pub fn update_hud(
     }
     if latest.is_none() {
         s.push_str("(complexity and swords appear after the first year)\n");
+    }
+    if let Some(msg) = toast.current(time.elapsed_secs_f64()) {
+        s.push_str(&format!(
+            "
+{msg}
+"
+        ));
     }
     text.0 = s;
 }
