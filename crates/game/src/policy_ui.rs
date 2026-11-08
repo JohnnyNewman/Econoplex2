@@ -7,7 +7,7 @@
 
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
-use sim_core::policy::{Immigration, Minting, Order, OrderQueue, PlayerTown, School, War};
+use sim_core::policy::{Immigration, Minting, Order, OrderQueue, PlayerTown, School, Tax, War};
 use sim_core::{Db, Towns};
 use sim_data::Category;
 
@@ -33,6 +33,11 @@ pub enum Action {
     SchoolSeats(i32),
     Immigration,
     Minting,
+    WealthTax(i32),
+    IncomeTax(i32),
+    Wages(i32),
+    Spending(i32),
+    Procure(i32),
     CharterDomain(i32),
     CharterToggle,
     ArmyShare(i32),
@@ -52,6 +57,11 @@ pub enum Field {
     SchoolSeats,
     Immigration,
     Minting,
+    WealthTax,
+    IncomeTax,
+    Wages,
+    Spending,
+    Procure,
     CharterDomain,
     CharterState,
     ArmyShare,
@@ -74,7 +84,7 @@ fn buildings(db: &Db) -> Vec<usize> {
 fn subsidizable(db: &Db) -> Vec<usize> {
     (0..db.content.products.len())
         .filter(|&p| db.category(p as u32) != Category::Building)
-        .filter(|&p| db.content.products[p].opens.is_none())
+        .filter(|&p| db.content.products[p].opens.is_none() && db.coin[p] == 0.0)
         .collect()
 }
 
@@ -173,6 +183,29 @@ pub fn spawn_policy_panel(mut commands: Commands) {
             row(p, "Mint", &|r| {
                 button(r, "change", Action::Minting);
                 value(r, Field::Minting, 90.0);
+            });
+            row(p, "Taxes", &|r| {
+                button(r, "-", Action::WealthTax(-1));
+                value(r, Field::WealthTax, 110.0);
+                button(r, "+", Action::WealthTax(1));
+                button(r, "-", Action::IncomeTax(-1));
+                value(r, Field::IncomeTax, 90.0);
+                button(r, "+", Action::IncomeTax(1));
+            });
+            row(p, "Wages", &|r| {
+                button(r, "-", Action::Wages(-1));
+                value(r, Field::Wages, 110.0);
+                button(r, "+", Action::Wages(1));
+            });
+            row(p, "Spending", &|r| {
+                button(r, "-", Action::Spending(-1));
+                value(r, Field::Spending, 110.0);
+                button(r, "+", Action::Spending(1));
+            });
+            row(p, "Order", &|r| {
+                button(r, "-", Action::Procure(-1));
+                value(r, Field::Procure, 220.0);
+                button(r, "+", Action::Procure(1));
             });
             row(p, "Army", &|r| {
                 button(r, "-", Action::ArmyShare(-1));
@@ -297,6 +330,47 @@ pub fn policy_buttons(
                         placing.0 = kinds.get(cursor.building).map(|&b| b as u32);
                         None
                     }
+                    Action::WealthTax(d) => {
+                        let now = policy.wealth_tax.unwrap_or(params.market.wealth_tax);
+                        Some(Order::Tax {
+                            town,
+                            tax: Tax::Wealth,
+                            rate: Some((((now + 0.25 * d as f32) * 4.0).round() / 4.0).max(0.0)),
+                        })
+                    }
+                    Action::IncomeTax(d) => Some(Order::Tax {
+                        town,
+                        tax: Tax::Income,
+                        rate: Some(
+                            (((policy.income_tax + 0.05 * d as f32) * 20.0).round() / 20.0)
+                                .max(0.0),
+                        ),
+                    }),
+                    Action::Wages(d) => {
+                        let now = policy.wage_share.unwrap_or(params.work.wage_share);
+                        Some(Order::Wages {
+                            town,
+                            share: Some(((now + 0.05 * d as f32) * 20.0).round() / 20.0),
+                        })
+                    }
+                    Action::Spending(d) => {
+                        let now = policy
+                            .public_spending
+                            .unwrap_or(params.market.public_spending);
+                        Some(Order::Spending {
+                            town,
+                            rate: Some((now + 0.5 * d as f32).max(0.0)),
+                        })
+                    }
+                    // Orders the good picked in the Subsidy row, 50 at a time.
+                    Action::Procure(d) => {
+                        let product = products[cursor.product.min(products.len() - 1)];
+                        Some(Order::Procure {
+                            town,
+                            product: product as u32,
+                            amount: (policy.ordered(product) + 50.0 * d as f32).max(0.0),
+                        })
+                    }
                     Action::Minting => Some(Order::Mint {
                         town,
                         minting: match policy.minting {
@@ -393,6 +467,25 @@ pub fn update_policy_panel(
             },
             Field::SubsidyProduct => db.content.products[product].name.clone(),
             Field::SubsidyAmount => format!("{:.0}%", p.subsidy[product] * 100.0),
+            Field::WealthTax => format!(
+                "wealth {:.2}/yr",
+                p.wealth_tax.unwrap_or(params.market.wealth_tax)
+            ),
+            Field::IncomeTax => format!("income {:.0}%", p.income_tax * 100.0),
+            Field::Wages => format!(
+                "{:.0}% of value",
+                p.wage_share.unwrap_or(params.work.wage_share) * 100.0
+            ),
+            Field::Spending => format!(
+                "{:.1}/yr",
+                p.public_spending.unwrap_or(params.market.public_spending)
+            ),
+            Field::Procure => format!(
+                "{:.0} {} ({:.0} in)",
+                p.ordered(product),
+                db.content.products[product].name,
+                town.procured.get(product).copied().unwrap_or(0.0)
+            ),
             Field::SchoolDomain => match p.school {
                 Some(s) if s.domain as usize != cursor.school_domain => format!(
                     "{} (now {})",

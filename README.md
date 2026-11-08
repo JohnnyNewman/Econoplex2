@@ -457,6 +457,28 @@ town's policy:
 - **Construction** (`build TOWN BUILDING [X Y]`): the town pays full price for the
   building, so builders take the job as soon as materials allow, and it goes up at
   the given spot (or the next free one).
+- **Taxes** (`tax TOWN wealth RATE|auto`, `tax TOWN income RATE|auto`): the town's
+  own wealth-tax rate on savings above the allowance, and an income tax: the
+  treasury keeps that share of every wage it pays (booked as taxed).
+- **Wages** (`wages TOWN SHARE|auto`): the share of value added the town market pays
+  its makers. A higher share draws people into better-paid work, but empties the
+  treasury faster, and pay is capped by what the treasury holds.
+- **Spending** (`spending TOWN RATE|auto`): how much of the treasury above its
+  reserve goes back to residents each year.
+- **Government orders** (`procure TOWN PRODUCT AMOUNT`, 0 cancels): the town wants
+  that many more of a good. The order raises the stock its market aims for, so the
+  good's price, and its makers' pay, rise. Workers take the job on their own until
+  the order is delivered, and delivered goods go to public use. A scarce good is
+  taken from what residents would have bought: a large bread order can leave a
+  town hungry.
+- **Minting** (`mint TOWN auto|on|off`): see Mints above.
+
+Every lever is a `Policy` field that AI towns have too, at its default. Each one only
+changes prices, wages, demand or who pays whom; no lever sets an outcome. The economy
+panel's Levers section shows each town's settings and orders, and its money lines
+compare this month with last year. In the game the panel at the bottom right sets
+them for your town. `--player NAME` picks the town you govern, and `--order TEXT`
+gives an order on day 0.
 
 Over 25 years on six seeds, applying one lever to Greenvale from day 0 changed its
 results this way:

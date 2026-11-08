@@ -30,7 +30,8 @@ use std::collections::HashMap;
 use std::path::Path;
 
 /// Bumped whenever the save layout changes incompatibly.
-pub const SAVE_VERSION: u32 = 1;
+/// 2: the ledger gained income tax (18 flows).
+pub const SAVE_VERSION: u32 = 2;
 
 /// One simulation entity and its components.
 #[derive(Serialize, Deserialize)]

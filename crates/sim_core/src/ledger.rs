@@ -2,8 +2,8 @@
 //!
 //! Read with a credit-first eye, the town is the issuer of its money. What it pays
 //! out (wages, subsidies, fees, soldiers' pay, public spending, grants) puts money
-//! into people's hands: **issued**. What it takes back by right (the wealth tax,
-//! estates without heirs) is **taxed**. What people hand back by choice, buying food
+//! into people's hands: **issued**. What it takes back by right (the wealth and
+//! income taxes, estates without heirs) is **taxed**. What people hand back by choice, buying food
 //! and tools at the town market, is **spent**. Trade, tribute and plunder move money
 //! between towns. Coin struck at a mint is new money: **minted**. Apart from that
 //! the total stays constant; the ledger only labels the flows.
@@ -40,9 +40,11 @@ pub enum Flow {
     LootLost,
     // New coin struck at the town's mint.
     Minted,
+    // Taxed: the share of wages the treasury takes back.
+    IncomeTax,
 }
 
-pub const FLOWS: usize = 17;
+pub const FLOWS: usize = 18;
 
 /// How the HUD groups flows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,6 +79,7 @@ impl Flow {
         Flow::LootTaken,
         Flow::LootLost,
         Flow::Minted,
+        Flow::IncomeTax,
     ];
 
     pub fn name(self) -> &'static str {
@@ -98,6 +101,7 @@ impl Flow {
             Flow::LootTaken => "loot taken",
             Flow::LootLost => "loot lost",
             Flow::Minted => "minted",
+            Flow::IncomeTax => "income tax",
         }
     }
 
@@ -107,7 +111,7 @@ impl Flow {
             Wages | Subsidies | SchoolFees | SoldierPay | PublicSpending | SettlementGrants => {
                 Group::Issued
             }
-            WealthTax | Estates => Group::Taxed,
+            WealthTax | Estates | IncomeTax => Group::Taxed,
             FoodSales | ToolSales => Group::Spent,
             TradeSales | TributeReceived | LootTaken => Group::ExternalIn,
             TradePurchases | TributePaid | LootLost => Group::ExternalOut,

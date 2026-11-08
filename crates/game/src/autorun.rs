@@ -28,6 +28,10 @@ pub struct GameArgs {
     pub zoom: Option<f32>,
     pub no_economy: bool,
     pub product_space: bool,
+    /// The town the player governs (overrides scenario.ron).
+    pub player: Option<String>,
+    /// Orders given on day 0, as typed in the CLI (e.g. "tax Greenvale income 0.1").
+    pub orders: Vec<String>,
 }
 
 pub fn parse() -> GameArgs {
@@ -74,6 +78,8 @@ pub fn parse() -> GameArgs {
             }
             "--no-economy" => a.no_economy = true,
             "--product-space" => a.product_space = true,
+            "--player" => a.player = Some(val()),
+            "--order" => a.orders.push(val()),
             "-h" | "--help" => {
                 println!(
                     "econoplex: the Econoplex game\n\n\
@@ -86,7 +92,9 @@ pub fn parse() -> GameArgs {
                      --camera X Y     center the camera on a world position
                      --zoom F         camera zoom (default 1.6; smaller is closer)
                      --no-economy     start with the economy panel closed
-                     --product-space  start with the product space overlay (P) on"
+                     --product-space  start with the product space overlay (P) on\n\
+                     --player NAME    govern this town (default: scenario.ron's player)\n\
+                     --order TEXT     give an order on day 0 (repeatable), as in the CLI"
                 );
                 std::process::exit(0);
             }

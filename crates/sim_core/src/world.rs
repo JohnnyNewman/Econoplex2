@@ -121,6 +121,9 @@ pub struct Town {
     pub moves: MoveCounters,
     /// Levers the town's government has set (see `policy.rs`).
     pub policy: crate::policy::Policy,
+    /// Goods delivered for government orders since the start, by product.
+    #[serde(default)]
+    pub procured: Vec<f32>,
     /// Payments into and out of the treasury, by kind (see `ledger.rs`).
     #[serde(default)]
     pub ledger: crate::ledger::Ledger,
@@ -404,6 +407,7 @@ pub fn setup(world: &mut World, db: Db, params: ModelParams, scenario: &Scenario
             moves: MoveCounters::default(),
             policy: crate::policy::Policy::new(db.content.products.len(), db.content.domains.len()),
             ledger: crate::ledger::Ledger::new(scenario.towns.len()),
+            procured: vec![0.0; db.content.products.len()],
         });
 
         // Starting trades follow what the town can actually run, with food work weighted
