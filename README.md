@@ -141,9 +141,11 @@ cutting wood for the bakery help against hunger too, not only farming and baking
 
 ### Money
 
-Money is never created or destroyed; `econoplex-sim` prints the total each year and
-the `money_is_conserved` test checks it. It moves between agents' wealth and town
-treasuries:
+Every town starts with `starting_coins` in its treasury. After that, new money comes
+only from a **mint** (see below); otherwise money is never created or destroyed.
+`econoplex-sim` prints the total each year, and the `money_is_conserved` test checks
+that it changes by exactly what the mints struck. Money moves between agents' wealth
+and town treasuries:
 
 | Flow | From → to |
 | --- | --- |
@@ -158,36 +160,55 @@ treasuries:
 When a treasury runs dry, wages for that day are cut, so pay follows what people
 actually spend. All rates are in the `market` section of `models.ron`.
 
+#### Mints
+
+A mint (`content/60_money.ron`) is a building: 16 planks, 10 wood and 4 iron, put up
+by builders like any other. Working it is a trade like any other: up to four minters
+turn one iron and one charcoal into 60 coins per three person-days. Struck coin is
+not stocked; it goes into the treasury as new money and is paid out from there as
+wages and the rest. Each town's `minting` policy decides when:
+
+- **auto** (default): the town builds a mint, and keeps it working, while its
+  treasury holds less than `mint_below_per_capita` per resident
+- **on**: strike coin whenever the mint has workers and metal
+- **off**: never (no mint is built unless ordered)
+
+Minting is limited by labor and by iron, which the smiths also want. Towns without
+ore have to buy iron before they can mint. Change it with `mint TOWN auto|on|off`, or
+with the Mint row of the policy panel.
+
 Every one of these payments is booked in the town's ledger (`ledger.rs`), read with a
 credit-first eye: what the treasury pays out puts money into people's hands
 (**issued**: wages, subsidies, fees, soldiers' pay, public spending, grants), what it
 takes back by right is **taxed** (wealth tax, estates without heirs), and what people
-hand back by choice at the town market is **spent** (food, tools). Trade, tribute and
-plunder move money between towns. The ledger keeps a monthly average for the game and
-yearly totals for the CSV (`issued`, `taxed`, `spent`, `external_in`, `external_out`),
+hand back by choice at the town market is **spent** (food, tools). Coin struck at a mint
+is **minted**. Trade, tribute and plunder move money between towns. The ledger keeps a monthly average for the game and
+yearly totals for the CSV (`minted`, `issued`, `taxed`, `spent`, `external_in`, `external_out`),
 and the `the_ledger_accounts_for_every_treasury_change` test checks that it explains
 every change in every treasury.
 
 ### The economy on screen
 
-![Economy panel](docs/screenshots/economy-ironhold-year25.png)
+![Economy panel](docs/screenshots/mint-ironhold-year15.png)
 
-The economy panel (E; Tab cycles towns, starting with yours) shows for one town:
+The economy panel (E; Tab cycles towns, starting with yours) shows for one town, in
+sections you can fold by clicking their headings (Goods starts folded):
 
-- money per day over the last month: issued, taxed and spent as bars, with the
-  biggest items under each, plus trade in and out, the treasury and what people hold
+- money per day over the last month: minted, issued, taxed and spent as bars, with
+  the town's mint and minting policy and the biggest items under each, plus trade in
+  and out, the treasury and what people hold
 - how many adults worked, rested or idled today, and how many are soldiers
 - its foods and main products with stock, price and price against base price (red at
   1.5 times base or more)
 - how many days its food lasts, hungry days this year, and the goods in short supply
 
-On the map, a ring around each town splits the month's money into issued (green),
-taxed (orange) and spent (blue); the busiest town gets a full ring. Gold arrows are
+On the map, a ring around each town splits the month's money into minted (violet),
+issued (green), taxed (orange) and spent (blue); the busiest town gets a full ring. Gold arrows are
 caravan routes, wider and brighter the more value they carry, labeled per day.
 
 ### Winning a match
 
-`scenario.ron` sets the goal:
+A scenario can set a goal. The default scenario has none (endless play), for example:
 
 ```ron
 goal: Some((product: "longsword_3", amount: 5.0, max_starving: 0.02, years: 40)),
@@ -196,7 +217,7 @@ goal: Some((product: "longsword_3", amount: 5.0, max_starving: 0.02, years: 40))
 The first town that has made `amount` of `product` in total wins, checked at each
 year end, if it pays tribute to nobody and spent at most `max_starving` of that
 year's person-days starving. After `years`, the free town closest to the goal wins
-(ties go to the higher ECI). The HUD's `goal` column shows the race, and
+(ties go to the higher ECI). With a goal, the HUD gains a `goal` column for the race, and
 `econoplex-sim` prints it at the end. Fine steel longswords need ore, charcoal,
 steel, blades, hilts and skilled smiths, so no town gets there alone. Left alone,
 Ironhold makes five in about 33 to 35 years on some seeds and fewer than five by

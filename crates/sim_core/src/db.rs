@@ -45,6 +45,8 @@ pub struct Db {
     pub is_food: Vec<bool>,
     /// Land products: the nature kind each one opens.
     pub opens: Vec<Option<u32>>,
+    /// Face value of coin products (0 for everything else).
+    pub coin: Vec<f32>,
 }
 
 impl Db {
@@ -142,7 +144,9 @@ impl Db {
             .map(|p| p.opens.as_ref().and_then(|n| content.nature_kind(n)))
             .collect();
 
+        let coin = content.products.iter().map(|p| p.coin).collect();
         Db {
+            coin,
             content,
             embedding,
             skill_vecs,

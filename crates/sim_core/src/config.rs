@@ -208,6 +208,14 @@ pub struct LifeParams {
     pub starting_food_bias: f32,
 }
 
+fn default_starting_coins() -> f32 {
+    1000.0
+}
+
+fn default_mint_below() -> f32 {
+    3.0
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MarketParams {
     pub price_adjust: f32,
@@ -236,6 +244,13 @@ pub struct MarketParams {
     pub food_spoilage: f32,
     /// Guild members may buy a tool on credit until their wealth reaches minus this.
     pub tool_credit: f32,
+    /// Coins each town starts with in its treasury.
+    #[serde(default = "default_starting_coins")]
+    pub starting_coins: f32,
+    /// A town on automatic minting builds a mint and strikes coin while its treasury
+    /// holds less than this per resident.
+    #[serde(default = "default_mint_below")]
+    pub mint_below_per_capita: f32,
     /// Share of a building type's slots in use above which the town wants another.
     pub build_threshold: f32,
     /// Price, as a share of base price, a town offers for a building type it lacks.

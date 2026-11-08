@@ -47,6 +47,7 @@ pub struct TownStats {
     pub spent: f32,
     pub external_in: f32,
     pub external_out: f32,
+    pub minted: f32,
     /// Mean wealth of residents.
     pub mean_wealth: f32,
     /// Mean total trust adults place in others (positive ties only).
@@ -266,6 +267,7 @@ pub fn record(
             s.spent = l.last_year_group(Group::Spent);
             s.external_in = l.last_year_group(Group::ExternalIn);
             s.external_out = l.last_year_group(Group::ExternalOut);
+            s.minted = l.last_year_group(Group::Minted);
         }
         s.buildings = town.buildings.len();
         s.soldiers = town.squad.len();

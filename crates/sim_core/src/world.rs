@@ -189,6 +189,18 @@ impl Town {
         (self.pos.0 + r * a.cos(), self.pos.1 + r * a.sin())
     }
 
+    /// Whether the town wants new coin: by policy, or on automatic while its
+    /// treasury holds less than `mint_below_per_capita` per resident.
+    pub fn mint_wanted(&self, mp: &crate::config::MarketParams) -> bool {
+        match self.policy.minting {
+            crate::policy::Minting::On => true,
+            crate::policy::Minting::Off => false,
+            crate::policy::Minting::Auto => {
+                self.treasury < mp.mint_below_per_capita * self.residents.len().max(1) as f32
+            }
+        }
+    }
+
     pub fn building(&self, def: u32) -> Option<(Entity, (f32, f32))> {
         self.buildings
             .iter()
@@ -359,7 +371,7 @@ pub fn setup(world: &mut World, db: Db, params: ModelParams, scenario: &Scenario
             stock,
             quality: vec![0.5; np],
             price: db.base_price.clone(),
-            treasury: 1000.0,
+            treasury: params.market.starting_coins,
             buildings,
             nature_sites,
             armory: Vec::new(),

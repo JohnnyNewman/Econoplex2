@@ -66,12 +66,16 @@ fn economy_produces_and_people_learn() {
 
 #[test]
 fn money_is_conserved() {
+    // Money only grows by what the mints strike.
     let mut s = sim(4);
     let money = |s: &Simulation| {
-        sim_core::world::total_money(
-            s.world.resource::<sim_core::AgentStore>(),
-            s.world.resource::<sim_core::Towns>(),
-        )
+        let towns = s.world.resource::<sim_core::Towns>();
+        let minted: f64 = towns
+            .0
+            .iter()
+            .map(|t| t.ledger.total[sim_core::ledger::Flow::Minted as usize])
+            .sum();
+        sim_core::world::total_money(s.world.resource::<sim_core::AgentStore>(), towns) - minted
     };
     let before = money(&s);
     for _ in 0..600 {
@@ -604,6 +608,7 @@ fn the_ledger_accounts_for_every_treasury_change() {
         let l = &town.ledger.last_year;
         let net = sum_group(l, Group::Taxed)
             + sum_group(l, Group::Spent)
+            + sum_group(l, Group::Minted)
             + sum_group(l, Group::ExternalIn)
             - sum_group(l, Group::Issued)
             - sum_group(l, Group::ExternalOut);
@@ -655,4 +660,38 @@ fn a_match_is_won_by_the_first_town_to_reach_the_goal() {
     run_years(&mut s, 1);
     let r = s.world.resource::<MatchState>().result.unwrap();
     assert_eq!(r.reason, WinReason::TimeUp);
+}
+
+#[test]
+fn a_town_short_of_money_builds_a_mint_and_strikes_coin() {
+    use sim_core::ledger::Flow;
+    let mut s = full(42);
+    // Ironhold has ore and a furnace; ordered to mint, it builds a mint and works it.
+    s.order("mint Ironhold on").unwrap();
+    s.order("build Ironhold mint").unwrap();
+    run_years(&mut s, 4);
+    let db = s.world.resource::<sim_core::Db>();
+    let mint = db.content.product("mint").unwrap();
+    let towns = s.world.resource::<sim_core::Towns>();
+    let ironhold = &towns.0[0];
+    assert!(ironhold.building_count(mint) >= 1, "no mint built");
+    assert!(
+        ironhold.ledger.total[Flow::Minted as usize] > 0.0,
+        "no coin struck"
+    );
+    // Coin is money, never a good in stock.
+    let coin = db.content.product("coin").unwrap() as usize;
+    assert!(towns.0.iter().all(|t| t.stock[coin] == 0.0));
+
+    // A town that turns minting off strikes nothing, even with a mint.
+    let mut s = full(42);
+    for t in ["Ironhold", "Greenvale", "Timberwick", "Brassmoor"] {
+        s.order(&format!("mint {t} off")).unwrap();
+    }
+    run_years(&mut s, 4);
+    let towns = s.world.resource::<sim_core::Towns>();
+    assert!(towns
+        .0
+        .iter()
+        .all(|t| t.ledger.total[Flow::Minted as usize] == 0.0));
 }

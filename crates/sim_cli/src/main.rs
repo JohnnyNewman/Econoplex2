@@ -140,7 +140,7 @@ fn parse_args() -> Args {
                                     orders: subsidy TOWN PRODUCT SHARE | school TOWN DOMAIN SEATS | school TOWN off\n\
                                     immigration TOWN open|closed|encouraged | charter TOWN DOMAIN on|off\n\
                                     army TOWN SHARE|auto | war TOWN auto|defend | raid TOWN TARGET\n\
-                                    build TOWN BUILDING [X Y]\n\
+                                    build TOWN BUILDING [X Y] | mint TOWN auto|on|off\n\
                      --save FILE    save the game at the end of the run
                      --load FILE    continue a saved game (days in --order count from the load)
                      --profile      print wall-clock time per system\n\
@@ -521,19 +521,19 @@ fn write_csv(path: &std::path::Path, m: &Metrics) -> std::io::Result<()> {
     let mut f = std::fs::File::create(path)?;
     writeln!(
         f,
-        "year,town,population,adults,food_per_capita,diversity,rca_products,eci,specialization,mean_top_skill,masters,guild_members,tools_in_use,swords_1,swords_2,swords_3,treasury,mean_wealth,buildings,tradition,faith,liberty,ideology_spread,starving,migrants_in,migrants_out,captives_taken,captives_lost,ruler,conquests,revolts,tribute_paid,trust,trade_ties,issued,taxed,spent,external_in,external_out"
+        "year,town,population,adults,food_per_capita,diversity,rca_products,eci,specialization,mean_top_skill,masters,guild_members,tools_in_use,swords_1,swords_2,swords_3,treasury,mean_wealth,buildings,tradition,faith,liberty,ideology_spread,starving,migrants_in,migrants_out,captives_taken,captives_lost,ruler,conquests,revolts,tribute_paid,trust,trade_ties,issued,taxed,spent,external_in,external_out,minted"
     )?;
     for y in &m.years {
         for t in &y.towns {
             writeln!(
                 f,
-                "{},{},{},{},{:.3},{},{},{:.3},{:.4},{:.4},{},{},{},{},{},{},{:.1},{:.2},{},{:.4},{:.4},{:.4},{:.4},{:.4},{},{},{},{},{},{},{},{:.1},{:.4},{:.4},{:.1},{:.1},{:.1},{:.1},{:.1}",
+                "{},{},{},{},{:.3},{},{},{:.3},{:.4},{:.4},{},{},{},{},{},{},{:.1},{:.2},{},{:.4},{:.4},{:.4},{:.4},{:.4},{},{},{},{},{},{},{},{:.1},{:.4},{:.4},{:.1},{:.1},{:.1},{:.1},{:.1},{:.1}",
                 y.year, t.name, t.population, t.adults, t.food_per_capita, t.diversity, t.rca_products, t.eci, t.specialization,
                 t.mean_top_skill, t.masters, t.guild_members, t.tools_in_use, t.swords[0], t.swords[1], t.swords[2], t.treasury, t.mean_wealth, t.buildings,
                 t.ideology[0], t.ideology[1], t.ideology[2], t.ideology_spread, t.starving,
                 t.moves.arrived, t.moves.left, t.war.captives_taken, t.war.captives_lost,
                 t.ruler.map_or("", |r| y.towns[r as usize].name.as_str()), t.war.conquests, t.war.revolts, t.war.tribute_paid, t.trust, t.trade_ties,
-                t.issued, t.taxed, t.spent, t.external_in, t.external_out
+                t.issued, t.taxed, t.spent, t.external_in, t.external_out, t.minted
             )?;
         }
     }
