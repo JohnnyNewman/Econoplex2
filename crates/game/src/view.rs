@@ -220,6 +220,7 @@ pub fn animate_agents(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn draw_world(
     mut gizmos: Gizmos,
     towns: Res<Towns>,

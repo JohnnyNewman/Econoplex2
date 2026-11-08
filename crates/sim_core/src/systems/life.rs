@@ -234,8 +234,8 @@ pub fn lifecycle(
         .clamp(0.3, 2.0);
         // Personality from temperament; ideology from the parents' culture.
         let mut mind_v = temperament;
-        for k in mind::IDEOLOGY_START..MIND_DIM {
-            mind_v[k] = (0.5 * (store.mind[mother][k] + store.mind[father][k])
+        for (k, v) in mind_v.iter_mut().enumerate().skip(mind::IDEOLOGY_START) {
+            *v = (0.5 * (store.mind[mother][k] + store.mind[father][k])
                 + 0.05 * rng.random_range(-1.0..1.0f32))
             .clamp(0.0, 1.0);
         }

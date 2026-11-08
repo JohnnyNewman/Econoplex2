@@ -207,14 +207,16 @@ mod tests {
     }
 
     fn content() -> Content {
-        let mut f = ContentFile::default();
-        f.skills = vec![
-            skill("mining", &[]),
-            skill("smelting", &["mining"]),
-            skill("smithing", &["smelting"]),
-            skill("farming", &[]),
-            skill("baking", &["farming"]),
-        ];
+        let f = ContentFile {
+            skills: vec![
+                skill("mining", &[]),
+                skill("smelting", &["mining"]),
+                skill("smithing", &["smelting"]),
+                skill("farming", &[]),
+                skill("baking", &["farming"]),
+            ],
+            ..Default::default()
+        };
         let mut c = Content::default();
         c.skills = f.skills;
         c.skill_index = c
