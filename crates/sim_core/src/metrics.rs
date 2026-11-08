@@ -7,7 +7,7 @@ use bevy_ecs::prelude::*;
 use sim_data::dims::{mind, MIND_DIM};
 use sim_data::Category;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct TownStats {
     pub name: String,
     pub population: usize,
@@ -48,7 +48,7 @@ pub struct TownStats {
     pub trade_ties: f32,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct YearStats {
     pub year: u64,
     pub population: usize,
@@ -58,7 +58,7 @@ pub struct YearStats {
     pub towns: Vec<TownStats>,
 }
 
-#[derive(Resource, Default)]
+#[derive(Resource, Default, serde::Serialize, serde::Deserialize)]
 pub struct Metrics {
     pub years: Vec<YearStats>,
     last_attempts: u64,

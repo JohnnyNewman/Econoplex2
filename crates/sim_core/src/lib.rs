@@ -12,6 +12,7 @@ pub mod metrics;
 pub mod models;
 pub mod policy;
 pub mod profile;
+pub mod save;
 pub mod store;
 pub mod systems;
 pub mod terrain;
@@ -160,6 +161,31 @@ impl Simulation {
     pub fn from_paths(paths: &AssetPaths) -> Result<Self, Box<dyn std::error::Error>> {
         let (db, params, scenario) = load(paths)?;
         Ok(Self::new(db, params, &scenario))
+    }
+
+    /// Load a saved game. Content comes from `paths`; parameters and scenario
+    /// come from the save.
+    pub fn load_save(save: &Path, paths: &AssetPaths) -> Result<Self, Box<dyn std::error::Error>> {
+        let file = save::read_file(save)?;
+        let content = sim_data::Content::load_dir(&paths.content)?;
+        Self::from_save(file, content)
+    }
+
+    pub fn from_save(
+        file: save::SaveFile,
+        content: sim_data::Content,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let mut world = World::new();
+        save::restore(&mut world, file, content)?;
+        Ok(Simulation {
+            world,
+            schedule: build_schedule(),
+        })
+    }
+
+    /// Write the full simulation state to `path` (RON).
+    pub fn save(&self, path: &Path) -> Result<(), String> {
+        save::save_to_file(&self.world, path)
     }
 
     pub fn step(&mut self) {

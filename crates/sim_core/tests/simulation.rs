@@ -546,3 +546,43 @@ fn the_river_makes_the_southern_road_longer() {
     assert!(towns.0.iter().all(|town| t.buildable(town.pos)));
     assert!(!t.buildable((-30.0, 0.0)));
 }
+
+#[test]
+fn a_saved_game_loads_and_continues_identically() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let paths = AssetPaths::from_root(&root);
+    let mut a = full(11);
+    run_years(&mut a, 2);
+    a.order("Ironhold build smithy").ok();
+
+    let text = sim_core::save::to_string(&a.world).unwrap();
+    let content = sim_data::Content::load_dir(&paths.content).unwrap();
+    let mut b = Simulation::from_save(sim_core::save::from_str(&text).unwrap(), content).unwrap();
+    assert_eq!(a.tick(), b.tick());
+    assert_eq!(a.state_hash(), b.state_hash());
+
+    // Both runs continue in lockstep, through raids, migration and a year end.
+    run_years(&mut a, 1);
+    run_years(&mut b, 1);
+    assert_eq!(a.state_hash(), b.state_hash());
+    let (ma, mb) = (
+        a.world.resource::<sim_core::metrics::Metrics>(),
+        b.world.resource::<sim_core::metrics::Metrics>(),
+    );
+    assert_eq!(ma.years.len(), mb.years.len());
+    assert_eq!(
+        format!("{:?}", ma.latest().unwrap()),
+        format!("{:?}", mb.latest().unwrap())
+    );
+}
+
+#[test]
+fn a_save_from_other_content_is_refused() {
+    let mut a = sim(3);
+    a.step();
+    let text = sim_core::save::to_string(&a.world).unwrap();
+    let mut content = sim_data::Content::default();
+    content.domains.push("nothing".into());
+    let err = Simulation::from_save(sim_core::save::from_str(&text).unwrap(), content);
+    assert!(err.is_err());
+}

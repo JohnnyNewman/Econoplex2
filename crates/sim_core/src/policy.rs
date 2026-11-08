@@ -24,7 +24,7 @@ use crate::db::Db;
 use crate::world::{SimClock, Towns};
 use bevy_ecs::prelude::*;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum Immigration {
     #[default]
     Open,
@@ -32,7 +32,7 @@ pub enum Immigration {
     Encouraged,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct School {
     pub domain: u32,
     /// Most pupils taught per day.
@@ -40,7 +40,7 @@ pub struct School {
 }
 
 /// Who decides when the squad marches.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum War {
     /// The squad raids whenever it sees a good chance (the AI towns).
     #[default]
@@ -50,7 +50,7 @@ pub enum War {
 }
 
 /// A building the town has ordered, and where to put it (`None`: the next free spot).
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Commission {
     pub building: u32,
     pub pos: Option<(f32, f32)>,
@@ -58,7 +58,7 @@ pub struct Commission {
 
 /// A town's policy. Every town starts with no subsidies, no school, open borders
 /// and no charters.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct Policy {
     /// Extra share of market value paid per unit made, by product.
     pub subsidy: Vec<f32>,
@@ -87,7 +87,7 @@ impl Policy {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Order {
     Subsidy {
         town: u16,
@@ -247,7 +247,7 @@ impl Order {
 }
 
 /// Orders waiting for the next tick, and every order applied so far.
-#[derive(Resource, Default)]
+#[derive(Resource, Default, serde::Serialize, serde::Deserialize)]
 pub struct OrderQueue {
     pub pending: Vec<Order>,
     pub log: Vec<(u64, Order)>,
