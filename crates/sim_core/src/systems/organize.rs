@@ -119,6 +119,7 @@ pub fn organize(
             let cost = town.price[prod.def as usize] * (0.5 + prod.quality);
             store.wealth[i] -= cost;
             town.treasury += cost;
+            town.ledger.add(crate::ledger::Flow::ToolSales, cost);
             let bonus = db.content.products[prod.def as usize]
                 .equip
                 .as_ref()

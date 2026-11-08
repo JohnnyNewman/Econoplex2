@@ -76,7 +76,11 @@ fn bequeath(store: &mut AgentStore, towns: &mut Towns, dead: &[usize]) {
                     store.wealth[c] += share;
                 }
             }
-            _ => towns.0[store.town[i] as usize].treasury += w,
+            _ => {
+                let town = &mut towns.0[store.town[i] as usize];
+                town.treasury += w;
+                town.ledger.add(crate::ledger::Flow::Estates, w);
+            }
         }
     }
 }

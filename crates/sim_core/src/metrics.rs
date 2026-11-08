@@ -40,6 +40,13 @@ pub struct TownStats {
     pub moves: crate::world::MoveCounters,
     /// The town this one pays tribute to at year end.
     pub ruler: Option<u16>,
+    /// Money the treasury paid out to people (issued), took by right (taxed) and
+    /// took in at its market (spent), and money in from and out to other towns.
+    pub issued: f32,
+    pub taxed: f32,
+    pub spent: f32,
+    pub external_in: f32,
+    pub external_out: f32,
     /// Mean wealth of residents.
     pub mean_wealth: f32,
     /// Mean total trust adults place in others (positive ties only).
@@ -251,6 +258,15 @@ pub fn record(
         s.trust = trust_sum / s.adults.max(1) as f32;
         s.trade_ties = same_trade as f32 / ties.max(1) as f32;
         s.treasury = town.treasury;
+        {
+            use crate::ledger::Group;
+            let l = &town.ledger;
+            s.issued = l.last_year_group(Group::Issued);
+            s.taxed = l.last_year_group(Group::Taxed);
+            s.spent = l.last_year_group(Group::Spent);
+            s.external_in = l.last_year_group(Group::ExternalIn);
+            s.external_out = l.last_year_group(Group::ExternalOut);
+        }
         s.buildings = town.buildings.len();
         s.soldiers = town.squad.len();
         s.war = town.war;

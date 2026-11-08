@@ -427,9 +427,11 @@ pub fn produce(
             let pay =
                 (params.work.wage_share * (value - input_cost)).clamp(0.0, town.treasury.max(0.0));
             town.treasury -= pay;
+            town.ledger.add(crate::ledger::Flow::Wages, pay);
             // A subsidized product earns its makers a top-up, while the treasury lasts.
             let subsidy = subsidy.clamp(0.0, town.treasury.max(0.0));
             town.treasury -= subsidy;
+            town.ledger.add(crate::ledger::Flow::Subsidies, subsidy);
             let pay = pay + subsidy;
             let wage = pay / n as f32;
             for &w in &workers {
@@ -587,6 +589,7 @@ pub fn learn(
         }
         let fee = pupils.len() as f32 * pp.school_fee;
         town.treasury -= fee;
+        town.ledger.add(crate::ledger::Flow::SchoolFees, fee);
         store.wealth[teacher] += fee;
     }
 }

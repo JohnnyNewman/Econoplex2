@@ -60,6 +60,8 @@ The first build compiles Bevy and takes a while.
 | Left click | Inspect an agent (skills, mind, physique vs. genetic potential, state, guild, family) |
 | P | Product space overlay: skill graph, brightness = selected agent's (or average) proficiency |
 | Esc | Deselect |
+| E | Economy panel and trade flows on the map (on at start) |
+| Tab | Next town in the economy panel |
 | F5 / F9 | Quicksave to `saves/quicksave.ron` / load it again |
 
 Agents are colored by their best skill domain; brightness shows how good they are.
@@ -155,6 +157,51 @@ treasuries:
 
 When a treasury runs dry, wages for that day are cut, so pay follows what people
 actually spend. All rates are in the `market` section of `models.ron`.
+
+Every one of these payments is booked in the town's ledger (`ledger.rs`), read with a
+credit-first eye: what the treasury pays out puts money into people's hands
+(**issued**: wages, subsidies, fees, soldiers' pay, public spending, grants), what it
+takes back by right is **taxed** (wealth tax, estates without heirs), and what people
+hand back by choice at the town market is **spent** (food, tools). Trade, tribute and
+plunder move money between towns. The ledger keeps a monthly average for the game and
+yearly totals for the CSV (`issued`, `taxed`, `spent`, `external_in`, `external_out`),
+and the `the_ledger_accounts_for_every_treasury_change` test checks that it explains
+every change in every treasury.
+
+### The economy on screen
+
+![Economy panel](docs/screenshots/economy-ironhold-year25.png)
+
+The economy panel (E; Tab cycles towns, starting with yours) shows for one town:
+
+- money per day over the last month: issued, taxed and spent as bars, with the
+  biggest items under each, plus trade in and out, the treasury and what people hold
+- how many adults worked, rested or idled today, and how many are soldiers
+- its foods and main products with stock, price and price against base price (red at
+  1.5 times base or more)
+- how many days its food lasts, hungry days this year, and the goods in short supply
+
+On the map, a ring around each town splits the month's money into issued (green),
+taxed (orange) and spent (blue); the busiest town gets a full ring. Gold arrows are
+caravan routes, wider and brighter the more value they carry, labeled per day.
+
+### Winning a match
+
+`scenario.ron` sets the goal:
+
+```ron
+goal: Some((product: "longsword_3", amount: 5.0, max_starving: 0.02, years: 40)),
+```
+
+The first town that has made `amount` of `product` in total wins, checked at each
+year end, if it pays tribute to nobody and spent at most `max_starving` of that
+year's person-days starving. After `years`, the free town closest to the goal wins
+(ties go to the higher ECI). The HUD's `goal` column shows the race, and
+`econoplex-sim` prints it at the end. Fine steel longswords need ore, charcoal,
+steel, blades, hilts and skilled smiths, so no town gets there alone. Left alone,
+Ironhold makes five in about 33 to 35 years on some seeds and fewer than five by
+year 40 on others. Greenvale has no ore and must trade or conquer to compete. Leave
+`goal` out for endless play.
 
 ### Food
 

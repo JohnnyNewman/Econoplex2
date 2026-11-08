@@ -8,6 +8,8 @@
 pub mod components;
 pub mod config;
 pub mod db;
+pub mod goal;
+pub mod ledger;
 pub mod metrics;
 pub mod models;
 pub mod policy;
@@ -72,7 +74,9 @@ pub fn build_schedule() -> Schedule {
                 profile::mark::<10>,
                 life::lifecycle,
                 profile::mark::<11>,
+                ledger::close_day,
                 metrics::record,
+                goal::evaluate,
                 profile::mark::<12>,
             )
                 .chain(),

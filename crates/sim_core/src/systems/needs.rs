@@ -44,6 +44,7 @@ pub fn sense(
                     let pay = town.price[f].min(store.wealth[i].max(0.0));
                     store.wealth[i] -= pay;
                     town.treasury += pay;
+                    town.ledger.add(crate::ledger::Flow::FoodSales, pay);
                     break;
                 }
             }

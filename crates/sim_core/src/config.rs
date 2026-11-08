@@ -393,6 +393,27 @@ pub struct Scenario {
     /// Hills and rivers; flat open ground when left out.
     #[serde(default)]
     pub terrain: Option<TerrainSpec>,
+    /// How the match is won; none for endless play.
+    #[serde(default)]
+    pub goal: Option<GoalSpec>,
+}
+
+/// How a match is won (see [`crate::goal`]).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GoalSpec {
+    /// Product id to make, e.g. "longsword_3".
+    pub product: String,
+    /// How many a town must have made in total.
+    pub amount: f32,
+    /// Most of a year's person-days a winning town may spend starving (0.02 = 2%).
+    #[serde(default = "default_max_starving")]
+    pub max_starving: f32,
+    /// The match ends after this many years; then the town closest to the goal wins.
+    pub years: u32,
+}
+
+fn default_max_starving() -> f32 {
+    0.02
 }
 
 /// The lay of the land (see [`crate::terrain`]).

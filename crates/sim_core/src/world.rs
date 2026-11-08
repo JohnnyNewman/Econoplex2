@@ -121,6 +121,9 @@ pub struct Town {
     pub moves: MoveCounters,
     /// Levers the town's government has set (see `policy.rs`).
     pub policy: crate::policy::Policy,
+    /// Payments into and out of the treasury, by kind (see `ledger.rs`).
+    #[serde(default)]
+    pub ledger: crate::ledger::Ledger,
 }
 
 /// A squad on the march: out to `target`, battle on arrival, then home.
@@ -388,6 +391,7 @@ pub fn setup(world: &mut World, db: Db, params: ModelParams, scenario: &Scenario
             ruler: None,
             moves: MoveCounters::default(),
             policy: crate::policy::Policy::new(db.content.products.len(), db.content.domains.len()),
+            ledger: crate::ledger::Ledger::new(scenario.towns.len()),
         });
 
         // Starting trades follow what the town can actually run, with food work weighted
@@ -478,6 +482,9 @@ pub fn setup(world: &mut World, db: Db, params: ModelParams, scenario: &Scenario
         towns.0[t as usize].residents.push(i as u32);
     }
 
+    let goal = crate::goal::MatchState::new(scenario.goal.as_ref(), &db, scenario.towns.len())
+        .unwrap_or_else(|e| panic!("{e}"));
+    world.insert_resource(goal);
     world.insert_resource(store);
     world.insert_resource(towns);
     world.insert_resource(db);

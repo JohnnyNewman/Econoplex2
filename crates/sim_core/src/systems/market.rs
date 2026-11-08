@@ -3,6 +3,7 @@
 
 use crate::components::{Item, NaturalResource, Product, TownId};
 use crate::db::Db;
+use crate::ledger::Flow;
 use crate::store::AgentStore;
 use crate::terrain::Terrain;
 use crate::world::{Params, SimClock, Towns};
@@ -99,7 +100,9 @@ pub fn settle(
         if excess > 0.0 {
             let tax = excess * rate;
             store.wealth[i] -= tax;
-            towns.0[store.town[i] as usize].treasury += tax;
+            let town = &mut towns.0[store.town[i] as usize];
+            town.treasury += tax;
+            town.ledger.add(Flow::WealthTax, tax);
         }
     }
 
@@ -112,6 +115,7 @@ pub fn settle(
         }
         let spend = excess * (mp.public_spending / dpy).min(1.0);
         town.treasury -= spend;
+        town.ledger.add(Flow::PublicSpending, spend);
         let share = spend / n as f32;
         for &i in &town.residents {
             store.wealth[i as usize] += share;
@@ -169,11 +173,14 @@ pub fn settle(
                     }
                     towns.0[a].stock[p] = (towns.0[a].stock[p] - amount).max(0.0);
                     towns.0[a].treasury += amount * pb;
+                    towns.0[a].ledger.add(Flow::TradeSales, amount * pb);
+                    towns.0[a].ledger.export(b, amount * pb);
                     let tb = &mut towns.0[b];
                     tb.quality[p] =
                         (tb.stock[p] * tb.quality[p] + amount * q) / (tb.stock[p] + amount);
                     tb.stock[p] += amount;
                     tb.treasury -= amount * pb;
+                    tb.ledger.add(Flow::TradePurchases, amount * pb);
                 }
             }
         }

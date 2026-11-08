@@ -6,9 +6,10 @@
 //!
 //! Controls: Space pause · 1-5 speed · WASD/arrows pan · mouse wheel zoom ·
 //! left click select agent · Esc deselect · P product space overlay ·
-//! F5 quicksave · F9 quickload · policy panel (bottom right) for the player's town
+//! E economy panel · Tab next town · F5 quicksave · F9 quickload · policy panel (bottom right) for the player's town
 
 mod autorun;
+mod economy_ui;
 mod hud;
 mod policy_ui;
 mod saving;
@@ -67,6 +68,22 @@ fn main() {
     app.add_schedule(sim_core::build_schedule());
 
     let speed = args.speed.unwrap_or(1);
+    let econ_town = args
+        .town
+        .as_ref()
+        .and_then(|name| {
+            app.world()
+                .resource::<sim_core::Towns>()
+                .0
+                .iter()
+                .position(|t| &t.name == name)
+        })
+        .or(app
+            .world()
+            .resource::<sim_core::policy::PlayerTown>()
+            .0
+            .map(|t| t as usize))
+        .unwrap_or(0);
     app.insert_resource(Time::<Fixed>::from_hz(SPEEDS[speed]))
         .insert_resource(SimControl {
             paused: false,
@@ -79,6 +96,10 @@ fn main() {
         .insert_resource(policy_ui::PolicyCursor::default())
         .insert_resource(policy_ui::Placing::default())
         .insert_resource(saving::Toast::default())
+        .insert_resource(economy_ui::EconomyView {
+            visible: true,
+            town: econ_town,
+        })
         .insert_resource(ClearColor(Color::srgb(0.08, 0.09, 0.08)))
         .add_systems(
             Startup,
@@ -89,10 +110,20 @@ fn main() {
                 view::spawn_skill_labels,
                 hud::spawn_hud,
                 policy_ui::spawn_policy_panel,
+                economy_ui::spawn_economy_panel.after(hud::spawn_hud),
             ),
         )
         .add_systems(PostStartup, autorun::load_at_start)
         .add_systems(FixedUpdate, run_sim_tick)
+        .add_systems(
+            Update,
+            (
+                economy_ui::economy_keys,
+                economy_ui::update_economy_panel,
+                economy_ui::draw_flows,
+                economy_ui::draw_money_rings,
+            ),
+        )
         .add_systems(
             Update,
             (
