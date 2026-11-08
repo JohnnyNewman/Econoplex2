@@ -6,10 +6,12 @@
 //!
 //! Controls: Space pause · 1-5 speed · WASD/arrows pan · mouse wheel zoom ·
 //! left click select agent · Esc deselect · P product space overlay ·
-//! policy panel (bottom right) for the player's town
+//! F5 quicksave · F9 quickload · policy panel (bottom right) for the player's town
 
+mod autorun;
 mod hud;
 mod policy_ui;
+mod saving;
 mod terrain_view;
 mod view;
 
@@ -29,6 +31,7 @@ pub struct SimControl {
 pub struct Selection(pub Option<u32>);
 
 fn main() {
+    let args = autorun::parse();
     let paths = AssetPaths::discover();
     let (db, params, scenario) = match sim_core::load(&paths) {
         Ok(x) => x,
@@ -63,15 +66,19 @@ fn main() {
     }
     app.add_schedule(sim_core::build_schedule());
 
-    app.insert_resource(Time::<Fixed>::from_hz(SPEEDS[1]))
+    let speed = args.speed.unwrap_or(1);
+    app.insert_resource(Time::<Fixed>::from_hz(SPEEDS[speed]))
         .insert_resource(SimControl {
             paused: false,
-            speed: 1,
+            speed,
         })
+        .insert_resource(args)
+        .insert_resource(autorun::ShotState::default())
         .insert_resource(Selection::default())
         .insert_resource(view::Overlay::default())
         .insert_resource(policy_ui::PolicyCursor::default())
         .insert_resource(policy_ui::Placing::default())
+        .insert_resource(saving::Toast::default())
         .insert_resource(ClearColor(Color::srgb(0.08, 0.09, 0.08)))
         .add_systems(
             Startup,
@@ -84,11 +91,14 @@ fn main() {
                 policy_ui::spawn_policy_panel,
             ),
         )
+        .add_systems(PostStartup, autorun::load_at_start)
         .add_systems(FixedUpdate, run_sim_tick)
         .add_systems(
             Update,
             (
                 controls,
+                saving::quicksave_keys,
+                autorun::autoshot,
                 view::camera_controls,
                 view::attach_agent_sprites,
                 view::attach_building_sprites,

@@ -161,6 +161,23 @@ pub struct SaveFile {
     pub metrics: Metrics,
 }
 
+impl SaveFile {
+    /// Whether this save can be restored with `content`: same content, valid parameters.
+    pub fn check(&self, content: &sim_data::Content) -> Result<(), String> {
+        if content_hash(content) != self.content_hash {
+            return Err(
+                "the game content (skills, products or recipes) changed since this save was made"
+                    .into(),
+            );
+        }
+        self.params.validate().map_err(|e| e.to_string())
+    }
+
+    pub fn day(&self) -> u64 {
+        self.clock.tick
+    }
+}
+
 #[derive(Serialize)]
 struct SaveRef<'a> {
     version: u32,
@@ -259,13 +276,7 @@ pub fn restore(
     save: SaveFile,
     content: sim_data::Content,
 ) -> Result<(), String> {
-    let hash = content_hash(&content);
-    if hash != save.content_hash {
-        return Err(
-            "the game content (skills, products or recipes) changed since this save was made"
-                .into(),
-        );
-    }
+    save.check(&content)?;
     let SaveFile {
         params,
         scenario,
@@ -280,7 +291,6 @@ pub fn restore(
         metrics,
         ..
     } = save;
-    params.validate().map_err(|e| e.to_string())?;
     let db = Db::build(
         content,
         params.embedding.ancestor_decay,
