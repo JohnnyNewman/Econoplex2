@@ -11,7 +11,7 @@
 use bevy_ecs::prelude::*;
 use sim_data::dims::*;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Activity {
     Child,
     Idle,
@@ -23,14 +23,14 @@ pub enum Activity {
     Captive,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Role {
     Apprentice,
     Member,
     Master,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct GuildLink {
     pub org: Entity,
     pub membership: Entity,
@@ -38,7 +38,7 @@ pub struct GuildLink {
     pub role: Role,
 }
 
-#[derive(Resource, Default)]
+#[derive(Resource, Default, serde::Serialize, serde::Deserialize)]
 pub struct AgentStore {
     // --- latent / named vector blocks
     pub cap: Vec<CapVec>,

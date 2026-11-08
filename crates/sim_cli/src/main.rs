@@ -3,13 +3,16 @@
 //! ```text
 //! econoplex-sim [--years N] [--seed S] [--scale F] [--assets DIR] [--csv FILE]
 //!               [--set path=value]... [--sweep path=v1,v2,...]... [--seeds N]
-//!               [--order DAY:ORDER]...
+//!               [--order DAY:ORDER]... [--save FILE] [--load FILE]
 //!               [--embedding] [--hash] [--profile] [--quiet]
 //! ```
 //!
 //! With `--sweep` or `--seeds` above 1 the runner switches to batch mode: every
 //! combination of swept values is run on every seed, in parallel, and each run
 //! is reduced to one summary row (see `sweep.rs`).
+//!
+//! `--load` continues a saved game for `--years` more years; its parameters and
+//! scenario come from the save, so `--seed`, `--scale` and `--set` do not apply.
 
 mod sweep;
 
@@ -35,6 +38,8 @@ struct Args {
     seeds: u64,
     /// Player orders, by the day they are given.
     orders: Vec<(u64, String)>,
+    save: Option<PathBuf>,
+    load: Option<PathBuf>,
 }
 
 fn parse_args() -> Args {
@@ -51,6 +56,8 @@ fn parse_args() -> Args {
         sets: Vec::new(),
         sweeps: Vec::new(),
         seeds: 1,
+        save: None,
+        load: None,
         orders: Vec::new(),
     };
     let mut it = std::env::args().skip(1);
@@ -110,6 +117,8 @@ fn parse_args() -> Args {
                     .unwrap_or_else(|_| die("--order expects DAY:ORDER with a day number"));
                 a.orders.push((day, text.trim().to_string()));
             }
+            "--save" => a.save = Some(PathBuf::from(val())),
+            "--load" => a.load = Some(PathBuf::from(val())),
             "--embedding" => a.embedding = true,
             "--hash" => a.hash = true,
             "--quiet" => a.quiet = true,
@@ -132,6 +141,8 @@ fn parse_args() -> Args {
                                     immigration TOWN open|closed|encouraged | charter TOWN DOMAIN on|off\n\
                                     army TOWN SHARE|auto | war TOWN auto|defend | raid TOWN TARGET\n\
                                     build TOWN BUILDING [X Y]\n\
+                     --save FILE    save the game at the end of the run
+                     --load FILE    continue a saved game (days in --order count from the load)
                      --profile      print wall-clock time per system\n\
                      --quiet        only print the summary"
                 );
@@ -190,8 +201,25 @@ fn main() {
         return;
     }
 
-    let dpy = params.life.days_per_year as u64;
-    let mut sim = Simulation::new(db, params, &scenario);
+    let mut sim = match &args.load {
+        Some(path) => {
+            let sim = Simulation::load_save(path, &paths).unwrap_or_else(|e| die(&e.to_string()));
+            println!(
+                "Loaded {} at day {} (year {})",
+                path.display(),
+                sim.tick(),
+                sim.world.resource::<sim_core::SimClock>().year()
+            );
+            sim
+        }
+        None => Simulation::new(db, params, &scenario),
+    };
+    let scenario = &sim.world.resource::<sim_core::world::ScenarioSpec>().0;
+    let dpy = sim
+        .world
+        .resource::<sim_core::world::Params>()
+        .life
+        .days_per_year as u64;
     println!(
         "Econoplex: {} towns, {} agents, seed {}, {} days per year",
         scenario.towns.len(),
@@ -201,7 +229,7 @@ fn main() {
     );
 
     let start = Instant::now();
-    let mut shown = 0;
+    let mut shown = sim.world.resource::<Metrics>().years.len();
     for tick in 0..args.years * dpy {
         for (_, text) in args.orders.iter().filter(|o| o.0 == tick) {
             sim.order(text).unwrap_or_else(|e| die(&e));
@@ -229,6 +257,10 @@ fn main() {
     }
     if args.hash {
         println!("state hash: {:016x}", sim.state_hash());
+    }
+    if let Some(path) = &args.save {
+        sim.save(path).unwrap_or_else(|e| die(&e));
+        println!("saved {} at day {}", path.display(), sim.tick());
     }
     if let Some(path) = args.csv {
         write_csv(&path, sim.world.resource::<Metrics>())

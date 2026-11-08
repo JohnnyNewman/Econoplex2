@@ -33,6 +33,10 @@ cargo run --release -p sim_cli -- --years 30 --seeds 8 \
 cargo run --release -p sim_cli -- --years 25 --order "0:immigration Greenvale encouraged" \
     --order "0:school Greenvale woodworking 40"
 
+# Save after 10 years, then continue the same game for 5 more
+cargo run --release -p sim_cli -- --years 10 --save game.ron
+cargo run --release -p sim_cli -- --load game.ron --years 5
+
 # The product space derived from the skill graph
 cargo run --release -p sim_cli -- --embedding
 
@@ -369,6 +373,17 @@ the mean and spread per setting; `--csv` writes every run.
 The tick schedule runs single-threaded in a fixed order, every system draws from its
 own RNG stream derived from the seed and tick, and nothing iterates hash maps. Same
 seed, same state hash (`econoplex-sim --hash`, and the `same_seed_same_state` test).
+
+### Saving
+
+`sim_core::save` writes the whole changing state as RON: clock, agent store, towns,
+orders, logs, metrics and every simulation entity, plus the model parameters and
+scenario the game started from. Content is not stored; it is reloaded from the
+assets and checked against a fingerprint, and everything derived (content database,
+models, terrain) is rebuilt. Entities get new ids on load and every reference is
+remapped. A loaded game has the same state hash and continues exactly as the saved
+one would have (the `a_saved_game_loads_and_continues_identically` test). A save of
+about 12,000 agents is roughly 20 MB and loads in under a second.
 
 ## What a 30-year run shows
 

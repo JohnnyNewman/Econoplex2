@@ -30,8 +30,24 @@ impl Params {
     }
 }
 
+/// The scenario the world was set up from (kept for saving).
+#[derive(Resource, Debug, Clone)]
+pub struct ScenarioSpec(pub Scenario);
+
+/// The town the scenario hands to the player, if any.
+pub fn player_town(scenario: &Scenario) -> crate::policy::PlayerTown {
+    crate::policy::PlayerTown(scenario.player.as_ref().map(|name| {
+        scenario
+            .towns
+            .iter()
+            .position(|t| &t.name == name)
+            .unwrap_or_else(|| panic!("scenario: player town `{name}` is not a town"))
+            as u16
+    }))
+}
+
 /// Simulation calendar. One tick = one in-game day.
-#[derive(Resource, Debug, Clone, Copy)]
+#[derive(Resource, Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct SimClock {
     pub tick: u64,
     pub days_per_year: u32,
@@ -48,7 +64,7 @@ impl SimClock {
 
 /// World seed. Each system derives its own stream per tick, so results do not
 /// depend on system scheduling.
-#[derive(Resource, Debug, Clone, Copy)]
+#[derive(Resource, Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct SimSeed(pub u64);
 
 impl SimSeed {
@@ -60,6 +76,7 @@ impl SimSeed {
     }
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct Town {
     pub name: String,
     pub pos: (f32, f32),
@@ -107,7 +124,7 @@ pub struct Town {
 }
 
 /// A squad on the march: out to `target`, battle on arrival, then home.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Raid {
     pub target: u16,
     pub soldiers: Vec<u32>,
@@ -122,7 +139,7 @@ pub struct Raid {
 }
 
 /// Military events since the last yearly report.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, serde::Serialize, serde::Deserialize)]
 pub struct WarCounters {
     pub raids: u32,
     pub raids_won: u32,
@@ -143,7 +160,7 @@ pub struct WarCounters {
 }
 
 /// Migration since the last yearly report.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, serde::Serialize, serde::Deserialize)]
 pub struct MoveCounters {
     pub arrived: u32,
     pub left: u32,
@@ -191,14 +208,14 @@ pub fn total_money(store: &AgentStore, towns: &Towns) -> f64 {
 }
 
 /// Choices made in the decide step, consumed by assign.
-#[derive(Resource, Default)]
+#[derive(Resource, Default, serde::Serialize, serde::Deserialize)]
 pub struct Decisions {
     /// (agent, recipe)
     pub jobs: Vec<(u32, u32)>,
 }
 
 /// One finished work step, consumed by learn and socialize.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct WorkEvent {
     pub recipe: u32,
     pub town: u16,
@@ -208,7 +225,7 @@ pub struct WorkEvent {
     pub quality: f32,
 }
 
-#[derive(Resource, Default)]
+#[derive(Resource, Default, serde::Serialize, serde::Deserialize)]
 pub struct WorkLog {
     pub events: Vec<WorkEvent>,
     pub next_serial: u64,
@@ -469,16 +486,8 @@ pub fn setup(world: &mut World, db: Db, params: ModelParams, scenario: &Scenario
     world.insert_resource(crate::terrain::Terrain::build(scenario));
     world.insert_resource(crate::profile::Profile::default());
     world.insert_resource(crate::policy::OrderQueue::default());
-    world.insert_resource(crate::policy::PlayerTown(scenario.player.as_ref().map(
-        |name| {
-            scenario
-                .towns
-                .iter()
-                .position(|t| &t.name == name)
-                .unwrap_or_else(|| panic!("scenario: player town `{name}` is not a town"))
-                as u16
-        },
-    )));
+    world.insert_resource(player_town(scenario));
+    world.insert_resource(ScenarioSpec(scenario.clone()));
     world.insert_resource(SimClock {
         tick: 0,
         days_per_year: dpy,

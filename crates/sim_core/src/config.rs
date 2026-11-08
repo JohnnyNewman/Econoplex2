@@ -3,7 +3,7 @@
 //! Every formula in the simulation reads its constants from here. Formulas with
 //! alternative shapes are enums: pick a variant in the RON file to swap the model.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sim_data::dims::{MIND_DIM, STATE_DIM};
 use std::path::Path;
 
@@ -12,7 +12,7 @@ pub const FEATURES: usize = 6;
 pub const FEATURE_NAMES: [&str; FEATURES] =
     ["value", "skill", "effort", "novelty", "social", "need"];
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelParams {
     pub embedding: EmbeddingParams,
     pub team_pooling: TeamPoolingParams,
@@ -59,7 +59,7 @@ impl ModelParams {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmbeddingParams {
     /// Weight of an ancestor skill per level of depth in the closure vector.
     pub ancestor_decay: f32,
@@ -67,7 +67,7 @@ pub struct EmbeddingParams {
     pub method: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TeamPoolingParams {
     /// Best member per capability dimension, minus a cost per extra member.
     ElementwiseMax { coordination_cost: f32 },
@@ -75,20 +75,20 @@ pub enum TeamPoolingParams {
     LeaderPlusAssistants { assist: f32, coordination_cost: f32 },
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SuccessParams {
     /// p = sigmoid(steepness * (effective - difficulty))
     Sigmoid { steepness: f32 },
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub enum QualityCombine {
     /// Weakest link: final quality is the worst of step and inputs.
     Min,
     GeometricMean,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum QualityParams {
     /// Step quality = sigmoid(steepness * (effective - difficulty) + offset), combined with input quality.
     Margin {
@@ -98,7 +98,7 @@ pub enum QualityParams {
     },
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum LearningParams {
     /// a += rate * aptitude * max(0, 1 - a·s / mastery) * s; failure teaches `failure_factor` as much.
     Diminishing {
@@ -108,19 +108,19 @@ pub enum LearningParams {
     },
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DiffusionParams {
     /// Apprentice moves toward the best team member along the skill direction only.
     AlongSkill { rate: f32, teacher_gain: f32 },
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CapacityParams {
     /// Daily multiplicative forgetting, then renormalize to at most `budget`.
     NormBudget { budget: f32, forgetting: f32 },
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DecisionParams {
     /// Softmax temperature: higher = less rational choices.
     pub temperature: f32,
@@ -137,7 +137,7 @@ pub struct DecisionParams {
     pub candidates: usize,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SocialParams {
     /// Deffuant-style bounded confidence on the ideological subspace of the mind vector.
     BoundedConfidence {
@@ -151,7 +151,7 @@ pub enum SocialParams {
     },
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NeedsParams {
     pub hunger_per_day: f32,
     pub eat_threshold: f32,
@@ -165,7 +165,7 @@ pub struct NeedsParams {
     pub fatigue_penalty: f32,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PhysiqueParams {
     /// How strongly physique counts in effective proficiency, relative to the recipe's demand.
     pub weight: f32,
@@ -178,14 +178,14 @@ pub struct PhysiqueParams {
     pub decline_per_year: f32,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeneticsParams {
     /// 1 = child takes each gene from one parent; 0 = child gets the parents' mean.
     pub heritability: f32,
     pub mutation: f32,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LifeParams {
     /// Simulation ticks per in-game year (1 tick = 1 day).
     pub days_per_year: u32,
@@ -208,7 +208,7 @@ pub struct LifeParams {
     pub starting_food_bias: f32,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MarketParams {
     pub price_adjust: f32,
     pub target_per_capita: f32,
@@ -246,14 +246,14 @@ pub struct MarketParams {
     pub land_threshold: f32,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrganizeParams {
     pub interval: u32,
     pub guild_threshold: f32,
     pub master_threshold: f32,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MilitaryParams {
     /// Days between musters (recruiting, releasing, arming soldiers).
     pub muster_interval: u32,
@@ -308,7 +308,7 @@ pub struct MilitaryParams {
 }
 
 /// Player levers (`policy.rs`).
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PolicyParams {
     /// Highest subsidy, as a share of the product's market value.
     pub max_subsidy: f32,
@@ -331,7 +331,7 @@ pub struct PolicyParams {
 }
 
 /// Personal ties between agents (`trust.rs`).
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrustParams {
     /// Trust gained by each pair of coworkers when a job succeeds.
     pub cowork_gain: f32,
@@ -351,7 +351,7 @@ pub struct TrustParams {
     pub migration_weight: f32,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MigrationParams {
     /// Days between migration rounds.
     pub interval: u32,
@@ -375,7 +375,7 @@ pub struct MigrationParams {
     pub distance_cost: f32,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkParams {
     /// Team work rate per day = members ^ exponent (below 1 = diminishing returns).
     pub work_exponent: f32,
@@ -383,7 +383,7 @@ pub struct WorkParams {
     pub wage_share: f32,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Scenario {
     pub seed: u64,
     /// The town the player governs; none for a pure simulation.
@@ -396,7 +396,7 @@ pub struct Scenario {
 }
 
 /// The lay of the land (see [`crate::terrain`]).
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TerrainSpec {
     /// Size of one grid cell.
@@ -410,7 +410,7 @@ pub struct TerrainSpec {
     pub rivers: Vec<RiverSpec>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RiverSpec {
     /// The river's course, as a polyline.
     pub points: Vec<(f32, f32)>,
@@ -433,7 +433,7 @@ fn default_ford_cost() -> f32 {
     3.0
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TownSpec {
     pub name: String,
     pub position: (f32, f32),
