@@ -67,7 +67,46 @@ impl SimClock {
 #[derive(Resource, Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct SimSeed(pub u64);
 
+/// A tiny counter-based generator (SplitMix64) for per-agent streams in parallel
+/// loops: seeding costs a few multiplications, unlike a ChaCha key setup, and the
+/// numbers depend only on seed, tick, stream and agent, never on thread timing.
+#[derive(Debug, Clone)]
+pub struct AgentRng(u64);
+
+impl rand::RngCore for AgentRng {
+    fn next_u32(&mut self) -> u32 {
+        (self.next_u64() >> 32) as u32
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = self.0;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^ (z >> 31)
+    }
+
+    fn fill_bytes(&mut self, dst: &mut [u8]) {
+        for chunk in dst.chunks_mut(8) {
+            let v = self.next_u64().to_le_bytes();
+            chunk.copy_from_slice(&v[..chunk.len()]);
+        }
+    }
+}
+
 impl SimSeed {
+    /// Agent `i`'s own stream of `stream` for this tick.
+    pub fn agent_rng(&self, tick: u64, stream: u64, i: usize) -> AgentRng {
+        let mut s = self.0 ^ 0xA076_1D64_78BD_642F;
+        s = s.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(tick);
+        s = s.wrapping_mul(0xBF58_476D_1CE4_E5B9).wrapping_add(stream);
+        s = s.wrapping_mul(0x94D0_49BB_1331_11EB).wrapping_add(i as u64);
+        let mut r = AgentRng(s);
+        // Mix the seed once so neighbouring agents' streams decorrelate.
+        let _ = rand::RngCore::next_u64(&mut r);
+        r
+    }
+
     pub fn rng(&self, tick: u64, stream: u64) -> ChaCha8Rng {
         let mut s = self.0 ^ 0x5DEE_CE66_D1CE_4E5B;
         s = s.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(tick);

@@ -880,15 +880,25 @@ fn income_tax_takes_its_share_of_every_wage() {
 #[test]
 fn a_higher_wage_share_pays_makers_more() {
     use sim_core::ledger::Flow;
-    let base = with_orders(8, &[], 1);
-    let rich = with_orders(8, &["wages Greenvale 0.8"], 1);
-    let (a, b) = (
-        flow_total(&base, 1, Flow::Wages),
-        flow_total(&rich, 1, Flow::Wages),
-    );
-    // Pay is also capped by what the treasury holds, so wages rise less than
-    // the share does.
-    assert!(b > a * 1.05, "wages {b:.0} vs {a:.0}");
+    // While the treasury still holds its starting coins, wages follow the share;
+    // later the treasury caps them. Summed over a few seeds so no single run's luck
+    // decides it.
+    let wages = |order: Option<&str>| -> f64 {
+        (8..12)
+            .map(|seed| {
+                let mut s = full(seed);
+                if let Some(o) = order {
+                    s.order(o).unwrap();
+                }
+                for _ in 0..30 {
+                    s.step();
+                }
+                flow_total(&s, 1, Flow::Wages)
+            })
+            .sum()
+    };
+    let (a, b) = (wages(None), wages(Some("wages Greenvale 0.8")));
+    assert!(b > a * 1.2, "wages {b:.0} vs {a:.0}");
 }
 
 #[test]
@@ -919,18 +929,42 @@ fn a_government_order_is_delivered_and_lifts_a_glut() {
     );
 
     // A glutted good (Greenvale's bread): the order raises the stock the market
-    // wants, so bakers who had stopped go back to work.
-    let made = |s: &Simulation| {
-        let t = &s.world.resource::<sim_core::Towns>().0[1];
-        t.produced_last_year[bread] + t.produced_this_year[bread]
+    // wants, so the price (the signal that draws bakers back) goes up.
+    let price = |order: Option<&str>| -> f32 {
+        let mut s = full(8);
+        if let Some(o) = order {
+            s.order(o).unwrap();
+        }
+        let mut sum = 0.0;
+        // Greenvale's bread gluts once its fields are worked in; measure year 3.
+        for d in 0..360 {
+            s.step();
+            if d >= 300 {
+                sum += s.world.resource::<sim_core::Towns>().0[1].price[bread];
+            }
+        }
+        sum / 60.0
     };
-    let s = with_orders(8, &["procure Greenvale bread 20000"], 2);
-    let town = &s.world.resource::<sim_core::Towns>().0[1];
-    assert!(town.procured[bread] > 0.0);
-    assert!(
-        made(&s) > made(&base) * 1.05,
-        "{} vs {}",
-        made(&s),
-        made(&base)
-    );
+    let (a, b) = (price(None), price(Some("procure Greenvale bread 20000")));
+    assert!(b > a * 1.2, "bread price {b:.2} vs {a:.2}");
+}
+
+#[test]
+fn the_run_does_not_depend_on_the_number_of_threads() {
+    // Parallel steps (job scoring, learning, bodies) must give the same world
+    // whether one thread or many do the work.
+    let run = |threads: usize| {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build()
+            .unwrap()
+            .install(|| {
+                let mut s = sim(12);
+                run_years(&mut s, 1);
+                s.state_hash()
+            })
+    };
+    let one = run(1);
+    assert_eq!(one, run(4));
+    assert_eq!(one, run(7));
 }

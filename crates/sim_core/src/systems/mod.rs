@@ -36,10 +36,4 @@ pub mod streams {
     pub const ORGANIZE: u64 = 7;
     pub const MILITARY: u64 = 8;
     pub const MIGRATE: u64 = 9;
-
-    /// A stream of `system`'s own for agent `i`, so per-agent work can run in
-    /// parallel and still draw the same numbers every run.
-    pub fn agent(system: u64, i: usize) -> u64 {
-        (system << 40) | (1 << 39) | i as u64
-    }
 }
