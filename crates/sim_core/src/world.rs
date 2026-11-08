@@ -422,8 +422,8 @@ pub fn setup(world: &mut World, db: Db, params: ModelParams, scenario: &Scenario
                     r += 1;
                 }
                 let amount = rng.random_range(0.2..0.6f32) * (age_years / 40.0).min(1.0);
-                for k in 0..CAP_DIM {
-                    cap[k] += amount * db.recipes[r].skill[k];
+                for (c, s) in cap.iter_mut().zip(db.recipes[r].skill.iter()) {
+                    *c += amount * s;
                 }
             }
             let age_factor = crate::systems::body::age_curve(age_years, &params.physique);
