@@ -294,6 +294,7 @@ pub fn decide(
     let mut options: Vec<(Option<u32>, f32)> = Vec::with_capacity(d.candidates + 2);
     let mut pool: Vec<u32> = Vec::new();
     let store = &mut *store;
+    let mut cap: Vec<f32> = Vec::with_capacity(db.cap_dim);
     for i in 0..store.len() {
         if !store.alive[i] || store.activity[i] != Activity::Idle {
             continue;
@@ -301,7 +302,7 @@ pub fn decide(
         let t = store.town[i] as usize;
         let st = store.state[i];
         let w = preference_weights(&params, &store.mind[i], &st);
-        let cap = store.effective_cap(i);
+        store.effective_cap_into(i, &mut cap);
         let sf = state_factor(&st, &params.needs);
 
         // Candidate list: a random sample of feasible jobs plus the agent's habitual job.

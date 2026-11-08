@@ -128,8 +128,8 @@ pub fn organize(
                 * (0.5 + prod.quality);
             town.stock[prod.def as usize] = (town.stock[prod.def as usize] - 1.0).max(0.0);
             store.equipped[i] = Some(e);
-            let dir = db.domain_dirs[g.domain as usize];
-            store.equip_vec[i] = std::array::from_fn(|k| dir[k] * bonus);
+            let dir = &db.domain_dirs[g.domain as usize];
+            store.equip_vec[i] = dir.iter().map(|d| d * bonus).collect();
             commands
                 .entity(e)
                 .remove::<Stored>()

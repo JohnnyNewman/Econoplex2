@@ -65,6 +65,11 @@ pub struct EmbeddingParams {
     pub ancestor_decay: f32,
     /// `Auto`, `Closure` or `Nmf`.
     pub method: String,
+    /// Capability dimensions. Leave out to size them from the content: one per
+    /// skill, rounded up to a multiple of 8. Fewer dimensions than skills compress
+    /// the product space (NMF).
+    #[serde(default)]
+    pub dims: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

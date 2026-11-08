@@ -34,6 +34,8 @@ pub struct RecipeMeta {
 pub struct Db {
     pub content: Content,
     pub embedding: Embedding,
+    /// Length of every capability vector in this game.
+    pub cap_dim: usize,
     pub skill_vecs: Vec<CapVec>,
     pub recipes: Vec<RecipeMeta>,
     /// Unit direction per domain: normalized sum of the domain's skill vectors.
@@ -50,31 +52,37 @@ pub struct Db {
 }
 
 impl Db {
-    pub fn build(content: Content, decay: f32, method: &str) -> Db {
+    /// Build lookup tables and the skill embedding. `dims` is the capability
+    /// dimension; `None` sizes it from the content ([`cap_dim_for`]).
+    pub fn build(content: Content, decay: f32, method: &str, dims: Option<usize>) -> Db {
         let method = match method {
             "Closure" => EmbedMethod::Closure,
             "Nmf" => EmbedMethod::Nmf,
             _ => EmbedMethod::Auto,
         };
-        let embedding = embed::embed(&content, CAP_DIM, decay, method);
+        let cap_dim = dims
+            .unwrap_or_else(|| cap_dim_for(content.skills.len()))
+            .max(1);
+        let embedding = embed::embed(&content, cap_dim, decay, method);
         let skill_vecs: Vec<CapVec> = embedding
             .vectors
             .iter()
             .map(|v| {
-                let mut a = [0.0; CAP_DIM];
-                a.copy_from_slice(&v[..CAP_DIM]);
+                let mut a = vec![0.0; cap_dim];
+                let n = v.len().min(cap_dim);
+                a[..n].copy_from_slice(&v[..n]);
                 a
             })
             .collect();
 
         let nd = content.domains.len();
-        let mut domain_dirs = vec![[0.0; CAP_DIM]; nd];
+        let mut domain_dirs = vec![vec![0.0; cap_dim]; nd];
         let mut domain_skills = vec![Vec::new(); nd];
         for (i, s) in content.skills.iter().enumerate() {
             let d = content.domain(&s.domain).unwrap() as usize;
             domain_skills[d].push(i as u32);
-            for k in 0..CAP_DIM {
-                domain_dirs[d][k] += skill_vecs[i][k];
+            for (x, s) in domain_dirs[d].iter_mut().zip(&skill_vecs[i]) {
+                *x += s;
             }
         }
         for d in &mut domain_dirs {
@@ -104,7 +112,7 @@ impl Db {
                 RecipeMeta {
                     name: r.name.clone(),
                     skill_idx: si,
-                    skill: skill_vecs[si as usize],
+                    skill: skill_vecs[si as usize].clone(),
                     difficulty: r.difficulty,
                     domain: content.domain(&content.skills[si as usize].domain).unwrap(),
                     phys,
@@ -146,6 +154,7 @@ impl Db {
 
         let coin = content.products.iter().map(|p| p.coin).collect();
         Db {
+            cap_dim,
             coin,
             content,
             embedding,

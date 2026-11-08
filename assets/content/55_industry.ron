@@ -6,6 +6,7 @@
         (id: "coking",       name: "Coking",       domain: "metallurgy",  prereqs: ["charcoal_burning", "mining"]),
         (id: "ironfounding", name: "Ironfounding", domain: "metallurgy",  prereqs: ["smelting", "coking"]),
         (id: "engineering",  name: "Engineering",  domain: "engineering", prereqs: ["toolmaking", "carpentry", "ironfounding"]),
+        (id: "millwrighting", name: "Millwrighting", domain: "engineering", prereqs: ["engineering", "milling"]),
     ],
     products: [
         (id: "coal", name: "Coal", category: Raw,      base_price: 2.0),
@@ -40,7 +41,7 @@
             inputs: [("iron", 2), ("plank", 2)], outputs: [("plough", 1)], building: Some("smithy"),
             duration: 1.0, max_team: 2, physique: [("strength", 0.3)]),
         // Mills driven by machinery: more output per worker and per input.
-        (id: "roll_flour", name: "Roll flour", skill: "milling", difficulty: 0.50,
+        (id: "roll_flour", name: "Roll flour", skill: "millwrighting", difficulty: 0.50,
             inputs: [("grain", 6)], outputs: [("flour", 8)], building: Some("roller_mill"),
             duration: 1.0, max_team: 4, physique: [("strength", 0.1)]),
         (id: "mill_spin", name: "Spin yarn by machine", skill: "spinning", difficulty: 0.45,

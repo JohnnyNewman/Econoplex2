@@ -3,7 +3,8 @@
 (
     skills: [
         (id: "shepherding",  name: "Shepherding",  domain: "agriculture", prereqs: ["farming"]),
-        (id: "spinning",     name: "Spinning",     domain: "textiles",    prereqs: ["shepherding"]),
+        (id: "flax_growing", name: "Flax growing", domain: "agriculture", prereqs: ["farming"]),
+        (id: "spinning",     name: "Spinning",     domain: "textiles",    prereqs: ["shepherding", "flax_growing"]),
         (id: "weaving",      name: "Weaving",      domain: "textiles",    prereqs: ["spinning"]),
         (id: "tailoring",    name: "Tailoring",    domain: "textiles",    prereqs: ["weaving"]),
         (id: "brewing",      name: "Brewing",      domain: "food",        prereqs: ["milling", "pottery"]),
@@ -24,7 +25,7 @@
         (id: "shear_sheep", name: "Shear sheep", skill: "shepherding", difficulty: 0.15,
             outputs: [("wool", 3)], nature: Some("pasture"), duration: 1.0, max_team: 3,
             physique: [("endurance", 0.2), ("dexterity", 0.1)]),
-        (id: "harvest_flax", name: "Harvest flax", skill: "farming", difficulty: 0.15,
+        (id: "harvest_flax", name: "Harvest flax", skill: "flax_growing", difficulty: 0.15,
             outputs: [("flax", 4)], nature: Some("flax_field"), duration: 1.0, max_team: 4,
             physique: [("endurance", 0.3)]),
         (id: "spin_wool", name: "Spin wool", skill: "spinning", difficulty: 0.30,

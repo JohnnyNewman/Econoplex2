@@ -424,13 +424,19 @@ fn a_school_teaches_its_subject_and_pays_the_teacher() {
         run_years(&mut s, 3);
         let store = s.world.resource::<sim_core::AgentStore>();
         let db = s.world.resource::<sim_core::Db>();
-        let dir = db.domain_dirs[db.content.domain("woodworking").unwrap() as usize];
+        let dir = &db.domain_dirs[db.content.domain("woodworking").unwrap() as usize];
         let kids: Vec<f32> = s.world.resource::<sim_core::Towns>().0[1]
             .residents
             .iter()
             .map(|&i| i as usize)
             .filter(|&i| store.activity[i] == sim_core::store::Activity::Child)
-            .map(|i| store.cap[i].iter().zip(dir).map(|(a, b)| a * b).sum())
+            .map(|i| {
+                store.cap[i]
+                    .iter()
+                    .zip(dir.iter())
+                    .map(|(a, b)| a * b)
+                    .sum()
+            })
             .collect();
         kids.iter().sum::<f32>() / kids.len().max(1) as f32
     };
@@ -783,4 +789,47 @@ fn eras_are_only_a_label_and_never_change_the_simulation() {
     assert_eq!(a, b, "relabelling eras changed the simulation");
     // The labels themselves did change.
     assert_ne!(eras_a, eras_b);
+}
+
+#[test]
+fn a_save_with_other_skill_dimensions_is_refused() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let paths = AssetPaths::from_root(&root);
+    let mut a = sim(3);
+    a.step();
+    let text = sim_core::save::to_string(&a.world).unwrap();
+    let dim = a.world.resource::<sim_core::Db>().cap_dim;
+    let content = || sim_data::Content::load_dir(&paths.content).unwrap();
+    // The same save loads with matching dimensions...
+    let ok = sim_core::save::from_str(&text).unwrap();
+    assert_eq!(ok.cap_dim, dim);
+    assert!(Simulation::from_save(ok, content()).is_ok());
+    // ...and is refused when the save's vectors have another length.
+    let mut wrong = sim_core::save::from_str(&text).unwrap();
+    wrong.cap_dim = dim + 8;
+    let err = Simulation::from_save(wrong, content())
+        .err()
+        .unwrap()
+        .to_string();
+    assert!(err.contains("dimensional"), "{err}");
+}
+
+#[test]
+fn skill_dimensions_follow_the_content_or_the_config() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, mut params, scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    let skills = db.content.skills.len();
+    assert_eq!(db.cap_dim, sim_data::dims::cap_dim_for(skills));
+    assert!(db.cap_dim >= skills && db.cap_dim % 8 == 0);
+    // A configured size wins, and the whole simulation runs at it.
+    params.embedding.dims = Some(64);
+    let db = sim_core::Db::build(db.content, 0.5, "Auto", Some(64));
+    assert_eq!(db.cap_dim, 64);
+    assert!(db.skill_vecs.iter().all(|v| v.len() == 64));
+    let mut s = Simulation::new(db, params, &scenario);
+    for _ in 0..30 {
+        s.step();
+    }
+    let store = s.world.resource::<sim_core::AgentStore>();
+    assert!(store.cap.iter().all(|v| v.len() == 64));
 }

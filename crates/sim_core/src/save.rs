@@ -148,6 +148,9 @@ impl SavedEntity {
 pub struct SaveFile {
     pub version: u32,
     pub content_hash: u64,
+    /// Length of the capability vectors in the save.
+    #[serde(default)]
+    pub cap_dim: usize,
     pub params: ModelParams,
     pub scenario: Scenario,
     pub clock: SimClock,
@@ -172,7 +175,31 @@ impl SaveFile {
                     .into(),
             );
         }
-        self.params.validate().map_err(|e| e.to_string())
+        self.params.validate().map_err(|e| e.to_string())?;
+        // Capability vectors must have the length this content and these parameters give.
+        let dim = self
+            .params
+            .embedding
+            .dims
+            .unwrap_or_else(|| sim_data::dims::cap_dim_for(content.skills.len()))
+            .max(1);
+        let saved = if self.cap_dim > 0 {
+            self.cap_dim
+        } else {
+            self.store.cap.first().map_or(dim, Vec::len)
+        };
+        let consistent = self
+            .store
+            .cap
+            .iter()
+            .chain(&self.store.equip_vec)
+            .all(|v| v.len() == saved);
+        if saved != dim || !consistent {
+            return Err(format!(
+                "this save has {saved}-dimensional skills, but the game now uses {dim}"
+            ));
+        }
+        Ok(())
     }
 
     pub fn day(&self) -> u64 {
@@ -184,6 +211,7 @@ impl SaveFile {
 struct SaveRef<'a> {
     version: u32,
     content_hash: u64,
+    cap_dim: usize,
     params: &'a ModelParams,
     scenario: &'a Scenario,
     clock: &'a SimClock,
@@ -218,6 +246,7 @@ pub fn to_string(world: &World) -> Result<String, String> {
     let save = SaveRef {
         version: SAVE_VERSION,
         content_hash: content_hash(&world.resource::<Db>().content),
+        cap_dim: world.resource::<Db>().cap_dim,
         params: &world.resource::<Params>().0,
         scenario: &world.resource::<ScenarioSpec>().0,
         clock: world.resource::<SimClock>(),
@@ -300,6 +329,7 @@ pub fn restore(
         content,
         params.embedding.ancestor_decay,
         &params.embedding.method,
+        params.embedding.dims,
     );
 
     let map = EntityMap(

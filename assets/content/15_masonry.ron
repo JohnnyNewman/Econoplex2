@@ -1,12 +1,12 @@
-// Stone and clay (era 1): quarrying stone and digging clay, stonecutting, pottery
-// and bricks.
+// Stone and clay (era 1): quarrying and stonecutting, clay, pottery and bricks.
 // Cut stone and bricks are what the later buildings are made of: kilns, the mint,
 // breweries, blast furnaces and mills.
 (
     skills: [
         (id: "quarrying",    name: "Quarrying",    domain: "masonry"),
         (id: "stonecutting", name: "Stonecutting", domain: "masonry", prereqs: ["quarrying"]),
-        (id: "pottery",      name: "Pottery",      domain: "masonry", prereqs: ["quarrying"]),
+        (id: "clay_digging", name: "Clay digging", domain: "masonry"),
+        (id: "pottery",      name: "Pottery",      domain: "masonry", prereqs: ["clay_digging"]),
         (id: "brickmaking",  name: "Brickmaking",  domain: "masonry", prereqs: ["pottery", "charcoal_burning"]),
     ],
     products: [
@@ -27,7 +27,7 @@
         (id: "cut_stone", name: "Cut stone", skill: "stonecutting", difficulty: 0.35,
             inputs: [("stone", 3)], outputs: [("cut_stone", 2)], building: Some("masons_yard"),
             duration: 1.0, physique: [("strength", 0.3), ("dexterity", 0.1)]),
-        (id: "dig_clay", name: "Dig clay", skill: "quarrying", difficulty: 0.10,
+        (id: "dig_clay", name: "Dig clay", skill: "clay_digging", difficulty: 0.10,
             outputs: [("clay", 4)], nature: Some("clay_pit"), duration: 1.0, max_team: 4,
             physique: [("endurance", 0.3)]),
         (id: "throw_pots", name: "Throw pots", skill: "pottery", difficulty: 0.35,

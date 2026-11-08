@@ -142,6 +142,7 @@ pub fn load_with(
         content,
         params.embedding.ancestor_decay,
         &params.embedding.method,
+        params.embedding.dims,
     );
     Ok((db, params, scenario))
 }

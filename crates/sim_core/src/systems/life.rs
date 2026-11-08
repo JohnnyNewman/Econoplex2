@@ -243,8 +243,9 @@ pub fn lifecycle(
                 + 0.05 * rng.random_range(-1.0..1.0f32))
             .clamp(0.0, 1.0);
         }
-        let cap: CapVec =
-            std::array::from_fn(|_| rng.random::<f32>() * crate::world::STARTING_SKILL_NOISE * 0.5);
+        let cap: CapVec = (0..db.cap_dim)
+            .map(|_| rng.random::<f32>() * crate::world::STARTING_SKILL_NOISE * 0.5)
+            .collect();
         let c = age_curve(0.0, &params.physique) * params.physique.untrained_level;
         let phys: PhysVec = std::array::from_fn(|k| potential[k] * c);
         let entity = commands.spawn_empty().id();
