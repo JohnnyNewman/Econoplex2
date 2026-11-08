@@ -450,6 +450,7 @@ pub fn goal_text(
 pub fn draw_flows(
     mut gizmos: Gizmos,
     towns: Res<Towns>,
+    overlay: Res<crate::view::Overlay>,
     mut labels: Query<(&FlowLabel, &mut Text2d, &mut Transform, &mut Visibility)>,
 ) {
     let max = towns
@@ -464,7 +465,7 @@ pub fn draw_flows(
             .get(a)
             .and_then(|t| t.ledger.exports.get(b).copied())
             .unwrap_or(0.0);
-        if v < 0.5 {
+        if v < 0.5 || overlay.product_space {
             *vis = Visibility::Hidden;
             continue;
         }
@@ -491,7 +492,15 @@ pub fn draw_flows(
 
 /// A ring per town showing the month's money: minted (violet), issued (green),
 /// taxed (orange), spent (blue), as arcs proportional to each flow.
-pub fn draw_money_rings(mut gizmos: Gizmos, view: Res<EconomyView>, towns: Res<Towns>) {
+pub fn draw_money_rings(
+    mut gizmos: Gizmos,
+    view: Res<EconomyView>,
+    towns: Res<Towns>,
+    overlay: Res<crate::view::Overlay>,
+) {
+    if overlay.product_space {
+        return;
+    }
     let groups = [
         (Group::Minted, MINTED),
         (Group::Issued, ISSUED),

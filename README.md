@@ -43,6 +43,9 @@ cargo run --release -p sim_cli -- --load game.ron --years 5
 # The product space derived from the skill graph
 cargo run --release -p sim_cli -- --embedding
 
+# The technology tree as a Mermaid flowchart (docs/tech-tree.mmd, rendered in docs/tech-tree.png)
+cargo run --release -p sim_cli -- --tech-tree
+
 # Tests (content validation, models, determinism)
 cargo test --release
 ```
@@ -113,7 +116,48 @@ Skills form a DAG through prerequisites. Each skill's vector is its prerequisite
 closure (itself plus ancestors, weighted by `0.5^depth`), normalized. The dot product
 between two skills counts shared prerequisites, so the product space falls out of the
 geometry. With more skills than dimensions, NMF compresses it while keeping vectors
-nonnegative.
+nonnegative. The shipped content has exactly 32 skills, one per dimension, so the
+product space is exact (the `the_tree_spans_five_eras_and_fits_the_product_space` test
+keeps it that way).
+
+### The technology tree
+
+![Technology tree](docs/tech-tree.png)
+
+The content (`assets/content/*.ron`) spans five eras: **wood and grain**, **stone,
+clay and cloth**, **bronze**, **iron and steel**, and **early industry**. It has 32
+skills in 13 domains, 47 goods, 14 workplaces, 71 recipes and 11 kinds of natural
+resource:
+
+| File | Adds |
+| --- | --- |
+| `05_nature.ron` | quarries, clay pits, pastures, flax fields, copper, tin and silver veins, coal seams |
+| `12_husbandry_textiles.ron` | wool and flax to yarn, cloth and clothes (weaving shed); ale (brewery) |
+| `15_masonry.ron` | stone and cut stone (mason's yard), clay, pots and bricks (kiln), chisels |
+| `35_bronze.ron` | copper and tin smelting, bronze casting, bronze spears |
+| `55_industry.ron` | coal and coke, the blast furnace, machine parts (machine shop), roller and textile mills, ploughs |
+| `60_money.ron` | silver refining, the mint and its coins (silver, copper, iron) |
+
+Each era's buildings are made from the eras before it. Kilns need stone and clay,
+breweries bricks, the blast furnace bricks, cut stone and iron, and the mills
+machine parts. The scenario spreads the resources:
+
+- Ironhold: iron ore, coal, stone
+- Greenvale: sheep, flax, clay
+- Timberwick: tin, clay
+- Brassmoor: copper, silver, stone
+
+No town can cast bronze alone, so caravans carry ore and metal between towns.
+Products name their `era`. A town counts as having reached an era once that era's
+goods are at least 2% of what it makes by value, so digging up raw ore doesn't count.
+The HUD shows each town's era, and `econoplex-sim` prints the year each town first
+reached each era.
+
+Some buildings are `starter` buildings (workshop, mill, bakery, furnace, smithy):
+towns can begin with them, which breaks bootstrap loops such as planks needing a
+workshop. Validation checks that every good and building can be made from natural
+resources and starter buildings, through recipes whose inputs and buildings can
+themselves be made. `econoplex-sim --tech-tree` prints the tree as a Mermaid chart.
 
 ### One tick = one day
 
@@ -162,9 +206,11 @@ actually spend. All rates are in the `market` section of `models.ron`.
 
 #### Mints
 
-A mint (`content/60_money.ron`) is a building: 16 planks, 10 wood and 4 iron, put up
-by builders like any other. Working it is a trade like any other: up to four minters
-turn one iron and one charcoal into 60 coins per three person-days. Struck coin is
+A mint (`content/60_money.ron`) is a building of 12 cut stone and 12 planks, put up by
+builders like any other. Working it is a trade like any other. Up to four minters
+strike coin from silver (150 coins an ingot), copper (50 coins from two ingots and
+charcoal) or, as a fallback, iron (60 coins from one ingot and charcoal), whichever
+pays best, at three person-days a batch. Struck coin is
 not stocked; it goes into the treasury as new money and is paid out from there as
 wages and the rest. Each town's `minting` policy decides when:
 
@@ -173,8 +219,9 @@ wages and the rest. Each town's `minting` policy decides when:
 - **on**: strike coin whenever the mint has workers and metal
 - **off**: never (no mint is built unless ordered)
 
-Minting is limited by labor and by iron, which the smiths also want. Towns without
-ore have to buy iron before they can mint. Change it with `mint TOWN auto|on|off`, or
+Minting is limited by labor and by metal. Silver is the best coin metal and only
+Brassmoor has it; towns without coin metal buy it, or mint iron and compete with
+their smiths for it. Change it with `mint TOWN auto|on|off`, or
 with the Mint row of the policy panel.
 
 Every one of these payments is booked in the town's ledger (`ledger.rs`), read with a

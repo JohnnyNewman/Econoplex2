@@ -105,6 +105,7 @@ fn main() {
                 view::spawn_static,
                 terrain_view::spawn_terrain,
                 view::spawn_skill_labels,
+                view::spawn_overlay_shade,
                 hud::spawn_hud,
                 policy_ui::spawn_policy_panel,
                 economy_ui::spawn_economy_panel.after(hud::spawn_hud),
@@ -123,6 +124,7 @@ fn main() {
                 economy_ui::update_economy_panel,
                 economy_ui::draw_flows,
                 economy_ui::draw_money_rings,
+                view::update_overlay_shade,
             ),
         )
         .add_systems(
