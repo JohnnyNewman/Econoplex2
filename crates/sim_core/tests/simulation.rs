@@ -833,3 +833,104 @@ fn skill_dimensions_follow_the_content_or_the_config() {
     let store = s.world.resource::<sim_core::AgentStore>();
     assert!(store.cap.iter().all(|v| v.len() == 64));
 }
+
+/// Lifetime ledger total of one flow in one town.
+fn flow_total(s: &Simulation, town: usize, flow: sim_core::ledger::Flow) -> f64 {
+    s.world.resource::<sim_core::Towns>().0[town].ledger.total[flow as usize]
+}
+
+fn with_orders(seed: u64, orders: &[&str], years: u32) -> Simulation {
+    let mut s = full(seed);
+    for o in orders {
+        s.order(o).unwrap();
+    }
+    run_years(&mut s, years);
+    s
+}
+
+#[test]
+fn a_higher_wealth_tax_collects_more() {
+    use sim_core::ledger::Flow;
+    let base = with_orders(8, &[], 2);
+    let taxed = with_orders(8, &["tax Greenvale wealth 2.0"], 2);
+    let (a, b) = (
+        flow_total(&base, 1, Flow::WealthTax),
+        flow_total(&taxed, 1, Flow::WealthTax),
+    );
+    assert!(b > a * 1.5, "wealth tax {b:.0} vs {a:.0}");
+}
+
+#[test]
+fn income_tax_takes_its_share_of_every_wage() {
+    use sim_core::ledger::Flow;
+    let base = with_orders(8, &[], 1);
+    assert_eq!(flow_total(&base, 1, Flow::IncomeTax), 0.0);
+    let s = with_orders(8, &["tax Greenvale income 0.2"], 1);
+    let pay = flow_total(&s, 1, Flow::Wages) + flow_total(&s, 1, Flow::Subsidies);
+    let tax = flow_total(&s, 1, Flow::IncomeTax);
+    assert!(tax > 0.0);
+    assert!(
+        (tax - 0.2 * pay).abs() < 1e-3 * pay,
+        "tax {tax} of pay {pay}"
+    );
+    // Only the ordering town levies it.
+    assert_eq!(flow_total(&s, 0, Flow::IncomeTax), 0.0);
+}
+
+#[test]
+fn a_higher_wage_share_pays_makers_more() {
+    use sim_core::ledger::Flow;
+    let base = with_orders(8, &[], 1);
+    let rich = with_orders(8, &["wages Greenvale 0.8"], 1);
+    let (a, b) = (
+        flow_total(&base, 1, Flow::Wages),
+        flow_total(&rich, 1, Flow::Wages),
+    );
+    // Pay is also capped by what the treasury holds, so wages rise less than
+    // the share does.
+    assert!(b > a * 1.05, "wages {b:.0} vs {a:.0}");
+}
+
+#[test]
+fn public_spending_pays_out_the_treasury_surplus() {
+    use sim_core::ledger::Flow;
+    // A heavy wealth tax fills the treasury above its reserve; the spending rate
+    // decides how fast the surplus goes back to residents.
+    let none = with_orders(8, &["tax Greenvale wealth 3.0", "spending Greenvale 0"], 2);
+    let fast = with_orders(8, &["tax Greenvale wealth 3.0", "spending Greenvale 10"], 2);
+    assert_eq!(flow_total(&none, 1, Flow::PublicSpending), 0.0);
+    assert!(flow_total(&fast, 1, Flow::PublicSpending) > 0.0);
+}
+
+#[test]
+fn a_government_order_is_delivered_and_lifts_a_glut() {
+    // Scarce goods (cloth sells at its highest price in Greenvale): the order takes
+    // the town's output into public use until it is filled.
+    let base = with_orders(8, &[], 2);
+    let db = base.world.resource::<sim_core::Db>();
+    let cloth = db.content.product("cloth").unwrap() as usize;
+    let bread = db.content.product("bread").unwrap() as usize;
+    let s = with_orders(8, &["procure Greenvale cloth 400"], 2);
+    let town = &s.world.resource::<sim_core::Towns>().0[1];
+    assert_eq!(town.procured[cloth], 400.0);
+    assert!(
+        town.policy.procurement.is_empty(),
+        "a filled order is closed"
+    );
+
+    // A glutted good (Greenvale's bread): the order raises the stock the market
+    // wants, so bakers who had stopped go back to work.
+    let made = |s: &Simulation| {
+        let t = &s.world.resource::<sim_core::Towns>().0[1];
+        t.produced_last_year[bread] + t.produced_this_year[bread]
+    };
+    let s = with_orders(8, &["procure Greenvale bread 20000"], 2);
+    let town = &s.world.resource::<sim_core::Towns>().0[1];
+    assert!(town.procured[bread] > 0.0);
+    assert!(
+        made(&s) > made(&base) * 1.05,
+        "{} vs {}",
+        made(&s),
+        made(&base)
+    );
+}

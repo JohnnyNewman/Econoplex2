@@ -146,6 +146,8 @@ fn parse_args() -> Args {
                                     immigration TOWN open|closed|encouraged | charter TOWN DOMAIN on|off\n\
                                     army TOWN SHARE|auto | war TOWN auto|defend | raid TOWN TARGET\n\
                                     build TOWN BUILDING [X Y] | mint TOWN auto|on|off\n\
+                                    tax TOWN wealth|income RATE|auto | wages TOWN SHARE|auto\n\
+                                    spending TOWN RATE|auto | procure TOWN PRODUCT AMOUNT\n\
                      --save FILE    save the game at the end of the run
                      --load FILE    continue a saved game (days in --order count from the load)
                      --profile      print wall-clock time per system\n\

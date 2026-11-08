@@ -348,6 +348,33 @@ pub struct PolicyParams {
     pub settlement_grant: f32,
     /// Highest share of adults a town may keep under arms.
     pub max_army_share: f32,
+    /// Bounds of the economic levers (`tax`, `wages`, `spending` orders).
+    #[serde(default = "default_max_wealth_tax")]
+    pub max_wealth_tax: f32,
+    #[serde(default = "default_max_income_tax")]
+    pub max_income_tax: f32,
+    #[serde(default = "default_min_wage_share")]
+    pub min_wage_share: f32,
+    #[serde(default = "default_max_wage_share")]
+    pub max_wage_share: f32,
+    #[serde(default = "default_max_public_spending")]
+    pub max_public_spending: f32,
+}
+
+fn default_max_wealth_tax() -> f32 {
+    3.0
+}
+fn default_max_income_tax() -> f32 {
+    0.6
+}
+fn default_min_wage_share() -> f32 {
+    0.1
+}
+fn default_max_wage_share() -> f32 {
+    0.9
+}
+fn default_max_public_spending() -> f32 {
+    12.0
 }
 
 /// Personal ties between agents (`trust.rs`).

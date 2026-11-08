@@ -26,7 +26,7 @@ pub fn glutted(db: &Db, town: &crate::world::Town, params: &Params, p: usize) ->
     } else {
         mp.target_per_capita
     };
-    let target = (per_capita * town.residents.len() as f32).max(1.0);
+    let target = (per_capita * town.residents.len() as f32).max(1.0) + town.policy.ordered(p);
     // A subsidized good is bought up to a larger stock.
     town.stock[p] > mp.glut_factor * target * (1.0 + town.policy.subsidy[p])
 }

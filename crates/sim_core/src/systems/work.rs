@@ -350,6 +350,19 @@ pub fn produce(
                 let old = town.stock[pi];
                 town.quality[pi] = (old * town.quality[pi] + q * quality) / (old + q).max(1e-6);
                 town.stock[pi] += q;
+                // Deliveries for a government order go to public use.
+                if let Some(o) = town
+                    .policy
+                    .procurement
+                    .iter_mut()
+                    .find(|o| o.0 as usize == pi)
+                {
+                    let delivered = q.min(o.1);
+                    o.1 -= delivered;
+                    town.stock[pi] -= delivered;
+                    town.procured[pi] += delivered;
+                    town.policy.procurement.retain(|o| o.1 > 1e-3);
+                }
                 if let Some(kind) = db.opens[pi] {
                     // New land: a fresh site that starts bare and grows in. Two crews
                     // can finish on the last free plot; only the first one gets it.
@@ -431,8 +444,8 @@ pub fn produce(
                 .iter()
                 .map(|&(p, q)| town.price[p as usize] * q * task.batches as f32)
                 .sum();
-            let pay =
-                (params.work.wage_share * (value - input_cost)).clamp(0.0, town.treasury.max(0.0));
+            let share = town.policy.wage_share.unwrap_or(params.work.wage_share);
+            let pay = (share * (value - input_cost)).clamp(0.0, town.treasury.max(0.0));
             town.treasury -= pay;
             town.ledger.add(crate::ledger::Flow::Wages, pay);
             // A subsidized product earns its makers a top-up, while the treasury lasts.
@@ -440,7 +453,11 @@ pub fn produce(
             town.treasury -= subsidy;
             town.ledger.add(crate::ledger::Flow::Subsidies, subsidy);
             let pay = pay + subsidy;
-            let wage = pay / n as f32;
+            // Income tax: the treasury keeps its share of every wage.
+            let tax = pay * town.policy.income_tax;
+            town.treasury += tax;
+            town.ledger.add(crate::ledger::Flow::IncomeTax, tax);
+            let wage = (pay - tax) / n as f32;
             for &w in &workers {
                 store.wealth[w as usize] += wage;
                 let st = &mut store.state[w as usize];

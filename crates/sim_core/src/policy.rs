@@ -87,6 +87,36 @@ pub struct Policy {
     pub commissions: Vec<Commission>,
     #[serde(default)]
     pub minting: Minting,
+    /// Yearly wealth tax on savings above the allowance; `None` keeps models.ron's.
+    #[serde(default)]
+    pub wealth_tax: Option<f32>,
+    /// Share of every wage the treasury takes back as income tax.
+    #[serde(default)]
+    pub income_tax: f32,
+    /// Share of value added the town market pays its makers as wages; `None` keeps
+    /// models.ron's.
+    #[serde(default)]
+    pub wage_share: Option<f32>,
+    /// Share of the treasury above its reserve paid out to residents per year;
+    /// `None` keeps models.ron's.
+    #[serde(default)]
+    pub public_spending: Option<f32>,
+    /// Goods the government has ordered, as (product, still to deliver). An order
+    /// raises the town's target stock, so the good's price, and its makers' pay,
+    /// rise until it is delivered; delivered goods go to public use.
+    #[serde(default)]
+    pub procurement: Vec<(u32, f32)>,
+}
+
+impl Policy {
+    /// Amount of `product` the government still waits for.
+    pub fn ordered(&self, product: usize) -> f32 {
+        self.procurement
+            .iter()
+            .filter(|o| o.0 as usize == product)
+            .map(|o| o.1)
+            .fold(0.0, |a, b| a + b)
+    }
 }
 
 impl Policy {
@@ -142,6 +172,32 @@ pub enum Order {
         town: u16,
         minting: Minting,
     },
+    /// `None` returns to the default rate from models.ron.
+    Tax {
+        town: u16,
+        tax: Tax,
+        rate: Option<f32>,
+    },
+    Wages {
+        town: u16,
+        share: Option<f32>,
+    },
+    Spending {
+        town: u16,
+        rate: Option<f32>,
+    },
+    /// Order `amount` more of a good (0 cancels the town's order for it).
+    Procure {
+        town: u16,
+        product: u32,
+        amount: f32,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum Tax {
+    Wealth,
+    Income,
 }
 
 impl Order {
@@ -155,7 +211,11 @@ impl Order {
             | Order::War { town, .. }
             | Order::Raid { town, .. }
             | Order::Build { town, .. }
-            | Order::Mint { town, .. } => town,
+            | Order::Mint { town, .. }
+            | Order::Tax { town, .. }
+            | Order::Wages { town, .. }
+            | Order::Spending { town, .. }
+            | Order::Procure { town, .. } => town,
         }
     }
 
@@ -171,6 +231,10 @@ impl Order {
     /// raid <town> <target>
     /// build <town> <building> [<x> <y>]
     /// mint <town> auto|on|off
+    /// tax <town> wealth|income <rate>|auto  e.g. tax Greenvale income 0.1
+    /// wages <town> <share>|auto             e.g. wages Greenvale 0.6
+    /// spending <town> <rate>|auto           e.g. spending Greenvale 4
+    /// procure <town> <product> <amount>     e.g. procure Greenvale cloth 50 (0 cancels)
     /// ```
     pub fn parse(text: &str, db: &Db, towns: &Towns) -> Result<Order, String> {
         let w: Vec<&str> = text.split_whitespace().collect();
@@ -240,6 +304,43 @@ impl Order {
             ["war", t, w @ ("auto" | "defend")] => Ok(Order::War {
                 town: town(t)?,
                 war: if *w == "auto" { War::Auto } else { War::Defend },
+            }),
+            ["tax", t, kind @ ("wealth" | "income"), rate] => Ok(Order::Tax {
+                town: town(t)?,
+                tax: if *kind == "wealth" {
+                    Tax::Wealth
+                } else {
+                    Tax::Income
+                },
+                rate: match *rate {
+                    "auto" => None,
+                    r => Some(number(r)?),
+                },
+            }),
+            ["wages", t, share] => Ok(Order::Wages {
+                town: town(t)?,
+                share: match *share {
+                    "auto" => None,
+                    s => Some(number(s)?),
+                },
+            }),
+            ["spending", t, rate] => Ok(Order::Spending {
+                town: town(t)?,
+                rate: match *rate {
+                    "auto" => None,
+                    r => Some(number(r)?),
+                },
+            }),
+            ["procure", t, p, amount] => Ok(Order::Procure {
+                town: town(t)?,
+                product: db
+                    .content
+                    .product(p)
+                    .filter(|&i| {
+                        db.category(i) != sim_data::Category::Building && db.coin[i as usize] == 0.0
+                    })
+                    .ok_or_else(|| format!("no good `{p}` to order"))?,
+                amount: number(amount)?.max(0.0),
             }),
             ["mint", t, m @ ("auto" | "on" | "off")] => Ok(Order::Mint {
                 town: town(t)?,
@@ -320,6 +421,29 @@ pub fn apply_orders(
             }
             Order::War { war, .. } => p.war = war,
             Order::Mint { minting, .. } => p.minting = minting,
+            Order::Tax { tax, rate, .. } => match tax {
+                Tax::Wealth => {
+                    p.wealth_tax = rate.map(|r| r.clamp(0.0, params.policy.max_wealth_tax))
+                }
+                Tax::Income => {
+                    p.income_tax = rate.unwrap_or(0.0).clamp(0.0, params.policy.max_income_tax)
+                }
+            },
+            Order::Wages { share, .. } => {
+                p.wage_share = share
+                    .map(|s| s.clamp(params.policy.min_wage_share, params.policy.max_wage_share))
+            }
+            Order::Spending { rate, .. } => {
+                p.public_spending = rate.map(|r| r.clamp(0.0, params.policy.max_public_spending))
+            }
+            Order::Procure {
+                product, amount, ..
+            } => {
+                p.procurement.retain(|o| o.0 != product);
+                if amount > 0.0 {
+                    p.procurement.push((product, amount));
+                }
+            }
             Order::Raid { town: t, target } => {
                 p.raid_order = (target != t).then_some(target);
             }

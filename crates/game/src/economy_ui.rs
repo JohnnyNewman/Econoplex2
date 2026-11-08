@@ -18,23 +18,25 @@ use sim_core::{AgentStore, Db, Towns};
 use sim_data::Category;
 
 /// Foldable sections of the panel.
-pub const SECTIONS: [&str; 4] = [
+pub const SECTIONS: [&str; 5] = [
     "Money per day, last month",
+    "Levers",
     "Work today",
     "Goods",
     "Food and shortages",
 ];
 const MONEY: usize = 0;
-const WORK: usize = 1;
-const GOODS: usize = 2;
-const FOOD: usize = 3;
+const LEVERS: usize = 1;
+const WORK: usize = 2;
+const GOODS: usize = 3;
+const FOOD: usize = 4;
 
 #[derive(Resource)]
 pub struct EconomyView {
     pub visible: bool,
     pub town: usize,
     /// Folded sections. Goods start folded so the panel fits next to the map.
-    pub folded: [bool; 4],
+    pub folded: [bool; 5],
     /// Which section header sits on each panel line (filled with the text).
     pub headers: Vec<Option<usize>>,
 }
@@ -44,7 +46,7 @@ impl EconomyView {
         EconomyView {
             visible: true,
             town,
-            folded: [false, false, true, false],
+            folded: [false, false, false, true, false],
             headers: Vec::new(),
         }
     }
@@ -61,7 +63,7 @@ pub struct EconomyRoot;
 #[derive(Component)]
 pub struct FlowLabel(pub usize, pub usize);
 
-pub const LINES: usize = 32;
+pub const LINES: usize = 44;
 
 pub const MINTED: Color = Color::srgb(0.85, 0.6, 1.0);
 pub const ISSUED: Color = Color::srgb(0.45, 0.85, 0.45);
@@ -166,7 +168,7 @@ pub fn economy_lines(
     town: &Town,
     t: usize,
     player: Option<u16>,
-    folded: &[bool; 4],
+    folded: &[bool; 5],
     store: &AgentStore,
     db: &Db,
     params: &Params,
@@ -234,12 +236,25 @@ pub fn economy_lines(
             },
             MINTED.with_alpha(0.75),
         );
+        // Trend: this month's daily rate against last year's.
+        let dpy = params.life.days_per_year.max(1) as f32;
+        let trend = |g: Group, now: f32| {
+            let before = l.last_year_group(g) / dpy;
+            if before < 0.05 {
+                String::new()
+            } else {
+                format!("  {:+.0}% vs last yr", 100.0 * (now / before - 1.0))
+            }
+        };
         for (name, v, g, c) in [
             ("issued", issued, Group::Issued, ISSUED),
             ("taxed ", taxed, Group::Taxed, TAXED),
             ("spent ", spent, Group::Spent, SPENT),
         ] {
-            line(format!("  {name} {} {v:>6.1}", bar(v, max, 14)), c);
+            line(
+                format!("  {name} {} {v:>6.1}{}", bar(v, max, 14), trend(g, v)),
+                c,
+            );
             line(detail(g), c.with_alpha(0.75));
         }
         line(format!("  trade  in {ext_in:.1}, out {ext_out:.1}"), TRADE);
@@ -252,6 +267,77 @@ pub fn economy_lines(
             format!("  treasury {:.0}, people hold {:.0}", town.treasury, held),
             DIM,
         );
+    }
+
+    // The town's economic levers, each against the default from models.ron.
+    if header(&mut out, LEVERS) {
+        let mut line = |s: String, c: Color| out.push((s, c, None));
+        let p = &town.policy;
+        let mp = &params.market;
+        let mark = |set: bool| if set { "" } else { " (default)" };
+        line(
+            format!(
+                "  wealth tax {:.2}/yr{}, income tax {:.0}%",
+                p.wealth_tax.unwrap_or(mp.wealth_tax),
+                mark(p.wealth_tax.is_some()),
+                100.0 * p.income_tax
+            ),
+            TAXED,
+        );
+        line(
+            format!(
+                "  wages {:.0}% of value added{}",
+                100.0 * p.wage_share.unwrap_or(params.work.wage_share),
+                mark(p.wage_share.is_some())
+            ),
+            ISSUED,
+        );
+        line(
+            format!(
+                "  spending {:.1}/yr of the surplus{}",
+                p.public_spending.unwrap_or(mp.public_spending),
+                mark(p.public_spending.is_some())
+            ),
+            ISSUED,
+        );
+        let subsidies: Vec<String> = p
+            .subsidy
+            .iter()
+            .enumerate()
+            .filter(|(_, &s)| s > 0.0)
+            .map(|(i, s)| format!("{} {:.0}%", db.content.products[i].name, 100.0 * s))
+            .collect();
+        if !subsidies.is_empty() {
+            line(format!("  subsidies: {}", subsidies.join(", ")), ISSUED);
+        }
+        if p.procurement.is_empty() {
+            line("  no open government orders".into(), DIM);
+        }
+        let delivered: Vec<String> = town
+            .procured
+            .iter()
+            .enumerate()
+            .filter(|(_, &q)| q > 0.0)
+            .map(|(i, q)| format!("{} {:.0}", db.content.products[i].name, q))
+            .collect();
+        if !delivered.is_empty() {
+            line(
+                format!("  delivered so far: {}", delivered.join(", ")),
+                SPENT,
+            );
+        }
+        for &(prod, left) in &p.procurement {
+            let i = prod as usize;
+            line(
+                format!(
+                    "  order: {:.0} more {} ({:.0} delivered)",
+                    left,
+                    db.content.products[i].name,
+                    town.procured.get(i).copied().unwrap_or(0.0)
+                ),
+                SPENT,
+            );
+        }
     }
 
     // Employment today.

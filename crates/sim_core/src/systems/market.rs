@@ -94,7 +94,8 @@ pub fn settle(
             } else {
                 mp.target_per_capita
             };
-            let target = (per_capita * pop).max(1.0);
+            // Goods the government ordered raise the stock the market wants.
+            let target = (per_capita * pop).max(1.0) + town.policy.ordered(p);
             let pressure = ((target - town.stock[p]) / target).clamp(-1.0, 1.0);
             let base = db.base_price[p];
             town.price[p] = (town.price[p] * (mp.price_adjust * pressure).exp())
@@ -110,14 +111,19 @@ pub fn settle(
     }
 
     // Wealth tax: savings above the allowance flow back to the town treasury.
-    let rate = mp.wealth_tax / dpy;
+    // Each town's own rate.
+    let rates: Vec<f32> = towns
+        .0
+        .iter()
+        .map(|t| t.policy.wealth_tax.unwrap_or(mp.wealth_tax) / dpy)
+        .collect();
     for i in 0..store.len() {
         if !store.alive[i] {
             continue;
         }
         let excess = store.wealth[i] - mp.tax_free_wealth;
         if excess > 0.0 {
-            let tax = excess * rate;
+            let tax = excess * rates[store.town[i] as usize];
             store.wealth[i] -= tax;
             let town = &mut towns.0[store.town[i] as usize];
             town.treasury += tax;
@@ -132,7 +138,8 @@ pub fn settle(
         if n == 0 || excess <= 0.0 {
             continue;
         }
-        let spend = excess * (mp.public_spending / dpy).min(1.0);
+        let rate = town.policy.public_spending.unwrap_or(mp.public_spending);
+        let spend = excess * (rate / dpy).min(1.0);
         town.treasury -= spend;
         town.ledger.add(Flow::PublicSpending, spend);
         let share = spend / n as f32;

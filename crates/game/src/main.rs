@@ -34,7 +34,7 @@ pub struct Selection(pub Option<u32>);
 fn main() {
     let args = autorun::parse();
     let paths = AssetPaths::discover();
-    let (db, params, scenario) = match sim_core::load(&paths) {
+    let (db, params, mut scenario) = match sim_core::load(&paths) {
         Ok(x) => x,
         Err(e) => {
             eprintln!(
@@ -44,6 +44,14 @@ fn main() {
             std::process::exit(1);
         }
     };
+
+    if let Some(name) = &args.player {
+        if !scenario.towns.iter().any(|t| &t.name == name) {
+            eprintln!("error: no town `{name}` to govern");
+            std::process::exit(2);
+        }
+        scenario.player = Some(name.clone());
+    }
 
     let mut app = App::new();
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -64,6 +72,21 @@ fn main() {
                 town,
                 war: sim_core::policy::War::Defend,
             });
+    }
+    for text in &args.orders {
+        let order = sim_core::policy::Order::parse(
+            text,
+            app.world().resource::<sim_core::Db>(),
+            app.world().resource::<sim_core::Towns>(),
+        )
+        .unwrap_or_else(|e| {
+            eprintln!("error: {e}");
+            std::process::exit(2);
+        });
+        app.world_mut()
+            .resource_mut::<sim_core::policy::OrderQueue>()
+            .pending
+            .push(order);
     }
     app.add_schedule(sim_core::build_schedule());
 
