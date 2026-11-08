@@ -12,3 +12,4 @@ serde.workspace = true
 ron.workspace = true
 rand.workspace = true
 rand_chacha.workspace = true
+rayon.workspace = true

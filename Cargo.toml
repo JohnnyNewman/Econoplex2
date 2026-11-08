@@ -16,6 +16,7 @@ serde = { version = "1", features = ["derive"] }
 ron = "0.12"
 rand = "0.9"
 rand_chacha = "0.9"
+rayon = "1"
 
 # Fast iteration: optimize dependencies even in debug builds, keep our own code quick to compile.
 [profile.dev]
