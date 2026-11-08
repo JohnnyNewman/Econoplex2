@@ -310,6 +310,18 @@ pub fn economy_lines(
         if !subsidies.is_empty() {
             line(format!("  subsidies: {}", subsidies.join(", ")), ISSUED);
         }
+        for prod in town.orders_eating_food(db, params) {
+            let days = town.food_stock(db)
+                / (town.residents.len().max(1) as f32 * params.needs.hunger_per_day).max(1e-6);
+            line(
+                format!(
+                    "  ! the {} order takes food people need: {:.0} days left",
+                    db.content.products[prod as usize].name.to_lowercase(),
+                    days
+                ),
+                ALERT,
+            );
+        }
         if p.procurement.is_empty() {
             line("  no open government orders".into(), DIM);
         }

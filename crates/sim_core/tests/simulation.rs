@@ -968,3 +968,26 @@ fn the_run_does_not_depend_on_the_number_of_threads() {
     assert_eq!(one, run(4));
     assert_eq!(one, run(7));
 }
+
+#[test]
+fn an_order_that_eats_into_food_is_flagged_but_not_capped() {
+    let mut s = full(8);
+    s.order("procure Greenvale bread 30000").unwrap();
+    s.order("procure Greenvale cloth 50").unwrap();
+    let mut flagged = false;
+    for _ in 0..240 {
+        s.step();
+        let db = s.world.resource::<sim_core::Db>();
+        let params = s.world.resource::<sim_core::world::Params>();
+        let town = &s.world.resource::<sim_core::Towns>().0[1];
+        let warn = town.orders_eating_food(db, params);
+        let cloth = db.content.product("cloth").unwrap();
+        assert!(!warn.contains(&cloth), "cloth is not food");
+        flagged |= !warn.is_empty();
+    }
+    assert!(flagged, "the bread order never drew a warning");
+    // The order keeps running: no cap.
+    let db = s.world.resource::<sim_core::Db>();
+    let bread = db.content.product("bread").unwrap() as usize;
+    assert!(s.world.resource::<sim_core::Towns>().0[1].procured[bread] > 0.0);
+}

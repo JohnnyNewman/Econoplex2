@@ -212,6 +212,29 @@ pub struct MoveCounters {
 }
 
 impl Town {
+    /// Open government orders that take food, or what food is made from (grain,
+    /// flour, wood for the ovens), while the town holds less food per resident
+    /// than its market aims for. Orders are never capped; this is the warning.
+    pub fn orders_eating_food(&self, db: &Db, params: &crate::config::ModelParams) -> Vec<u32> {
+        let per_capita = self.food_stock(db) / self.residents.len().max(1) as f32;
+        if per_capita >= params.market.food_target_per_capita {
+            return Vec::new();
+        }
+        let feeds = |p: usize| {
+            db.is_food[p]
+                || (0..db.recipes.len()).any(|r| {
+                    crate::systems::decide::makes_food(db, r)
+                        && db.recipes[r].inputs.iter().any(|i| i.0 as usize == p)
+                })
+        };
+        self.policy
+            .procurement
+            .iter()
+            .filter(|o| o.1 > 0.0 && feeds(o.0 as usize))
+            .map(|o| o.0)
+            .collect()
+    }
+
     pub fn food_stock(&self, db: &Db) -> f32 {
         db.foods
             .iter()

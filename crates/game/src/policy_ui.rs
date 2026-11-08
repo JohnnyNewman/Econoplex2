@@ -481,10 +481,18 @@ pub fn update_policy_panel(
                 p.public_spending.unwrap_or(params.market.public_spending)
             ),
             Field::Procure => format!(
-                "{:.0} {} ({:.0} in)",
+                "{:.0} {} ({:.0} in){}",
                 p.ordered(product),
                 db.content.products[product].name,
-                town.procured.get(product).copied().unwrap_or(0.0)
+                town.procured.get(product).copied().unwrap_or(0.0),
+                if town
+                    .orders_eating_food(&db, &params)
+                    .contains(&(product as u32))
+                {
+                    " ! food"
+                } else {
+                    ""
+                }
             ),
             Field::SchoolDomain => match p.school {
                 Some(s) if s.domain as usize != cursor.school_domain => format!(
