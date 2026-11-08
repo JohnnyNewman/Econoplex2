@@ -4,6 +4,7 @@
 (
     skills: [
         (id: "bronze_casting", name: "Bronze casting", domain: "metallurgy", prereqs: ["smelting"]),
+        (id: "spear_making",   name: "Spear making",   domain: "smithing",   prereqs: ["bronze_casting", "carpentry"]),
     ],
     products: [
         (id: "copper_ore", name: "Copper ore", category: Raw,      base_price: 1.5),
@@ -29,7 +30,7 @@
         (id: "cast_bronze", name: "Cast bronze", skill: "bronze_casting", difficulty: 0.40,
             inputs: [("copper", 3), ("tin", 1), ("charcoal", 1)], outputs: [("bronze", 3)],
             building: Some("furnace"), duration: 1.0, physique: [("endurance", 0.1), ("perception", 0.2)]),
-        (id: "make_bronze_spear", name: "Make bronze spear", skill: "bladesmithing", difficulty: 0.40,
+        (id: "make_bronze_spear", name: "Make bronze spear", skill: "spear_making", difficulty: 0.40,
             inputs: [("bronze", 2), ("plank", 1)], outputs: [("bronze_spear", 1)],
             building: Some("smithy"), duration: 1.0, max_team: 2, physique: [("strength", 0.2), ("dexterity", 0.1)]),
     ],

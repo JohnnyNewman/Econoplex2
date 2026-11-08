@@ -104,7 +104,7 @@ Each agent has an index into `AgentStore`, which keeps every block in contiguous
 
 | Block | Size | Meaning |
 | --- | --- | --- |
-| Capability | 32, latent | Skills and know-how |
+| Capability | one per skill (rounded up to 8), latent | Skills and know-how |
 | Mind | 8, named | ambition, diligence, curiosity, sociability, risk (personality, from genes); tradition, faith, liberty (ideology, social) |
 | Physique | 6, named | strength, endurance, agility, dexterity, perception, constitution |
 | State | 4, named | hunger, fatigue, happiness, health |
@@ -115,17 +115,23 @@ Each agent has an index into `AgentStore`, which keeps every block in contiguous
 Skills form a DAG through prerequisites. Each skill's vector is its prerequisite
 closure (itself plus ancestors, weighted by `0.5^depth`), normalized. The dot product
 between two skills counts shared prerequisites, so the product space falls out of the
-geometry. With more skills than dimensions, NMF compresses it while keeping vectors
-nonnegative. The shipped content has exactly 32 skills, one per dimension, so the
-product space is exact (the `the_tree_spans_five_eras_and_fits_the_product_space` test
-keeps it that way).
+geometry.
+
+Capability vectors are sized at load time: one dimension per skill, rounded up to a
+multiple of 8 (37 skills give 40 dimensions), so the product space stays exact however
+far the content grows. `embedding.dims` in `models.ron` can set a size instead. With
+fewer dimensions than skills, NMF compresses the space while keeping vectors
+nonnegative. A save records its dimension and is refused if the game now uses another.
+
+At about 12,500 agents a tick costs about 7.2 ms at 32 dimensions (6.95 ms with the
+earlier fixed 32-wide arrays), 7.8 ms at 40 and 9.0 ms at 64.
 
 ### The technology tree
 
 ![Technology tree](docs/tech-tree.png)
 
 The content (`assets/content/*.ron`) spans five eras: **wood and grain**, **stone,
-clay and cloth**, **bronze**, **iron and steel**, and **early industry**. It has 32
+clay and cloth**, **bronze**, **iron and steel**, and **early industry**. It has 37
 skills in 13 domains, 47 goods, 14 workplaces, 71 recipes and 11 kinds of natural
 resource:
 

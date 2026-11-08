@@ -9,6 +9,7 @@
 (
     skills: [
         (id: "assaying", name: "Assaying", domain: "metallurgy", prereqs: ["smelting"]),
+        (id: "coining",  name: "Coining",  domain: "smithing",   prereqs: ["smithing", "assaying"]),
     ],
     products: [
         (id: "silver_ore", name: "Silver ore", category: Raw,      base_price: 4.0),
@@ -28,15 +29,15 @@
             duration: 50.0, max_team: 6, physique: [("strength", 0.3), ("endurance", 0.2)]),
         // Three person-days of work strike one ingot into coin; four minters strike
         // a little over one ingot a day.
-        (id: "strike_silver_coins", name: "Strike silver coins", skill: "smithing", difficulty: 0.45,
+        (id: "strike_silver_coins", name: "Strike silver coins", skill: "coining", difficulty: 0.45,
             inputs: [("silver", 1)], outputs: [("coin", 150)],
             building: Some("mint"), duration: 3.0, max_team: 4,
             physique: [("dexterity", 0.3)]),
-        (id: "strike_copper_coins", name: "Strike copper coins", skill: "smithing", difficulty: 0.35,
+        (id: "strike_copper_coins", name: "Strike copper coins", skill: "coining", difficulty: 0.35,
             inputs: [("copper", 2), ("charcoal", 1)], outputs: [("coin", 50)],
             building: Some("mint"), duration: 3.0, max_team: 4,
             physique: [("strength", 0.2), ("dexterity", 0.2)]),
-        (id: "strike_coins", name: "Strike iron coins", skill: "smithing", difficulty: 0.40,
+        (id: "strike_coins", name: "Strike iron coins", skill: "coining", difficulty: 0.40,
             inputs: [("iron", 1), ("charcoal", 1)], outputs: [("coin", 60)],
             building: Some("mint"), duration: 3.0, max_team: 4,
             physique: [("strength", 0.2), ("dexterity", 0.2)]),
