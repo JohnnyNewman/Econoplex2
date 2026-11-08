@@ -60,6 +60,7 @@ pub fn military(
     params: Res<Params>,
     clock: Res<SimClock>,
     seed: Res<SimSeed>,
+    terrain: Res<crate::terrain::Terrain>,
     weapons: Query<&Product, With<Stored>>,
 ) {
     let mp = &params.military;
@@ -211,7 +212,7 @@ pub fn military(
             continue;
         };
         raid.soldiers.retain(|&s| store.alive[s as usize]);
-        let (home_pos, target_pos) = (towns.0[t].pos, towns.0[raid.target as usize].pos);
+        let home_pos = towns.0[t].pos;
         let now = clock.tick;
         if now >= raid.arrive && !raid.fought {
             raid.fought = true;
@@ -247,8 +248,8 @@ pub fn military(
         } else {
             1.0 - (now - raid.arrive) as f32 / (raid.home - raid.arrive).max(1) as f32
         };
-        let x = home_pos.0 + (target_pos.0 - home_pos.0) * f;
-        let y = home_pos.1 + (target_pos.1 - home_pos.1) * f;
+        let road = terrain.path(home_pos, raid.target as usize);
+        let (x, y) = crate::terrain::along(&road, f);
         for &s in raid.soldiers.iter().chain(&raid.captives) {
             store.target[s as usize] = (
                 x + rng.random_range(-15.0..15.0f32),
@@ -282,7 +283,8 @@ pub fn military(
             // Rulers protect their tributaries; tributaries of one ruler keep the peace.
             let ruled = other.ruler == Some(t as u16)
                 || (town.ruler.is_some() && other.ruler == town.ruler);
-            if o == t || ruled || ordered.is_some() {
+            // Nobody marches where no road leads.
+            if o == t || ruled || ordered.is_some() || !terrain.road(t, o).is_finite() {
                 continue;
             }
             let defense = total_defense(store, &towns, o, &fight, mp, loyalty);
@@ -312,10 +314,14 @@ pub fn military(
         if ordered.is_none() && rng.random::<f32>() >= mp.raid_appetite * temper {
             continue;
         }
-        let tp = towns.0[target].pos;
-        let dist = ((tp.0 - town.pos.0).powi(2) + (tp.1 - town.pos.1).powi(2)).sqrt();
+        // The squad marches along the road, around rivers and over hills.
+        let dist = terrain.road(t, target);
+        if !dist.is_finite() {
+            towns.0[t].policy.raid_order = None;
+            continue;
+        }
         let days = (dist / mp.march_speed.max(1.0)).ceil().max(1.0) as u64;
-        let soldiers = town.squad.clone();
+        let soldiers = towns.0[t].squad.clone();
         let np = db.content.products.len();
         let town = &mut towns.0[t];
         town.policy.raid_order = None;

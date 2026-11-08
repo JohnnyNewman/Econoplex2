@@ -47,6 +47,7 @@ pub fn migrate(
     params: Res<Params>,
     clock: Res<SimClock>,
     seed: Res<SimSeed>,
+    terrain: Res<crate::terrain::Terrain>,
 ) {
     let mp = &params.migration;
     if mp.interval == 0 || !clock.tick.is_multiple_of(mp.interval as u64) || towns.0.len() < 2 {
@@ -89,10 +90,8 @@ pub fn migrate(
     let mean_price: Vec<f32> = (0..np)
         .map(|p| towns.0.iter().map(|t| t.price[p]).sum::<f32>() / n_towns as f32)
         .collect();
-    let dist = |a: usize, b: usize, towns: &Towns| {
-        let (pa, pb) = (towns.0[a].pos, towns.0[b].pos);
-        ((pa.0 - pb.0).powi(2) + (pa.1 - pb.1).powi(2)).sqrt()
-    };
+    // The journey is as long as the road, not the crow's flight.
+    let dist = |a: usize, b: usize, _: &Towns| terrain.road(a, b);
 
     let free = |s: &AgentStore, j: usize| {
         s.alive[j] && matches!(s.activity[j], Activity::Idle | Activity::Resting)

@@ -171,6 +171,7 @@ pub fn attach_agent_sprites(
 }
 
 /// Move agents toward their targets and color them by their best skill domain.
+#[allow(clippy::too_many_arguments)]
 pub fn animate_agents(
     time: Res<Time>,
     store: Res<AgentStore>,
@@ -178,21 +179,22 @@ pub fn animate_agents(
     params: Res<Params>,
     clock: Res<sim_core::SimClock>,
     selection: Res<Selection>,
+    terrain: Res<sim_core::terrain::Terrain>,
+    towns: Res<Towns>,
     mut agents: Query<(&Agent, &mut Transform, &mut Sprite), With<AgentSprite>>,
 ) {
     let dt = time.delta_secs();
+    let town_pos: Vec<Vec2> = towns
+        .0
+        .iter()
+        .map(|t| Vec2::new(t.pos.0, t.pos.1))
+        .collect();
     let n = db.domain_dirs.len();
     for (a, mut tf, mut sprite) in &mut agents {
         let i = a.idx as usize;
         let target = Vec2::new(store.target[i].0, store.target[i].1);
         let pos = tf.translation.truncate();
-        let delta = target - pos;
-        let step = 160.0 * dt;
-        let next = if delta.length() <= step {
-            target
-        } else {
-            pos + delta.normalize() * step
-        };
+        let next = crate::terrain_view::walk(&terrain, &town_pos, pos, target, 160.0 * dt);
         tf.translation.x = next.x;
         tf.translation.y = next.y;
 

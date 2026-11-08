@@ -14,6 +14,7 @@ pub mod policy;
 pub mod profile;
 pub mod store;
 pub mod systems;
+pub mod terrain;
 pub mod trust;
 pub mod world;
 

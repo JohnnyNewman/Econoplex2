@@ -29,4 +29,22 @@
             stock: [("bread", 900.0), ("wood", 30.0)],
         ),
     ],
+    // A river runs north to south between the western and the eastern towns. It
+    // can be crossed at two fords: one in the north and one far to the south, so
+    // the northern neighbors trade easily and the southern ones go the long way.
+    terrain: Some((
+        cell: 20.0,
+        half_size: (900.0, 700.0),
+        hill_cost: 1.5,
+        hill_scale: 260.0,
+        rivers: [
+            (
+                points: [(-40.0, -800.0), (30.0, -380.0), (-30.0, 0.0), (40.0, 380.0), (-20.0, 800.0)],
+                width: 50.0,
+                fords: [(30.0, 330.0), (10.0, -600.0)],
+                ford_width: 70.0,
+                ford_cost: 2.5,
+            ),
+        ],
+    )),
 )
