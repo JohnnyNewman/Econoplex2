@@ -6,7 +6,10 @@
 //   state    = [hunger, fatigue, happiness, health]
 //   features = [value, skill, effort, novelty, social, need]
 (
-    embedding: (ancestor_decay: 0.5, method: "Auto"),
+    // Skill embedding. `dims` is the length of every capability vector; None sizes
+    // it from the content (one per skill, rounded up to a multiple of 8), which
+    // keeps the product space exact. Fewer dims than skills compress it with NMF.
+    embedding: (ancestor_decay: 0.5, method: "Auto", dims: None),
 
     team_pooling: ElementwiseMax(coordination_cost: 0.04),
     success: Sigmoid(steepness: 8.0),

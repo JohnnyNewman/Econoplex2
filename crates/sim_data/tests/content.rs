@@ -18,7 +18,8 @@ fn shipped_content_is_valid() {
 #[test]
 fn product_space_clusters_by_domain() {
     let c = load();
-    let e = embed::embed(&c, sim_data::dims::CAP_DIM, 0.5, embed::EmbedMethod::Auto);
+    let dim = sim_data::dims::cap_dim_for(c.skills.len());
+    let e = embed::embed(&c, dim, 0.5, embed::EmbedMethod::Auto);
     let s =
         |a: &str, b: &str| e.similarity(c.skill(a).unwrap() as usize, c.skill(b).unwrap() as usize);
     assert!(s("smelting", "steelmaking") > s("steelmaking", "baking"));
@@ -63,9 +64,11 @@ fn the_tree_spans_five_eras_and_fits_the_product_space() {
             c.eras[e as usize]
         );
     }
-    // One dimension per skill keeps the product space exact.
-    assert!(c.skills.len() <= sim_data::dims::CAP_DIM);
-    let e = embed::embed(&c, sim_data::dims::CAP_DIM, 0.5, embed::EmbedMethod::Auto);
+    // Capability vectors get at least one dimension per skill, so the product
+    // space stays exact however many skills the content has.
+    assert!(sim_data::dims::cap_dim_for(c.skills.len()) >= c.skills.len());
+    let dim = sim_data::dims::cap_dim_for(c.skills.len());
+    let e = embed::embed(&c, dim, 0.5, embed::EmbedMethod::Auto);
     let s =
         |a: &str, b: &str| e.similarity(c.skill(a).unwrap() as usize, c.skill(b).unwrap() as usize);
     assert!(s("bronze_casting", "smelting") > s("bronze_casting", "weaving"));

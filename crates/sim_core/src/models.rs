@@ -4,7 +4,7 @@
 
 use crate::config::*;
 use bevy_ecs::prelude::Resource;
-use sim_data::dims::{dot, mind, norm, CapVec, MindVec, CAP_DIM};
+use sim_data::dims::{dot, mind, norm, CapVec, MindVec};
 
 pub trait TeamPooling: Send + Sync {
     /// Combine the members' effective capability vectors into one team vector.
@@ -48,10 +48,10 @@ pub struct ElementwiseMax {
 }
 impl TeamPooling for ElementwiseMax {
     fn pool(&self, members: &[CapVec]) -> CapVec {
-        let mut out: CapVec = [0.0; CAP_DIM];
+        let mut out: CapVec = vec![0.0; members.first().map_or(0, Vec::len)];
         for m in members {
-            for i in 0..CAP_DIM {
-                out[i] = out[i].max(m[i]);
+            for (o, x) in out.iter_mut().zip(m) {
+                *o = o.max(*x);
             }
         }
         out
@@ -73,11 +73,11 @@ impl TeamPooling for LeaderPlusAssistants {
             .max_by(|a, b| norm(a.1).total_cmp(&norm(b.1)).then(b.0.cmp(&a.0)))
             .map(|(i, _)| i)
             .unwrap_or(0);
-        let mut out = members[leader];
+        let mut out = members[leader].clone();
         for (j, m) in members.iter().enumerate() {
             if j != leader {
-                for i in 0..CAP_DIM {
-                    out[i] += self.assist * m[i];
+                for (o, x) in out.iter_mut().zip(m) {
+                    *o += self.assist * x;
                 }
             }
         }
@@ -127,8 +127,8 @@ impl LearningRule for DiminishingPractice {
     fn practice(&self, cap: &mut CapVec, skill: &CapVec, aptitude: f32, success: bool) {
         let room = (1.0 - dot(cap, skill) / self.mastery).max(0.0);
         let k = self.rate * aptitude * room * if success { 1.0 } else { self.failure_factor };
-        for i in 0..CAP_DIM {
-            cap[i] += k * skill[i];
+        for (c, s) in cap.iter_mut().zip(skill) {
+            *c += k * s;
         }
     }
 }
@@ -139,13 +139,14 @@ pub struct AlongSkillDiffusion {
 }
 impl DiffusionRule for AlongSkillDiffusion {
     fn diffuse(&self, apprentice: &mut CapVec, master: &CapVec, skill: &CapVec) -> f32 {
-        let mut diff = [0.0; CAP_DIM];
-        for i in 0..CAP_DIM {
-            diff[i] = master[i] - apprentice[i];
-        }
+        let diff: Vec<f32> = master
+            .iter()
+            .zip(apprentice.iter())
+            .map(|(m, a)| m - a)
+            .collect();
         let gap = dot(&diff, skill).max(0.0);
-        for i in 0..CAP_DIM {
-            apprentice[i] += self.rate * gap * skill[i];
+        for (a, s) in apprentice.iter_mut().zip(skill) {
+            *a += self.rate * gap * s;
         }
         self.teacher_gain * gap
     }
@@ -290,8 +291,10 @@ impl Models {
 mod tests {
     use super::*;
 
+    const DIM: usize = sim_data::dims::DEFAULT_CAP_DIM;
+
     fn unit(i: usize) -> CapVec {
-        let mut v = [0.0; CAP_DIM];
+        let mut v = vec![0.0; DIM];
         v[i] = 1.0;
         v
     }
@@ -304,7 +307,7 @@ mod tests {
             failure_factor: 0.5,
         };
         let s = unit(3);
-        let mut a = [0.0; CAP_DIM];
+        let mut a = vec![0.0; DIM];
         for _ in 0..2000 {
             rule.practice(&mut a, &s, 1.0, true);
         }
@@ -318,8 +321,8 @@ mod tests {
             rate: 0.5,
             teacher_gain: 0.0,
         };
-        let mut app = [0.0; CAP_DIM];
-        let mut master = [0.0; CAP_DIM];
+        let mut app = vec![0.0; DIM];
+        let mut master = vec![0.0; DIM];
         master[1] = 1.0;
         master[2] = 1.0;
         rule.diffuse(&mut app, &master, &unit(1));
@@ -342,7 +345,7 @@ mod tests {
             budget: 1.0,
             forgetting: 0.0,
         };
-        let mut a = [1.0; CAP_DIM];
+        let mut a = vec![1.0; DIM];
         rule.apply(&mut a);
         assert!((norm(&a) - 1.0).abs() < 1e-4);
     }

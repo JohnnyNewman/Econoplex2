@@ -114,7 +114,7 @@ impl AgentStore {
         self.potential.push(a.potential);
         self.temperament.push(a.temperament);
         self.aptitude.push(a.aptitude);
-        self.equip_vec.push([0.0; CAP_DIM]);
+        self.equip_vec.push(vec![0.0; self.cap[idx as usize].len()]);
         self.equipped.push(None);
         self.weapon.push(None);
         self.weapon_power.push(0.0);
@@ -143,10 +143,9 @@ impl AgentStore {
     /// Base capability plus equipment bonus.
     #[inline]
     pub fn effective_cap(&self, i: usize) -> CapVec {
-        let mut v = self.cap[i];
-        let e = &self.equip_vec[i];
-        for k in 0..CAP_DIM {
-            v[k] += e[k];
+        let mut v = self.cap[i].clone();
+        for (x, e) in v.iter_mut().zip(&self.equip_vec[i]) {
+            *x += e;
         }
         v
     }

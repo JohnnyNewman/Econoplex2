@@ -2,8 +2,16 @@
 //!
 //! Capability is fully latent. Mind, physique and state use named axes so players can read them.
 
-/// Latent capability (skill) dimension.
-pub const CAP_DIM: usize = 32;
+/// Latent capability (skill) dimension when nothing else decides it. The simulation
+/// sizes capability vectors from the content at load time (see [`cap_dim_for`]).
+pub const DEFAULT_CAP_DIM: usize = 32;
+
+/// Capability dimension for `skills` skills: one per skill, rounded up to a multiple
+/// of 8 so vector loops stay SIMD-friendly. With at least one dimension per skill
+/// the product space is exact (no compression).
+pub fn cap_dim_for(skills: usize) -> usize {
+    skills.max(1).div_ceil(8) * 8
+}
 /// Mind: 5 personality axes (fixed by temperament) + 3 ideological axes (socially mutable).
 pub const MIND_DIM: usize = 8;
 pub const PHYS_DIM: usize = 6;
@@ -53,21 +61,34 @@ pub fn phys_index(name: &str) -> Option<usize> {
     PHYS_NAMES.iter().position(|n| *n == name)
 }
 
-pub type CapVec = [f32; CAP_DIM];
+/// Latent capability vector; its length is the content's capability dimension
+/// (`Db::cap_dim`), the same for every agent and skill in a game.
+pub type CapVec = Vec<f32>;
 pub type MindVec = [f32; MIND_DIM];
 pub type PhysVec = [f32; PHYS_DIM];
 pub type StateVec = [f32; STATE_DIM];
 
 #[inline]
-pub fn dot<const N: usize>(a: &[f32; N], b: &[f32; N]) -> f32 {
-    let mut s = 0.0;
-    for i in 0..N {
-        s += a[i] * b[i];
+pub fn dot(a: &[f32], b: &[f32]) -> f32 {
+    debug_assert_eq!(a.len(), b.len());
+    // Four running sums let the compiler vectorize without reassociating floats
+    // differently between builds, so results stay bit-identical.
+    let mut acc = [0.0f32; 4];
+    let (ca, ra) = a.split_at(a.len() / 4 * 4);
+    let (cb, rb) = b.split_at(ca.len());
+    for (x, y) in ca.chunks_exact(4).zip(cb.chunks_exact(4)) {
+        for k in 0..4 {
+            acc[k] += x[k] * y[k];
+        }
+    }
+    let mut s = (acc[0] + acc[1]) + (acc[2] + acc[3]);
+    for (x, y) in ra.iter().zip(rb) {
+        s += x * y;
     }
     s
 }
 
 #[inline]
-pub fn norm<const N: usize>(a: &[f32; N]) -> f32 {
+pub fn norm(a: &[f32]) -> f32 {
     dot(a, a).sqrt()
 }

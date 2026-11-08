@@ -68,7 +68,7 @@ pub fn military(
     let Some(fight_idx) = db.content.skill("fighting") else {
         return;
     };
-    let fight = db.skill_vecs[fight_idx as usize];
+    let fight = db.skill_vecs[fight_idx as usize].clone();
     let mut rng = seed.rng(clock.tick, streams::MILITARY);
     let store = &mut *store;
     let dpy = clock.days_per_year;

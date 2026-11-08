@@ -442,7 +442,7 @@ pub fn setup(world: &mut World, db: Db, params: ModelParams, scenario: &Scenario
                 let center = 0.5 + 0.25 * ((ti * 3 + k) as f32 * 1.7).sin();
                 *m = (center + rng.random_range(-0.15..0.15f32)).clamp(0.0, 1.0);
             }
-            let mut cap = [0.0; CAP_DIM];
+            let mut cap = vec![0.0; db.cap_dim];
             for x in cap.iter_mut() {
                 *x = rng.random::<f32>() * STARTING_SKILL_NOISE;
             }
