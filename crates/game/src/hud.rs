@@ -141,7 +141,12 @@ pub fn update_hud(
         store.alive_count()
     );
     let latest = metrics.latest();
-    s.push_str("\ntown          pop   food  ECI  div  swords 1/2/3  goal  army\n");
+    // The goal column only shows when the scenario sets a goal.
+    s.push_str(if goal_amount.is_some() {
+        "\ntown          pop   food  ECI  div  swords 1/2/3  goal  army\n"
+    } else {
+        "\ntown          pop   food  ECI  div  swords 1/2/3  army\n"
+    });
     for (t, town) in towns.0.iter().enumerate() {
         let food = town.food_stock(&db) / town.residents.len().max(1) as f32;
         let (eci, div, swords) = latest
@@ -172,11 +177,14 @@ pub fn update_hud(
             town.name.clone()
         };
         let progress = match goal_amount {
-            Some(a) => format!("{:.0}/{a:.0}", state.progress(&towns, t)),
-            None => "-".into(),
+            Some(a) => format!(
+                "{:>5}  ",
+                format!("{:.0}/{a:.0}", state.progress(&towns, t))
+            ),
+            None => String::new(),
         };
         s.push_str(&format!(
-            "{:<11} {:>5} {:>6.1} {} {:>4}  {:>3}/{}/{}  {:>5}  {}\n",
+            "{:<11} {:>5} {:>6.1} {} {:>4}  {:>3}/{}/{}  {}{}\n",
             name,
             town.residents.len(),
             food,

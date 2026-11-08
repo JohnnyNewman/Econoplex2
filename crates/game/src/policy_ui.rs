@@ -7,7 +7,7 @@
 
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
-use sim_core::policy::{Immigration, Order, OrderQueue, PlayerTown, School, War};
+use sim_core::policy::{Immigration, Minting, Order, OrderQueue, PlayerTown, School, War};
 use sim_core::{Db, Towns};
 use sim_data::Category;
 
@@ -32,6 +32,7 @@ pub enum Action {
     SchoolDomain(i32),
     SchoolSeats(i32),
     Immigration,
+    Minting,
     CharterDomain(i32),
     CharterToggle,
     ArmyShare(i32),
@@ -50,6 +51,7 @@ pub enum Field {
     SchoolDomain,
     SchoolSeats,
     Immigration,
+    Minting,
     CharterDomain,
     CharterState,
     ArmyShare,
@@ -167,6 +169,10 @@ pub fn spawn_policy_panel(mut commands: Commands) {
             row(p, "Immigration", &|r| {
                 button(r, "change", Action::Immigration);
                 value(r, Field::Immigration, 90.0);
+            });
+            row(p, "Mint", &|r| {
+                button(r, "change", Action::Minting);
+                value(r, Field::Minting, 90.0);
             });
             row(p, "Army", &|r| {
                 button(r, "-", Action::ArmyShare(-1));
@@ -291,6 +297,14 @@ pub fn policy_buttons(
                         placing.0 = kinds.get(cursor.building).map(|&b| b as u32);
                         None
                     }
+                    Action::Minting => Some(Order::Mint {
+                        town,
+                        minting: match policy.minting {
+                            Minting::Auto => Minting::On,
+                            Minting::On => Minting::Off,
+                            Minting::Off => Minting::Auto,
+                        },
+                    }),
                     Action::Immigration => Some(Order::Immigration {
                         town,
                         policy: match policy.immigration {
@@ -395,6 +409,12 @@ pub fn update_policy_panel(
                 "on"
             } else {
                 "off"
+            }
+            .into(),
+            Field::Minting => match p.minting {
+                Minting::Auto => "auto",
+                Minting::On => "on",
+                Minting::Off => "off",
             }
             .into(),
             Field::Immigration => match p.immigration {

@@ -26,7 +26,13 @@ pub fn settle(
 
     for town in towns.0.iter_mut() {
         let pop = town.residents.len().max(1) as f32;
+        let mint_wanted = town.mint_wanted(mp);
         for p in 0..np {
+            if db.coin[p] > 0.0 {
+                // Coin is worth its face value, while the town wants more of it.
+                town.price[p] = if mint_wanted { db.coin[p] } else { 0.0 };
+                continue;
+            }
             if let Some(kind) = db.opens[p] {
                 town.price[p] = land_price(&db, town, mp, p, kind, &sites);
                 continue;
@@ -59,6 +65,19 @@ pub fn settle(
                     .any(|c| c.building == p as u32)
                 {
                     town.price[p] = base;
+                    continue;
+                }
+                // A mint is worth building when the town wants coin and has none.
+                let mints = db.recipes.iter().any(|m| {
+                    m.building == Some(p as u32)
+                        && m.outputs.iter().any(|o| db.coin[o.0 as usize] > 0.0)
+                });
+                if mints {
+                    town.price[p] = if mint_wanted && town.building_count(p as u32) == 0 {
+                        base
+                    } else {
+                        0.0
+                    };
                     continue;
                 }
                 town.price[p] = if town.building_count(p as u32) == 0 {

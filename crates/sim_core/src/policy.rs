@@ -40,6 +40,18 @@ pub struct School {
 }
 
 /// Who decides when the squad marches.
+/// Whether the town strikes coin (see `Policy::mint_wanted`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub enum Minting {
+    /// Build a mint and strike coin while the treasury runs low.
+    #[default]
+    Auto,
+    /// Strike coin whenever the mint has workers and metal.
+    On,
+    /// Never strike coin (and don't build a mint unless ordered).
+    Off,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum War {
     /// The squad raids whenever it sees a good chance (the AI towns).
@@ -73,6 +85,8 @@ pub struct Policy {
     pub raid_order: Option<u16>,
     /// Buildings ordered and not yet built, in order.
     pub commissions: Vec<Commission>,
+    #[serde(default)]
+    pub minting: Minting,
 }
 
 impl Policy {
@@ -124,6 +138,10 @@ pub enum Order {
         building: u32,
         pos: Option<(f32, f32)>,
     },
+    Mint {
+        town: u16,
+        minting: Minting,
+    },
 }
 
 impl Order {
@@ -136,7 +154,8 @@ impl Order {
             | Order::Army { town, .. }
             | Order::War { town, .. }
             | Order::Raid { town, .. }
-            | Order::Build { town, .. } => town,
+            | Order::Build { town, .. }
+            | Order::Mint { town, .. } => town,
         }
     }
 
@@ -151,6 +170,7 @@ impl Order {
     /// war <town> auto|defend
     /// raid <town> <target>
     /// build <town> <building> [<x> <y>]
+    /// mint <town> auto|on|off
     /// ```
     pub fn parse(text: &str, db: &Db, towns: &Towns) -> Result<Order, String> {
         let w: Vec<&str> = text.split_whitespace().collect();
@@ -220,6 +240,14 @@ impl Order {
             ["war", t, w @ ("auto" | "defend")] => Ok(Order::War {
                 town: town(t)?,
                 war: if *w == "auto" { War::Auto } else { War::Defend },
+            }),
+            ["mint", t, m @ ("auto" | "on" | "off")] => Ok(Order::Mint {
+                town: town(t)?,
+                minting: match *m {
+                    "on" => Minting::On,
+                    "off" => Minting::Off,
+                    _ => Minting::Auto,
+                },
             }),
             ["raid", t, target] => Ok(Order::Raid {
                 town: town(t)?,
@@ -291,6 +319,7 @@ pub fn apply_orders(
                 p.army_share = share.map(|s| s.clamp(0.0, params.policy.max_army_share));
             }
             Order::War { war, .. } => p.war = war,
+            Order::Mint { minting, .. } => p.minting = minting,
             Order::Raid { town: t, target } => {
                 p.raid_order = (target != t).then_some(target);
             }

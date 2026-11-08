@@ -5,8 +5,8 @@
 //! into people's hands: **issued**. What it takes back by right (the wealth tax,
 //! estates without heirs) is **taxed**. What people hand back by choice, buying food
 //! and tools at the town market, is **spent**. Trade, tribute and plunder move money
-//! between towns. Total money stays constant: the ledger only labels the flows, it
-//! does not change them.
+//! between towns. Coin struck at a mint is new money: **minted**. Apart from that
+//! the total stays constant; the ledger only labels the flows.
 //!
 //! The ledger keeps today's sums, a daily average over about a month (for the HUD),
 //! and yearly totals (for metrics). It also tracks the value of goods each town ships
@@ -38,9 +38,11 @@ pub enum Flow {
     TributePaid,
     LootTaken,
     LootLost,
+    // New coin struck at the town's mint.
+    Minted,
 }
 
-pub const FLOWS: usize = 16;
+pub const FLOWS: usize = 17;
 
 /// How the HUD groups flows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,6 +54,8 @@ pub enum Group {
     ExternalIn,
     /// Money going out to other towns.
     ExternalOut,
+    /// New money from the mint.
+    Minted,
 }
 
 impl Flow {
@@ -72,6 +76,7 @@ impl Flow {
         Flow::TributePaid,
         Flow::LootTaken,
         Flow::LootLost,
+        Flow::Minted,
     ];
 
     pub fn name(self) -> &'static str {
@@ -92,6 +97,7 @@ impl Flow {
             Flow::TributePaid => "tribute paid",
             Flow::LootTaken => "loot taken",
             Flow::LootLost => "loot lost",
+            Flow::Minted => "minted",
         }
     }
 
@@ -105,6 +111,7 @@ impl Flow {
             FoodSales | ToolSales => Group::Spent,
             TradeSales | TributeReceived | LootTaken => Group::ExternalIn,
             TradePurchases | TributePaid | LootLost => Group::ExternalOut,
+            Minted => Group::Minted,
         }
     }
 }
@@ -119,6 +126,9 @@ pub struct Ledger {
     pub monthly: [f32; FLOWS],
     pub this_year: [f32; FLOWS],
     pub last_year: [f32; FLOWS],
+    /// Since the start of the game.
+    #[serde(default)]
+    pub total: [f64; FLOWS],
     /// Value of goods shipped to each town (at the buyer's price): today, and the
     /// daily average over about a month.
     pub exports_today: Vec<f32>,
@@ -160,6 +170,7 @@ impl Ledger {
         for k in 0..FLOWS {
             self.monthly[k] += a * (self.today[k] - self.monthly[k]);
             self.this_year[k] += self.today[k];
+            self.total[k] += self.today[k] as f64;
         }
         self.today = [0.0; FLOWS];
         self.exports.resize(self.exports_today.len(), 0.0);

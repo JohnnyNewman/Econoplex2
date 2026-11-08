@@ -107,6 +107,11 @@
         public_spending: 2.0,
         food_spoilage: 0.5,
         tool_credit: 40.0,
+        // Money: every town starts with this many coins. New coin comes only from a
+        // mint (content/60_money.ron), which a town builds and works while its
+        // treasury holds less than `mint_below_per_capita` per resident.
+        starting_coins: 1000.0,
+        mint_below_per_capita: 3.0,
         // Construction: a town pays for a new building when the ones it has are this full.
         build_threshold: 0.75,
         new_building_appeal: 0.3,

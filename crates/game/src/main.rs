@@ -96,10 +96,7 @@ fn main() {
         .insert_resource(policy_ui::PolicyCursor::default())
         .insert_resource(policy_ui::Placing::default())
         .insert_resource(saving::Toast::default())
-        .insert_resource(economy_ui::EconomyView {
-            visible: true,
-            town: econ_town,
-        })
+        .insert_resource(economy_ui::EconomyView::new(econ_town))
         .insert_resource(ClearColor(Color::srgb(0.08, 0.09, 0.08)))
         .add_systems(
             Startup,
@@ -119,6 +116,7 @@ fn main() {
             Update,
             (
                 economy_ui::economy_keys,
+                economy_ui::fold_sections,
                 economy_ui::update_economy_panel,
                 economy_ui::draw_flows,
                 economy_ui::draw_money_rings,

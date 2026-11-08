@@ -75,6 +75,10 @@ pub struct ProductDef {
     /// cleared field, a planted woodlot) instead of putting up a workplace.
     #[serde(default)]
     pub opens: Option<String>,
+    /// Coin: each unit made is this much new money in the town treasury instead of
+    /// a good in stock (0 = not money). Only a mint makes coin.
+    #[serde(default)]
+    pub coin: f32,
 }
 
 /// One production step. A product such as a level-3 longsword is the end of a chain of steps.
