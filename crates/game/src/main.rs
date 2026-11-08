@@ -110,7 +110,10 @@ fn main() {
                 economy_ui::spawn_economy_panel.after(hud::spawn_hud),
             ),
         )
-        .add_systems(PostStartup, autorun::load_at_start)
+        .add_systems(
+            PostStartup,
+            (autorun::apply_view_args, autorun::load_at_start),
+        )
         .add_systems(FixedUpdate, run_sim_tick)
         .add_systems(
             Update,

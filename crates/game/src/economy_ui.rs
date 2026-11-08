@@ -449,7 +449,6 @@ pub fn goal_text(
 /// Caravan routes as arrows: brighter and wider the more value they carry.
 pub fn draw_flows(
     mut gizmos: Gizmos,
-    view: Res<EconomyView>,
     towns: Res<Towns>,
     mut labels: Query<(&FlowLabel, &mut Text2d, &mut Transform, &mut Visibility)>,
 ) {
@@ -465,7 +464,7 @@ pub fn draw_flows(
             .get(a)
             .and_then(|t| t.ledger.exports.get(b).copied())
             .unwrap_or(0.0);
-        if !view.visible || v < 0.5 {
+        if v < 0.5 {
             *vis = Visibility::Hidden;
             continue;
         }
@@ -493,9 +492,6 @@ pub fn draw_flows(
 /// A ring per town showing the month's money: minted (violet), issued (green),
 /// taxed (orange), spent (blue), as arcs proportional to each flow.
 pub fn draw_money_rings(mut gizmos: Gizmos, view: Res<EconomyView>, towns: Res<Towns>) {
-    if !view.visible {
-        return;
-    }
     let groups = [
         (Group::Minted, MINTED),
         (Group::Issued, ISSUED),
@@ -531,7 +527,7 @@ pub fn draw_money_rings(mut gizmos: Gizmos, view: Res<EconomyView>, towns: Res<T
             }
             start += arc;
         }
-        if view.town == t {
+        if view.visible && view.town == t {
             gizmos.circle_2d(center, 118.0, Color::srgba(1.0, 1.0, 1.0, 0.5));
         }
     }

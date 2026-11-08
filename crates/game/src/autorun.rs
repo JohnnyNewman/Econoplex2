@@ -2,6 +2,7 @@
 //!
 //! ```text
 //! econoplex [--load FILE] [--speed 1-5] [--shot FILE [--shot-day N] [--exit]]
+//!           [--town NAME] [--camera X Y] [--zoom F] [--no-economy] [--product-space]
 //! ```
 //!
 //! `--shot` runs until day N (default: right away), pauses, lets the view settle,
@@ -22,6 +23,11 @@ pub struct GameArgs {
     pub exit: bool,
     /// Town shown in the economy panel at start.
     pub town: Option<String>,
+    /// Camera center and zoom (world units per pixel; the default is 1.6).
+    pub camera: Option<(f32, f32)>,
+    pub zoom: Option<f32>,
+    pub no_economy: bool,
+    pub product_space: bool,
 }
 
 pub fn parse() -> GameArgs {
@@ -50,6 +56,24 @@ pub fn parse() -> GameArgs {
             }
             "--exit" => a.exit = true,
             "--town" => a.town = Some(val()),
+            "--camera" => {
+                let x = val()
+                    .parse()
+                    .unwrap_or_else(|_| die("--camera expects X Y"));
+                let y = val()
+                    .parse()
+                    .unwrap_or_else(|_| die("--camera expects X Y"));
+                a.camera = Some((x, y));
+            }
+            "--zoom" => {
+                a.zoom = Some(
+                    val()
+                        .parse()
+                        .unwrap_or_else(|_| die("--zoom expects a number")),
+                )
+            }
+            "--no-economy" => a.no_economy = true,
+            "--product-space" => a.product_space = true,
             "-h" | "--help" => {
                 println!(
                     "econoplex: the Econoplex game\n\n\
@@ -58,7 +82,11 @@ pub fn parse() -> GameArgs {
                      --shot FILE      save a PNG screenshot once the game reaches --shot-day\n\
                      --shot-day N     day of the screenshot (default: at once)\n\
                      --exit           quit after the screenshot
-                     --town NAME      town shown in the economy panel at start"
+                     --town NAME      town shown in the economy panel at start
+                     --camera X Y     center the camera on a world position
+                     --zoom F         camera zoom (default 1.6; smaller is closer)
+                     --no-economy     start with the economy panel closed
+                     --product-space  start with the product space overlay (P) on"
                 );
                 std::process::exit(0);
             }
@@ -66,6 +94,26 @@ pub fn parse() -> GameArgs {
         }
     }
     a
+}
+
+/// Apply the camera and panel options once the view has been set up.
+pub fn apply_view_args(
+    args: Res<GameArgs>,
+    mut camera: Single<&mut Transform, With<Camera2d>>,
+    mut economy: ResMut<crate::economy_ui::EconomyView>,
+    mut overlay: ResMut<crate::view::Overlay>,
+) {
+    if let Some((x, y)) = args.camera {
+        camera.translation.x = x;
+        camera.translation.y = y;
+    }
+    if let Some(z) = args.zoom {
+        camera.scale = Vec3::new(z, z, 1.0);
+    }
+    if args.no_economy {
+        economy.visible = false;
+    }
+    overlay.product_space |= args.product_space;
 }
 
 /// Load `--load` once the view has been set up.
