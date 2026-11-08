@@ -140,6 +140,18 @@ impl AgentStore {
         idx
     }
 
+    /// Base capability plus equipment bonus, written into `out` (no allocation).
+    #[inline]
+    pub fn effective_cap_into(&self, i: usize, out: &mut Vec<f32>) {
+        out.clear();
+        out.extend(
+            self.cap[i]
+                .iter()
+                .zip(&self.equip_vec[i])
+                .map(|(c, e)| c + e),
+        );
+    }
+
     /// Base capability plus equipment bonus.
     #[inline]
     pub fn effective_cap(&self, i: usize) -> CapVec {

@@ -71,17 +71,18 @@ pub type StateVec = [f32; STATE_DIM];
 #[inline]
 pub fn dot(a: &[f32], b: &[f32]) -> f32 {
     debug_assert_eq!(a.len(), b.len());
-    // Four running sums let the compiler vectorize without reassociating floats
-    // differently between builds, so results stay bit-identical.
-    let mut acc = [0.0f32; 4];
-    let (ca, ra) = a.split_at(a.len() / 4 * 4);
-    let (cb, rb) = b.split_at(ca.len());
-    for (x, y) in ca.chunks_exact(4).zip(cb.chunks_exact(4)) {
-        for k in 0..4 {
+    // Eight running sums (capability dimensions are a multiple of 8) let the
+    // compiler vectorize with a fixed summation order, so results stay identical
+    // between runs and machines.
+    let mut acc = [0.0f32; 8];
+    let (ca, ra) = a.as_chunks::<8>();
+    let (cb, rb) = b.as_chunks::<8>();
+    for (x, y) in ca.iter().zip(cb) {
+        for k in 0..8 {
             acc[k] += x[k] * y[k];
         }
     }
-    let mut s = (acc[0] + acc[1]) + (acc[2] + acc[3]);
+    let mut s = ((acc[0] + acc[1]) + (acc[2] + acc[3])) + ((acc[4] + acc[5]) + (acc[6] + acc[7]));
     for (x, y) in ra.iter().zip(rb) {
         s += x * y;
     }

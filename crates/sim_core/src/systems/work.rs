@@ -509,11 +509,11 @@ pub fn learn(
             let mult = store.aptitude[i] * (0.5 + store.state[i][state::HAPPINESS]);
             models
                 .learning
-                .practice(&mut store.cap[i], &s, mult, ev.success);
+                .practice(&mut store.cap[i], s, mult, ev.success);
         }
         let Some(&master) = ev.workers.iter().max_by(|&&a, &&b| {
-            dot(&store.cap[a as usize], &s)
-                .total_cmp(&dot(&store.cap[b as usize], &s))
+            dot(&store.cap[a as usize], s)
+                .total_cmp(&dot(&store.cap[b as usize], s))
                 .then(b.cmp(&a))
         }) else {
             continue;
@@ -528,7 +528,7 @@ pub fn learn(
                     * (1.0
                         + params.trust.teaching_bonus * store.trust(o, master as usize).max(0.0));
                 let before = store.cap[o].clone();
-                let g = models.diffusion.diffuse(&mut store.cap[o], &master_cap, &s);
+                let g = models.diffusion.diffuse(&mut store.cap[o], &master_cap, s);
                 for (c, b) in store.cap[o].iter_mut().zip(before) {
                     *c = b + (*c - b) * boost;
                 }
@@ -556,8 +556,8 @@ pub fn learn(
             .map(|&i| i as usize)
             .filter(|&i| store.alive[i] && store.activity[i] != Activity::Child)
             .max_by(|&a, &b| {
-                dot(&store.cap[a], &dir)
-                    .total_cmp(&dot(&store.cap[b], &dir))
+                dot(&store.cap[a], dir)
+                    .total_cmp(&dot(&store.cap[b], dir))
                     .then(b.cmp(&a))
             })
         else {
@@ -583,13 +583,11 @@ pub fn learn(
             // Lessons are practice at a share of the pace of real work, plus what
             // the teacher passes on.
             let mult = store.aptitude[c] * pp.school_rate;
-            models
-                .learning
-                .practice(&mut store.cap[c], &dir, mult, true);
+            models.learning.practice(&mut store.cap[c], dir, mult, true);
             let before = store.cap[c].clone();
             models
                 .diffusion
-                .diffuse(&mut store.cap[c], &teacher_cap, &dir);
+                .diffuse(&mut store.cap[c], &teacher_cap, dir);
             for (x, b) in store.cap[c].iter_mut().zip(before) {
                 *x = b + (*x - b) * pp.school_rate;
             }

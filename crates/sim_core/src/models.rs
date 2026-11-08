@@ -139,12 +139,8 @@ pub struct AlongSkillDiffusion {
 }
 impl DiffusionRule for AlongSkillDiffusion {
     fn diffuse(&self, apprentice: &mut CapVec, master: &CapVec, skill: &CapVec) -> f32 {
-        let diff: Vec<f32> = master
-            .iter()
-            .zip(apprentice.iter())
-            .map(|(m, a)| m - a)
-            .collect();
-        let gap = dot(&diff, skill).max(0.0);
+        // The gap along the skill is linear: no difference vector needed.
+        let gap = (dot(master, skill) - dot(apprentice, skill)).max(0.0);
         for (a, s) in apprentice.iter_mut().zip(skill) {
             *a += self.rate * gap * s;
         }
