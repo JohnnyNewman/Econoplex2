@@ -20,6 +20,8 @@ pub struct GameArgs {
     pub shot: Option<PathBuf>,
     pub shot_day: u64,
     pub exit: bool,
+    /// Town shown in the economy panel at start.
+    pub town: Option<String>,
 }
 
 pub fn parse() -> GameArgs {
@@ -47,6 +49,7 @@ pub fn parse() -> GameArgs {
                     .unwrap_or_else(|_| die("--shot-day expects a day"))
             }
             "--exit" => a.exit = true,
+            "--town" => a.town = Some(val()),
             "-h" | "--help" => {
                 println!(
                     "econoplex: the Econoplex game\n\n\
@@ -54,7 +57,8 @@ pub fn parse() -> GameArgs {
                      --speed N        start at speed N (1-5)\n\
                      --shot FILE      save a PNG screenshot once the game reaches --shot-day\n\
                      --shot-day N     day of the screenshot (default: at once)\n\
-                     --exit           quit after the screenshot"
+                     --exit           quit after the screenshot
+                     --town NAME      town shown in the economy panel at start"
                 );
                 std::process::exit(0);
             }

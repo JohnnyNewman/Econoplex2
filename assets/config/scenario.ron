@@ -3,6 +3,16 @@
     seed: 42,
     // The town the player governs in the game; the headless runner ignores it.
     player: Some("Greenvale"),
+    // How the match is won: the first free town (paying no tribute) that has made
+    // `amount` of `product` in total, in a year it did not go hungry (at most
+    // `max_starving` of its person-days starving). After `years`, the free town
+    // closest to the goal wins. Leave out for endless play.
+    goal: Some((
+        product: "longsword_3",
+        amount: 5.0,
+        max_starving: 0.02,
+        years: 40,
+    )),
     towns: [
         (
             name: "Ironhold", position: (-450.0, 250.0), population: 300,

@@ -586,3 +586,73 @@ fn a_save_from_other_content_is_refused() {
     let err = Simulation::from_save(sim_core::save::from_str(&text).unwrap(), content);
     assert!(err.is_err());
 }
+
+#[test]
+fn the_ledger_accounts_for_every_treasury_change() {
+    use sim_core::ledger::{sum_group, Group};
+    let mut s = full(5);
+    run_years(&mut s, 1);
+    let before: Vec<f32> = s
+        .world
+        .resource::<sim_core::Towns>()
+        .0
+        .iter()
+        .map(|t| t.treasury)
+        .collect();
+    run_years(&mut s, 1);
+    for (t, town) in s.world.resource::<sim_core::Towns>().0.iter().enumerate() {
+        let l = &town.ledger.last_year;
+        let net = sum_group(l, Group::Taxed)
+            + sum_group(l, Group::Spent)
+            + sum_group(l, Group::ExternalIn)
+            - sum_group(l, Group::Issued)
+            - sum_group(l, Group::ExternalOut);
+        let change = town.treasury - before[t];
+        let scale = sum_group(l, Group::Issued).max(1.0);
+        assert!(
+            (net - change).abs() < 1e-3 * scale,
+            "{}: ledger says {net}, treasury moved {change}",
+            town.name
+        );
+        assert!(sum_group(l, Group::Issued) > 0.0);
+        assert!(sum_group(l, Group::Spent) > 0.0);
+    }
+}
+
+#[test]
+fn a_match_is_won_by_the_first_town_to_reach_the_goal() {
+    use sim_core::config::GoalSpec;
+    use sim_core::goal::{MatchState, WinReason};
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    // Everyone bakes: whoever baked most in the first year wins at its end.
+    scenario.goal = Some(GoalSpec {
+        product: "bread".into(),
+        amount: 100.0,
+        max_starving: 1.0,
+        years: 10,
+    });
+    let mut s = Simulation::new(db, params, &scenario);
+    run_years(&mut s, 1);
+    let state = s.world.resource::<MatchState>();
+    let r = state.result.expect("someone baked 100 loaves in a year");
+    assert_eq!(r.reason, WinReason::Goal);
+    assert_eq!(r.year, 1);
+    let best = (0..state.made.len())
+        .max_by(|&a, &b| state.made[a].total_cmp(&state.made[b]))
+        .unwrap();
+    assert_eq!(r.winner as usize, best);
+
+    // An unreachable goal is decided by time: the closest free town wins.
+    let (db, params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    scenario.goal = Some(GoalSpec {
+        product: "longsword_3".into(),
+        amount: 1e9,
+        max_starving: 1.0,
+        years: 1,
+    });
+    let mut s = Simulation::new(db, params, &scenario);
+    run_years(&mut s, 1);
+    let r = s.world.resource::<MatchState>().result.unwrap();
+    assert_eq!(r.reason, WinReason::TimeUp);
+}

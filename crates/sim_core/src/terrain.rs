@@ -358,6 +358,7 @@ mod tests {
         let scenario = Scenario {
             seed: 1,
             player: None,
+            goal: None,
             towns: vec![town(-400.0, 0.0), town(400.0, 0.0)],
             terrain: Some(TerrainSpec {
                 rivers: vec![RiverSpec {

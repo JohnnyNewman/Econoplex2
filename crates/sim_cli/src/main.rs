@@ -252,6 +252,7 @@ fn main() {
         agents
     );
     print_final(&sim);
+    print_match(&sim);
     if args.profile {
         print_profile(sim.world.resource::<sim_core::profile::Profile>(), ticks);
     }
@@ -266,6 +267,34 @@ fn main() {
         write_csv(&path, sim.world.resource::<Metrics>())
             .unwrap_or_else(|e| die(&format!("cannot write CSV: {e}")));
         println!("wrote {}", path.display());
+    }
+}
+
+fn print_match(sim: &Simulation) {
+    let Some(goal) = &sim.world.resource::<sim_core::world::ScenarioSpec>().0.goal else {
+        return;
+    };
+    let state = sim.world.resource::<sim_core::goal::MatchState>();
+    let towns = sim.world.resource::<sim_core::Towns>();
+    println!(
+        "
+Match goal: {} x {} within {} years",
+        goal.amount, goal.product, goal.years
+    );
+    for (t, town) in towns.0.iter().enumerate() {
+        println!("  {:<11} {:>6.1}", town.name, state.progress(towns, t));
+    }
+    match state.result {
+        Some(r) => println!(
+            "  winner: {} in year {} ({})",
+            towns.0[r.winner as usize].name,
+            r.year,
+            match r.reason {
+                sim_core::goal::WinReason::Goal => "reached the goal",
+                sim_core::goal::WinReason::TimeUp => "closest when time ran out",
+            }
+        ),
+        None => println!("  no winner yet"),
     }
 }
 
@@ -492,18 +521,19 @@ fn write_csv(path: &std::path::Path, m: &Metrics) -> std::io::Result<()> {
     let mut f = std::fs::File::create(path)?;
     writeln!(
         f,
-        "year,town,population,adults,food_per_capita,diversity,rca_products,eci,specialization,mean_top_skill,masters,guild_members,tools_in_use,swords_1,swords_2,swords_3,treasury,mean_wealth,buildings,tradition,faith,liberty,ideology_spread,starving,migrants_in,migrants_out,captives_taken,captives_lost,ruler,conquests,revolts,tribute_paid,trust,trade_ties"
+        "year,town,population,adults,food_per_capita,diversity,rca_products,eci,specialization,mean_top_skill,masters,guild_members,tools_in_use,swords_1,swords_2,swords_3,treasury,mean_wealth,buildings,tradition,faith,liberty,ideology_spread,starving,migrants_in,migrants_out,captives_taken,captives_lost,ruler,conquests,revolts,tribute_paid,trust,trade_ties,issued,taxed,spent,external_in,external_out"
     )?;
     for y in &m.years {
         for t in &y.towns {
             writeln!(
                 f,
-                "{},{},{},{},{:.3},{},{},{:.3},{:.4},{:.4},{},{},{},{},{},{},{:.1},{:.2},{},{:.4},{:.4},{:.4},{:.4},{:.4},{},{},{},{},{},{},{},{:.1},{:.4},{:.4}",
+                "{},{},{},{},{:.3},{},{},{:.3},{:.4},{:.4},{},{},{},{},{},{},{:.1},{:.2},{},{:.4},{:.4},{:.4},{:.4},{:.4},{},{},{},{},{},{},{},{:.1},{:.4},{:.4},{:.1},{:.1},{:.1},{:.1},{:.1}",
                 y.year, t.name, t.population, t.adults, t.food_per_capita, t.diversity, t.rca_products, t.eci, t.specialization,
                 t.mean_top_skill, t.masters, t.guild_members, t.tools_in_use, t.swords[0], t.swords[1], t.swords[2], t.treasury, t.mean_wealth, t.buildings,
                 t.ideology[0], t.ideology[1], t.ideology[2], t.ideology_spread, t.starving,
                 t.moves.arrived, t.moves.left, t.war.captives_taken, t.war.captives_lost,
-                t.ruler.map_or("", |r| y.towns[r as usize].name.as_str()), t.war.conquests, t.war.revolts, t.war.tribute_paid, t.trust, t.trade_ties
+                t.ruler.map_or("", |r| y.towns[r as usize].name.as_str()), t.war.conquests, t.war.revolts, t.war.tribute_paid, t.trust, t.trade_ties,
+                t.issued, t.taxed, t.spent, t.external_in, t.external_out
             )?;
         }
     }

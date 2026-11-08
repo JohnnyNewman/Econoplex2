@@ -175,7 +175,11 @@ pub fn military(
             let pay = towns.0[t].treasury.max(0.0) * mp.tribute_share;
             towns.0[t].treasury -= pay;
             towns.0[t].war.tribute_paid += pay;
+            towns.0[t].ledger.add(crate::ledger::Flow::TributePaid, pay);
             towns.0[r].treasury += pay;
+            towns.0[r]
+                .ledger
+                .add(crate::ledger::Flow::TributeReceived, pay);
             towns.0[r].war.tribute_received += pay;
             if rng.random::<f32>() < chance {
                 towns.0[t].ruler = None;
@@ -190,6 +194,7 @@ pub fn military(
             let i = s as usize;
             let pay = mp.soldier_pay.min(town.treasury.max(0.0));
             town.treasury -= pay;
+            town.ledger.add(crate::ledger::Flow::SoldierPay, pay);
             store.wealth[i] += pay;
             if !marching.contains(&s) {
                 let mult = mp.drill_rate * store.aptitude[i];
@@ -484,7 +489,11 @@ fn battle(
     if won {
         let money = towns.0[d].treasury.max(0.0) * mp.loot_share;
         towns.0[d].treasury -= money;
+        towns.0[d].ledger.add(crate::ledger::Flow::LootLost, money);
         towns.0[attacker].treasury += money;
+        towns.0[attacker]
+            .ledger
+            .add(crate::ledger::Flow::LootTaken, money);
         for p in 0..db.content.products.len() {
             let cat = db.category(p as u32);
             if cat == Category::Building || cat.is_item() {
