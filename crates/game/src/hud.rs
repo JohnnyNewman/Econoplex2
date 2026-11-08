@@ -143,22 +143,23 @@ pub fn update_hud(
     let latest = metrics.latest();
     // The goal column only shows when the scenario sets a goal.
     s.push_str(if goal_amount.is_some() {
-        "\ntown          pop   food  ECI  div  swords 1/2/3  goal  army\n"
+        "\ntown          pop   food  ECI  div  era  swords 1/2/3  goal  army\n"
     } else {
-        "\ntown          pop   food  ECI  div  swords 1/2/3  army\n"
+        "\ntown          pop   food  ECI  div  era  swords 1/2/3  army\n"
     });
     for (t, town) in towns.0.iter().enumerate() {
         let food = town.food_stock(&db) / town.residents.len().max(1) as f32;
-        let (eci, div, swords) = latest
+        let (eci, div, swords, era) = latest
             .and_then(|y| y.towns.get(t))
             .map(|ts| {
                 (
                     format!("{:>5.2}", ts.eci),
                     ts.diversity.to_string(),
                     ts.swords,
+                    ts.era.to_string(),
                 )
             })
-            .unwrap_or(("  -  ".into(), "-".into(), [0; 3]));
+            .unwrap_or(("  -  ".into(), "-".into(), [0; 3], "-".into()));
         let army = match &town.raid {
             Some(r) => format!(
                 "{} -> {}",
@@ -184,12 +185,13 @@ pub fn update_hud(
             None => String::new(),
         };
         s.push_str(&format!(
-            "{:<11} {:>5} {:>6.1} {} {:>4}  {:>3}/{}/{}  {}{}\n",
+            "{:<11} {:>5} {:>6.1} {} {:>4} {:>4}  {:>3}/{}/{}  {}{}\n",
             name,
             town.residents.len(),
             food,
             eci,
             div,
+            era,
             swords[0],
             swords[1],
             swords[2],
@@ -199,6 +201,16 @@ pub fn update_hud(
     }
     if player.0.is_some() {
         s.push_str("* your town\n");
+    }
+    if !db.content.eras.is_empty() {
+        let names: Vec<String> = db
+            .content
+            .eras
+            .iter()
+            .enumerate()
+            .map(|(k, n)| format!("{k} {n}"))
+            .collect();
+        s.push_str(&format!("eras: {}\n", names.join(" | ")));
     }
     if let Some(g) = crate::economy_ui::goal_text(&scenario, &state, &towns, &db) {
         s.push_str(&format!("\n{g}\n"));

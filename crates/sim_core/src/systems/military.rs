@@ -104,7 +104,9 @@ pub fn military(
                     .copied()
                     .filter(|&i| {
                         let i = i as usize;
-                        store.activity[i] == Activity::Idle
+                        // Anyone not in the middle of a job can be called up; in a busy
+                        // economy few adults are ever idle.
+                        matches!(store.activity[i], Activity::Idle | Activity::Resting)
                             && store.age_years(i, dpy) <= mp.max_recruit_age
                             && store.state[i][state::HEALTH] > 0.6
                     })

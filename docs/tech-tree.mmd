@@ -1,0 +1,177 @@
+flowchart LR
+  subgraph era0["0 Wood and grain"]
+    p_workshop[["Workshop"]]
+    p_mill[["Mill"]]
+    p_bakery[["Bakery"]]
+    p_furnace[["Furnace"]]
+    p_smithy[["Smithy"]]
+    p_grain(["Grain"])
+    p_flour["Flour"]
+    p_bread["Bread"]
+    p_wool(["Wool"])
+    p_flax(["Flax"])
+    p_stone(["Stone"])
+    p_clay(["Clay"])
+    p_wood(["Wood"])
+    p_plank["Plank"]
+    p_charcoal["Charcoal"]
+    p_hilt["Hilt"]
+    p_ore(["Iron ore"])
+    p_copper_ore(["Copper ore"])
+    p_tin_ore(["Tin ore"])
+    p_coal(["Coal"])
+    p_silver_ore(["Silver ore"])
+  end
+  subgraph era1["1 Stone, clay and cloth"]
+    p_yarn["Yarn"]
+    p_cloth["Cloth"]
+    p_clothes["Clothes"]
+    p_ale["Ale"]
+    p_weaving_shed[["Weaving shed"]]
+    p_brewery[["Brewery"]]
+    p_cut_stone["Cut stone"]
+    p_pot["Pot"]
+    p_brick["Brick"]
+    p_masons_yard[["Mason's yard"]]
+    p_kiln[["Kiln"]]
+  end
+  subgraph era2["2 Bronze"]
+    p_shears["Shears"]
+    p_copper["Copper"]
+    p_tin["Tin"]
+    p_bronze["Bronze"]
+    p_bronze_spear["Bronze spear (lvl 1)"]
+    p_silver["Silver"]
+    p_mint[["Mint"]]
+    p_coin(("Coin"))
+  end
+  subgraph era3["3 Iron and steel"]
+    p_sickle["Sickle"]
+    p_chisel["Chisel"]
+    p_axe["Axe"]
+    p_iron["Iron"]
+    p_steel["Steel"]
+    p_iron_blade["Iron blade"]
+    p_steel_blade["Steel blade"]
+    p_tempered_blade["Tempered blade"]
+    p_sharp_blade["Sharp blade"]
+    p_hammer["Hammer"]
+    p_pickaxe["Pickaxe"]
+    p_longsword_1["Iron longsword (lvl 1)"]
+    p_longsword_2["Steel longsword (lvl 2)"]
+    p_longsword_3["Fine steel longsword (lvl 3)"]
+    p_plough["Iron plough"]
+  end
+  subgraph era4["4 Early industry"]
+    p_coke["Coke"]
+    p_machine_parts["Machine parts"]
+    p_blast_furnace[["Blast furnace"]]
+    p_machine_shop[["Machine shop"]]
+    p_roller_mill[["Roller mill"]]
+    p_textile_mill[["Textile mill"]]
+  end
+  subgraph land["Natural resources"]
+    n_forest{{"Forest"}}
+    n_ore_vein{{"Ore vein"}}
+    n_field{{"Field"}}
+    n_quarry{{"Quarry"}}
+    n_clay_pit{{"Clay pit"}}
+    n_pasture{{"Pasture"}}
+    n_flax_field{{"Flax field"}}
+    n_copper_vein{{"Copper vein"}}
+    n_tin_vein{{"Tin vein"}}
+    n_silver_vein{{"Silver vein"}}
+    n_coal_seam{{"Coal seam"}}
+  end
+  n_clay_pit --> p_clay
+  n_coal_seam --> p_coal
+  n_copper_vein --> p_copper_ore
+  n_field --> p_grain
+  n_flax_field --> p_flax
+  n_forest --> p_wood
+  n_ore_vein --> p_ore
+  n_pasture --> p_wool
+  n_quarry --> p_stone
+  n_silver_vein --> p_silver_ore
+  n_tin_vein --> p_tin_ore
+  p_brick --> p_blast_furnace
+  p_brick --> p_brewery
+  p_brick --> p_machine_shop
+  p_brick --> p_roller_mill
+  p_brick --> p_textile_mill
+  p_bronze --> p_bronze_spear
+  p_bronze --> p_shears
+  p_clay --> p_brick
+  p_clay --> p_kiln
+  p_clay --> p_pot
+  p_cloth --> p_clothes
+  p_coal --> p_coke
+  p_coke --> p_iron
+  p_coke --> p_steel
+  p_copper --> p_bronze
+  p_copper --> p_coin
+  p_copper_ore --> p_copper
+  p_cut_stone --> p_blast_furnace
+  p_cut_stone --> p_mint
+  p_cut_stone --> p_roller_mill
+  p_cut_stone --> p_textile_mill
+  p_flax --> p_yarn
+  p_flour --> p_bread
+  p_grain --> p_ale
+  p_grain --> p_flour
+  p_hilt --> p_longsword_1
+  p_hilt --> p_longsword_2
+  p_hilt --> p_longsword_3
+  p_iron --> p_axe
+  p_iron --> p_blast_furnace
+  p_iron --> p_chisel
+  p_iron --> p_coin
+  p_iron --> p_hammer
+  p_iron --> p_iron_blade
+  p_iron --> p_machine_parts
+  p_iron --> p_machine_shop
+  p_iron --> p_pickaxe
+  p_iron --> p_plough
+  p_iron --> p_sickle
+  p_iron --> p_smithy
+  p_iron --> p_steel
+  p_iron_blade --> p_longsword_1
+  p_machine_parts --> p_roller_mill
+  p_machine_parts --> p_textile_mill
+  p_ore --> p_iron
+  p_pot --> p_ale
+  p_sharp_blade --> p_longsword_3
+  p_silver --> p_coin
+  p_silver_ore --> p_silver
+  p_steel --> p_machine_parts
+  p_steel --> p_steel_blade
+  p_steel_blade --> p_longsword_2
+  p_steel_blade --> p_tempered_blade
+  p_stone --> p_cut_stone
+  p_stone --> p_kiln
+  p_tempered_blade --> p_sharp_blade
+  p_tin --> p_bronze
+  p_tin_ore --> p_tin
+  p_wool --> p_yarn
+  p_yarn --> p_cloth
+  p_blast_furnace -.-> p_iron
+  p_blast_furnace -.-> p_steel
+  p_brewery -.-> p_ale
+  p_kiln -.-> p_brick
+  p_kiln -.-> p_coke
+  p_kiln -.-> p_pot
+  p_machine_shop -.-> p_machine_parts
+  p_masons_yard -.-> p_cut_stone
+  p_mint -.-> p_coin
+  p_roller_mill -.-> p_flour
+  p_textile_mill -.-> p_cloth
+  p_textile_mill -.-> p_yarn
+  p_weaving_shed -.-> p_cloth
+  p_weaving_shed -.-> p_yarn
+  note["Wood, planks and charcoal feed many recipes, and the starter workshops, mills, bakeries, furnaces and smithies host most of them; those arrows are left out"]
+  style era0 fill:#e8f0d8,stroke:#888
+  style era1 fill:#efe3d3,stroke:#888
+  style era2 fill:#f3dcc4,stroke:#888
+  style era3 fill:#dde3ea,stroke:#888
+  style era4 fill:#e6dcef,stroke:#888
+  style land fill:#e3efe6,stroke:#888

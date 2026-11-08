@@ -48,6 +48,8 @@ pub struct TownStats {
     pub external_in: f32,
     pub external_out: f32,
     pub minted: f32,
+    /// Latest technology era of anything the town made this year.
+    pub era: u8,
     /// Mean wealth of residents.
     pub mean_wealth: f32,
     /// Mean total trust adults place in others (positive ties only).
@@ -77,6 +79,30 @@ impl Metrics {
     pub fn latest(&self) -> Option<&YearStats> {
         self.years.last()
     }
+}
+
+/// Share of a year's production value an era's goods need for the town to count
+/// as having reached that era.
+pub const ERA_SHARE: f32 = 0.02;
+
+/// The latest technology era whose goods made up at least [`ERA_SHARE`] of what a
+/// town produced (by value at base prices). Raw materials belong to era 0, so an
+/// era counts once the town works its materials, not when it merely digs them up.
+pub fn town_era(db: &Db, produced: &[f32]) -> u8 {
+    let n = db.content.eras.len().max(1);
+    let mut value = vec![0.0f32; n];
+    for (p, &q) in produced.iter().enumerate() {
+        if db.coin[p] > 0.0 {
+            continue;
+        }
+        let e = (db.content.products[p].era as usize).min(n - 1);
+        value[e] += q * db.base_price[p];
+    }
+    let total: f32 = value.iter().sum();
+    (0..n)
+        .rev()
+        .find(|&e| total > 0.0 && value[e] >= ERA_SHARE * total)
+        .unwrap_or(0) as u8
 }
 
 /// 1 - normalized entropy of a nonnegative profile (0 = generalist, 1 = one skill only).
@@ -177,7 +203,8 @@ pub fn record(
 
     // Production value matrix (towns x non-building products).
     let products: Vec<usize> = (0..db.content.products.len())
-        .filter(|&p| db.category(p as u32) != Category::Building)
+        // Coin is money, not a product.
+        .filter(|&p| db.category(p as u32) != Category::Building && db.coin[p] == 0.0)
         .collect();
     let x: Vec<Vec<f32>> = towns
         .0
@@ -259,6 +286,7 @@ pub fn record(
         s.trust = trust_sum / s.adults.max(1) as f32;
         s.trade_ties = same_trade as f32 / ties.max(1) as f32;
         s.treasury = town.treasury;
+        s.era = town_era(&db, &town.produced_last_year);
         {
             use crate::ledger::Group;
             let l = &town.ledger;

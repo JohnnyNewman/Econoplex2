@@ -1,4 +1,7 @@
-// Starting world: four towns with different natural endowments.
+// Starting world: four towns with different natural endowments. Ironhold has iron,
+// coal and stone; Greenvale fields, sheep, flax and clay; Timberwick forests, tin
+// and clay; Brassmoor copper, silver and stone. Bronze needs Brassmoor's copper and
+// Timberwick's tin, bricks need clay, the blast furnace needs Ironhold's coal.
 (
     seed: 42,
     // The town the player governs in the game; the headless runner ignores it.
@@ -12,25 +15,25 @@
     towns: [
         (
             name: "Ironhold", position: (-450.0, 250.0), population: 300,
-            nature: [("ore_vein", 4), ("forest", 3), ("field", 3)],
+            nature: [("ore_vein", 4), ("forest", 3), ("field", 3), ("coal_seam", 2), ("quarry", 2)],
             buildings: ["furnace", "smithy", "workshop", "mill", "bakery"],
             stock: [("bread", 900.0), ("wood", 30.0)],
         ),
         (
             name: "Greenvale", position: (450.0, 250.0), population: 300,
-            nature: [("field", 6), ("forest", 4)],
+            nature: [("field", 6), ("forest", 4), ("pasture", 3), ("flax_field", 2), ("clay_pit", 2)],
             buildings: ["mill", "bakery", "workshop"],
             stock: [("bread", 900.0), ("wood", 30.0)],
         ),
         (
             name: "Timberwick", position: (-450.0, -250.0), population: 300,
-            nature: [("forest", 6), ("field", 3), ("ore_vein", 1)],
+            nature: [("forest", 6), ("field", 3), ("ore_vein", 1), ("tin_vein", 2), ("clay_pit", 2), ("pasture", 1)],
             buildings: ["workshop", "furnace", "mill", "bakery"],
             stock: [("bread", 900.0), ("wood", 30.0)],
         ),
         (
             name: "Brassmoor", position: (450.0, -250.0), population: 300,
-            nature: [("ore_vein", 2), ("field", 4), ("forest", 2)],
+            nature: [("ore_vein", 2), ("field", 4), ("forest", 2), ("copper_vein", 3), ("silver_vein", 1), ("quarry", 1)],
             buildings: ["furnace", "smithy", "mill", "bakery", "workshop"],
             stock: [("bread", 900.0), ("wood", 30.0)],
         ),

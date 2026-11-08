@@ -8,6 +8,47 @@ pub struct Report {
     pub warnings: Vec<String>,
 }
 
+/// Which products (including buildings) can be made from natural resources: the
+/// fixpoint of every recipe whose inputs can be made and whose building can be built.
+/// `nature` limits the natural resources available (all of them when `None`).
+pub fn reachable_with(c: &Content, nature: Option<&[bool]>) -> Vec<bool> {
+    let mut have: Vec<bool> = c.products.iter().map(|p| p.starter).collect();
+    loop {
+        let mut changed = false;
+        for rec in &c.recipes {
+            let inputs = rec
+                .inputs
+                .iter()
+                .all(|(p, _)| c.product(p).is_some_and(|i| have[i as usize]));
+            let building = rec
+                .building
+                .as_ref()
+                .is_none_or(|b| c.product(b).is_some_and(|i| have[i as usize]));
+            let land = match (&rec.nature, nature) {
+                (Some(n), Some(avail)) => c.nature_kind(n).is_some_and(|k| avail[k as usize]),
+                _ => true,
+            };
+            if inputs && building && land {
+                for (p, _) in &rec.outputs {
+                    if let Some(i) = c.product(p) {
+                        if !have[i as usize] {
+                            have[i as usize] = true;
+                            changed = true;
+                        }
+                    }
+                }
+            }
+        }
+        if !changed {
+            return have;
+        }
+    }
+}
+
+pub fn reachable(c: &Content) -> Vec<bool> {
+    reachable_with(c, None)
+}
+
 pub fn validate(c: &Content) -> Report {
     let mut r = Report::default();
 
@@ -104,40 +145,36 @@ pub fn validate(c: &Content) -> Report {
         }
     }
 
-    // Reachability: which products can be made starting from natural resources only?
-    if r.errors.is_empty() {
-        let mut have = vec![false; c.products.len()];
-        loop {
-            let mut changed = false;
-            for rec in &c.recipes {
-                let ok = rec
-                    .inputs
-                    .iter()
-                    .all(|(p, _)| have[c.product(p).unwrap() as usize]);
-                if ok {
-                    for (p, _) in &rec.outputs {
-                        let i = c.product(p).unwrap() as usize;
-                        if !have[i] {
-                            have[i] = true;
-                            changed = true;
-                        }
-                    }
-                }
-            }
-            if !changed {
-                break;
-            }
+    for p in &c.products {
+        if !c.eras.is_empty() && p.era as usize >= c.eras.len() {
+            r.errors.push(format!(
+                "product `{}` is in era {}, but only {} eras are named",
+                p.id,
+                p.era,
+                c.eras.len()
+            ));
         }
+    }
+
+    // Reachability: which products and buildings can be made starting from natural
+    // resources only? A recipe counts once its inputs can be made and its building
+    // can be built.
+    if r.errors.is_empty() {
+        let have = reachable(c);
         for (i, p) in c.products.iter().enumerate() {
-            if !have[i] && p.category != Category::Building {
+            if !have[i] {
                 r.errors.push(format!(
-                    "product `{}` cannot be produced from natural resources",
+                    "{} `{}` cannot be produced from natural resources",
+                    if p.category == Category::Building {
+                        "building"
+                    } else {
+                        "product"
+                    },
                     p.id
                 ));
             }
         }
     }
-
     for (i, s) in c.skills.iter().enumerate() {
         let used = c.recipes.iter().any(|r| r.skill == s.id)
             || c.skills.iter().any(|o| o.prereqs.contains(&s.id));

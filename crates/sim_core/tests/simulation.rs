@@ -436,8 +436,9 @@ fn a_school_teaches_its_subject_and_pays_the_teacher() {
     };
     let without = proficiency(None);
     let with = proficiency(Some("school Greenvale woodworking 40"));
+    // Pupils end up well over twice as good at the subject.
     assert!(
-        with > without + 0.1,
+        with > without * 2.0 && with > without + 0.05,
         "school {with:.3} vs none {without:.3}"
     );
 }
@@ -446,15 +447,17 @@ fn a_school_teaches_its_subject_and_pays_the_teacher() {
 fn closed_borders_keep_migrants_out_and_subsidies_draw_workers() {
     let mut s = full(6);
     s.order("immigration Greenvale closed").unwrap();
-    s.order("subsidy Timberwick plank 1.0").unwrap();
+    // A good with spare capacity to grow (Timberwick's planks are already bound by
+    // workshop space and construction demand).
+    s.order("subsidy Greenvale cloth 1.0").unwrap();
     let mut base = full(6);
     let mut arrived = 0;
-    let mut planks = [0.0f32; 2];
-    let plank = s
+    let mut made = [0.0f32; 2];
+    let cloth = s
         .world
         .resource::<sim_core::Db>()
         .content
-        .product("plank")
+        .product("cloth")
         .unwrap() as usize;
     for _ in 0..5 {
         run_years(&mut s, 1);
@@ -465,15 +468,15 @@ fn closed_borders_keep_migrants_out_and_subsidies_draw_workers() {
             .latest()
             .unwrap();
         arrived += y.towns[1].moves.arrived;
-        planks[0] += s.world.resource::<sim_core::Towns>().0[2].produced_last_year[plank];
-        planks[1] += base.world.resource::<sim_core::Towns>().0[2].produced_last_year[plank];
+        made[0] += s.world.resource::<sim_core::Towns>().0[1].produced_last_year[cloth];
+        made[1] += base.world.resource::<sim_core::Towns>().0[1].produced_last_year[cloth];
     }
     assert_eq!(arrived, 0);
     assert!(
-        planks[0] > planks[1] * 1.2,
-        "subsidized {} vs {} planks",
-        planks[0],
-        planks[1]
+        made[0] > made[1] * 1.2,
+        "subsidized {} vs {} cloth",
+        made[0],
+        made[1]
     );
 }
 
@@ -694,4 +697,56 @@ fn a_town_short_of_money_builds_a_mint_and_strikes_coin() {
         .0
         .iter()
         .all(|t| t.ledger.total[Flow::Minted as usize] == 0.0));
+}
+
+#[test]
+fn the_scenario_spreads_resources_so_bronze_needs_trade() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, _, scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    let c = &db.content;
+    let nature_of = |towns: &[&sim_core::config::TownSpec]| {
+        let mut avail = vec![false; c.nature.len()];
+        for t in towns {
+            for (n, count) in &t.nature {
+                if *count > 0 {
+                    avail[c.nature_kind(n).unwrap() as usize] = true;
+                }
+            }
+        }
+        avail
+    };
+    // All towns together can make everything in the content.
+    let all: Vec<_> = scenario.towns.iter().collect();
+    let have = sim_data::validate::reachable_with(c, Some(&nature_of(&all)));
+    assert!(
+        have.iter().all(|h| *h),
+        "the scenario's land cannot make everything"
+    );
+    // But no town makes bronze on its own: copper and tin sit in different towns.
+    let bronze = c.product("bronze").unwrap() as usize;
+    for t in &scenario.towns {
+        let alone = sim_data::validate::reachable_with(c, Some(&nature_of(&[t])));
+        assert!(!alone[bronze], "{} can make bronze alone", t.name);
+    }
+}
+
+#[test]
+fn ai_towns_climb_the_tree() {
+    use sim_core::metrics::Metrics;
+    let mut s = full(42);
+    run_years(&mut s, 8);
+    let db = s.world.resource::<sim_core::Db>();
+    let m = s.world.resource::<Metrics>();
+    let best = |t: usize| m.years.iter().map(|y| y.towns[t].era).max().unwrap();
+    // Ironhold, with ore and coal, reaches early industry; the others at least
+    // stone, clay and cloth.
+    assert_eq!(db.content.eras[best(0) as usize], "Early industry");
+    assert!((1..4).all(|t| best(t) >= 1));
+    // Bronze is cast somewhere, from traded copper and tin.
+    let bronze = db.content.product("bronze").unwrap() as usize;
+    let towns = s.world.resource::<sim_core::Towns>();
+    assert!(towns
+        .0
+        .iter()
+        .any(|t| t.produced_last_year[bronze] > 0.0 || t.produced_this_year[bronze] > 0.0));
 }
