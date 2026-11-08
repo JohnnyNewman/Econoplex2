@@ -15,6 +15,35 @@ pub struct Overlay {
     pub product_space: bool,
 }
 
+/// View entities drawn from the world's state (town names, building labels,
+/// terrain). They are despawned and rebuilt when a saved game is loaded.
+#[derive(Component)]
+pub struct WorldView;
+
+/// Dark veil over the map while the product space overlay is on, so the graph reads.
+#[derive(Component)]
+pub struct OverlayShade;
+
+pub fn spawn_overlay_shade(mut commands: Commands) {
+    commands.spawn((
+        OverlayShade,
+        Sprite::from_color(Color::srgba(0.02, 0.03, 0.02, 0.82), Vec2::splat(1.0)),
+        Transform::from_xyz(0.0, 0.0, 8.0).with_scale(Vec3::new(1.0e5, 1.0e5, 1.0)),
+        Visibility::Hidden,
+    ));
+}
+
+pub fn update_overlay_shade(
+    overlay: Res<Overlay>,
+    mut shade: Single<&mut Visibility, With<OverlayShade>>,
+) {
+    **shade = if overlay.product_space {
+        Visibility::Inherited
+    } else {
+        Visibility::Hidden
+    };
+}
+
 /// Skill name label for the product space overlay.
 #[derive(Component)]
 pub struct SkillLabel(pub usize);
@@ -116,6 +145,7 @@ pub fn attach_building_sprites(
             },
             TextColor(Color::srgb(0.85, 0.8, 0.7)),
             Transform::from_xyz(pos.x, pos.y - 22.0, 5.0),
+            WorldView,
         ));
     }
 }
@@ -130,6 +160,7 @@ pub fn spawn_static(mut commands: Commands, towns: Res<Towns>) {
             },
             TextColor(Color::srgb(0.95, 0.92, 0.8)),
             Transform::from_xyz(town.pos.0, town.pos.1 + 120.0, 5.0),
+            WorldView,
         ));
     }
 }
@@ -145,6 +176,14 @@ pub fn attach_nature_sprites(
             "forest" => Color::srgb(0.15, 0.45, 0.2),
             "field" => Color::srgb(0.75, 0.65, 0.25),
             "ore_vein" => Color::srgb(0.5, 0.5, 0.55),
+            "quarry" => Color::srgb(0.7, 0.7, 0.68),
+            "clay_pit" => Color::srgb(0.7, 0.42, 0.28),
+            "pasture" => Color::srgb(0.55, 0.8, 0.45),
+            "flax_field" => Color::srgb(0.55, 0.6, 0.85),
+            "copper_vein" => Color::srgb(0.8, 0.5, 0.25),
+            "tin_vein" => Color::srgb(0.75, 0.78, 0.8),
+            "silver_vein" => Color::srgb(0.9, 0.92, 0.95),
+            "coal_seam" => Color::srgb(0.15, 0.15, 0.15),
             _ => Color::srgb(0.4, 0.4, 0.4),
         };
         commands.entity(e).insert((
@@ -231,6 +270,17 @@ pub fn draw_world(
     nature: Query<(&NaturalResource, &Pos)>,
     camera: Single<&Transform, With<Camera2d>>,
 ) {
+    if overlay.product_space {
+        draw_product_space(
+            &mut gizmos,
+            &db,
+            &store,
+            selection.0,
+            camera.translation.truncate(),
+            camera.scale.x,
+        );
+        return;
+    }
     for town in &towns.0 {
         gizmos.circle_2d(
             Vec2::new(town.pos.0, town.pos.1),

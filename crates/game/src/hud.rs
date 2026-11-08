@@ -16,6 +16,10 @@ pub struct HudText;
 #[derive(Component)]
 pub struct InspectorText;
 
+/// Left-hand column: the world summary, then the economy panel.
+#[derive(Component)]
+pub struct LeftColumn;
+
 #[derive(Component)]
 pub struct LegendRoot;
 
@@ -41,11 +45,29 @@ pub fn spawn_hud(mut commands: Commands, db: Res<Db>) {
     };
     commands
         .spawn((
-            panel(Some(8.0), None, Some(8.0), None),
-            BackgroundColor(PANEL),
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(8.0),
+                top: Val::Px(8.0),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(6.0),
+                align_items: AlignItems::FlexStart,
+                ..default()
+            },
+            LeftColumn,
         ))
-        .with_children(|p| {
-            p.spawn((Text::new(""), font(13.0), HudText));
+        .with_children(|c| {
+            c.spawn((
+                Node {
+                    padding: UiRect::all(Val::Px(8.0)),
+                    flex_direction: FlexDirection::Column,
+                    ..default()
+                },
+                BackgroundColor(PANEL),
+            ))
+            .with_children(|p| {
+                p.spawn((Text::new(""), font(13.0), HudText));
+            });
         });
     commands
         .spawn((
@@ -83,7 +105,8 @@ pub fn spawn_hud(mut commands: Commands, db: Res<Db>) {
         });
     commands.spawn((panel(None, Some(8.0), None, Some(8.0)), BackgroundColor(PANEL))).with_children(|p| {
         p.spawn((
-            Text::new("Space pause | 1-5 speed | WASD pan | wheel zoom\nclick select | Esc deselect | P product space"),
+            Text::new("Space pause | 1-5 speed | WASD pan | wheel zoom\nclick select | Esc deselect | P product space
+E economy | Tab next town | F5 save | F9 load"),
             font(12.0),
             TextColor(Color::srgb(0.8, 0.8, 0.8)),
         ));
@@ -100,7 +123,15 @@ pub fn update_hud(
     db: Res<Db>,
     metrics: Res<Metrics>,
     player: Res<sim_core::policy::PlayerTown>,
+    toast: Res<crate::saving::Toast>,
+    time: Res<Time>,
+    goal: (
+        Res<sim_core::world::ScenarioSpec>,
+        Res<sim_core::goal::MatchState>,
+    ),
 ) {
+    let (scenario, state) = goal;
+    let goal_amount = scenario.0.goal.as_ref().map(|g| g.amount);
     let mut s = format!(
         "ECONOPLEX   year {}  day {:>3}   {}{} days/s\npopulation {}\n",
         clock.year(),
@@ -110,19 +141,25 @@ pub fn update_hud(
         store.alive_count()
     );
     let latest = metrics.latest();
-    s.push_str("\ntown          pop   food  ECI  div  swords 1/2/3  army\n");
+    // The goal column only shows when the scenario sets a goal.
+    s.push_str(if goal_amount.is_some() {
+        "\ntown          pop   food  ECI  div  era  swords 1/2/3  goal  army\n"
+    } else {
+        "\ntown          pop   food  ECI  div  era  swords 1/2/3  army\n"
+    });
     for (t, town) in towns.0.iter().enumerate() {
         let food = town.food_stock(&db) / town.residents.len().max(1) as f32;
-        let (eci, div, swords) = latest
+        let (eci, div, swords, era) = latest
             .and_then(|y| y.towns.get(t))
             .map(|ts| {
                 (
                     format!("{:>5.2}", ts.eci),
                     ts.diversity.to_string(),
                     ts.swords,
+                    ts.era.to_string(),
                 )
             })
-            .unwrap_or(("  -  ".into(), "-".into(), [0; 3]));
+            .unwrap_or(("  -  ".into(), "-".into(), [0; 3], "-".into()));
         let army = match &town.raid {
             Some(r) => format!(
                 "{} -> {}",
@@ -140,24 +177,53 @@ pub fn update_hud(
         } else {
             town.name.clone()
         };
+        let progress = match goal_amount {
+            Some(a) => format!(
+                "{:>5}  ",
+                format!("{:.0}/{a:.0}", state.progress(&towns, t))
+            ),
+            None => String::new(),
+        };
         s.push_str(&format!(
-            "{:<11} {:>5} {:>6.1} {} {:>4}  {}/{}/{}  {}\n",
+            "{:<11} {:>5} {:>6.1} {} {:>4} {:>4}  {:>3}/{}/{}  {}{}\n",
             name,
             town.residents.len(),
             food,
             eci,
             div,
+            era,
             swords[0],
             swords[1],
             swords[2],
+            progress,
             army
         ));
     }
     if player.0.is_some() {
         s.push_str("* your town\n");
     }
+    if !db.content.eras.is_empty() {
+        let names: Vec<String> = db
+            .content
+            .eras
+            .iter()
+            .enumerate()
+            .map(|(k, n)| format!("{k} {n}"))
+            .collect();
+        s.push_str(&format!("eras: {}\n", names.join(" | ")));
+    }
+    if let Some(g) = crate::economy_ui::goal_text(&scenario, &state, &towns, &db) {
+        s.push_str(&format!("\n{g}\n"));
+    }
     if latest.is_none() {
         s.push_str("(complexity and swords appear after the first year)\n");
+    }
+    if let Some(msg) = toast.current(time.elapsed_secs_f64()) {
+        s.push_str(&format!(
+            "
+{msg}
+"
+        ));
     }
     text.0 = s;
 }
@@ -256,8 +322,9 @@ pub fn update_inspector(
 pub fn update_legend(
     mut legend: Single<&mut Visibility, With<LegendRoot>>,
     overlay: Res<crate::view::Overlay>,
+    economy: Res<crate::economy_ui::EconomyView>,
 ) {
-    **legend = if overlay.product_space {
+    **legend = if overlay.product_space || economy.visible {
         Visibility::Hidden
     } else {
         Visibility::Inherited

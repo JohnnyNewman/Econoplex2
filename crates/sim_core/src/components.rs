@@ -5,52 +5,52 @@ use crate::store::Role;
 use bevy_ecs::prelude::*;
 
 /// Every unit. Its vectors live in [`crate::store::AgentStore`] at `idx`.
-#[derive(Component, Debug, Clone, Copy)]
+#[derive(Component, Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct Agent {
     pub idx: u32,
 }
 
 /// World position in map units (static entities; agents keep theirs in the store).
-#[derive(Component, Debug, Clone, Copy, PartialEq)]
+#[derive(Component, Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Pos {
     pub x: f32,
     pub y: f32,
 }
 
 /// Which town an entity belongs to.
-#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TownId(pub u16);
 
 /// A made thing with a definition and a quality. Shared by items and buildings,
 /// so quality, recipes and markets treat both uniformly.
-#[derive(Component, Debug, Clone, Copy)]
+#[derive(Component, Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct Product {
     pub def: u32,
     pub quality: f32,
 }
 
 /// A building: a product with a footprint that serves as a workplace.
-#[derive(Component, Debug, Clone, Copy)]
+#[derive(Component, Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct Structure {
     pub footprint: (f32, f32),
 }
 
 /// Individually tracked good (tools, weapons) with wear.
-#[derive(Component, Debug, Clone, Copy)]
+#[derive(Component, Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct Item {
     pub durability: u32,
 }
 
 /// Item sits in its town's armory.
-#[derive(Component, Debug, Clone, Copy)]
+#[derive(Component, Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct Stored;
 
 /// Item is equipped by the agent with this store index.
-#[derive(Component, Debug, Clone, Copy)]
+#[derive(Component, Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct EquippedBy(pub u32);
 
 /// Trees, ore veins, fields.
-#[derive(Component, Debug, Clone, Copy)]
+#[derive(Component, Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct NaturalResource {
     pub kind: u32,
     pub amount: f32,
@@ -58,14 +58,14 @@ pub struct NaturalResource {
     pub regrowth: f32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum OrgKind {
     Town,
     Guild,
     Squad,
 }
 
-#[derive(Component, Debug, Clone)]
+#[derive(Component, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Organization {
     pub kind: OrgKind,
     pub name: String,
@@ -74,7 +74,7 @@ pub struct Organization {
 }
 
 /// Edge entity linking an agent to an organization with a role.
-#[derive(Component, Debug, Clone, Copy)]
+#[derive(Component, Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct Membership {
     pub agent: u32,
     pub org: Entity,
@@ -83,7 +83,7 @@ pub struct Membership {
 }
 
 /// A unit of work in progress: one run of a recipe by a team.
-#[derive(Component, Debug, Clone)]
+#[derive(Component, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Task {
     /// Creation order, used to resolve tasks deterministically.
     pub serial: u64,
@@ -96,7 +96,7 @@ pub struct Task {
     pub batches: u32,
 }
 
-#[derive(Component, Debug, Clone, Default)]
+#[derive(Component, Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct Participants {
     pub workers: Vec<u32>,
     /// Children learning by watching; they do not add work.

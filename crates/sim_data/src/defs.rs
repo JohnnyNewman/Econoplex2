@@ -13,6 +13,9 @@ pub struct ContentFile {
     pub recipes: Vec<RecipeDef>,
     #[serde(default)]
     pub nature: Vec<NatureDef>,
+    /// Names of the technology eras, oldest first (the last file that lists them wins).
+    #[serde(default)]
+    pub eras: Vec<String>,
 }
 
 /// A granular capability. Skills form a DAG through `prereqs` (several parents allowed).
@@ -75,6 +78,18 @@ pub struct ProductDef {
     /// cleared field, a planted woodlot) instead of putting up a workplace.
     #[serde(default)]
     pub opens: Option<String>,
+    /// Coin: each unit made is this much new money in the town treasury instead of
+    /// a good in stock (0 = not money). Only a mint makes coin.
+    #[serde(default)]
+    pub coin: f32,
+    /// Technology era the product belongs to (index into the content's `eras`).
+    /// A label for the player only: no mechanic reads it.
+    #[serde(default)]
+    pub era: u8,
+    /// Buildings: towns may start with it (scenario.ron lists which do). Starter
+    /// buildings break bootstrap loops such as planks needing a workshop.
+    #[serde(default)]
+    pub starter: bool,
 }
 
 /// One production step. A product such as a level-3 longsword is the end of a chain of steps.

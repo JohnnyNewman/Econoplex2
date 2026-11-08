@@ -98,6 +98,11 @@ pub fn job_capacity(
             if goods.peek().is_some() && goods.all(|o| glutted(db, town, params, o.0 as usize)) {
                 return 0.0;
             }
+            if m.outputs.iter().any(|o| db.coin[o.0 as usize] > 0.0)
+                && !town.mint_wanted(&params.market)
+            {
+                return 0.0;
+            }
             let food = makes_food(db, r);
             // One worker does about 1/duration runs per day.
             let mut cap = f32::INFINITY;

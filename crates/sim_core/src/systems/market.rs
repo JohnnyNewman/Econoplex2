@@ -3,6 +3,7 @@
 
 use crate::components::{Item, NaturalResource, Product, TownId};
 use crate::db::Db;
+use crate::ledger::Flow;
 use crate::store::AgentStore;
 use crate::terrain::Terrain;
 use crate::world::{Params, SimClock, Towns};
@@ -25,7 +26,13 @@ pub fn settle(
 
     for town in towns.0.iter_mut() {
         let pop = town.residents.len().max(1) as f32;
+        let mint_wanted = town.mint_wanted(mp);
         for p in 0..np {
+            if db.coin[p] > 0.0 {
+                // Coin is worth its face value, while the town wants more of it.
+                town.price[p] = if mint_wanted { db.coin[p] } else { 0.0 };
+                continue;
+            }
             if let Some(kind) = db.opens[p] {
                 town.price[p] = land_price(&db, town, mp, p, kind, &sites);
                 continue;
@@ -58,6 +65,19 @@ pub fn settle(
                     .any(|c| c.building == p as u32)
                 {
                     town.price[p] = base;
+                    continue;
+                }
+                // A mint is worth building when the town wants coin and has none.
+                let mints = db.recipes.iter().any(|m| {
+                    m.building == Some(p as u32)
+                        && m.outputs.iter().any(|o| db.coin[o.0 as usize] > 0.0)
+                });
+                if mints {
+                    town.price[p] = if mint_wanted && town.building_count(p as u32) == 0 {
+                        base
+                    } else {
+                        0.0
+                    };
                     continue;
                 }
                 town.price[p] = if town.building_count(p as u32) == 0 {
@@ -99,7 +119,9 @@ pub fn settle(
         if excess > 0.0 {
             let tax = excess * rate;
             store.wealth[i] -= tax;
-            towns.0[store.town[i] as usize].treasury += tax;
+            let town = &mut towns.0[store.town[i] as usize];
+            town.treasury += tax;
+            town.ledger.add(Flow::WealthTax, tax);
         }
     }
 
@@ -112,6 +134,7 @@ pub fn settle(
         }
         let spend = excess * (mp.public_spending / dpy).min(1.0);
         town.treasury -= spend;
+        town.ledger.add(Flow::PublicSpending, spend);
         let share = spend / n as f32;
         for &i in &town.residents {
             store.wealth[i as usize] += share;
@@ -169,11 +192,14 @@ pub fn settle(
                     }
                     towns.0[a].stock[p] = (towns.0[a].stock[p] - amount).max(0.0);
                     towns.0[a].treasury += amount * pb;
+                    towns.0[a].ledger.add(Flow::TradeSales, amount * pb);
+                    towns.0[a].ledger.export(b, amount * pb);
                     let tb = &mut towns.0[b];
                     tb.quality[p] =
                         (tb.stock[p] * tb.quality[p] + amount * q) / (tb.stock[p] + amount);
                     tb.stock[p] += amount;
                     tb.treasury -= amount * pb;
+                    tb.ledger.add(Flow::TradePurchases, amount * pb);
                 }
             }
         }

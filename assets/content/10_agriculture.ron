@@ -9,7 +9,7 @@
         (id: "grain", name: "Grain", category: Raw,      base_price: 1.0, food: 0.3),
         (id: "flour", name: "Flour", category: Material, base_price: 1.5),
         (id: "bread", name: "Bread", category: Food,     base_price: 2.5, food: 1.0),
-        (id: "sickle", name: "Sickle", category: Tool, base_price: 25.0,
+        (id: "sickle", name: "Sickle", category: Tool, era: 3, base_price: 25.0,
             equip: Some((domain: "agriculture", bonus: 0.25))),
     ],
     recipes: [

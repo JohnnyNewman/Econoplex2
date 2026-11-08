@@ -7,7 +7,7 @@ license.workspace = true
 
 [dependencies]
 sim_data.workspace = true
-bevy_ecs.workspace = true
+bevy_ecs = { workspace = true, features = ["serialize"] }
 serde.workspace = true
 ron.workspace = true
 rand.workspace = true

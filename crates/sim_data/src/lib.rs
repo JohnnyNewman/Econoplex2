@@ -22,6 +22,8 @@ pub struct Content {
     pub products: Vec<ProductDef>,
     pub recipes: Vec<RecipeDef>,
     pub nature: Vec<NatureDef>,
+    /// Technology era names, oldest first.
+    pub eras: Vec<String>,
     /// Distinct skill domains, in order of first appearance.
     pub domains: Vec<String>,
 
@@ -95,6 +97,9 @@ impl Content {
             merge(&mut c.products, f.products, |s| &s.id);
             merge(&mut c.recipes, f.recipes, |s| &s.id);
             merge(&mut c.nature, f.nature, |s| &s.id);
+            if !f.eras.is_empty() {
+                c.eras = f.eras;
+            }
         }
         c.reindex();
         let report = validate::validate(&c);

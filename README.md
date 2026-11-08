@@ -16,6 +16,9 @@ Requires Rust 1.85 or newer.
 # The game (Bevy 2D view)
 cargo run --release -p game
 
+# Start the game from a save (F5 quicksaves to saves/quicksave.ron, F9 loads it)
+cargo run --release -p game -- --load game.ron
+
 # Headless: 30 years, metrics per year
 cargo run --release -p sim_cli -- --years 30
 
@@ -33,8 +36,15 @@ cargo run --release -p sim_cli -- --years 30 --seeds 8 \
 cargo run --release -p sim_cli -- --years 25 --order "0:immigration Greenvale encouraged" \
     --order "0:school Greenvale woodworking 40"
 
+# Save after 10 years, then continue the same game for 5 more
+cargo run --release -p sim_cli -- --years 10 --save game.ron
+cargo run --release -p sim_cli -- --load game.ron --years 5
+
 # The product space derived from the skill graph
 cargo run --release -p sim_cli -- --embedding
+
+# The technology tree as a Mermaid flowchart (docs/tech-tree.mmd, rendered in docs/tech-tree.png)
+cargo run --release -p sim_cli -- --tech-tree
 
 # Tests (content validation, models, determinism)
 cargo test --release
@@ -53,6 +63,9 @@ The first build compiles Bevy and takes a while.
 | Left click | Inspect an agent (skills, mind, physique vs. genetic potential, state, guild, family) |
 | P | Product space overlay: skill graph, brightness = selected agent's (or average) proficiency |
 | Esc | Deselect |
+| E | Economy panel and trade flows on the map (on at start) |
+| Tab | Next town in the economy panel |
+| F5 / F9 | Quicksave to `saves/quicksave.ron` / load it again |
 
 Agents are colored by their best skill domain; brightness shows how good they are.
 Children are grey and follow a working parent as apprentices.
@@ -103,7 +116,56 @@ Skills form a DAG through prerequisites. Each skill's vector is its prerequisite
 closure (itself plus ancestors, weighted by `0.5^depth`), normalized. The dot product
 between two skills counts shared prerequisites, so the product space falls out of the
 geometry. With more skills than dimensions, NMF compresses it while keeping vectors
-nonnegative.
+nonnegative. The shipped content has exactly 32 skills, one per dimension, so the
+product space is exact (the `the_tree_spans_five_eras_and_fits_the_product_space` test
+keeps it that way).
+
+### The technology tree
+
+![Technology tree](docs/tech-tree.png)
+
+The content (`assets/content/*.ron`) spans five eras: **wood and grain**, **stone,
+clay and cloth**, **bronze**, **iron and steel**, and **early industry**. It has 32
+skills in 13 domains, 47 goods, 14 workplaces, 71 recipes and 11 kinds of natural
+resource:
+
+| File | Adds |
+| --- | --- |
+| `05_nature.ron` | quarries, clay pits, pastures, flax fields, copper, tin and silver veins, coal seams |
+| `12_husbandry_textiles.ron` | wool and flax to yarn, cloth and clothes (weaving shed); ale (brewery) |
+| `15_masonry.ron` | stone and cut stone (mason's yard), clay, pots and bricks (kiln), chisels |
+| `35_bronze.ron` | copper and tin smelting, bronze casting, bronze spears |
+| `55_industry.ron` | coal and coke, the blast furnace, machine parts (machine shop), roller and textile mills, ploughs |
+| `60_money.ron` | silver refining, the mint and its coins (silver, copper, iron) |
+
+Each era's buildings are made from the eras before it. Kilns need stone and clay,
+breweries bricks, the blast furnace bricks, cut stone and iron, and the mills
+machine parts. The scenario spreads the resources:
+
+- Ironhold: iron ore, coal, stone
+- Greenvale: sheep, flax, clay
+- Timberwick: tin, clay
+- Brassmoor: copper, silver, stone
+
+No town can cast bronze alone, so caravans carry ore and metal between towns.
+Products name their `era`. A town counts as having reached an era once that era's
+goods are at least 2% of what it makes by value, so digging up raw ore doesn't count.
+The HUD shows each town's era, and `econoplex-sim` prints the year each town first
+reached each era.
+
+Eras are only a label for the player. No mechanic reads them: nothing unlocks by
+era, and AI towns don't choose buildings or work by it. What a town can make follows
+bottom up from the agent-based simulation: what its people can do, what it holds or
+can buy, and which buildings it has. The era only reports where that has got to, so
+a town can also slip back. The
+`eras_are_only_a_label_and_never_change_the_simulation` test relabels every
+product's era and checks that the run is unchanged.
+
+Some buildings are `starter` buildings (workshop, mill, bakery, furnace, smithy):
+towns can begin with them, which breaks bootstrap loops such as planks needing a
+workshop. Validation checks that every good and building can be made from natural
+resources and starter buildings, through recipes whose inputs and buildings can
+themselves be made. `econoplex-sim --tech-tree` prints the tree as a Mermaid chart.
 
 ### One tick = one day
 
@@ -131,9 +193,11 @@ cutting wood for the bakery help against hunger too, not only farming and baking
 
 ### Money
 
-Money is never created or destroyed; `econoplex-sim` prints the total each year and
-the `money_is_conserved` test checks it. It moves between agents' wealth and town
-treasuries:
+Every town starts with `starting_coins` in its treasury. After that, new money comes
+only from a **mint** (see below); otherwise money is never created or destroyed.
+`econoplex-sim` prints the total each year, and the `money_is_conserved` test checks
+that it changes by exactly what the mints struck. Money moves between agents' wealth
+and town treasuries:
 
 | Flow | From → to |
 | --- | --- |
@@ -147,6 +211,73 @@ treasuries:
 
 When a treasury runs dry, wages for that day are cut, so pay follows what people
 actually spend. All rates are in the `market` section of `models.ron`.
+
+#### Mints
+
+A mint (`content/60_money.ron`) is a building of 12 cut stone and 12 planks, put up by
+builders like any other. Working it is a trade like any other. Up to four minters
+strike coin from silver (150 coins an ingot), copper (50 coins from two ingots and
+charcoal) or, as a fallback, iron (60 coins from one ingot and charcoal), whichever
+pays best, at three person-days a batch. Struck coin is
+not stocked; it goes into the treasury as new money and is paid out from there as
+wages and the rest. Each town's `minting` policy decides when:
+
+- **auto** (default): the town builds a mint, and keeps it working, while its
+  treasury holds less than `mint_below_per_capita` per resident
+- **on**: strike coin whenever the mint has workers and metal
+- **off**: never (no mint is built unless ordered)
+
+Minting is limited by labor and by metal. Silver is the best coin metal and only
+Brassmoor has it; towns without coin metal buy it, or mint iron and compete with
+their smiths for it. Change it with `mint TOWN auto|on|off`, or
+with the Mint row of the policy panel.
+
+Every one of these payments is booked in the town's ledger (`ledger.rs`), read with a
+credit-first eye: what the treasury pays out puts money into people's hands
+(**issued**: wages, subsidies, fees, soldiers' pay, public spending, grants), what it
+takes back by right is **taxed** (wealth tax, estates without heirs), and what people
+hand back by choice at the town market is **spent** (food, tools). Coin struck at a mint
+is **minted**. Trade, tribute and plunder move money between towns. The ledger keeps a monthly average for the game and
+yearly totals for the CSV (`minted`, `issued`, `taxed`, `spent`, `external_in`, `external_out`),
+and the `the_ledger_accounts_for_every_treasury_change` test checks that it explains
+every change in every treasury.
+
+### The economy on screen
+
+![Economy panel](docs/screenshots/mint-ironhold-year15.png)
+
+The economy panel (E; Tab cycles towns, starting with yours) shows for one town, in
+sections you can fold by clicking their headings (Goods starts folded):
+
+- money per day over the last month: minted, issued, taxed and spent as bars, with
+  the town's mint and minting policy and the biggest items under each, plus trade in
+  and out, the treasury and what people hold
+- how many adults worked, rested or idled today, and how many are soldiers
+- its foods and main products with stock, price and price against base price (red at
+  1.5 times base or more)
+- how many days its food lasts, hungry days this year, and the goods in short supply
+
+On the map, a ring around each town splits the month's money into minted (violet),
+issued (green), taxed (orange) and spent (blue); the busiest town gets a full ring. Gold arrows are
+caravan routes, wider and brighter the more value they carry, labeled per day.
+
+### Winning a match
+
+A scenario can set a goal. The default scenario has none (endless play), for example:
+
+```ron
+goal: Some((product: "longsword_3", amount: 5.0, max_starving: 0.02, years: 40)),
+```
+
+The first town that has made `amount` of `product` in total wins, checked at each
+year end, if it pays tribute to nobody and spent at most `max_starving` of that
+year's person-days starving. After `years`, the free town closest to the goal wins
+(ties go to the higher ECI). With a goal, the HUD gains a `goal` column for the race, and
+`econoplex-sim` prints it at the end. Fine steel longswords need ore, charcoal,
+steel, blades, hilts and skilled smiths, so no town gets there alone. Left alone,
+Ironhold makes five in about 33 to 35 years on some seeds and fewer than five by
+year 40 on others. Greenvale has no ore and must trade or conquer to compete. Leave
+`goal` out for endless play.
 
 ### Food
 
@@ -369,6 +500,17 @@ the mean and spread per setting; `--csv` writes every run.
 The tick schedule runs single-threaded in a fixed order, every system draws from its
 own RNG stream derived from the seed and tick, and nothing iterates hash maps. Same
 seed, same state hash (`econoplex-sim --hash`, and the `same_seed_same_state` test).
+
+### Saving
+
+`sim_core::save` writes the whole changing state as RON: clock, agent store, towns,
+orders, logs, metrics and every simulation entity, plus the model parameters and
+scenario the game started from. Content is not stored; it is reloaded from the
+assets and checked against a fingerprint, and everything derived (content database,
+models, terrain) is rebuilt. Entities get new ids on load and every reference is
+remapped. A loaded game has the same state hash and continues exactly as the saved
+one would have (the `a_saved_game_loads_and_continues_identically` test). A save of
+about 12,000 agents is roughly 20 MB and loads in under a second.
 
 ## What a 30-year run shows
 

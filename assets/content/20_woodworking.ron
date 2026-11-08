@@ -11,7 +11,7 @@
         (id: "plank",    name: "Plank",    category: Material, base_price: 1.5),
         (id: "charcoal", name: "Charcoal", category: Material, base_price: 3.0),
         (id: "hilt",     name: "Hilt",     category: Material, base_price: 6.0),
-        (id: "axe", name: "Axe", category: Tool, base_price: 25.0,
+        (id: "axe", name: "Axe", category: Tool, era: 3, base_price: 25.0,
             equip: Some((domain: "forestry", bonus: 0.25))),
     ],
     recipes: [

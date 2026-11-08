@@ -3,15 +3,19 @@
 //! ```text
 //! econoplex-sim [--years N] [--seed S] [--scale F] [--assets DIR] [--csv FILE]
 //!               [--set path=value]... [--sweep path=v1,v2,...]... [--seeds N]
-//!               [--order DAY:ORDER]...
+//!               [--order DAY:ORDER]... [--save FILE] [--load FILE]
 //!               [--embedding] [--hash] [--profile] [--quiet]
 //! ```
 //!
 //! With `--sweep` or `--seeds` above 1 the runner switches to batch mode: every
 //! combination of swept values is run on every seed, in parallel, and each run
 //! is reduced to one summary row (see `sweep.rs`).
+//!
+//! `--load` continues a saved game for `--years` more years; its parameters and
+//! scenario come from the save, so `--seed`, `--scale` and `--set` do not apply.
 
 mod sweep;
+mod techtree;
 
 use sim_core::metrics::Metrics;
 use sim_core::{AssetPaths, Simulation};
@@ -26,6 +30,7 @@ struct Args {
     assets: Option<PathBuf>,
     csv: Option<PathBuf>,
     embedding: bool,
+    tech_tree: bool,
     hash: bool,
     quiet: bool,
     profile: bool,
@@ -35,6 +40,8 @@ struct Args {
     seeds: u64,
     /// Player orders, by the day they are given.
     orders: Vec<(u64, String)>,
+    save: Option<PathBuf>,
+    load: Option<PathBuf>,
 }
 
 fn parse_args() -> Args {
@@ -45,12 +52,15 @@ fn parse_args() -> Args {
         assets: None,
         csv: None,
         embedding: false,
+        tech_tree: false,
         hash: false,
         quiet: false,
         profile: false,
         sets: Vec::new(),
         sweeps: Vec::new(),
         seeds: 1,
+        save: None,
+        load: None,
         orders: Vec::new(),
     };
     let mut it = std::env::args().skip(1);
@@ -110,7 +120,10 @@ fn parse_args() -> Args {
                     .unwrap_or_else(|_| die("--order expects DAY:ORDER with a day number"));
                 a.orders.push((day, text.trim().to_string()));
             }
+            "--save" => a.save = Some(PathBuf::from(val())),
+            "--load" => a.load = Some(PathBuf::from(val())),
             "--embedding" => a.embedding = true,
+            "--tech-tree" => a.tech_tree = true,
             "--hash" => a.hash = true,
             "--quiet" => a.quiet = true,
             "--profile" => a.profile = true,
@@ -126,12 +139,15 @@ fn parse_args() -> Args {
                      --sweep P=A,B  run once per value (repeat for a grid); implies batch mode\n\
                      --seeds N      run N consecutive seeds from the scenario seed; implies batch mode\n\
                      --embedding    print the skill embedding (product space) report and exit\n\
+                     --tech-tree    print the technology tree as a Mermaid flowchart and exit\n\
                      --hash         print the final state hash (determinism check)\n\
                      --order D:O    give a player order on day D (repeatable), e.g. 0:school Greenvale smithing 20\n\
                                     orders: subsidy TOWN PRODUCT SHARE | school TOWN DOMAIN SEATS | school TOWN off\n\
                                     immigration TOWN open|closed|encouraged | charter TOWN DOMAIN on|off\n\
                                     army TOWN SHARE|auto | war TOWN auto|defend | raid TOWN TARGET\n\
-                                    build TOWN BUILDING [X Y]\n\
+                                    build TOWN BUILDING [X Y] | mint TOWN auto|on|off\n\
+                     --save FILE    save the game at the end of the run
+                     --load FILE    continue a saved game (days in --order count from the load)
                      --profile      print wall-clock time per system\n\
                      --quiet        only print the summary"
                 );
@@ -162,6 +178,10 @@ fn main() {
         print_embedding(&db);
         return;
     }
+    if args.tech_tree {
+        print!("{}", techtree::mermaid(&db));
+        return;
+    }
     if let Some(s) = args.seed {
         scenario.seed = s;
     }
@@ -190,8 +210,25 @@ fn main() {
         return;
     }
 
-    let dpy = params.life.days_per_year as u64;
-    let mut sim = Simulation::new(db, params, &scenario);
+    let mut sim = match &args.load {
+        Some(path) => {
+            let sim = Simulation::load_save(path, &paths).unwrap_or_else(|e| die(&e.to_string()));
+            println!(
+                "Loaded {} at day {} (year {})",
+                path.display(),
+                sim.tick(),
+                sim.world.resource::<sim_core::SimClock>().year()
+            );
+            sim
+        }
+        None => Simulation::new(db, params, &scenario),
+    };
+    let scenario = &sim.world.resource::<sim_core::world::ScenarioSpec>().0;
+    let dpy = sim
+        .world
+        .resource::<sim_core::world::Params>()
+        .life
+        .days_per_year as u64;
     println!(
         "Econoplex: {} towns, {} agents, seed {}, {} days per year",
         scenario.towns.len(),
@@ -201,7 +238,7 @@ fn main() {
     );
 
     let start = Instant::now();
-    let mut shown = 0;
+    let mut shown = sim.world.resource::<Metrics>().years.len();
     for tick in 0..args.years * dpy {
         for (_, text) in args.orders.iter().filter(|o| o.0 == tick) {
             sim.order(text).unwrap_or_else(|e| die(&e));
@@ -224,16 +261,72 @@ fn main() {
         agents
     );
     print_final(&sim);
+    print_match(&sim);
+    print_eras(&sim);
     if args.profile {
         print_profile(sim.world.resource::<sim_core::profile::Profile>(), ticks);
     }
     if args.hash {
         println!("state hash: {:016x}", sim.state_hash());
     }
+    if let Some(path) = &args.save {
+        sim.save(path).unwrap_or_else(|e| die(&e));
+        println!("saved {} at day {}", path.display(), sim.tick());
+    }
     if let Some(path) = args.csv {
         write_csv(&path, sim.world.resource::<Metrics>())
             .unwrap_or_else(|e| die(&format!("cannot write CSV: {e}")));
         println!("wrote {}", path.display());
+    }
+}
+
+/// The year each town first reached each technology era.
+fn print_eras(sim: &Simulation) {
+    let db = sim.world.resource::<sim_core::Db>();
+    let m = sim.world.resource::<Metrics>();
+    let Some(last) = m.latest() else { return };
+    if db.content.eras.is_empty() {
+        return;
+    }
+    println!("\nTechnology eras (year first reached):");
+    for (t, ts) in last.towns.iter().enumerate() {
+        let firsts: Vec<String> = (1..db.content.eras.len())
+            .filter_map(|e| {
+                m.years
+                    .iter()
+                    .find(|y| y.towns.get(t).is_some_and(|s| s.era as usize >= e))
+                    .map(|y| format!("{} y{}", db.content.eras[e], y.year))
+            })
+            .collect();
+        println!("  {:<11} {}", ts.name, firsts.join(", "));
+    }
+}
+
+fn print_match(sim: &Simulation) {
+    let Some(goal) = &sim.world.resource::<sim_core::world::ScenarioSpec>().0.goal else {
+        return;
+    };
+    let state = sim.world.resource::<sim_core::goal::MatchState>();
+    let towns = sim.world.resource::<sim_core::Towns>();
+    println!(
+        "
+Match goal: {} x {} within {} years",
+        goal.amount, goal.product, goal.years
+    );
+    for (t, town) in towns.0.iter().enumerate() {
+        println!("  {:<11} {:>6.1}", town.name, state.progress(towns, t));
+    }
+    match state.result {
+        Some(r) => println!(
+            "  winner: {} in year {} ({})",
+            towns.0[r.winner as usize].name,
+            r.year,
+            match r.reason {
+                sim_core::goal::WinReason::Goal => "reached the goal",
+                sim_core::goal::WinReason::TimeUp => "closest when time ran out",
+            }
+        ),
+        None => println!("  no winner yet"),
     }
 }
 
@@ -460,18 +553,19 @@ fn write_csv(path: &std::path::Path, m: &Metrics) -> std::io::Result<()> {
     let mut f = std::fs::File::create(path)?;
     writeln!(
         f,
-        "year,town,population,adults,food_per_capita,diversity,rca_products,eci,specialization,mean_top_skill,masters,guild_members,tools_in_use,swords_1,swords_2,swords_3,treasury,mean_wealth,buildings,tradition,faith,liberty,ideology_spread,starving,migrants_in,migrants_out,captives_taken,captives_lost,ruler,conquests,revolts,tribute_paid,trust,trade_ties"
+        "year,town,population,adults,food_per_capita,diversity,rca_products,eci,specialization,mean_top_skill,masters,guild_members,tools_in_use,swords_1,swords_2,swords_3,treasury,mean_wealth,buildings,tradition,faith,liberty,ideology_spread,starving,migrants_in,migrants_out,captives_taken,captives_lost,ruler,conquests,revolts,tribute_paid,trust,trade_ties,issued,taxed,spent,external_in,external_out,minted,era"
     )?;
     for y in &m.years {
         for t in &y.towns {
             writeln!(
                 f,
-                "{},{},{},{},{:.3},{},{},{:.3},{:.4},{:.4},{},{},{},{},{},{},{:.1},{:.2},{},{:.4},{:.4},{:.4},{:.4},{:.4},{},{},{},{},{},{},{},{:.1},{:.4},{:.4}",
+                "{},{},{},{},{:.3},{},{},{:.3},{:.4},{:.4},{},{},{},{},{},{},{:.1},{:.2},{},{:.4},{:.4},{:.4},{:.4},{:.4},{},{},{},{},{},{},{},{:.1},{:.4},{:.4},{:.1},{:.1},{:.1},{:.1},{:.1},{:.1},{}",
                 y.year, t.name, t.population, t.adults, t.food_per_capita, t.diversity, t.rca_products, t.eci, t.specialization,
                 t.mean_top_skill, t.masters, t.guild_members, t.tools_in_use, t.swords[0], t.swords[1], t.swords[2], t.treasury, t.mean_wealth, t.buildings,
                 t.ideology[0], t.ideology[1], t.ideology[2], t.ideology_spread, t.starving,
                 t.moves.arrived, t.moves.left, t.war.captives_taken, t.war.captives_lost,
-                t.ruler.map_or("", |r| y.towns[r as usize].name.as_str()), t.war.conquests, t.war.revolts, t.war.tribute_paid, t.trust, t.trade_ties
+                t.ruler.map_or("", |r| y.towns[r as usize].name.as_str()), t.war.conquests, t.war.revolts, t.war.tribute_paid, t.trust, t.trade_ties,
+                t.issued, t.taxed, t.spent, t.external_in, t.external_out, t.minted, t.era
             )?;
         }
     }

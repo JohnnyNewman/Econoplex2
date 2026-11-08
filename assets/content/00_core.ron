@@ -1,17 +1,22 @@
-// Core content: natural resources and buildings.
+// Core content: natural resources and the starter buildings (towns can begin with
+// these; see `starter` and the `buildings` of each town in scenario.ron).
 // Files in this folder load alphabetically; later files can add entries or override
 // earlier ones with the same id.
 (
+    // Technology eras, oldest first. Each product names its era (`era`, default 0).
+    // Eras are only a label for the player (HUD, CSV, CLI): no mechanic reads them,
+    // and what towns can make follows from skills, goods and buildings.
+    eras: ["Wood and grain", "Stone, clay and cloth", "Bronze", "Iron and steel", "Early industry"],
     nature: [
         (id: "forest",   name: "Forest",   regrowth: 8.0,  capacity: 150.0),
         (id: "ore_vein", name: "Ore vein", regrowth: 6.0,  capacity: 200.0),
         (id: "field",    name: "Field",    regrowth: 40.0, capacity: 200.0),
     ],
     products: [
-        (id: "workshop", name: "Workshop", category: Building, base_price: 200.0, slots: 16),
-        (id: "mill",     name: "Mill",     category: Building, base_price: 250.0, slots: 16),
-        (id: "bakery",   name: "Bakery",   category: Building, base_price: 250.0, slots: 16),
-        (id: "furnace",  name: "Furnace",  category: Building, base_price: 300.0, slots: 12),
-        (id: "smithy",   name: "Smithy",   category: Building, base_price: 350.0, slots: 12),
+        (id: "workshop", name: "Workshop", category: Building, base_price: 200.0, slots: 16, starter: true),
+        (id: "mill",     name: "Mill",     category: Building, base_price: 250.0, slots: 16, starter: true),
+        (id: "bakery",   name: "Bakery",   category: Building, base_price: 250.0, slots: 16, starter: true),
+        (id: "furnace",  name: "Furnace",  category: Building, base_price: 300.0, slots: 12, starter: true),
+        (id: "smithy",   name: "Smithy",   category: Building, base_price: 350.0, slots: 12, starter: true),
     ],
 )

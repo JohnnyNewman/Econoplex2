@@ -66,12 +66,16 @@ fn economy_produces_and_people_learn() {
 
 #[test]
 fn money_is_conserved() {
+    // Money only grows by what the mints strike.
     let mut s = sim(4);
     let money = |s: &Simulation| {
-        sim_core::world::total_money(
-            s.world.resource::<sim_core::AgentStore>(),
-            s.world.resource::<sim_core::Towns>(),
-        )
+        let towns = s.world.resource::<sim_core::Towns>();
+        let minted: f64 = towns
+            .0
+            .iter()
+            .map(|t| t.ledger.total[sim_core::ledger::Flow::Minted as usize])
+            .sum();
+        sim_core::world::total_money(s.world.resource::<sim_core::AgentStore>(), towns) - minted
     };
     let before = money(&s);
     for _ in 0..600 {
@@ -432,8 +436,9 @@ fn a_school_teaches_its_subject_and_pays_the_teacher() {
     };
     let without = proficiency(None);
     let with = proficiency(Some("school Greenvale woodworking 40"));
+    // Pupils end up well over twice as good at the subject.
     assert!(
-        with > without + 0.1,
+        with > without * 2.0 && with > without + 0.05,
         "school {with:.3} vs none {without:.3}"
     );
 }
@@ -442,15 +447,17 @@ fn a_school_teaches_its_subject_and_pays_the_teacher() {
 fn closed_borders_keep_migrants_out_and_subsidies_draw_workers() {
     let mut s = full(6);
     s.order("immigration Greenvale closed").unwrap();
-    s.order("subsidy Timberwick plank 1.0").unwrap();
+    // A good with spare capacity to grow (Timberwick's planks are already bound by
+    // workshop space and construction demand).
+    s.order("subsidy Greenvale cloth 1.0").unwrap();
     let mut base = full(6);
     let mut arrived = 0;
-    let mut planks = [0.0f32; 2];
-    let plank = s
+    let mut made = [0.0f32; 2];
+    let cloth = s
         .world
         .resource::<sim_core::Db>()
         .content
-        .product("plank")
+        .product("cloth")
         .unwrap() as usize;
     for _ in 0..5 {
         run_years(&mut s, 1);
@@ -461,15 +468,15 @@ fn closed_borders_keep_migrants_out_and_subsidies_draw_workers() {
             .latest()
             .unwrap();
         arrived += y.towns[1].moves.arrived;
-        planks[0] += s.world.resource::<sim_core::Towns>().0[2].produced_last_year[plank];
-        planks[1] += base.world.resource::<sim_core::Towns>().0[2].produced_last_year[plank];
+        made[0] += s.world.resource::<sim_core::Towns>().0[1].produced_last_year[cloth];
+        made[1] += base.world.resource::<sim_core::Towns>().0[1].produced_last_year[cloth];
     }
     assert_eq!(arrived, 0);
     assert!(
-        planks[0] > planks[1] * 1.2,
-        "subsidized {} vs {} planks",
-        planks[0],
-        planks[1]
+        made[0] > made[1] * 1.2,
+        "subsidized {} vs {} cloth",
+        made[0],
+        made[1]
     );
 }
 
@@ -545,4 +552,235 @@ fn the_river_makes_the_southern_road_longer() {
     // Towns stand on dry ground, and the river cannot be built on.
     assert!(towns.0.iter().all(|town| t.buildable(town.pos)));
     assert!(!t.buildable((-30.0, 0.0)));
+}
+
+#[test]
+fn a_saved_game_loads_and_continues_identically() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let paths = AssetPaths::from_root(&root);
+    let mut a = full(11);
+    run_years(&mut a, 2);
+    a.order("Ironhold build smithy").ok();
+
+    let text = sim_core::save::to_string(&a.world).unwrap();
+    let content = sim_data::Content::load_dir(&paths.content).unwrap();
+    let mut b = Simulation::from_save(sim_core::save::from_str(&text).unwrap(), content).unwrap();
+    assert_eq!(a.tick(), b.tick());
+    assert_eq!(a.state_hash(), b.state_hash());
+
+    // Both runs continue in lockstep, through raids, migration and a year end.
+    run_years(&mut a, 1);
+    run_years(&mut b, 1);
+    assert_eq!(a.state_hash(), b.state_hash());
+    let (ma, mb) = (
+        a.world.resource::<sim_core::metrics::Metrics>(),
+        b.world.resource::<sim_core::metrics::Metrics>(),
+    );
+    assert_eq!(ma.years.len(), mb.years.len());
+    assert_eq!(
+        format!("{:?}", ma.latest().unwrap()),
+        format!("{:?}", mb.latest().unwrap())
+    );
+}
+
+#[test]
+fn a_save_from_other_content_is_refused() {
+    let mut a = sim(3);
+    a.step();
+    let text = sim_core::save::to_string(&a.world).unwrap();
+    let mut content = sim_data::Content::default();
+    content.domains.push("nothing".into());
+    let err = Simulation::from_save(sim_core::save::from_str(&text).unwrap(), content);
+    assert!(err.is_err());
+}
+
+#[test]
+fn the_ledger_accounts_for_every_treasury_change() {
+    use sim_core::ledger::{sum_group, Group};
+    let mut s = full(5);
+    run_years(&mut s, 1);
+    let before: Vec<f32> = s
+        .world
+        .resource::<sim_core::Towns>()
+        .0
+        .iter()
+        .map(|t| t.treasury)
+        .collect();
+    run_years(&mut s, 1);
+    for (t, town) in s.world.resource::<sim_core::Towns>().0.iter().enumerate() {
+        let l = &town.ledger.last_year;
+        let net = sum_group(l, Group::Taxed)
+            + sum_group(l, Group::Spent)
+            + sum_group(l, Group::Minted)
+            + sum_group(l, Group::ExternalIn)
+            - sum_group(l, Group::Issued)
+            - sum_group(l, Group::ExternalOut);
+        let change = town.treasury - before[t];
+        let scale = sum_group(l, Group::Issued).max(1.0);
+        assert!(
+            (net - change).abs() < 1e-3 * scale,
+            "{}: ledger says {net}, treasury moved {change}",
+            town.name
+        );
+        assert!(sum_group(l, Group::Issued) > 0.0);
+        assert!(sum_group(l, Group::Spent) > 0.0);
+    }
+}
+
+#[test]
+fn a_match_is_won_by_the_first_town_to_reach_the_goal() {
+    use sim_core::config::GoalSpec;
+    use sim_core::goal::{MatchState, WinReason};
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    // Everyone bakes: whoever baked most in the first year wins at its end.
+    scenario.goal = Some(GoalSpec {
+        product: "bread".into(),
+        amount: 100.0,
+        max_starving: 1.0,
+        years: 10,
+    });
+    let mut s = Simulation::new(db, params, &scenario);
+    run_years(&mut s, 1);
+    let state = s.world.resource::<MatchState>();
+    let r = state.result.expect("someone baked 100 loaves in a year");
+    assert_eq!(r.reason, WinReason::Goal);
+    assert_eq!(r.year, 1);
+    let best = (0..state.made.len())
+        .max_by(|&a, &b| state.made[a].total_cmp(&state.made[b]))
+        .unwrap();
+    assert_eq!(r.winner as usize, best);
+
+    // An unreachable goal is decided by time: the closest free town wins.
+    let (db, params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    scenario.goal = Some(GoalSpec {
+        product: "longsword_3".into(),
+        amount: 1e9,
+        max_starving: 1.0,
+        years: 1,
+    });
+    let mut s = Simulation::new(db, params, &scenario);
+    run_years(&mut s, 1);
+    let r = s.world.resource::<MatchState>().result.unwrap();
+    assert_eq!(r.reason, WinReason::TimeUp);
+}
+
+#[test]
+fn a_town_short_of_money_builds_a_mint_and_strikes_coin() {
+    use sim_core::ledger::Flow;
+    let mut s = full(42);
+    // Ironhold has ore and a furnace; ordered to mint, it builds a mint and works it.
+    s.order("mint Ironhold on").unwrap();
+    s.order("build Ironhold mint").unwrap();
+    run_years(&mut s, 4);
+    let db = s.world.resource::<sim_core::Db>();
+    let mint = db.content.product("mint").unwrap();
+    let towns = s.world.resource::<sim_core::Towns>();
+    let ironhold = &towns.0[0];
+    assert!(ironhold.building_count(mint) >= 1, "no mint built");
+    assert!(
+        ironhold.ledger.total[Flow::Minted as usize] > 0.0,
+        "no coin struck"
+    );
+    // Coin is money, never a good in stock.
+    let coin = db.content.product("coin").unwrap() as usize;
+    assert!(towns.0.iter().all(|t| t.stock[coin] == 0.0));
+
+    // A town that turns minting off strikes nothing, even with a mint.
+    let mut s = full(42);
+    for t in ["Ironhold", "Greenvale", "Timberwick", "Brassmoor"] {
+        s.order(&format!("mint {t} off")).unwrap();
+    }
+    run_years(&mut s, 4);
+    let towns = s.world.resource::<sim_core::Towns>();
+    assert!(towns
+        .0
+        .iter()
+        .all(|t| t.ledger.total[Flow::Minted as usize] == 0.0));
+}
+
+#[test]
+fn the_scenario_spreads_resources_so_bronze_needs_trade() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, _, scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    let c = &db.content;
+    let nature_of = |towns: &[&sim_core::config::TownSpec]| {
+        let mut avail = vec![false; c.nature.len()];
+        for t in towns {
+            for (n, count) in &t.nature {
+                if *count > 0 {
+                    avail[c.nature_kind(n).unwrap() as usize] = true;
+                }
+            }
+        }
+        avail
+    };
+    // All towns together can make everything in the content.
+    let all: Vec<_> = scenario.towns.iter().collect();
+    let have = sim_data::validate::reachable_with(c, Some(&nature_of(&all)));
+    assert!(
+        have.iter().all(|h| *h),
+        "the scenario's land cannot make everything"
+    );
+    // But no town makes bronze on its own: copper and tin sit in different towns.
+    let bronze = c.product("bronze").unwrap() as usize;
+    for t in &scenario.towns {
+        let alone = sim_data::validate::reachable_with(c, Some(&nature_of(&[t])));
+        assert!(!alone[bronze], "{} can make bronze alone", t.name);
+    }
+}
+
+#[test]
+fn ai_towns_climb_the_tree() {
+    use sim_core::metrics::Metrics;
+    let mut s = full(42);
+    run_years(&mut s, 8);
+    let db = s.world.resource::<sim_core::Db>();
+    let m = s.world.resource::<Metrics>();
+    let best = |t: usize| m.years.iter().map(|y| y.towns[t].era).max().unwrap();
+    // Ironhold, with ore and coal, reaches early industry; the others at least
+    // stone, clay and cloth.
+    assert_eq!(db.content.eras[best(0) as usize], "Early industry");
+    assert!((1..4).all(|t| best(t) >= 1));
+    // Bronze is cast somewhere, from traded copper and tin.
+    let bronze = db.content.product("bronze").unwrap() as usize;
+    let towns = s.world.resource::<sim_core::Towns>();
+    assert!(towns
+        .0
+        .iter()
+        .any(|t| t.produced_last_year[bronze] > 0.0 || t.produced_this_year[bronze] > 0.0));
+}
+
+#[test]
+fn eras_are_only_a_label_and_never_change_the_simulation() {
+    // Eras are derived for the player (HUD, CSV, CLI). Everything else works bottom
+    // up from what agents can do and what towns hold, so relabelling every product's
+    // era, or dropping the era names, must leave the run unchanged.
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let run = |relabel: bool| {
+        let (mut db, params, scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+        if relabel {
+            for (i, p) in db.content.products.iter_mut().enumerate() {
+                p.era = (4 - p.era.min(4) + i as u8) % 5;
+            }
+            db.content.eras.clear();
+        }
+        let mut s = Simulation::new(db, params, &scenario);
+        run_years(&mut s, 3);
+        let eras: Vec<u8> = s
+            .world
+            .resource::<sim_core::metrics::Metrics>()
+            .latest()
+            .unwrap()
+            .towns
+            .iter()
+            .map(|t| t.era)
+            .collect();
+        (s.state_hash(), eras)
+    };
+    let (a, eras_a) = run(false);
+    let (b, eras_b) = run(true);
+    assert_eq!(a, b, "relabelling eras changed the simulation");
+    // The labels themselves did change.
+    assert_ne!(eras_a, eras_b);
 }

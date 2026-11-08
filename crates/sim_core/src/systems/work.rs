@@ -339,10 +339,17 @@ pub fn produce(
                 let pi = p as usize;
                 value += town.price[pi] * q * (0.5 + quality);
                 subsidy += town.policy.subsidy[pi] * db.base_price[pi] * q;
+                town.produced_this_year[pi] += q;
+                if db.coin[pi] > 0.0 {
+                    // Struck coin is new money in the treasury, not a good in stock.
+                    let minted = q * db.coin[pi];
+                    town.treasury += minted;
+                    town.ledger.add(crate::ledger::Flow::Minted, minted);
+                    continue;
+                }
                 let old = town.stock[pi];
                 town.quality[pi] = (old * town.quality[pi] + q * quality) / (old + q).max(1e-6);
                 town.stock[pi] += q;
-                town.produced_this_year[pi] += q;
                 if let Some(kind) = db.opens[pi] {
                     // New land: a fresh site that starts bare and grows in. Two crews
                     // can finish on the last free plot; only the first one gets it.
@@ -427,9 +434,11 @@ pub fn produce(
             let pay =
                 (params.work.wage_share * (value - input_cost)).clamp(0.0, town.treasury.max(0.0));
             town.treasury -= pay;
+            town.ledger.add(crate::ledger::Flow::Wages, pay);
             // A subsidized product earns its makers a top-up, while the treasury lasts.
             let subsidy = subsidy.clamp(0.0, town.treasury.max(0.0));
             town.treasury -= subsidy;
+            town.ledger.add(crate::ledger::Flow::Subsidies, subsidy);
             let pay = pay + subsidy;
             let wage = pay / n as f32;
             for &w in &workers {
@@ -587,6 +596,7 @@ pub fn learn(
         }
         let fee = pupils.len() as f32 * pp.school_fee;
         town.treasury -= fee;
+        town.ledger.add(crate::ledger::Flow::SchoolFees, fee);
         store.wealth[teacher] += fee;
     }
 }
