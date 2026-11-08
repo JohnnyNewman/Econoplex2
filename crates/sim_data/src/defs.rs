@@ -83,7 +83,7 @@ pub struct ProductDef {
     #[serde(default)]
     pub coin: f32,
     /// Technology era the product belongs to (index into the content's `eras`).
-    /// A town has reached an era once it makes something from it.
+    /// A label for the player only: no mechanic reads it.
     #[serde(default)]
     pub era: u8,
     /// Buildings: towns may start with it (scenario.ron lists which do). Starter

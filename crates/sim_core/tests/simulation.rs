@@ -750,3 +750,37 @@ fn ai_towns_climb_the_tree() {
         .iter()
         .any(|t| t.produced_last_year[bronze] > 0.0 || t.produced_this_year[bronze] > 0.0));
 }
+
+#[test]
+fn eras_are_only_a_label_and_never_change_the_simulation() {
+    // Eras are derived for the player (HUD, CSV, CLI). Everything else works bottom
+    // up from what agents can do and what towns hold, so relabelling every product's
+    // era, or dropping the era names, must leave the run unchanged.
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let run = |relabel: bool| {
+        let (mut db, params, scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+        if relabel {
+            for (i, p) in db.content.products.iter_mut().enumerate() {
+                p.era = (4 - p.era.min(4) + i as u8) % 5;
+            }
+            db.content.eras.clear();
+        }
+        let mut s = Simulation::new(db, params, &scenario);
+        run_years(&mut s, 3);
+        let eras: Vec<u8> = s
+            .world
+            .resource::<sim_core::metrics::Metrics>()
+            .latest()
+            .unwrap()
+            .towns
+            .iter()
+            .map(|t| t.era)
+            .collect();
+        (s.state_hash(), eras)
+    };
+    let (a, eras_a) = run(false);
+    let (b, eras_b) = run(true);
+    assert_eq!(a, b, "relabelling eras changed the simulation");
+    // The labels themselves did change.
+    assert_ne!(eras_a, eras_b);
+}

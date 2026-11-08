@@ -3,8 +3,9 @@
 // Files in this folder load alphabetically; later files can add entries or override
 // earlier ones with the same id.
 (
-    // Technology eras, oldest first. Each product names its era (`era`, default 0);
-    // a town has reached an era once it makes something from it.
+    // Technology eras, oldest first. Each product names its era (`era`, default 0).
+    // Eras are only a label for the player (HUD, CSV, CLI): no mechanic reads them,
+    // and what towns can make follows from skills, goods and buildings.
     eras: ["Wood and grain", "Stone, clay and cloth", "Bronze", "Iron and steel", "Early industry"],
     nature: [
         (id: "forest",   name: "Forest",   regrowth: 8.0,  capacity: 150.0),

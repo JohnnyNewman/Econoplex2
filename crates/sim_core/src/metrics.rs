@@ -88,6 +88,8 @@ pub const ERA_SHARE: f32 = 0.02;
 /// The latest technology era whose goods made up at least [`ERA_SHARE`] of what a
 /// town produced (by value at base prices). Raw materials belong to era 0, so an
 /// era counts once the town works its materials, not when it merely digs them up.
+///
+/// The era is a label for the player only; no system reads it.
 pub fn town_era(db: &Db, produced: &[f32]) -> u8 {
     let n = db.content.eras.len().max(1);
     let mut value = vec![0.0f32; n];

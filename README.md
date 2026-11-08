@@ -153,6 +153,14 @@ goods are at least 2% of what it makes by value, so digging up raw ore doesn't c
 The HUD shows each town's era, and `econoplex-sim` prints the year each town first
 reached each era.
 
+Eras are only a label for the player. No mechanic reads them: nothing unlocks by
+era, and AI towns don't choose buildings or work by it. What a town can make follows
+bottom up from the agent-based simulation: what its people can do, what it holds or
+can buy, and which buildings it has. The era only reports where that has got to, so
+a town can also slip back. The
+`eras_are_only_a_label_and_never_change_the_simulation` test relabels every
+product's era and checks that the run is unchanged.
+
 Some buildings are `starter` buildings (workshop, mill, bakery, furnace, smithy):
 towns can begin with them, which breaks bootstrap loops such as planks needing a
 workshop. Validation checks that every good and building can be made from natural
