@@ -33,6 +33,7 @@ struct PendingTask {
     town: u16,
     workers: Vec<u32>,
     apprentices: Vec<u32>,
+    trainees: Vec<u32>,
     input_quality: f32,
     pos: (f32, f32),
     batches: u32,
@@ -201,6 +202,11 @@ pub fn assign(
                 town: t,
                 workers: team.clone(),
                 apprentices: Vec::new(),
+                trainees: team
+                    .iter()
+                    .copied()
+                    .filter(|w| decisions.apprentices.binary_search(w).is_ok())
+                    .collect(),
                 input_quality,
                 pos,
                 batches,
@@ -273,6 +279,7 @@ pub fn assign(
         commands.entity(e).insert(Participants {
             workers: p.workers,
             apprentices: p.apprentices,
+            trainees: p.trainees,
         });
     }
 }
@@ -511,11 +518,20 @@ pub fn produce(
             let factor = town.wage_factor.get(r as usize).copied().unwrap_or(1.0);
             let share = (base * factor).min(1.0);
             let days = (task.required / (n as f32).powf(params.work.work_exponent)).max(1.0);
+            // Apprentices on the team cost the market less.
+            let aw = params.decision.matching.apprentice_wage();
+            let trainees: Vec<u32> = workers
+                .iter()
+                .copied()
+                .filter(|w| parts.trainees.contains(w))
+                .collect();
+            let weight = (n as f32 - trainees.len() as f32 * (1.0 - aw)) / n as f32;
             claims.push(Claim {
                 town: t,
                 recipe: r,
                 workers: workers.clone(),
-                wage: (share * (value - input_cost)).max(0.0),
+                trainees,
+                wage: (share * (value - input_cost)).max(0.0) * weight,
                 subsidy,
                 days,
             });
@@ -534,6 +550,7 @@ pub fn produce(
                 town: t,
                 recipe: r,
                 workers: workers.clone(),
+                trainees: Vec::new(),
                 wage: 0.0,
                 subsidy: 0.0,
                 days,
@@ -568,7 +585,13 @@ pub fn produce(
         commands.entity(e).despawn();
     }
 
-    settle_wages(claims, &mut towns, store, &decision);
+    settle_wages(
+        claims,
+        &mut towns,
+        store,
+        &decision,
+        params.decision.matching.apprentice_wage(),
+    );
 }
 
 /// A finished step's claim on its town market.
@@ -576,6 +599,8 @@ struct Claim {
     town: usize,
     recipe: u32,
     workers: Vec<u32>,
+    /// Workers paid as apprentices.
+    trainees: Vec<u32>,
     wage: f32,
     subsidy: f32,
     /// Days the team worked on it.
@@ -591,6 +616,7 @@ fn settle_wages(
     towns: &mut Towns,
     store: &mut AgentStore,
     decision: &crate::decision::DecisionModels,
+    apprentice_wage: f32,
 ) {
     let n_towns = towns.0.len();
     let mut owed = vec![(0.0f32, 0.0f32); n_towns];
@@ -627,18 +653,25 @@ fn settle_wages(
         let tax = pay * town.policy.income_tax;
         town.treasury += tax;
         town.ledger.add(crate::ledger::Flow::IncomeTax, tax);
-        let each = (pay - tax) / c.workers.len().max(1) as f32;
+        // Shares: 1 per regular worker, `apprentice_wage` per apprentice.
+        let shares = c.workers.len() as f32 - c.trainees.len() as f32 * (1.0 - apprentice_wage);
+        let each = (pay - tax) / shares.max(1e-6);
         let per_day = each / c.days;
         let rate = &mut town.pay_rate[c.recipe as usize];
         *rate += PAY_RATE_SMOOTHING * (per_day - *rate);
         for &w in &c.workers {
             let wi = w as usize;
-            store.wealth[wi] += each;
+            let own = if c.trainees.contains(&w) {
+                each * apprentice_wage
+            } else {
+                each
+            };
+            store.wealth[wi] += own;
             let curiosity = store.mind[wi][sim_data::dims::mind::CURIOSITY];
             crate::decision::expectations::remember(
                 &mut store.pay_expect[wi],
                 c.recipe,
-                per_day,
+                own / c.days,
                 curiosity,
                 &*decision.expectations,
             );

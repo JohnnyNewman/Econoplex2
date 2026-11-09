@@ -17,6 +17,31 @@ pub trait ChoiceRule: Send + Sync {
         mind: &MindVec,
         rng: &mut dyn RngCore,
     ) -> Option<u32>;
+
+    /// The options worth more than resting, best first, as this rule would choose
+    /// them one after another (for matching). Values are in the same units as for
+    /// `pick`.
+    fn rank(
+        &self,
+        rest: f32,
+        options: &[(u32, f32)],
+        mind: &MindVec,
+        rng: &mut dyn RngCore,
+    ) -> Vec<u32>;
+}
+
+/// Sort `(id, value)` best first and keep those above `rest`.
+fn above_rest(rest: f32, mut v: Vec<(u32, f32)>) -> Vec<u32> {
+    v.retain(|o| o.1 > rest);
+    v.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+    v.into_iter().map(|o| o.0).collect()
+}
+
+/// A Gumbel draw: adding one to each option's value divided by the temperature and
+/// taking the best is the same as a logit choice.
+fn gumbel(rng: &mut dyn RngCore) -> f32 {
+    let u: f32 = rng.random::<f32>().clamp(1e-7, 1.0 - 1e-7);
+    -(-u.ln()).ln()
 }
 
 /// `decision.choice` in models.ron.
@@ -80,6 +105,16 @@ impl ChoiceRule for Argmax {
         }
         best.0
     }
+
+    fn rank(
+        &self,
+        rest: f32,
+        options: &[(u32, f32)],
+        _mind: &MindVec,
+        _rng: &mut dyn RngCore,
+    ) -> Vec<u32> {
+        above_rest(rest, options.to_vec())
+    }
 }
 
 pub struct Logit {
@@ -120,12 +155,50 @@ impl ChoiceRule for Logit {
         }
         None
     }
+
+    fn rank(
+        &self,
+        rest: f32,
+        options: &[(u32, f32)],
+        m: &MindVec,
+        rng: &mut dyn RngCore,
+    ) -> Vec<u32> {
+        let temp = self.temperature(m);
+        let rest = rest / temp + gumbel(rng);
+        let noisy = options
+            .iter()
+            .map(|&(id, v)| (id, v / temp + gumbel(rng)))
+            .collect();
+        above_rest(rest, noisy)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use rand::SeedableRng;
+
+    #[test]
+    fn ranking_keeps_options_better_than_resting() {
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(3);
+        let m = [0.5; 8];
+        let ranked = Argmax.rank(1.0, &[(1, 0.5), (2, 3.0), (3, 2.0)], &m, &mut rng);
+        assert_eq!(ranked, vec![2, 3]);
+        // A logit ranking mostly puts the clearly best option first.
+        let rule = Logit {
+            base: 0.2,
+            risk_weight: 0.0,
+            diligence_weight: 0.0,
+        };
+        let first = (0..500)
+            .filter(|_| {
+                rule.rank(-10.0, &[(1, 0.0), (2, 2.0)], &m, &mut rng)
+                    .first()
+                    == Some(&2)
+            })
+            .count();
+        assert!(first > 450, "{first}");
+    }
 
     #[test]
     fn argmax_takes_the_best_option() {

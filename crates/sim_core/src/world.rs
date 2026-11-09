@@ -167,6 +167,9 @@ pub struct Town {
     /// Market factor on the base wage share, per recipe (see `decision::wages`).
     #[serde(default)]
     pub wage_factor: Vec<f32>,
+    /// Share of each job's places offered to apprentices (see `decision::matching`).
+    #[serde(default)]
+    pub apprentice_share: Vec<f32>,
     /// Goods delivered for government orders since the start, by product.
     #[serde(default)]
     pub procured: Vec<f32>,
@@ -299,6 +302,9 @@ pub fn total_money(store: &AgentStore, towns: &Towns) -> f64 {
 pub struct Decisions {
     /// (agent, recipe)
     pub jobs: Vec<(u32, u32)>,
+    /// Agents who took their job as apprentices (paid `apprentice_wage`).
+    #[serde(default)]
+    pub apprentices: Vec<u32>,
 }
 
 /// One finished work step, consumed by learn and socialize.
@@ -479,6 +485,7 @@ pub fn setup(world: &mut World, db: Db, params: ModelParams, scenario: &Scenario
             procured: vec![0.0; db.content.products.len()],
             pay_rate: vec![0.0; db.recipes.len()],
             wage_factor: vec![1.0; db.recipes.len()],
+            apprentice_share: vec![0.0; db.recipes.len()],
         });
 
         // Starting trades follow what the town can actually run, with food work weighted

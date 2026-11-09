@@ -78,6 +78,16 @@
         // None, or Discounted: the extra pay a higher success chance brings over
         // horizon_days, discounted daily, ending at retire_age.
         learning: Discounted(horizon_days: 360.0, discount: 0.995, retire_age: 60.0),
+        // Component: who gets which place. FirstCome: in agent order, first choice
+        // still open. DeferredAcceptance: stable matching; regular places go to
+        // the most skilled applicants, apprentice places to those with the most to
+        // learn, paid apprentice_wage of a regular worker. Each workplace sets its
+        // apprentice share monthly within share.min..max, while cheap labour now
+        // plus a trained worker later (trainee_output, retention, payoff_days)
+        // is worth it. Example:
+        // matching: DeferredAcceptance(apprentice_wage: 0.4, share: (min: 0.0,
+        //     max: 0.3, step: 0.05, trainee_output: 0.5, retention: 0.8, payoff_days: 0.5)),
+        matching: FirstCome,
     ),
 
     social: BoundedConfidence(

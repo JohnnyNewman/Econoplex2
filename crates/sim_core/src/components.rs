@@ -101,4 +101,8 @@ pub struct Participants {
     pub workers: Vec<u32>,
     /// Children learning by watching; they do not add work.
     pub apprentices: Vec<u32>,
+    /// Workers who took this job as apprentices: they work and learn, at
+    /// `apprentice_wage` of a regular worker's pay.
+    #[serde(default)]
+    pub trainees: Vec<u32>,
 }
