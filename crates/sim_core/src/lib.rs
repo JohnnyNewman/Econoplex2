@@ -30,6 +30,7 @@ use std::path::{Path, PathBuf};
 
 pub mod consumption;
 pub mod firms;
+pub mod history;
 pub mod price_index;
 pub mod pricing;
 pub mod worldgen;
@@ -83,6 +84,7 @@ pub fn build_schedule() -> Schedule {
                 profile::mark::<11>,
                 ledger::close_day,
                 metrics::record,
+                history::record,
                 goal::evaluate,
                 governor::govern,
                 profile::mark::<12>,

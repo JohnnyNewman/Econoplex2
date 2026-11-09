@@ -698,6 +698,7 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
     world.insert_resource(player_town(scenario));
     world.insert_resource(ScenarioSpec(scenario.clone()));
     world.insert_resource(crate::governor::Governors::new(scenario.towns.len()));
+    world.insert_resource(crate::history::History::default());
     world.insert_resource(SimClock {
         tick: 0,
         days_per_year: dpy,
