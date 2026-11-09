@@ -1170,3 +1170,51 @@ fn agents_learn_what_their_jobs_pay() {
         .iter()
         .all(|l| l.len() <= sim_core::decision::expectations::KEEP));
 }
+
+#[test]
+fn under_the_utility_model_the_rich_work_less() {
+    // Money only adds standing, with diminishing returns: agents who already have a
+    // lot rest more readily than poor ones.
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    scenario.seed = 9;
+    params.decision.model = sim_core::config::DecisionModel::Utility;
+    params.decision.choice = sim_core::decision::choice::ChoiceParams::Logit {
+        base: Some(0.05),
+        risk_weight: 0.0,
+        diligence_weight: 0.0,
+    };
+    let mut s = Simulation::new(db, params, &scenario);
+    run_years(&mut s, 1);
+    // Count working days over the next 60 days, by wealth at the start.
+    let (adults, wealth): (Vec<usize>, Vec<f32>) = {
+        let store = s.world.resource::<sim_core::AgentStore>();
+        let dpy = s.world.resource::<sim_core::SimClock>().days_per_year;
+        let adult = |i: usize| {
+            store.alive[i] && store.age_years(i, dpy) >= 20.0 && store.age_years(i, dpy) < 50.0
+        };
+        let a: Vec<usize> = (0..store.len()).filter(|&i| adult(i)).collect();
+        let w = a.iter().map(|&i| store.wealth[i]).collect();
+        (a, w)
+    };
+    let mut sorted = wealth.clone();
+    sorted.sort_by(f32::total_cmp);
+    let (lo, hi) = (sorted[sorted.len() / 4], sorted[sorted.len() * 3 / 4]);
+    let mut worked = vec![0u32; adults.len()];
+    for _ in 0..60 {
+        s.step();
+        let store = s.world.resource::<sim_core::AgentStore>();
+        for (k, &i) in adults.iter().enumerate() {
+            worked[k] += store.worked_today[i].is_some() as u32;
+        }
+    }
+    let mean = |pick: &dyn Fn(f32) -> bool| {
+        let v: Vec<f32> = (0..adults.len())
+            .filter(|&k| pick(wealth[k]))
+            .map(|k| worked[k] as f32)
+            .collect();
+        v.iter().sum::<f32>() / v.len().max(1) as f32
+    };
+    let (poor, rich) = (mean(&|w| w <= lo), mean(&|w| w >= hi));
+    assert!(poor > rich, "poor worked {poor:.1} days, rich {rich:.1}");
+}

@@ -187,6 +187,11 @@ struct Choice<'a> {
     scarcity: &'a [f32],
     charters: &'a [Vec<bool>],
     mastery: f32,
+    decision: &'a crate::decision::DecisionModels,
+    models: &'a crate::models::Models,
+    towns: &'a Towns,
+    /// Median resident wealth per town (for standing).
+    median_wealth: &'a [f32],
 }
 
 impl Choice<'_> {
@@ -194,6 +199,9 @@ impl Choice<'_> {
     /// A score depends only on the agent and the job, so every agent's scores can
     /// be worked out in parallel before anyone picks.
     fn scores(&self, store: &AgentStore, i: usize, jobs: &[u32]) -> (f32, Vec<f32>) {
+        if self.params.decision.model == crate::config::DecisionModel::Utility {
+            return self.utility_scores(store, i, jobs);
+        }
         let (db, params) = (self.db, self.params);
         let d = &params.decision;
         let t = store.town[i] as usize;
@@ -235,6 +243,43 @@ impl Choice<'_> {
         (dot(&w, &rest), job_scores)
     }
 
+    /// The utility model: each option's expected utility of the agent's needs over
+    /// the coming weeks (see `decision::valuation`).
+    fn utility_scores(&self, store: &AgentStore, i: usize, jobs: &[u32]) -> (f32, Vec<f32>) {
+        use crate::decision::{expectations, utility, valuation};
+        let (db, params) = (self.db, self.params);
+        let d = &params.decision;
+        let t = store.town[i] as usize;
+        let st = store.state[i];
+        let weights = utility::need_weights(&d.utility, &store.mind[i]);
+        let situation = valuation::Situation {
+            state: &st,
+            wealth: store.wealth[i],
+            median_wealth: self.median_wealth[t],
+            weights: &weights,
+        };
+        let u = &*self.decision.utility;
+        let sf = state_factor(&st, &params.needs);
+        let rest = valuation::rest_value(u, &situation, params.needs.fatigue_rest_recovery);
+        let job_scores = jobs
+            .iter()
+            .map(|&r| {
+                let m = &db.recipes[r as usize];
+                let prof = dot(&store.cap[i], &m.skill) + dot(&store.equip_vec[i], &m.skill);
+                let eff = (prof + physique_bonus(&store.phys[i], m, params.physique.weight)) * sf;
+                let success = self.models.success.probability(eff, m.difficulty);
+                let pay = expectations::expected_pay(
+                    &store.pay_expect[i],
+                    r,
+                    self.towns.0[t].pay_rate[r as usize],
+                );
+                let fatigue = params.needs.fatigue_per_work_day * (0.5 + m.phys_total);
+                valuation::job_value(u, &d.valuation, &situation, pay, success, fatigue)
+            })
+            .collect();
+        (rest, job_scores)
+    }
+
     /// Agent `i` weighs a random sample of the jobs still open (plus its habitual
     /// job, if still open) against resting, and picks one by softmax. `None` is
     /// rest. `score(r)` looks up the agent's score for job `r`.
@@ -265,23 +310,12 @@ impl Choice<'_> {
                 pool.push(last);
             }
         }
-        // Softmax sample over rest and the candidates.
-        let max = pool.iter().map(|&r| score(r)).fold(rest, f32::max);
-        let temp = d.temperature.max(1e-4);
-        let weight = |s: f32| ((s - max) / temp).exp();
-        let total = weight(rest) + pool.iter().map(|&r| weight(score(r))).sum::<f32>();
-        let mut x = rng.random::<f32>() * total;
-        x -= weight(rest);
-        if x <= 0.0 {
-            return None;
-        }
-        for &r in pool.iter() {
-            x -= weight(score(r));
-            if x <= 0.0 {
-                return Some(r);
-            }
-        }
-        None
+        // The choice rule picks among rest and the candidates.
+        let options: Vec<(u32, f32)> = pool.iter().map(|&r| (r, score(r))).collect();
+        let rng: &mut dyn rand::RngCore = rng;
+        self.decision
+            .choice
+            .pick(rest, &options, &store.mind[i], rng)
     }
 }
 
@@ -297,8 +331,30 @@ pub fn decide(
     tasks: Query<(&Task, &Participants)>,
     mut decisions: ResMut<Decisions>,
     mut log: ResMut<crate::world::WorkLog>,
+    models: (
+        Res<crate::decision::DecisionModels>,
+        Res<crate::models::Models>,
+    ),
 ) {
+    let (decision, models) = models;
     decisions.jobs.clear();
+    // Median resident wealth per town, for the standing need.
+    let median_wealth: Vec<f32> = towns
+        .0
+        .iter()
+        .map(|t| {
+            let mut w: Vec<f32> = t
+                .residents
+                .iter()
+                .map(|&i| store.wealth[i as usize])
+                .collect();
+            if w.is_empty() {
+                return 1.0;
+            }
+            let mid = w.len() / 2;
+            *w.select_nth_unstable_by(mid, f32::total_cmp).1
+        })
+        .collect();
     let mastery = params.mastery();
 
     // Per-town context, computed once.
@@ -406,6 +462,10 @@ pub fn decide(
         scarcity: &scarcity,
         charters: &charters,
         mastery,
+        decision: &decision,
+        models: &models,
+        towns: &towns,
+        median_wealth: &median_wealth,
     };
 
     // Phase 1, in parallel: every idle agent scores the jobs its town has open at
