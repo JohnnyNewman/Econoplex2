@@ -5,13 +5,18 @@
 //!
 //! - [`expectations::Expectations`]: forecast a price or pay from what was observed.
 //! - [`utility::Utility`]: how much an agent values the state of its needs.
+//! - [`choice::ChoiceRule`]: how the values of the options become a decision.
+//! - [`valuation`]: what working a job or resting is worth to an agent (the
+//!   utility model's wiring of expectations and utility).
 //!
 //! Further components (learning value, choice rule, wage adjustment, job matching,
 //! migration) follow the same pattern. A component sees only its inputs; the systems
 //! that use it gather them.
 
+pub mod choice;
 pub mod expectations;
 pub mod utility;
+pub mod valuation;
 
 use bevy_ecs::prelude::*;
 
@@ -20,6 +25,7 @@ use bevy_ecs::prelude::*;
 pub struct DecisionModels {
     pub expectations: Box<dyn expectations::Expectations>,
     pub utility: Box<dyn utility::Utility>,
+    pub choice: Box<dyn choice::ChoiceRule>,
 }
 
 impl DecisionModels {
@@ -27,6 +33,7 @@ impl DecisionModels {
         DecisionModels {
             expectations: expectations::build(&p.expectations),
             utility: utility::build(&p.utility),
+            choice: choice::build(&p.choice, p.temperature),
         }
     }
 }

@@ -64,6 +64,12 @@
                 [   0.8,  0.0,  0.0,  0.3,  0.0,  0.0,  0.0,  0.0 ],  // standing
             ],
         ),
+        // Component: how option values become a choice. Logit: softmax with
+        // temperature base x (1 + risk_weight x risk - diligence_weight x diligence);
+        // base None uses `temperature` above. Argmax: always the best option.
+        choice: Logit(base: None, risk_weight: 0.0, diligence_weight: 0.0),
+        // The utility model's look ahead: horizon in days and daily discount.
+        valuation: (horizon_days: 30.0, discount: 0.97, typical_success: 0.7),
     ),
 
     social: BoundedConfidence(

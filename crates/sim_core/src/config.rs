@@ -154,12 +154,22 @@ pub struct DecisionParams {
     /// Component: how agents value the state of their needs.
     #[serde(default)]
     pub utility: crate::decision::utility::UtilityParams,
+    /// Component: how option values become a choice.
+    #[serde(default)]
+    pub choice: crate::decision::choice::ChoiceParams,
+    /// The utility model's horizon and discounting.
+    #[serde(default)]
+    pub valuation: crate::decision::valuation::ValuationParams,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DecisionModel {
+    /// The weighted feature matrix (`bias`, `mind_weights`, `state_weights`).
     #[default]
     Features,
+    /// Expected utility of the agent's needs over a few weeks, from its own
+    /// expected pay and chance of success (`decision::valuation`).
+    Utility,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
