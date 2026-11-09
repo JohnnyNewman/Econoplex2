@@ -1824,6 +1824,7 @@ fn workshops_pay_from_their_sales_and_money_is_conserved() {
         profit_tax: 0.2,
         close_days: 30,
         credit_days: 0.0,
+        grouping: Default::default(),
     };
     let mut s = Simulation::new(db, params, &scenario);
     let money = |s: &Simulation| {
@@ -1867,6 +1868,7 @@ fn towns_lend_to_workshops_and_get_repaid_with_interest() {
         profit_tax: 0.2,
         close_days: 30,
         credit_days: 0.0,
+        grouping: Default::default(),
     };
     params.governor.enabled = false;
     let mut s = Simulation::new(db, params, &scenario);
@@ -1915,6 +1917,7 @@ fn the_profit_tax_is_a_town_lever() {
             profit_tax: 0.0,
             close_days: 30,
             credit_days: 0.0,
+            grouping: Default::default(),
         };
         params.governor.enabled = false;
         let mut s = Simulation::new(db, params, &scenario);
@@ -2008,6 +2011,7 @@ fn workshops_buy_on_account_and_pay_from_their_sales() {
         profit_tax: 0.2,
         close_days: 30,
         credit_days: 10.0,
+        grouping: Default::default(),
     };
     let mut s = Simulation::new(db, params, &scenario);
     let money = |s: &Simulation| {
@@ -2038,4 +2042,38 @@ fn workshops_buy_on_account_and_pay_from_their_sales() {
     assert!(seen_debt, "no firm ever bought on account");
     let after = money(&s);
     assert!(((after - before) / before).abs() < 1e-3, "money changed");
+}
+
+#[test]
+fn guild_firms_pool_a_domain_and_the_mint_answers_a_money_shortage() {
+    use sim_core::firms::{FirmKey, FirmsParams, Grouping};
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, mut params, scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    params.market.firms = FirmsParams::Workshops {
+        start_cash: 50.0,
+        reserve_days: 5.0,
+        payout_rate: 0.2,
+        profit_tax: 0.2,
+        close_days: 30,
+        credit_days: 0.0,
+        grouping: Grouping::Guild,
+    };
+    params.market.mint_money_per_capita = 1e9;
+    let mut s = Simulation::new(db, params, &scenario);
+    s.step();
+    let db = s.world.resource::<sim_core::Db>();
+    // One firm per domain that has work.
+    let mut domains: Vec<u32> = db.recipes.iter().map(|m| m.domain).collect();
+    domains.sort_unstable();
+    domains.dedup();
+    assert_eq!(db.firm_keys.len(), domains.len());
+    assert!(db.firm_keys.iter().all(|k| matches!(k, FirmKey::Guild(_))));
+    let towns = s.world.resource::<sim_core::Towns>();
+    assert_eq!(towns.0[0].firms.len(), domains.len());
+    // Far below the money target: every town wants coin.
+    let mp = &s.world.resource::<sim_core::world::Params>().market;
+    assert!(towns
+        .0
+        .iter()
+        .all(|t| t.money_per_capita > 0.0 && t.mint_wanted(mp)));
 }

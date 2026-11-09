@@ -210,7 +210,9 @@
         // closes until capital comes. Example:
         // credit_days > 0: trade credit; a firm takes inputs on account up to
         // credit_days of its recent daily sales and pays from its sales. Example:
-        // firms: Workshops(start_cash: 100.0, reserve_days: 10.0, payout_rate: 0.05, profit_tax: 0.2, close_days: 30, credit_days: 10.0),
+        // grouping: Kind (one firm per building / nature site / guild trade) or
+        // Guild (one firm per guild domain, pooling the cash of all its work).
+        // firms: Workshops(start_cash: 100.0, reserve_days: 10.0, payout_rate: 0.05, profit_tax: 0.2, close_days: 30, credit_days: 10.0, grouping: Guild),
         firms: Treasury,
         // What households buy for their own use. None: food and tools only.
         // Basket(...): each adult keeps a household stock of the listed goods
@@ -258,6 +260,9 @@
         // treasury holds less than `mint_below_per_capita` per resident.
         starting_coins: 1000.0,
         mint_below_per_capita: 3.0,
+        // Money-supply rule: the mint (auto) also strikes coin while the town's
+        // whole money stock per resident is below this (0: off).
+        mint_money_per_capita: 0.0,
         // Construction: a town pays for a new building when the ones it has are this full.
         build_threshold: 0.75,
         new_building_appeal: 0.3,

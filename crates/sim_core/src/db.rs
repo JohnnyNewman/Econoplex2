@@ -191,6 +191,26 @@ impl Db {
         }
     }
 
+    /// Regroup recipes into firms (see `firms::Grouping`).
+    pub fn group_firms(&mut self, g: crate::firms::Grouping) {
+        let mut keys: Vec<crate::firms::FirmKey> = self
+            .recipes
+            .iter()
+            .map(|m| crate::firms::key_grouped(m, g))
+            .collect();
+        keys.sort_unstable();
+        keys.dedup();
+        self.recipe_firm = self
+            .recipes
+            .iter()
+            .map(|m| {
+                keys.binary_search(&crate::firms::key_grouped(m, g))
+                    .unwrap()
+            })
+            .collect();
+        self.firm_keys = keys;
+    }
+
     pub fn category(&self, product: u32) -> Category {
         self.content.products[product as usize].category
     }

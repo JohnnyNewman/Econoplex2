@@ -331,12 +331,13 @@ pub fn restore(
         governors,
         ..
     } = save;
-    let db = Db::build(
+    let mut db = Db::build(
         content,
         params.embedding.ancestor_decay,
         &params.embedding.method,
         params.embedding.dims,
     );
+    db.group_firms(params.market.firms.grouping());
 
     let map = EntityMap(
         entities
