@@ -197,6 +197,8 @@ pub fn assign(
             for &(p, q) in &m.inputs {
                 town.stock[p as usize] -= q * batches as f32;
                 town.input_today[p as usize] += q * batches as f32;
+                town.inputs_year.resize(town.stock.len(), 0.0);
+                town.inputs_year[p as usize] += q * batches as f32;
                 input_quality = input_quality.min(town.quality[p as usize]);
             }
             pending.push(PendingTask {
@@ -728,6 +730,7 @@ fn settle_wages(
         let shares = c.workers.len() as f32 - c.trainees.len() as f32 * (1.0 - apprentice_wage);
         let each = (pay - tax) / shares.max(1e-6);
         let per_day = each / c.days;
+        town.worker_days += shares * c.days;
         let rate = &mut town.pay_rate[c.recipe as usize];
         *rate += PAY_RATE_SMOOTHING * (per_day - *rate);
         if c.succeeded {

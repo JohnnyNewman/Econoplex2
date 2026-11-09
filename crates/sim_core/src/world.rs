@@ -185,6 +185,19 @@ pub struct Town {
     /// labour); see `pricing::Volatility`.
     #[serde(default)]
     pub price_vol: Vec<crate::pricing::Volatility>,
+    /// This year so far, for the price indices (see `price_index`): what residents
+    /// consumed and trades used, by product; the sum of daily prices and the days
+    /// counted; worker-days paid.
+    #[serde(default)]
+    pub consumed_year: Vec<f32>,
+    #[serde(default)]
+    pub inputs_year: Vec<f32>,
+    #[serde(default)]
+    pub price_sum: Vec<f64>,
+    #[serde(default)]
+    pub price_days: u32,
+    #[serde(default)]
+    pub worker_days: f32,
     /// Market factor on the base wage share, per recipe (see `decision::wages`).
     #[serde(default)]
     pub wage_factor: Vec<f32>,
@@ -518,6 +531,11 @@ pub fn setup(world: &mut World, db: Db, params: ModelParams, scenario: &Scenario
             input_use: Vec::new(),
             pressure: Vec::new(),
             price_vol: Vec::new(),
+            consumed_year: Vec::new(),
+            inputs_year: Vec::new(),
+            price_sum: Vec::new(),
+            price_days: 0,
+            worker_days: 0.0,
             wage_factor: vec![1.0; db.recipes.len()],
             apprentice_share: vec![0.0; db.recipes.len()],
             rent: 0.0,

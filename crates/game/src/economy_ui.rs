@@ -174,6 +174,7 @@ pub fn economy_lines(
     db: &Db,
     params: &Params,
     governor: Option<(&str, &sim_core::governor::GovernorState, u32)>,
+    stats: Option<&sim_core::metrics::TownStats>,
 ) -> Vec<PanelLine> {
     let mut out: Vec<PanelLine> = Vec::new();
     let mut line = |s: String, c: Color| out.push((s, c, None));
@@ -238,6 +239,36 @@ pub fn economy_lines(
             },
             MINTED.with_alpha(0.75),
         );
+        // Price level and the coin's strength here (last year; metrics only).
+        if let Some(s) = stats {
+            line(
+                format!(
+                    "  prices: CPI {:.0} ({:+.1}%/yr), food & fuel {:.0}, materials {:.0}, wages {:.0}",
+                    s.cpi.fisher,
+                    100.0 * s.cpi.inflation,
+                    s.cpi.essentials,
+                    s.cpi.commodities,
+                    s.cpi.labour
+                ),
+                TEXT,
+            );
+            line(
+                format!(
+                    "      coin buys {:.2}x year one, {:.2}x the world's prices; empire CPI {:.0}",
+                    s.purchasing_power, s.real_exchange_rate, s.empire_cpi
+                ),
+                DIM,
+            );
+            line(
+                format!(
+                    "      money {:.0}, turns over {:.1}x a year, {:.1}% newly minted",
+                    s.money_stock,
+                    s.velocity,
+                    100.0 * s.minted_share
+                ),
+                DIM,
+            );
+        }
         // Trend: this month's daily rate against last year's.
         let dpy = params.life.days_per_year.max(1) as f32;
         let trend = |g: Group, now: f32| {
@@ -504,6 +535,7 @@ pub fn update_economy_panel(
     ),
     mut root: Single<&mut Visibility, With<EconomyRoot>>,
     mut lines: Query<(&EconLine, &mut Text, &mut TextColor, &mut Node)>,
+    metrics: Res<sim_core::metrics::Metrics>,
 ) {
     **root = if view.visible {
         Visibility::Inherited
@@ -540,6 +572,7 @@ pub fn update_economy_panel(
         &db,
         &params,
         governor,
+        metrics.latest().and_then(|y| y.towns.get(t)),
     );
     view.headers = content.iter().map(|l| l.2).collect();
     for (l, mut text, mut color, mut node) in &mut lines {
