@@ -100,8 +100,22 @@ pub fn settle(
             let target = (per_capita * pop).max(1.0) + town.policy.ordered(p);
             let pressure = ((target - town.stock[p]) / target).clamp(-1.0, 1.0);
             let base = db.base_price[p];
+            let cap = town
+                .price_cap
+                .get(p)
+                .copied()
+                .unwrap_or(mp.max_price_factor);
             town.price[p] = (town.price[p] * (mp.price_adjust * pressure).exp())
-                .clamp(base * mp.min_price_factor, base * mp.max_price_factor);
+                .clamp(base * mp.min_price_factor, base * cap);
+            if let crate::config::ScarcityCap::Loosen { rate, max_factor } = mp.scarcity_cap {
+                town.price_cap.resize(np, mp.max_price_factor);
+                let c = &mut town.price_cap[p];
+                if pressure > 0.0 && town.price[p] >= base * *c * 0.999 {
+                    *c = (*c * (1.0 + rate)).min(max_factor.max(mp.max_price_factor));
+                } else {
+                    *c = (*c * (1.0 - rate)).max(mp.max_price_factor);
+                }
+            }
         }
     }
 

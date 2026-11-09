@@ -275,6 +275,19 @@ fn default_mint_below() -> f32 {
     3.0
 }
 
+/// `market.scarcity_cap` in models.ron: how far a scarce good's price may rise.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+pub enum ScarcityCap {
+    /// Prices stay within `max_price_factor` × base price.
+    #[default]
+    Fixed,
+    /// While a good sits at its cap and is still short, each day its cap rises by
+    /// `rate` (relative), up to `max_factor` × base price; once it is no longer at
+    /// its cap and short, the cap falls back toward `max_price_factor` at the same
+    /// rate. So a good that stays scarce can bid workers away from other trades.
+    Loosen { rate: f32, max_factor: f32 },
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MarketParams {
     pub price_adjust: f32,
@@ -287,6 +300,9 @@ pub struct MarketParams {
     pub food_reserve_days: f32,
     pub min_price_factor: f32,
     pub max_price_factor: f32,
+    /// Whether a good's price cap loosens while it stays scarce.
+    #[serde(default)]
+    pub scarcity_cap: ScarcityCap,
     pub trade_interval: u32,
     pub trade_amount: f32,
     /// Fraction of price lost per unit traded per 1000 units of road (transport cost).

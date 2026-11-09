@@ -72,7 +72,12 @@
         // posted_pay_days: each town's public pay rate for a job drifts toward what
         // it would pay at today's prices over this many days (realised pay pulls
         // harder), so jobs nobody has tried yet still show a pay.
-        valuation: (horizon_days: 30.0, discount: 0.97, typical_success: 0.7, posted_pay_days: 90.0),
+        // pay_basis: Average (a job's average pay here, failures included, scaled
+        // by the agent's success chance) or OwnSuccess (the agent's success chance
+        // times what a successful day pays here; beginners then see what a hard
+        // trade pays those who master it).
+        valuation: (horizon_days: 30.0, discount: 0.97, typical_success: 0.7, posted_pay_days: 90.0,
+            pay_basis: Average),
         // Component: each job's pay factor on the town's base wage share. Fixed: 1.
         // ExcessDemand: moves by step x (target_fill - takers / places) each day,
         // within min..max: crowded jobs pay less, empty ones more.
@@ -182,6 +187,11 @@
         food_reserve_days: 1.0,
         min_price_factor: 0.2,
         max_price_factor: 5.0,
+        // Fixed: prices stay within max_price_factor x base. Loosen(rate, max_factor):
+        // while a good sits at its cap and is still short, the cap rises by rate a
+        // day (up to max_factor x base); otherwise it falls back. Example:
+        // scarcity_cap: Loosen(rate: 0.01, max_factor: 50.0),
+        scarcity_cap: Fixed,
         trade_interval: 10,
         trade_amount: 6.0,
         // Per 1000 units of road: the straight road between neighbors is about 900.

@@ -164,6 +164,14 @@ pub struct Town {
     /// moving average of realised pay, failures included).
     #[serde(default)]
     pub pay_rate: Vec<f32>,
+    /// What a successful worker-day at each recipe has paid here lately (failures
+    /// left out); see `decision.valuation.pay_basis`.
+    #[serde(default)]
+    pub success_pay: Vec<f32>,
+    /// Each good's current price cap, as a factor of its base price (see
+    /// `market.scarcity_cap`). Empty: `max_price_factor` for all.
+    #[serde(default)]
+    pub price_cap: Vec<f32>,
     /// Market factor on the base wage share, per recipe (see `decision::wages`).
     #[serde(default)]
     pub wage_factor: Vec<f32>,
@@ -491,6 +499,8 @@ pub fn setup(world: &mut World, db: Db, params: ModelParams, scenario: &Scenario
             ledger: crate::ledger::Ledger::new(scenario.towns.len()),
             procured: vec![0.0; db.content.products.len()],
             pay_rate: vec![0.0; db.recipes.len()],
+            success_pay: vec![0.0; db.recipes.len()],
+            price_cap: Vec::new(),
             wage_factor: vec![1.0; db.recipes.len()],
             apprentice_share: vec![0.0; db.recipes.len()],
             rent: 0.0,
