@@ -40,6 +40,11 @@ pub enum FirmsParams {
         /// closes until capital comes.
         #[serde(default = "close_days_default")]
         close_days: u32,
+        /// Trade credit: a firm may take inputs on account up to `credit_days`
+        /// of its recent daily sales (at least of `start_cash` / 30), and pays
+        /// them from its sales. 0: cash only.
+        #[serde(default)]
+        credit_days: f32,
     },
 }
 
@@ -50,6 +55,18 @@ fn close_days_default() -> u32 {
 impl FirmsParams {
     pub fn on(&self) -> bool {
         matches!(self, FirmsParams::Workshops { .. })
+    }
+
+    /// Trade credit open to a firm (0 without workshops or with `credit_days` 0).
+    pub fn credit_room(&self, f: &Firm) -> f32 {
+        match *self {
+            FirmsParams::Workshops {
+                credit_days,
+                start_cash,
+                ..
+            } => f.credit_room(credit_days, start_cash / 30.0),
+            FirmsParams::Treasury => 0.0,
+        }
     }
 }
 
@@ -147,7 +164,19 @@ pub struct Firm {
     /// Loans from the town's treasury still to repay.
     #[serde(default)]
     pub loans: Vec<Loan>,
+    /// Inputs taken on account: (creditor, amount), oldest first. Creditor: a
+    /// firm index, or `TREASURY` for the town market.
+    #[serde(default)]
+    pub payables: Vec<(u32, f32)>,
+    /// Sales per day, averaged over about a month, and today's.
+    #[serde(default)]
+    pub sales_bill: f32,
+    #[serde(default)]
+    pub sales_today: f32,
 }
+
+/// The creditor index of the town market (the treasury) in `Firm::payables`.
+pub const TREASURY: u32 = u32::MAX;
 
 /// A loan from the treasury to a firm, repaid in daily instalments with interest.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
@@ -191,6 +220,9 @@ impl Firm {
         if f == FirmFlow::Inputs {
             self.inputs_today += amount;
         }
+        if f == FirmFlow::Sales || f == FirmFlow::DirectSales {
+            self.sales_today += amount;
+        }
     }
 
     /// Cash it may pay out today: `rate` of what is above `reserve_days` of its
@@ -198,6 +230,17 @@ impl Firm {
     pub fn payout(&self, reserve_days: f32, rate: f32) -> f32 {
         let reserve = (reserve_days * (self.wage_bill + self.input_bill)).max(self.capital);
         ((self.cash - reserve) * rate.clamp(0.0, 1.0)).max(0.0)
+    }
+
+    /// What it owes on account.
+    pub fn owed(&self) -> f32 {
+        self.payables.iter().map(|p| p.1).sum()
+    }
+
+    /// Credit still open to it: `credit_days` of its sales (at least `floor` a
+    /// day), less what it already owes.
+    pub fn credit_room(&self, credit_days: f32, floor: f32) -> f32 {
+        (credit_days.max(0.0) * self.sales_bill.max(floor) - self.owed()).max(0.0)
     }
 
     /// Cash it can spend on wages: what is above `reserve_days` of its inputs (the
@@ -212,6 +255,8 @@ impl Firm {
         self.wages_today = 0.0;
         self.input_bill += (self.inputs_today - self.input_bill) / 30.0;
         self.inputs_today = 0.0;
+        self.sales_bill += (self.sales_today - self.sales_bill) / 30.0;
+        self.sales_today = 0.0;
     }
 
     pub fn end_year(&mut self) {
@@ -287,6 +332,20 @@ mod tests {
         f.book(FirmFlow::Wages, 20.0);
         f.end_day();
         assert!((f.wage_bill - (10.0 + (20.0 - 10.0) / 30.0)).abs() < 1e-5);
+    }
+
+    #[test]
+    fn trade_credit_follows_sales_and_debts() {
+        let mut f = Firm {
+            sales_bill: 10.0,
+            ..Default::default()
+        };
+        assert_eq!(f.credit_room(5.0, 1.0), 50.0);
+        f.payables.push((TREASURY, 30.0));
+        assert_eq!(f.credit_room(5.0, 1.0), 20.0);
+        // A new firm with no sales still gets the floor.
+        assert_eq!(Firm::default().credit_room(5.0, 2.0), 10.0);
+        assert_eq!(Firm::default().credit_room(0.0, 2.0), 0.0);
     }
 
     #[test]

@@ -370,6 +370,7 @@ pub fn firm_finances(
         payout_rate,
         profit_tax,
         close_days,
+        ..
     } = params.market.firms
     else {
         return;
@@ -436,6 +437,29 @@ pub fn firm_finances(
             }
             f.closed = f.cash < 0.2 * start_cash;
         }
+        // Trade credit: debts on account are paid from cash, oldest first. A
+        // closed firm's debts are written off (its creditors lose them).
+        for k in 0..town.firms.len() {
+            if town.firms[k].payables.is_empty() {
+                continue;
+            }
+            let mut owed = std::mem::take(&mut town.firms[k].payables);
+            if town.firms[k].closed {
+                town.credit_defaults += owed.iter().map(|o| o.1).sum::<f32>();
+                continue;
+            }
+            for o in owed.iter_mut() {
+                let pay = o.1.min(town.firms[k].cash.max(0.0));
+                if pay <= 0.0 {
+                    break;
+                }
+                town.firms[k].cash -= pay;
+                super::work::receive(town, o.0, pay);
+                o.1 -= pay;
+            }
+            owed.retain(|o| o.1 > 1e-4);
+            town.firms[k].payables = owed;
+        }
         // Loans: each day's instalment, interest first, out of the firm's cash. A
         // closed firm's overdue loans default: the rest is written off.
         let dpy = params.life.days_per_year as f32;
@@ -468,8 +492,8 @@ pub fn firm_finances(
             f.loans = loans;
         }
         for (k, f) in town.firms.iter_mut().enumerate() {
-            // No payouts while a firm owes the treasury.
-            if !f.loans.is_empty() {
+            // No payouts while a firm owes the treasury or its suppliers.
+            if !f.loans.is_empty() || !f.payables.is_empty() {
                 continue;
             }
             let out = f.payout(reserve_days, payout_rate);

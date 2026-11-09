@@ -214,7 +214,10 @@ pub fn assign(
                     .map(|&(p, q)| town.price[p as usize] * q)
                     .sum();
                 let cash = match buyer {
-                    Some(f) => town.firms[f].cash,
+                    Some(f) => {
+                        town.firms[f].cash.max(0.0)
+                            + params.market.firms.credit_room(&town.firms[f])
+                    }
                     None => town.treasury,
                 };
                 if per_batch > 0.0 {
@@ -341,10 +344,8 @@ fn take_input(town: &mut crate::world::Town, p: usize, need: f32, buyer: Option<
     town.stock[p] -= from_market;
     if let Some(f) = buyer {
         let pay = from_market * price;
-        town.firms[f].cash -= pay;
         town.firms[f].book(FirmFlow::Inputs, pay);
-        town.treasury += pay;
-        town.ledger.add(Flow::InputSales, pay);
+        firm_pays(town, f, crate::firms::TREASURY, pay);
     }
     let mut left = need - from_market;
     // Own stock first, then the others.
@@ -368,18 +369,40 @@ fn take_input(town: &mut crate::world::Town, p: usize, need: f32, buyer: Option<
             continue;
         }
         let pay = q * price;
+        town.firms[k].book(FirmFlow::Sales, pay);
         match buyer {
             Some(f) => {
-                town.firms[f].cash -= pay;
                 town.firms[f].book(FirmFlow::Inputs, pay);
+                firm_pays(town, f, k as u32, pay);
             }
             None => {
                 town.treasury -= pay;
                 town.ledger.add(Flow::MarketPurchases, pay);
+                town.firms[k].cash += pay;
             }
         }
-        town.firms[k].cash += pay;
-        town.firms[k].book(FirmFlow::Sales, pay);
+    }
+}
+
+/// Firm `f` pays `amount` to a creditor (a firm, or `firms::TREASURY`) out of its
+/// cash; what it can't pay it owes on account (trade credit).
+pub fn firm_pays(town: &mut crate::world::Town, f: usize, creditor: u32, amount: f32) {
+    let pay = amount.min(town.firms[f].cash.max(0.0));
+    town.firms[f].cash -= pay;
+    receive(town, creditor, pay);
+    let rest = amount - pay;
+    if rest > 1e-6 {
+        town.firms[f].payables.push((creditor, rest));
+    }
+}
+
+/// A creditor receives a payment (no sale is booked: it was booked at delivery).
+pub fn receive(town: &mut crate::world::Town, creditor: u32, amount: f32) {
+    if creditor == crate::firms::TREASURY {
+        town.treasury += amount;
+        town.ledger.add(crate::ledger::Flow::InputSales, amount);
+    } else if let Some(c) = town.firms.get_mut(creditor as usize) {
+        c.cash += amount;
     }
 }
 

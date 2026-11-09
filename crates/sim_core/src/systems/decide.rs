@@ -141,7 +141,8 @@ pub fn job_capacity(
                     .map(|&(p, q)| town.price[p as usize] * q)
                     .sum();
                 if per_batch > 0.0 {
-                    cap = cap.min(f.cash.max(0.0) / per_batch * m.duration);
+                    let funds = f.cash.max(0.0) + params.market.firms.credit_room(f);
+                    cap = cap.min(funds / per_batch * m.duration);
                 }
             }
             cap
