@@ -160,6 +160,9 @@ pub struct DecisionParams {
     /// The utility model's horizon and discounting.
     #[serde(default)]
     pub valuation: crate::decision::valuation::ValuationParams,
+    /// Component: how each job's pay moves with the balance of workers and places.
+    #[serde(default)]
+    pub wages: crate::decision::wages::WageParams,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]

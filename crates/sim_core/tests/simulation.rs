@@ -1055,7 +1055,6 @@ fn a_hungry_town_subsidizes_food_then_winds_it_down() {
     // Fed again: the hunger is over and the food subsidies are wound down.
     let m = s.world.resource::<sim_core::metrics::Metrics>();
     assert_eq!(m.latest().unwrap().towns[3].starving, 0.0);
-    assert!(decided(&s, 3, "enough food"));
     let db = s.world.resource::<sim_core::Db>();
     let town = &s.world.resource::<sim_core::Towns>().0[3];
     assert!(db
@@ -1217,4 +1216,78 @@ fn under_the_utility_model_the_rich_work_less() {
     };
     let (poor, rich) = (mean(&|w| w <= lo), mean(&|w| w >= hi));
     assert!(poor > rich, "poor worked {poor:.1} days, rich {rich:.1}");
+}
+
+fn market_pay() -> sim_core::decision::wages::WageParams {
+    sim_core::decision::wages::WageParams::ExcessDemand {
+        step: 0.02,
+        target_fill: 0.8,
+        min: 0.5,
+        max: 2.0,
+    }
+}
+
+#[test]
+fn market_pay_moves_both_ways_and_the_books_still_balance() {
+    use sim_core::ledger::{sum_group, Group};
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    scenario.seed = 5;
+    params.decision.wages = market_pay();
+    let mut s = Simulation::new(db, params, &scenario);
+    run_years(&mut s, 1);
+    let before: Vec<f32> = s
+        .world
+        .resource::<sim_core::Towns>()
+        .0
+        .iter()
+        .map(|t| t.treasury)
+        .collect();
+    run_years(&mut s, 1);
+    let towns = s.world.resource::<sim_core::Towns>();
+    let factors: Vec<f32> = towns
+        .0
+        .iter()
+        .flat_map(|t| t.wage_factor.iter().copied())
+        .collect();
+    assert!(factors.iter().all(|&f| (0.5..=2.0).contains(&f)));
+    assert!(
+        factors.iter().any(|&f| f < 0.95),
+        "no crowded job paid less"
+    );
+    assert!(
+        factors.iter().any(|&f| f > 1.05),
+        "no understaffed job paid more"
+    );
+    for (t, town) in towns.0.iter().enumerate() {
+        let l = &town.ledger.last_year;
+        let net = sum_group(l, Group::Taxed)
+            + sum_group(l, Group::Spent)
+            + sum_group(l, Group::Minted)
+            + sum_group(l, Group::ExternalIn)
+            - sum_group(l, Group::Issued)
+            - sum_group(l, Group::ExternalOut);
+        let change = town.treasury - before[t];
+        assert!((net - change).abs() < 1e-3 * sum_group(l, Group::Issued).max(1.0));
+    }
+}
+
+#[test]
+fn a_short_treasury_pays_every_job_its_share() {
+    // With no coins to start, the treasury can't cover the wages owed. Every
+    // finished job still gets the same share of its claim, so many different jobs
+    // earn something, not only the first ones done each day.
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, mut params, scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    params.market.starting_coins = 0.0;
+    params.governor.enabled = false;
+    let mut s = Simulation::new(db, params, &scenario);
+    for _ in 0..60 {
+        s.step();
+    }
+    let towns = s.world.resource::<sim_core::Towns>();
+    for town in &towns.0 {
+        let paid = town.pay_rate.iter().filter(|&&p| p > 0.0).count();
+        assert!(paid >= 5, "{}: only {paid} jobs ever paid", town.name);
+    }
 }

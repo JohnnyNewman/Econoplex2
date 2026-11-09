@@ -468,6 +468,25 @@ pub fn decide(
         median_wealth: &median_wealth,
     };
 
+    // Places each job had at the start of the day, for the wage factors.
+    let places_start: Vec<Vec<f32>> = (0..towns.0.len())
+        .map(|t| {
+            (0..db.recipes.len())
+                .map(|r| {
+                    let mut p = capacity[t][r].max(0.0);
+                    if let Some(b) = db.recipes[r].building {
+                        p = p.min(slots_left[t][b as usize].max(0.0));
+                    }
+                    if p.is_finite() {
+                        p
+                    } else {
+                        0.0
+                    }
+                })
+                .collect()
+        })
+        .collect();
+
     // Phase 1, in parallel: every idle agent scores the jobs its town has open at
     // the start of the day. Jobs only close during the day, so these scores cover
     // everything an agent can still pick.
@@ -532,6 +551,25 @@ pub fn decide(
                 }
                 log.chosen[r as usize] += 1;
                 decisions.jobs.push((i as u32, r));
+            }
+        }
+    }
+
+    // Each job's pay moves with how many took it against its places.
+    let mut takers = vec![vec![0.0f32; db.recipes.len()]; towns.0.len()];
+    for &(i, r) in &decisions.jobs {
+        takers[store.town[i as usize] as usize][r as usize] += 1.0;
+    }
+    for (t, town) in towns.0.iter_mut().enumerate() {
+        town.wage_factor.resize(db.recipes.len(), 1.0);
+        for r in 0..db.recipes.len() {
+            let places = places_start[t][r];
+            if places >= 1.0 || takers[t][r] > 0.0 {
+                town.wage_factor[r] = decision.wages.adjust(
+                    town.wage_factor[r],
+                    takers[t][r],
+                    places.max(takers[t][r]),
+                );
             }
         }
     }

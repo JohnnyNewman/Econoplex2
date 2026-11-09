@@ -6,6 +6,7 @@
 //! - [`expectations::Expectations`]: forecast a price or pay from what was observed.
 //! - [`utility::Utility`]: how much an agent values the state of its needs.
 //! - [`choice::ChoiceRule`]: how the values of the options become a decision.
+//! - [`wages::WageAdjustment`]: how a job's pay moves with workers and places.
 //! - [`valuation`]: what working a job or resting is worth to an agent (the
 //!   utility model's wiring of expectations and utility).
 //!
@@ -17,6 +18,7 @@ pub mod choice;
 pub mod expectations;
 pub mod utility;
 pub mod valuation;
+pub mod wages;
 
 use bevy_ecs::prelude::*;
 
@@ -26,6 +28,7 @@ pub struct DecisionModels {
     pub expectations: Box<dyn expectations::Expectations>,
     pub utility: Box<dyn utility::Utility>,
     pub choice: Box<dyn choice::ChoiceRule>,
+    pub wages: Box<dyn wages::WageAdjustment>,
 }
 
 impl DecisionModels {
@@ -34,6 +37,7 @@ impl DecisionModels {
             expectations: expectations::build(&p.expectations),
             utility: utility::build(&p.utility),
             choice: choice::build(&p.choice, p.temperature),
+            wages: wages::build(&p.wages),
         }
     }
 }
