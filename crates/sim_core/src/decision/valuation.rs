@@ -73,11 +73,12 @@ pub fn job_value(
     expected_pay: f32,
     success: f32,
     fatigue_cost: f32,
+    learning_value: f32,
 ) -> f32 {
     let income = expected_pay.max(0.0) * (success / p.typical_success.max(1e-3)).clamp(0.0, 1.5);
     let mut n = needs(
         s.state,
-        s.wealth + income * p.horizon_weight(),
+        s.wealth + income * p.horizon_weight() + learning_value.max(0.0),
         s.median_wealth,
     );
     n[REST] = (n[REST] - fatigue_cost).max(0.0);
@@ -105,9 +106,15 @@ mod tests {
         let st = [0.3, 0.2, 0.6, 1.0];
         let w = [1.0; 4];
         let s = sit(&st, 20.0, &w);
-        assert!(job_value(&u, &p, &s, 2.0, 0.7, 0.1) > job_value(&u, &p, &s, 1.0, 0.7, 0.1));
-        assert!(job_value(&u, &p, &s, 1.0, 0.7, 0.1) > job_value(&u, &p, &s, 1.0, 0.7, 0.3));
-        assert!(job_value(&u, &p, &s, 1.0, 0.9, 0.1) > job_value(&u, &p, &s, 1.0, 0.3, 0.1));
+        assert!(
+            job_value(&u, &p, &s, 2.0, 0.7, 0.1, 0.0) > job_value(&u, &p, &s, 1.0, 0.7, 0.1, 0.0)
+        );
+        assert!(
+            job_value(&u, &p, &s, 1.0, 0.7, 0.1, 0.0) > job_value(&u, &p, &s, 1.0, 0.7, 0.3, 0.0)
+        );
+        assert!(
+            job_value(&u, &p, &s, 1.0, 0.9, 0.1, 0.0) > job_value(&u, &p, &s, 1.0, 0.3, 0.1, 0.0)
+        );
     }
 
     #[test]
@@ -120,7 +127,7 @@ mod tests {
         // Gain from working over resting, for a poor and a rich agent.
         let gain = |st: &sim_data::dims::StateVec, wealth: f32| {
             let s = sit(st, wealth, &w);
-            job_value(&u, &p, &s, 1.0, 0.7, 0.15) - rest_value(&u, &s, 0.4)
+            job_value(&u, &p, &s, 1.0, 0.7, 0.15, 0.0) - rest_value(&u, &s, 0.4)
         };
         assert!(gain(&fresh, 5.0) > gain(&fresh, 300.0));
         assert!(gain(&fresh, 20.0) > gain(&tired, 20.0));

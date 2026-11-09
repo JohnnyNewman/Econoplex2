@@ -1291,3 +1291,55 @@ fn a_short_treasury_pays_every_job_its_share() {
         assert!(paid >= 5, "{}: only {paid} jobs ever paid", town.name);
     }
 }
+
+#[test]
+fn valuing_skills_draws_the_young_into_work_they_are_still_learning() {
+    use sim_core::decision::learning::LearningValueParams;
+    // Share of young adults' working days spent on jobs they can't do well yet
+    // (skill along the recipe below its difficulty), without and with valuing what
+    // the work teaches.
+    let learning_share = |learning: LearningValueParams| {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+        scenario.seed = 6;
+        params.decision.model = sim_core::config::DecisionModel::Utility;
+        params.decision.choice = sim_core::decision::choice::ChoiceParams::Logit {
+            base: Some(0.05),
+            risk_weight: 0.0,
+            diligence_weight: 0.0,
+        };
+        params.decision.learning = learning;
+        let mut s = Simulation::new(db, params, &scenario);
+        run_years(&mut s, 1);
+        let (mut learning_days, mut days) = (0u32, 0u32);
+        for _ in 0..90 {
+            s.step();
+            let store = s.world.resource::<sim_core::AgentStore>();
+            let db = s.world.resource::<sim_core::Db>();
+            let dpy = s.world.resource::<sim_core::SimClock>().days_per_year;
+            for i in 0..store.len() {
+                let age = store.age_years(i, dpy);
+                if !store.alive[i] || !(16.0..30.0).contains(&age) {
+                    continue;
+                }
+                if let Some(r) = store.worked_today[i] {
+                    let m = &db.recipes[r as usize];
+                    let prof: f32 = store.cap[i].iter().zip(&m.skill).map(|(a, b)| a * b).sum();
+                    days += 1;
+                    learning_days += (prof < m.difficulty) as u32;
+                }
+            }
+        }
+        learning_days as f32 / days.max(1) as f32
+    };
+    let without = learning_share(LearningValueParams::None);
+    let with = learning_share(LearningValueParams::Discounted {
+        horizon_days: 360.0,
+        discount: 0.995,
+        retire_age: 60.0,
+    });
+    assert!(
+        with > without,
+        "learning work {with:.3} with vs {without:.3} without"
+    );
+}

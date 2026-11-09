@@ -163,6 +163,9 @@ pub struct DecisionParams {
     /// Component: how each job's pay moves with the balance of workers and places.
     #[serde(default)]
     pub wages: crate::decision::wages::WageParams,
+    /// Component: the value of the skill a job teaches (used by the utility model).
+    #[serde(default)]
+    pub learning: crate::decision::learning::LearningValueParams,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
