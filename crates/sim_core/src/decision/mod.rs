@@ -13,6 +13,7 @@
 //! - [`subsistence`]: how much of their food output workers' households keep.
 //! - [`crowding`]: the rent a town's crowding costs its residents.
 //! - [`culture`]: each town's culture vector and an agent's fit with it.
+//! - [`knowledge`]: which towns an agent knows about, and how well.
 //! - [`valuation`]: what working a job or resting is worth to an agent (the
 //!   utility model's wiring of expectations and utility).
 //!
@@ -24,6 +25,7 @@ pub mod choice;
 pub mod crowding;
 pub mod culture;
 pub mod expectations;
+pub mod knowledge;
 pub mod learning;
 pub mod matching;
 pub mod migration;
