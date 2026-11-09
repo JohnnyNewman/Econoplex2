@@ -27,6 +27,10 @@ pub struct ValuationParams {
     /// Success chance a job's typical worker has; an agent's expected pay scales by
     /// its own chance against this.
     pub typical_success: f32,
+    /// Days over which a town's public pay rate drifts toward what a job would pay
+    /// at today's prices (0: only realised pay counts, and an untried job shows
+    /// none).
+    pub posted_pay_days: f32,
 }
 
 impl Default for ValuationParams {
@@ -35,6 +39,7 @@ impl Default for ValuationParams {
             horizon_days: 30.0,
             discount: 0.97,
             typical_success: 0.7,
+            posted_pay_days: 90.0,
         }
     }
 }

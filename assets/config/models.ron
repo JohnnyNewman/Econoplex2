@@ -69,7 +69,10 @@
         // base None uses `temperature` above. Argmax: always the best option.
         choice: Logit(base: None, risk_weight: 0.0, diligence_weight: 0.0),
         // The utility model's look ahead: horizon in days and daily discount.
-        valuation: (horizon_days: 30.0, discount: 0.97, typical_success: 0.7),
+        // posted_pay_days: each town's public pay rate for a job drifts toward what
+        // it would pay at today's prices over this many days (realised pay pulls
+        // harder), so jobs nobody has tried yet still show a pay.
+        valuation: (horizon_days: 30.0, discount: 0.97, typical_success: 0.7, posted_pay_days: 90.0),
         // Component: each job's pay factor on the town's base wage share. Fixed: 1.
         // ExcessDemand: moves by step x (target_fill - takers / places) each day,
         // within min..max: crowded jobs pay less, empty ones more.

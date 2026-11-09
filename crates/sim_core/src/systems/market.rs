@@ -23,6 +23,8 @@ pub fn settle(
 ) {
     let mp = &params.market;
     let np = db.content.products.len();
+    // Public pay rates: yesterday's prices for jobs nobody has tried lately.
+    super::work::post_pay(&mut towns, &db, &params);
 
     for town in towns.0.iter_mut() {
         let pop = town.residents.len().max(1) as f32;

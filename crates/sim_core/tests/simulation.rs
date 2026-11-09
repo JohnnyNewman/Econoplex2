@@ -1323,6 +1323,10 @@ fn valuing_skills_draws_the_young_into_work_they_are_still_learning() {
             diligence_weight: 0.0,
         };
         params.decision.learning = learning;
+        // Isolate the learning term: with posted pay, untried jobs show a pay
+        // anyway, and on its own the learning term then barely changes choices
+        // (see the posted-pay PR).
+        params.decision.valuation.posted_pay_days = 0.0;
         let mut s = Simulation::new(db, params, &scenario);
         run_years(&mut s, 1);
         let (mut learning_days, mut days) = (0u32, 0u32);
@@ -1645,4 +1649,32 @@ fn households_only_move_to_towns_they_know() {
         4 * limited < all,
         "knowledge did not hold people back: {limited} vs {all}"
     );
+}
+
+#[test]
+fn towns_post_pay_for_jobs_nobody_has_tried() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let run = |days: f32| {
+        let (db, mut params, scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+        params.decision.valuation.posted_pay_days = days;
+        let mut s = Simulation::new(db, params, &scenario);
+        for _ in 0..30 {
+            s.step();
+        }
+        let db = s.world.resource::<sim_core::Db>();
+        let log = s.world.resource::<sim_core::world::WorkLog>();
+        let towns = s.world.resource::<sim_core::Towns>();
+        // Jobs nobody has finished yet, that would pay at today's prices.
+        let untried: Vec<usize> = (0..db.recipes.len())
+            .filter(|&r| log.runs[r] == 0)
+            .collect();
+        let shown: f32 = untried.iter().map(|&r| towns.0[0].pay_rate[r]).sum();
+        (untried.len(), shown)
+    };
+    let (untried, shown) = run(90.0);
+    assert!(untried > 0, "every job was tried in the first month");
+    assert!(shown > 0.0, "untried jobs show no pay");
+    // Off: only realised pay counts, and untried jobs show none.
+    let (_, shown) = run(0.0);
+    assert_eq!(shown, 0.0);
 }
