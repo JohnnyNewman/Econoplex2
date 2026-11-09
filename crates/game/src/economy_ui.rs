@@ -164,6 +164,7 @@ fn bar(v: f32, max: f32, width: usize) -> String {
 pub type PanelLine = (String, Color, Option<usize>);
 
 /// The panel for town `t`, with folded sections left out.
+#[allow(clippy::too_many_arguments)]
 pub fn economy_lines(
     town: &Town,
     t: usize,
@@ -172,6 +173,7 @@ pub fn economy_lines(
     store: &AgentStore,
     db: &Db,
     params: &Params,
+    governor: Option<(&str, &sim_core::governor::GovernorState, u32)>,
 ) -> Vec<PanelLine> {
     let mut out: Vec<PanelLine> = Vec::new();
     let mut line = |s: String, c: Color| out.push((s, c, None));
@@ -300,6 +302,19 @@ pub fn economy_lines(
             ),
             ISSUED,
         );
+        // Who sets these levers, and the latest decisions with their reasons.
+        match governor {
+            Some((personality, g, dpy)) => {
+                line(format!("  run by its AI government ({personality})"), DIM);
+                for (tick, why) in g.decisions.iter().rev().take(3) {
+                    line(
+                        format!("    y{} d{}: {why}", tick / dpy as u64, tick % dpy as u64),
+                        DIM,
+                    );
+                }
+            }
+            None => line("  set by you (policy panel)".into(), DIM),
+        }
         let subsidies: Vec<String> = p
             .subsidy
             .iter()
@@ -483,6 +498,10 @@ pub fn update_economy_panel(
     db: Res<Db>,
     params: Res<Params>,
     player: Res<sim_core::policy::PlayerTown>,
+    govern: (
+        Res<sim_core::governor::Governors>,
+        Res<sim_core::world::ScenarioSpec>,
+    ),
     mut root: Single<&mut Visibility, With<EconomyRoot>>,
     mut lines: Query<(&EconLine, &mut Text, &mut TextColor, &mut Node)>,
 ) {
@@ -498,7 +517,30 @@ pub fn update_economy_panel(
     let Some(town) = towns.0.get(t) else {
         return;
     };
-    let content = economy_lines(town, t, player.0, &view.folded, &store, &db, &params);
+    let (governors, scenario) = govern;
+    let ai = params.governor.enabled
+        && (player.0 != Some(t as u16) || params.governor.govern_player_town);
+    let personality = scenario
+        .0
+        .towns
+        .get(t)
+        .and_then(|s| s.governor.clone())
+        .unwrap_or_else(|| "balanced".into());
+    let governor = governors
+        .towns
+        .get(t)
+        .filter(|_| ai)
+        .map(|g| (personality.as_str(), g, params.life.days_per_year));
+    let content = economy_lines(
+        town,
+        t,
+        player.0,
+        &view.folded,
+        &store,
+        &db,
+        &params,
+        governor,
+    );
     view.headers = content.iter().map(|l| l.2).collect();
     for (l, mut text, mut color, mut node) in &mut lines {
         match content.get(l.0) {

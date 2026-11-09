@@ -473,12 +473,55 @@ town's policy:
   town hungry.
 - **Minting** (`mint TOWN auto|on|off`): see Mints above.
 
-Every lever is a `Policy` field that AI towns have too, at its default. Each one only
+Every lever is a `Policy` field that AI towns have too. Each one only
 changes prices, wages, demand or who pays whom; no lever sets an outcome. The economy
 panel's Levers section shows each town's settings and orders, and its money lines
 compare this month with last year. In the game the panel at the bottom right sets
 them for your town. `--player NAME` picks the town you govern, and `--order TEXT`
 gives an order on day 0.
+
+### AI town governments
+
+Every town but the player's has a governor (`governor.rs`). Each day it watches
+moving averages of the town's own numbers: food per resident, treasury per resident,
+the share of adults idle, and each good's price against its base. Every month it
+pulls the same levers the player has, by queuing the same orders:
+
+```mermaid
+flowchart LR
+  subgraph observe[Observe its own town, smoothed]
+    f[food per resident]
+    tr[treasury per resident]
+    pr[price / base price]
+    id[idle adults]
+  end
+  subgraph decide[Decide monthly, one step at a time]
+    f -- low --> fs[subsidize food, clear a field]
+    f -- recovered --> fw[wind food subsidies down]
+    pr -- "3x and made here" --> gs[subsidize the good]
+    tr -- low --> tx[raise wealth, then income tax; mint after 3 months]
+    tr -- high --> sp[lower taxes, spend more]
+    id -- high --> pw[order public works]
+  end
+  subgraph lever[Same orders as the player]
+    o[subsidy / tax / spending / mint / build / procure]
+  end
+  fs --> o
+  fw --> o
+  gs --> o
+  tx --> o
+  sp --> o
+  pw --> o
+  o --> abm[prices, pay, demand: agents respond]
+```
+
+Thresholds and step sizes are in the `governor` section of `models.ron`, along with
+personalities (frugal, balanced, expansionist) that scale how soon a town taxes and
+how boldly it subsidizes. A town's personality is set with `governor:` in
+`scenario.ron`. The economy panel shows who runs each town and its latest decisions
+with their reasons, and `econoplex-sim` lists each town's orders. Set
+`governor.enabled` to false to switch them off, or `governor.govern_player_town` to
+let an AI govern the player's town too in headless runs.
 
 Over 25 years on six seeds, applying one lever to Greenvale from day 0 changed its
 results this way:
