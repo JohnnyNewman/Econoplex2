@@ -813,11 +813,29 @@ pub fn decide(
         for r in 0..db.recipes.len() {
             let places = places_start[t][r];
             if places >= 1.0 || takers[t][r] > 0.0 {
-                town.wage_factor[r] = decision.wages.adjust(
-                    town.wage_factor[r],
-                    takers[t][r],
-                    places.max(takers[t][r]),
-                );
+                let old = town.wage_factor[r];
+                let mut new = decision
+                    .wages
+                    .adjust(old, takers[t][r], places.max(takers[t][r]));
+                // Labour's price class: wages are sticky, especially downward.
+                if let Some(classes) = &params.market.price_classes {
+                    let c = &classes.labour;
+                    if old > 0.0 && new > 0.0 && new != old {
+                        let mut d = (new / old).ln();
+                        if let crate::pricing::Inertia::Sticky { up, down } = c.inertia {
+                            if d < 0.0 && up > 0.0 {
+                                d *= down / up;
+                            }
+                        }
+                        let m = c.max_daily.max(0.0);
+                        new = (old * d.clamp(-m, m).exp()).clamp(c.floor, c.ceiling.max(c.floor));
+                    }
+                }
+                if old > 0.0 && new > 0.0 && new != old {
+                    town.price_vol.resize(3, Default::default());
+                    town.price_vol[2].add((new / old).ln().abs());
+                }
+                town.wage_factor[r] = new;
             }
         }
     }

@@ -23,10 +23,35 @@ pub fn settle(
 ) {
     let mp = &params.market;
     let np = db.content.products.len();
+    // Demand-driven pricing: the stock each good's users need.
+    let derived = derived_targets(&towns, &db, &params, &sites);
+    // Each good's price dynamics: its class's, or its own override.
+    let dynamics: Option<Vec<crate::pricing::ClassParams>> =
+        mp.price_classes.as_ref().map(|classes| {
+            db.content
+                .products
+                .iter()
+                .map(|p| {
+                    mp.price_overrides
+                        .iter()
+                        .find(|o| o.0 == p.id)
+                        .map(|o| o.1)
+                        .unwrap_or(*classes.get(p.price_class()))
+                })
+                .collect()
+        });
+    for town in towns.0.iter_mut() {
+        town.input_use.resize(np, 0.0);
+        town.input_today.resize(np, 0.0);
+        for p in 0..np {
+            let today = std::mem::take(&mut town.input_today[p]);
+            town.input_use[p] += (today - town.input_use[p]) / crate::ledger::MONTH_DAYS;
+        }
+    }
     // Public pay rates: yesterday's prices for jobs nobody has tried lately.
     super::work::post_pay(&mut towns, &db, &params);
 
-    for town in towns.0.iter_mut() {
+    for (ti, town) in towns.0.iter_mut().enumerate() {
         let pop = town.residents.len().max(1) as f32;
         let mint_wanted = town.mint_wanted(mp);
         for p in 0..np {
@@ -97,7 +122,13 @@ pub fn settle(
                 mp.target_per_capita
             };
             // Goods the government ordered raise the stock the market wants.
-            let target = (per_capita * pop).max(1.0) + town.policy.ordered(p);
+            let wanted = match (&derived, mp.pricing) {
+                (Some(d), crate::config::Pricing::Demand { .. }) if db.is_input[p] => {
+                    d[ti][p] + if db.is_food[p] { per_capita * pop } else { 0.0 }
+                }
+                _ => per_capita * pop,
+            };
+            let target = wanted.max(1.0) + town.policy.ordered(p);
             let pressure = ((target - town.stock[p]) / target).clamp(-1.0, 1.0);
             let base = db.base_price[p];
             let cap = town
@@ -105,8 +136,25 @@ pub fn settle(
                 .get(p)
                 .copied()
                 .unwrap_or(mp.max_price_factor);
-            town.price[p] = (town.price[p] * (mp.price_adjust * pressure).exp())
-                .clamp(base * mp.min_price_factor, base * cap);
+            let old = town.price[p];
+            match &dynamics {
+                Some(d) => {
+                    town.pressure.resize(np, 0.0);
+                    let mut c = d[p];
+                    // A loosened scarcity cap widens the class's ceiling too.
+                    c.ceiling = c.ceiling.max(cap * c.ceiling / mp.max_price_factor);
+                    town.price[p] = c.step(old, base, pressure, &mut town.pressure[p]);
+                }
+                None => {
+                    town.price[p] = (old * (mp.price_adjust * pressure).exp())
+                        .clamp(base * mp.min_price_factor, base * cap);
+                }
+            }
+            if old > 0.0 && town.price[p] > 0.0 {
+                town.price_vol.resize(3, Default::default());
+                let k = class_index(db.content.products[p].price_class());
+                town.price_vol[k].add((town.price[p] / old).ln().abs());
+            }
             if let crate::config::ScarcityCap::Loosen { rate, max_factor } = mp.scarcity_cap {
                 town.price_cap.resize(np, mp.max_price_factor);
                 let c = &mut town.price_cap[p];
@@ -231,6 +279,68 @@ pub fn settle(
     for mut n in sites.iter_mut() {
         n.amount = (n.amount + n.regrowth).min(n.capacity);
     }
+}
+
+/// Index of a price class in `Town::price_vol`.
+pub fn class_index(c: crate::pricing::PriceClass) -> usize {
+    match c {
+        crate::pricing::PriceClass::Essential => 0,
+        crate::pricing::PriceClass::Commodity => 1,
+        crate::pricing::PriceClass::Labour => 2,
+    }
+}
+
+/// For demand-driven pricing, each town's target stock of every good used as an
+/// input: `cover_days` × (its trades' daily use + what profitable trades held up
+/// only by its shortage would use). Also closes the day's input count.
+fn derived_targets(
+    towns: &Towns,
+    db: &Db,
+    params: &Params,
+    sites: &Query<&mut NaturalResource>,
+) -> Option<Vec<Vec<f32>>> {
+    let crate::config::Pricing::Demand {
+        cover_days,
+        blocked_workers,
+    } = params.market.pricing
+    else {
+        return None;
+    };
+    let np = db.content.products.len();
+    Some(
+        towns
+            .0
+            .iter()
+            .map(|town| {
+                let mut nature = vec![0.0f32; db.content.nature.len()];
+                for &e in &town.nature_sites {
+                    if let Ok(n) = sites.get(e) {
+                        nature[n.kind as usize] += n.amount;
+                    }
+                }
+                let mut want = vec![0.0f32; np];
+                for (p, w) in want.iter_mut().enumerate() {
+                    *w = town.input_use.get(p).copied().unwrap_or(0.0);
+                }
+                for (r, m) in db.recipes.iter().enumerate() {
+                    if m.inputs.is_empty()
+                        || m.builds.is_some()
+                        || m.building.is_some_and(|b| town.building_count(b) == 0)
+                        || m.nature.is_some_and(|k| nature[k as usize] <= 0.0)
+                        || super::work::posted_pay(town, db, params, r) <= 0.0
+                    {
+                        continue;
+                    }
+                    for &(p, q) in &m.inputs {
+                        if town.stock[p as usize] < q {
+                            want[p as usize] += q * blocked_workers / m.duration.max(1.0);
+                        }
+                    }
+                }
+                want.iter().map(|w| w * cover_days).collect()
+            })
+            .collect(),
+    )
 }
 
 /// New land is worth opening while the town's sites of that kind are worn down

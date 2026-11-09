@@ -14,7 +14,7 @@
         (id: "flax",    name: "Flax",    category: Raw,      base_price: 1.0),
         (id: "yarn",    name: "Yarn",    category: Material, era: 1, base_price: 3.0),
         (id: "cloth",   name: "Cloth",   category: Material, era: 1, base_price: 10.0),
-        (id: "clothes", name: "Clothes", category: Material, era: 1, base_price: 28.0),
+        (id: "clothes", name: "Clothes", category: Material, era: 1, base_price: 28.0, price_class: Some(Essential)),
         (id: "ale",     name: "Ale",     category: Food, era: 1,     base_price: 3.0, food: 0.7),
         (id: "weaving_shed", name: "Weaving shed", category: Building, era: 1, base_price: 200.0, slots: 12),
         (id: "brewery",      name: "Brewery",      category: Building, era: 1, base_price: 260.0, slots: 10),

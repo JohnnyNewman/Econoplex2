@@ -7,7 +7,7 @@
         (id: "hilt_making",      name: "Hilt making",      domain: "woodworking", prereqs: ["carpentry"]),
     ],
     products: [
-        (id: "wood",     name: "Wood",     category: Raw,      base_price: 1.0),
+        (id: "wood",     name: "Wood",     category: Raw,      base_price: 1.0, price_class: Some(Essential)),
         (id: "plank",    name: "Plank",    category: Material, base_price: 1.5),
         (id: "charcoal", name: "Charcoal", category: Material, base_price: 3.0),
         (id: "hilt",     name: "Hilt",     category: Material, base_price: 6.0),

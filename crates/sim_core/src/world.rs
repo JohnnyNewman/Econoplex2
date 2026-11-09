@@ -172,6 +172,19 @@ pub struct Town {
     /// `market.scarcity_cap`). Empty: `max_price_factor` for all.
     #[serde(default)]
     pub price_cap: Vec<f32>,
+    /// Inputs the town's trades took today, and their daily average over about a
+    /// month, by product (see `market.pricing`).
+    #[serde(default)]
+    pub input_today: Vec<f32>,
+    #[serde(default)]
+    pub input_use: Vec<f32>,
+    /// Smoothed price pressure per product (for `pricing::Inertia::Smoothed`).
+    #[serde(default)]
+    pub pressure: Vec<f32>,
+    /// Daily price changes this year, per price class (essential, commodity,
+    /// labour); see `pricing::Volatility`.
+    #[serde(default)]
+    pub price_vol: Vec<crate::pricing::Volatility>,
     /// Market factor on the base wage share, per recipe (see `decision::wages`).
     #[serde(default)]
     pub wage_factor: Vec<f32>,
@@ -501,6 +514,10 @@ pub fn setup(world: &mut World, db: Db, params: ModelParams, scenario: &Scenario
             pay_rate: vec![0.0; db.recipes.len()],
             success_pay: vec![0.0; db.recipes.len()],
             price_cap: Vec::new(),
+            input_today: Vec::new(),
+            input_use: Vec::new(),
+            pressure: Vec::new(),
+            price_vol: Vec::new(),
             wage_factor: vec![1.0; db.recipes.len()],
             apprentice_share: vec![0.0; db.recipes.len()],
             rent: 0.0,

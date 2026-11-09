@@ -275,6 +275,25 @@ fn default_mint_below() -> f32 {
     3.0
 }
 
+/// `market.pricing` in models.ron: the stock of each good the market aims for. A
+/// good's price rises while its stock is below that target and falls above it.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+pub enum Pricing {
+    /// Every good: a fixed stock per resident (`target_per_capita`, or
+    /// `food_target_per_capita` for food).
+    #[default]
+    StockTarget,
+    /// Goods that trades use as inputs: `cover_days` of what the town's trades use
+    /// a day, plus what profitable trades held up only by this input's shortage
+    /// would use (`blocked_workers` workers each). Final goods keep the per-resident
+    /// target; food gets both. So an input's price follows the demand of the
+    /// trades that need it, and caravans carry it to where it is wanted.
+    Demand {
+        cover_days: f32,
+        blocked_workers: f32,
+    },
+}
+
 /// `market.scarcity_cap` in models.ron: how far a scarce good's price may rise.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub enum ScarcityCap {
@@ -303,6 +322,15 @@ pub struct MarketParams {
     /// Whether a good's price cap loosens while it stays scarce.
     #[serde(default)]
     pub scarcity_cap: ScarcityCap,
+    /// What stock of each good the market aims for (and so where its price goes).
+    #[serde(default)]
+    pub pricing: Pricing,
+    /// Price dynamics per price class (see `pricing`); none: the legacy rule.
+    #[serde(default)]
+    pub price_classes: Option<crate::pricing::PriceClasses>,
+    /// Per-good dynamics that replace their class's: (product id, params).
+    #[serde(default)]
+    pub price_overrides: Vec<(String, crate::pricing::ClassParams)>,
     pub trade_interval: u32,
     pub trade_amount: f32,
     /// Fraction of price lost per unit traded per 1000 units of road (transport cost).
