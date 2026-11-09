@@ -1899,3 +1899,45 @@ fn towns_lend_to_workshops_and_get_repaid_with_interest() {
     let after = money(&s);
     assert!(((after - before) / before).abs() < 1e-3, "money changed");
 }
+
+#[test]
+fn the_profit_tax_is_a_town_lever() {
+    use sim_core::firms::{FirmFlow, FirmsParams};
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let run = |order: &str| {
+        let (db, mut params, scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+        params.market.firms = FirmsParams::Workshops {
+            start_cash: 100.0,
+            reserve_days: 10.0,
+            payout_rate: 0.05,
+            profit_tax: 0.0,
+            close_days: 30,
+        };
+        params.governor.enabled = false;
+        let mut s = Simulation::new(db, params, &scenario);
+        for t in ["Ironhold", "Greenvale", "Timberwick", "Brassmoor"] {
+            s.order(&format!("tax {t} profit {order}")).unwrap();
+        }
+        let mut dividends = 0.0;
+        for _ in 0..2 {
+            run_years(&mut s, 1);
+            let towns = s.world.resource::<sim_core::Towns>();
+            dividends += towns
+                .0
+                .iter()
+                .map(|t| sim_core::firms::last_year_totals(&t.firms)[FirmFlow::Dividends as usize])
+                .sum::<f32>();
+        }
+        let towns = s.world.resource::<sim_core::Towns>();
+        (towns.0[0].policy.profit_tax, dividends)
+    };
+    let (rate, dividends) = run("1");
+    assert_eq!(rate, Some(1.0));
+    assert_eq!(
+        dividends, 0.0,
+        "owners got dividends under a 100% profit tax"
+    );
+    let (rate, dividends) = run("0");
+    assert_eq!(rate, Some(0.0));
+    assert!(dividends > 0.0, "no owner ever got a dividend untaxed");
+}

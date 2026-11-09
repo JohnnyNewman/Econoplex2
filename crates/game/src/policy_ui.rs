@@ -35,6 +35,7 @@ pub enum Action {
     Minting,
     WealthTax(i32),
     IncomeTax(i32),
+    ProfitTax(i32),
     Wages(i32),
     Spending(i32),
     Procure(i32),
@@ -59,6 +60,7 @@ pub enum Field {
     Minting,
     WealthTax,
     IncomeTax,
+    ProfitTax,
     Wages,
     Spending,
     Procure,
@@ -191,6 +193,9 @@ pub fn spawn_policy_panel(mut commands: Commands) {
                 button(r, "-", Action::IncomeTax(-1));
                 value(r, Field::IncomeTax, 90.0);
                 button(r, "+", Action::IncomeTax(1));
+                button(r, "-", Action::ProfitTax(-1));
+                value(r, Field::ProfitTax, 90.0);
+                button(r, "+", Action::ProfitTax(1));
             });
             row(p, "Wages", &|r| {
                 button(r, "-", Action::Wages(-1));
@@ -338,6 +343,21 @@ pub fn policy_buttons(
                             rate: Some((((now + 0.25 * d as f32) * 4.0).round() / 4.0).max(0.0)),
                         })
                     }
+                    Action::ProfitTax(d) => {
+                        let now = policy.profit_tax.unwrap_or(match params.market.firms {
+                            sim_core::firms::FirmsParams::Workshops { profit_tax, .. } => {
+                                profit_tax
+                            }
+                            sim_core::firms::FirmsParams::Treasury => 0.0,
+                        });
+                        Some(Order::Tax {
+                            town,
+                            tax: Tax::Profit,
+                            rate: Some(
+                                (((now + 0.05 * d as f32) * 20.0).round() / 20.0).clamp(0.0, 1.0),
+                            ),
+                        })
+                    }
                     Action::IncomeTax(d) => Some(Order::Tax {
                         town,
                         tax: Tax::Income,
@@ -472,6 +492,13 @@ pub fn update_policy_panel(
                 p.wealth_tax.unwrap_or(params.market.wealth_tax)
             ),
             Field::IncomeTax => format!("income {:.0}%", p.income_tax * 100.0),
+            Field::ProfitTax => match (p.profit_tax, params.market.firms) {
+                (Some(r), _) => format!("profit {:.0}%", r * 100.0),
+                (None, sim_core::firms::FirmsParams::Workshops { profit_tax, .. }) => {
+                    format!("profit {:.0}%", profit_tax * 100.0)
+                }
+                (None, sim_core::firms::FirmsParams::Treasury) => "profit -".into(),
+            },
             Field::Wages => format!(
                 "{:.0}% of value",
                 p.wage_share.unwrap_or(params.work.wage_share) * 100.0
