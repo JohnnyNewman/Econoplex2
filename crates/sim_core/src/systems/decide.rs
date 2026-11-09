@@ -192,6 +192,7 @@ struct Choice<'a> {
     towns: &'a Towns,
     /// Median resident wealth per town (for standing).
     median_wealth: &'a [f32],
+    days_per_year: u32,
 }
 
 impl Choice<'_> {
@@ -274,7 +275,31 @@ impl Choice<'_> {
                     self.towns.0[t].pay_rate[r as usize],
                 );
                 let fatigue = params.needs.fatigue_per_work_day * (0.5 + m.phys_total);
-                valuation::job_value(u, &d.valuation, &situation, pay, success, fatigue)
+                // A day of practice raises the agent's skill along the recipe by about
+                // rate x aptitude x room left x (success, failures teaching less).
+                let crate::config::LearningParams::Diminishing {
+                    rate,
+                    mastery,
+                    failure_factor,
+                } = params.learning;
+                let room = (1.0 - prof / mastery).max(0.0);
+                let mult = store.aptitude[i] * (0.5 + st[state::HAPPINESS]);
+                let practice = rate * mult * room * (success + (1.0 - success) * failure_factor);
+                let after = self
+                    .models
+                    .success
+                    .probability(eff + practice * sf, m.difficulty);
+                let learned =
+                    self.decision
+                        .learning
+                        .value(&crate::decision::learning::LearnInputs {
+                            success_now: success,
+                            success_after: after,
+                            pay_per_day: pay,
+                            typical_success: d.valuation.typical_success,
+                            age_years: store.age_years(i, self.days_per_year),
+                        });
+                valuation::job_value(u, &d.valuation, &situation, pay, success, fatigue, learned)
             })
             .collect();
         (rest, job_scores)
@@ -466,6 +491,7 @@ pub fn decide(
         models: &models,
         towns: &towns,
         median_wealth: &median_wealth,
+        days_per_year: clock.days_per_year,
     };
 
     // Places each job had at the start of the day, for the wage factors.
