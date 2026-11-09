@@ -1,7 +1,8 @@
 # Workshops that pay from their own sales (design note, 2026-11-09)
 
-Status: **proposal, not built.** Nils picks between this and the other two options
-(the treasury recycles more, or towns lend on credit). Nothing changes until then.
+Status: **chosen by Nils (2026-11-09); being built behind a switch.** The other two
+options (the treasury recycles more, or towns lend on credit) are kept below for the
+record.
 
 ## The problem
 
@@ -19,6 +20,35 @@ When residents save, or food is in glut at its floor price, the treasury drains:
   pay its makers isn't there (#38).
 
 ## The option: workshops are firms
+
+```mermaid
+flowchart LR
+  subgraph R[Residents]
+    W[workers and apprentices]
+    O[owners: masters and guild members]
+    C[consumers]
+  end
+  F[Workshops: cash and stock]
+  M[Town market: food, tools, orders]
+  T[Treasury]
+  X[Caravans and other towns]
+  Mint[(Mint)]
+  F -- wages --> W
+  F -- dividends --> O
+  F -- profit tax --> T
+  F -- inputs bought --> F
+  M -- pays for outputs --> F
+  C -- buys food and tools --> M
+  X -- buys goods --> F
+  T -- orders, subsidies, public works --> F
+  T -- pay of public employees: soldiers, minters, public builders --> W
+  W -- income and wealth tax, rent --> T
+  Mint -- new coin --> T
+  T -- start-up grants --> F
+```
+
+Money moves only between purses (residents, workshops, the market, the treasury,
+other towns); the mint is the only source of new coin.
 
 A **workshop** is a town's workplaces of one kind: its smithies, or its fields for
 farming. Recipes without a building or a nature site belong to the guild of their
@@ -69,6 +99,16 @@ demand-driven price, now with money behind it.
 - **Apprentices:** apprentice places and wages (`decision.matching`) become each
   workshop's own choice, as designed.
 
+### Start-up capital, closure
+
+- **Start-up capital:** a new workshop (a building just finished, or a guild opening
+  a trade) gets its start-up cash from a treasury grant, or from its owners' wealth
+  (the guild's masters) when the treasury can't pay.
+- **Closure:** a workshop whose cash stays below one day's wages for a month (it
+  can't pay its people) closes. It pays out what it can, its stock goes to the
+  town market at the floor price, and its building stands idle until a new owner
+  puts up start-up capital.
+
 ### Profit and taxes
 
 - **Profit** = sales − inputs − wages.
@@ -76,9 +116,11 @@ demand-driven price, now with money behind it.
   becomes a lever beside the wealth and income taxes.
 - **Dividends:** the rest stays as cash up to a reserve (a few weeks of wages), and
   the excess is paid to the workshop's masters and guild members.
-- **The treasury** keeps taxes, rent, estates, tribute and the mint. It pays
-  soldiers, schools, public spending, subsidies and government orders. It no longer
-  pays wages.
+- **The treasury** taxes (income, wealth, rent, profit), takes estates and
+  tribute, and runs the mint. It spends on government orders, subsidies, schools,
+  public spending and start-up grants. Its own employees are the only workers it
+  pays: soldiers, minters, and the builders of public buildings. It no longer pays
+  other wages.
 
 ### Migration path behind a switch
 
