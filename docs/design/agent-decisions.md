@@ -327,26 +327,55 @@ green.
 
 1. **Horizon: weeks.** Agents plan a few weeks ahead (`H` ≈ 30 days), plus the
    discounted skill-investment term for learning.
-2. **Pay follows market forces.**
-   - Each job's pay is no longer a fixed share of value added. It moves with the
-     balance of applicants and places.
+2. **Hiring: apprentice places, the rest by expected output.**
+   - Workplaces (a town's buildings of one kind, or the guild of their domain) offer
+     **apprentice places** besides their regular places.
+   - Apprentices are paid less: an `apprentice_wage` factor in `models.ron`, e.g. 0.4
+     of the regular pay for the job. They also learn faster from the masters they
+     work beside (teaching already exists).
+   - **How many apprentice places is the workplace's own economic choice,** within
+     `apprentice_share_min`..`apprentice_share_max` from `models.ron`. Each month it
+     compares:
+     - **cheap labour now:** an apprentice's expected output × price − the
+       apprentice wage, against a regular worker's output − the regular wage
+     - **a skilled worker later:** the discounted extra output once trained, counted
+       only for the share expected to stay in the town (trust and guild ties raise
+       it)
+     - It adds apprentice places while that sum is positive and the town is short of
+       skilled hands in the domain, and removes them otherwise.
+   - Applicants say whether they apply as apprentice or regular worker. That is
+     their own utility choice: lower pay now, faster skill growth, better pay later.
+     It falls out of the learning-as-investment term.
+   - **Regular places** go to the applicants with the highest expected output;
+     **apprentice places** go to the applicants with the most to gain (lowest current
+     skill, highest aptitude), so beginners get a way in.
+3. **Pay follows market forces.**
+   - Each job's pay is no longer a fixed share of value added.
+   - A per-town, per-recipe **wage factor** multiplies the town's base wage share.
+     Every day it moves by a small step against the excess demand for regular places
+     ((applicants − places) / places), clamped to a range in `models.ron`.
    - A job with a queue pays less. A job with unfilled places pays more, up to its
      value added.
-   - Hiring goes by the market too: scarce places go to the applicants with the
-     highest expected output, with no reserved places. Beginners compete by
-     accepting lower-paid or easier work and learning there.
-   - Concretely: a per-town, per-recipe **wage factor** multiplies the town's base
-     wage share. Every day it moves by a small step against the excess demand for
-     that job (applicants − places) / places, and is clamped to a range in
-     `models.ron`.
-     - The player's and governors' `wages` lever sets the **base** share; the
-       market factor rides on top.
-     - Agents' expected pay learns from the realised pay, so the loop is
-       queue → wage → expectation → choice.
-3. **Hiring fairness:** follows from 2 (market-based, by expected output). If
-   beginners turn out to be shut out of whole trades, a reserved apprentice share is
-   the fallback.
+   - Apprentice pay is `apprentice_wage` × that job's current pay, so it follows the
+     market too.
+   - The player's and governors' `wages` lever sets the **base** share; the market
+     factor rides on top.
+   - Agents' expected pay learns from realised pay: queue → wage → expectation →
+     choice.
 
-The migration plan gains one step, before matching (5): **flexible pay** (wage
-factor per town and job, with the tests "a queued job's pay falls, an understaffed
-job's pay rises", "the ledger still balances", and "pay stays within its range").
+The migration plan changes accordingly:
+
+- **5. Flexible pay:** wage factor per town and job. Tests:
+  - a queued job's pay falls, an understaffed job's pay rises
+  - the ledger still balances
+  - pay stays in range
+- **6. Matching with apprentice places:**
+  - deferred acceptance for regular places by expected output
+  - apprentice places by gain, at `apprentice_wage`
+  - the workplace's monthly choice of its apprentice share
+  - Tests:
+    - order-independence
+    - scarce regular places go to higher expected output
+    - apprentice share stays within its bounds and grows when trained workers are
+      short and worth more
+    - beginners get into trades they couldn't enter by output alone
