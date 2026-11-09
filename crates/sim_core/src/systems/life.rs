@@ -117,6 +117,11 @@ pub fn lifecycle(
             store.alive[i] = false;
             commands.entity(store.entity[i]).despawn();
             dead.push(i);
+            // The household's food goes back to the town's stores.
+            let town = &mut towns.0[store.town[i] as usize];
+            for (g, q) in std::mem::take(&mut store.larder[i]) {
+                town.stock[g as usize] += q;
+            }
             if let Some(g) = store.guild[i].take() {
                 commands.entity(g.membership).despawn();
             }

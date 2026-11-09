@@ -95,6 +95,12 @@
         // 1000 road units; move when it beats home by min_gain. Example:
         // migration: Utility(social_weight: 0.5, distance_cost: 0.1, min_gain: 0.5, food_reference: 3.0),
         migration: Weighted,
+        // Component: subsistence. None: all output goes to the town's stores.
+        // Keep(share, larder_meals): food workers' households keep `share` of each
+        // edible output (up to `larder_meals` meals) and eat it before buying; the
+        // utility model counts that as covering the worker's own food need. Example:
+        // subsistence: Keep(share: 0.2, larder_meals: 10.0),
+        subsistence: None,
     ),
 
     social: BoundedConfidence(

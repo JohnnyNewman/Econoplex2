@@ -1450,3 +1450,39 @@ fn utility_migration_moves_households_and_respects_closed_borders() {
     let into_greenvale: u32 = m.years.iter().map(|y| y.towns[1].moves.arrived).sum();
     assert_eq!(into_greenvale, 0, "closed borders let people in");
 }
+
+#[test]
+fn households_keep_food_and_the_books_still_balance() {
+    use sim_core::decision::subsistence::SubsistenceParams;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, mut params, scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    params.decision.subsistence = SubsistenceParams::Keep {
+        share: 0.3,
+        larder_meals: 6.0,
+    };
+    let mut s = Simulation::new(db, params, &scenario);
+    let money = |s: &Simulation| {
+        let towns = s.world.resource::<sim_core::Towns>();
+        let minted: f64 = towns
+            .0
+            .iter()
+            .map(|t| t.ledger.total[sim_core::ledger::Flow::Minted as usize])
+            .sum();
+        sim_core::world::total_money(s.world.resource::<sim_core::AgentStore>(), towns) - minted
+    };
+    let before = money(&s);
+    run_years(&mut s, 2);
+    let after = money(&s);
+    assert!(((after - before) / before).abs() < 1e-3, "money changed");
+    let store = s.world.resource::<sim_core::AgentStore>();
+    let held: Vec<f32> = (0..store.len())
+        .filter(|&i| store.alive[i])
+        .map(|i| store.larder[i].iter().map(|e| e.1).sum())
+        .collect();
+    assert!(held.iter().any(|&h| h > 0.0), "no household kept any food");
+    assert!(held.iter().all(|&h| h <= 6.0 + 1e-3), "a larder overflowed");
+    // Dead agents' larders went back to the town.
+    assert!((0..store.len())
+        .filter(|&i| !store.alive[i])
+        .all(|i| store.larder[i].is_empty()));
+}

@@ -77,6 +77,10 @@ pub struct AgentStore {
     /// see `decision::expectations`.
     #[serde(default)]
     pub pay_expect: Vec<Vec<(u32, f32)>>,
+    /// Food the household keeps from its own work (good, units); see
+    /// `decision::subsistence`.
+    #[serde(default)]
+    pub larder: Vec<Vec<(u32, f32)>>,
 }
 
 /// Everything needed to create an agent.
@@ -142,6 +146,7 @@ impl AgentStore {
         self.ties
             .push([crate::trust::Tie::NONE; crate::trust::TIES]);
         self.pay_expect.push(Vec::new());
+        self.larder.push(Vec::new());
         idx
     }
 

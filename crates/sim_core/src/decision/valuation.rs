@@ -8,10 +8,12 @@
 //!
 //! Working changes two things: fatigue tomorrow (the rest need), and wealth over the
 //! horizon if the agent keeps at this kind of work (the standing need). Resting
-//! recovers fatigue and earns nothing. Hunger is the same either way: agents eat from
-//! the town's stores whether or not they work.
+//! recovers fatigue and earns nothing. Hunger is the same either way (agents eat from
+//! the town's stores whether or not they work), unless the household keeps part of
+//! the food it makes (`decision::subsistence`): then a food job also covers the
+//! worker's own food need, by the share `food_cover`.
 
-use super::utility::{needs, Needs, Utility, REST};
+use super::utility::{needs, Needs, Utility, FOOD, REST};
 use serde::{Deserialize, Serialize};
 
 /// `decision.valuation` in models.ron.
@@ -75,6 +77,31 @@ pub fn job_value(
     fatigue_cost: f32,
     learning_value: f32,
 ) -> f32 {
+    job_value_fed(
+        u,
+        p,
+        s,
+        expected_pay,
+        success,
+        fatigue_cost,
+        learning_value,
+        0.0,
+    )
+}
+
+/// `job_value` for a job whose kept output covers `food_cover` (0..1) of the
+/// worker's food need over the horizon.
+#[allow(clippy::too_many_arguments)]
+pub fn job_value_fed(
+    u: &dyn Utility,
+    p: &ValuationParams,
+    s: &Situation,
+    expected_pay: f32,
+    success: f32,
+    fatigue_cost: f32,
+    learning_value: f32,
+    food_cover: f32,
+) -> f32 {
     let income = expected_pay.max(0.0) * (success / p.typical_success.max(1e-3)).clamp(0.0, 1.5);
     let mut n = needs(
         s.state,
@@ -82,6 +109,8 @@ pub fn job_value(
         s.median_wealth,
     );
     n[REST] = (n[REST] - fatigue_cost).max(0.0);
+    n[FOOD] =
+        n[FOOD].max(food_cover.clamp(0.0, 1.0) * (success / p.typical_success.max(1e-3)).min(1.0));
     u.value(&n, s.weights)
 }
 
@@ -97,6 +126,18 @@ mod tests {
             median_wealth: 30.0,
             weights: w,
         }
+    }
+
+    #[test]
+    fn keeping_food_makes_a_food_job_worth_more_to_the_hungry() {
+        let u = Crra { rho: 1.5 };
+        let p = ValuationParams::default();
+        let st = [0.9, 0.2, 0.6, 1.0];
+        let w = [1.0; 4];
+        let s = sit(&st, 20.0, &w);
+        let plain = job_value(&u, &p, &s, 1.0, 0.7, 0.1, 0.0);
+        assert!(job_value_fed(&u, &p, &s, 1.0, 0.7, 0.1, 0.0, 0.8) > plain);
+        assert_eq!(job_value_fed(&u, &p, &s, 1.0, 0.7, 0.1, 0.0, 0.0), plain);
     }
 
     #[test]
