@@ -1,8 +1,8 @@
 //! Migration: households move to towns that suit them better.
 //!
 //! Every few weeks some idle adults weigh the towns they could live in: how much
-//! food there is per head, what their own trade sells for there, how close the
-//! town's people are to them in outlook, whether it was raided this year, and how
+//! food there is per head, what their own trade sells for there, how well they fit
+//! the town's culture, whether it was raided this year, and how
 //! far the road is, and where the people they trust live. When another town is clearly better, the household (the agent,
 //! an idle partner, and their young children) packs up and moves, carrying its
 //! skills, wealth and tools. Skills therefore follow demand between towns instead
@@ -17,8 +17,6 @@ use crate::world::{Params, SimClock, SimSeed, Towns};
 use bevy_ecs::prelude::*;
 use rand::Rng;
 use sim_data::dims::*;
-
-const IDEOLOGY: usize = MIND_DIM - mind::IDEOLOGY_START;
 
 /// Move one agent to another town: new home, new guild, the walk over there.
 pub fn relocate(
@@ -95,19 +93,6 @@ pub fn migrate(
         .collect();
     let horizon = params.decision.valuation.horizon_weight();
     let u = &*decision.utility;
-    let ideology: Vec<[f32; IDEOLOGY]> = towns
-        .0
-        .iter()
-        .map(|t| {
-            let mut m = [0.0; IDEOLOGY];
-            for &i in &t.residents {
-                for (k, v) in m.iter_mut().enumerate() {
-                    *v += store.mind[i as usize][mind::IDEOLOGY_START + k];
-                }
-            }
-            m.map(|v| v / t.residents.len().max(1) as f32)
-        })
-        .collect();
     let np = db.content.products.len();
     let mean_price: Vec<f32> = (0..np)
         .map(|p| towns.0.iter().map(|t| t.price[p]).sum::<f32>() / n_towns as f32)
@@ -156,30 +141,25 @@ pub fn migrate(
             median_wealth: median_wealth[home],
             weights: &weights,
         };
-        let view = |t: usize, road: f32| {
-            let mut d2 = 0.0;
-            for (k, m) in ideology[t].iter().enumerate() {
-                d2 += (store.mind[i][mind::IDEOLOGY_START + k] - m).powi(2);
-            }
-            TownView {
-                food_per_capita: food_pc[t],
-                danger: danger[t],
-                closeness: 1.0 - d2.sqrt() / (IDEOLOGY as f32).sqrt(),
-                friends: friends[t].min(1.0),
-                sells: trade.map_or(0.0, |p| {
-                    (towns.0[t].price[p] / mean_price[p].max(1e-6) - 1.0).clamp(-1.0, 2.0)
-                }),
-                rent: towns.0[t].rent,
-                pay: store.last_recipe[i].map_or(0.0, |r| {
-                    towns.0[t].pay_rate.get(r as usize).copied().unwrap_or(0.0)
-                }),
-                welcome: if towns.0[t].policy.immigration == Immigration::Encouraged {
-                    params.policy.immigration_bonus
-                } else {
-                    0.0
-                },
-                road,
-            }
+        let outlook = &store.mind[i][mind::IDEOLOGY_START..];
+        let view = |t: usize, road: f32| TownView {
+            food_per_capita: food_pc[t],
+            danger: danger[t],
+            culture_fit: crate::decision::culture::fit(outlook, &towns.0[t].culture),
+            friends: friends[t].min(1.0),
+            sells: trade.map_or(0.0, |p| {
+                (towns.0[t].price[p] / mean_price[p].max(1e-6) - 1.0).clamp(-1.0, 2.0)
+            }),
+            rent: towns.0[t].rent,
+            pay: store.last_recipe[i].map_or(0.0, |r| {
+                towns.0[t].pay_rate.get(r as usize).copied().unwrap_or(0.0)
+            }),
+            welcome: if towns.0[t].policy.immigration == Immigration::Encouraged {
+                params.policy.immigration_bonus
+            } else {
+                0.0
+            },
+            road,
         };
         let stay = decision.migration.value(&me, &view(home, 0.0), u, horizon);
         let mut best: Option<(usize, f32)> = None;

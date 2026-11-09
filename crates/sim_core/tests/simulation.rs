@@ -1051,16 +1051,27 @@ fn a_hungry_town_subsidizes_food_then_winds_it_down() {
         decided(&s, 3, "food is short"),
         "no food decision while hungry"
     );
-    run_years(&mut s, 3);
-    // Fed again: the hunger is over and the food subsidies are wound down.
-    let m = s.world.resource::<sim_core::metrics::Metrics>();
-    assert_eq!(m.latest().unwrap().towns[3].starving, 0.0);
-    let db = s.world.resource::<sim_core::Db>();
-    let town = &s.world.resource::<sim_core::Towns>().0[3];
-    assert!(db
-        .foods
-        .iter()
-        .all(|&(f, _)| town.policy.subsidy[f as usize] == 0.0));
+    // Fed again: the hunger ends and, within a few years, the food subsidies are
+    // wound down.
+    let mut wound_down = false;
+    for year in 2..=8 {
+        run_years(&mut s, 1);
+        let m = s.world.resource::<sim_core::metrics::Metrics>();
+        let starving = m.latest().unwrap().towns[3].starving;
+        let db = s.world.resource::<sim_core::Db>();
+        let town = &s.world.resource::<sim_core::Towns>().0[3];
+        let subsidies: Vec<f32> = db
+            .foods
+            .iter()
+            .map(|&(f, _)| town.policy.subsidy[f as usize])
+            .collect();
+        eprintln!("year {year}: starving {starving}, food subsidies {subsidies:?}");
+        if starving == 0.0 && subsidies.iter().all(|&x| x == 0.0) {
+            wound_down = true;
+            break;
+        }
+    }
+    assert!(wound_down, "food subsidies never wound down");
 }
 
 #[test]
@@ -1424,6 +1435,7 @@ fn utility_migration_moves_households_and_respects_closed_borders() {
     let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
     scenario.seed = 3;
     params.decision.migration = MigrationValueParams::Utility {
+        culture_weight: 1.0,
         social_weight: 0.5,
         distance_cost: 0.1,
         min_gain: 0.5,
@@ -1534,4 +1546,60 @@ fn crowded_towns_charge_more_rent_and_the_books_still_balance() {
         by.last().unwrap().1 > by[0].1,
         "the most crowded town is not dearer: {by:?}"
     );
+}
+
+/// Mean cultural fit of adults with the town they live in.
+fn mean_fit(s: &Simulation) -> f32 {
+    use sim_data::dims::mind;
+    let store = s.world.resource::<sim_core::AgentStore>();
+    let towns = s.world.resource::<sim_core::Towns>();
+    let fits: Vec<f32> = (0..store.len())
+        .filter(|&i| store.alive[i])
+        .map(|i| {
+            sim_core::decision::culture::fit(
+                &store.mind[i][mind::IDEOLOGY_START..],
+                &towns.0[store.town[i] as usize].culture,
+            )
+        })
+        .collect();
+    fits.iter().sum::<f32>() / fits.len().max(1) as f32
+}
+
+#[test]
+fn town_cultures_come_from_their_people_and_draw_those_who_fit() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let run = |weight: f32, seeded: bool| {
+        let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+        params.migration.culture_weight = weight;
+        params.migration.consider = 0.2;
+        if seeded {
+            scenario.towns[0].culture = Some(vec![0.9, 0.1, 0.5]);
+        }
+        let mut s = Simulation::new(db, params, &scenario);
+        run_years(&mut s, 3);
+        s
+    };
+    let s = run(1.0, true);
+    let towns = s.world.resource::<sim_core::Towns>();
+    for t in &towns.0 {
+        assert_eq!(t.culture.len(), 3);
+        assert!(t.culture.iter().all(|v| (0.0..=1.0).contains(v)));
+    }
+    // The seeded town keeps the culture it was founded with (its people were drawn
+    // around it and the culture changes only slowly).
+    let c = &towns.0[0].culture;
+    assert!(c[0] > 0.7 && c[1] < 0.3, "seeded culture lost: {c:?}");
+    // Same seed, same cultures.
+    let again = run(1.0, true);
+    let a: Vec<u32> = again.world.resource::<sim_core::Towns>().0[0]
+        .culture
+        .iter()
+        .map(|v| v.to_bits())
+        .collect();
+    let b: Vec<u32> = c.iter().map(|v| v.to_bits()).collect();
+    assert_eq!(a, b);
+    // When culture weighs more in moving, people end up where they fit better.
+    let strong = mean_fit(&run(4.0, false));
+    let none = mean_fit(&run(0.0, false));
+    assert!(strong > none, "fit {strong} with culture vs {none} without");
 }

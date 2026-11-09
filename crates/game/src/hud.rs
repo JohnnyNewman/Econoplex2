@@ -202,6 +202,16 @@ pub fn update_hud(
     if player.0.is_some() {
         s.push_str("* your town\n");
     }
+    // Each town's culture vector (follows its people slowly).
+    s.push_str("\nculture      tradition faith liberty\n");
+    for town in &towns.0 {
+        if let [t, f, l, ..] = town.culture[..] {
+            s.push_str(&format!(
+                "{:<11}  {:>8.2} {:>5.2} {:>7.2}\n",
+                town.name, t, f, l
+            ));
+        }
+    }
     if !db.content.eras.is_empty() {
         let names: Vec<String> = db
             .content
@@ -294,6 +304,21 @@ pub fn update_inspector(
     s.push_str("\nMind\n");
     for (k, name) in MIND_NAMES.iter().enumerate() {
         s.push_str(&format!("  {:<12} {}\n", name, bar(store.mind[i][k])));
+    }
+    // How well the agent's outlook fits each town's culture (-1..1).
+    s.push_str("\nCulture fit\n");
+    let outlook = &store.mind[i][sim_data::dims::mind::IDEOLOGY_START..];
+    for (t, town) in towns.0.iter().enumerate() {
+        if town.culture.is_empty() {
+            continue;
+        }
+        let fit = sim_core::decision::culture::fit(outlook, &town.culture);
+        let here = if t == store.town[i] as usize {
+            "  (home)"
+        } else {
+            ""
+        };
+        s.push_str(&format!("  {:<12} {:+.2}{here}\n", town.name, fit));
     }
     s.push_str("\nPhysique (actual / potential)\n");
     for (k, name) in PHYS_NAMES.iter().enumerate() {

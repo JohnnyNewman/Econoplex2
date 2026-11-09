@@ -91,9 +91,10 @@
         // Component: what living in another town is worth. Weighted: the
         // `migration` section's weighted sum. Utility: utility of needs there
         // (pay of the agent's trade over the horizon, food, safety), plus
-        // social_weight x (outlook closeness + friends), minus distance_cost per
-        // 1000 road units; move when it beats home by min_gain. Example:
-        // migration: Utility(social_weight: 0.5, distance_cost: 0.1, min_gain: 0.5, food_reference: 3.0),
+        // culture_weight x culture fit + social_weight x friends, minus
+        // distance_cost per 1000 road units; move when it beats home by min_gain.
+        // Example:
+        // migration: Utility(culture_weight: 1.0, social_weight: 0.5, distance_cost: 0.1, min_gain: 0.5, food_reference: 3.0),
         migration: Weighted,
         // Component: subsistence. None: all output goes to the town's stores.
         // Keep(share, larder_meals): food workers' households keep `share` of each
@@ -108,6 +109,9 @@
         // see wealth after the coming weeks' rent. Example:
         // crowding: Rent(base: 100.0, per_plot: 12.0, per_building: 8.0, rate: 0.3, exponent: 2.0, sticky_days: 60.0),
         crowding: None,
+        // Town culture: each town's culture vector follows its residents' average
+        // outlook over memory_days (a scenario may seed it per town).
+        culture: (memory_days: 365.0),
     ),
 
     social: BoundedConfidence(
@@ -236,7 +240,9 @@
         food_weight: 0.5,
         food_reference: 3.0,
         trade_weight: 0.6,
-        ideology_weight: 1.0,
+        // Cultural fit: centred cosine between the agent's outlook (tradition,
+        // faith, liberty) and the town's culture, -1..1 (see decision.culture).
+        culture_weight: 1.0,
         danger_weight: 0.3,
         distance_cost: 0.2,
     ),

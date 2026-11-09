@@ -351,6 +351,7 @@ mod tests {
             buildings: Vec::new(),
             stock: Vec::new(),
             governor: None,
+            culture: None,
         }
     }
 

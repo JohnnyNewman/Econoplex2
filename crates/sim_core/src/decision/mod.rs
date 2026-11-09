@@ -12,6 +12,7 @@
 //! - [`migration::Migration`]: what living in another town is worth.
 //! - [`subsistence`]: how much of their food output workers' households keep.
 //! - [`crowding`]: the rent a town's crowding costs its residents.
+//! - [`culture`]: each town's culture vector and an agent's fit with it.
 //! - [`valuation`]: what working a job or resting is worth to an agent (the
 //!   utility model's wiring of expectations and utility).
 //!
@@ -21,6 +22,7 @@
 
 pub mod choice;
 pub mod crowding;
+pub mod culture;
 pub mod expectations;
 pub mod learning;
 pub mod matching;

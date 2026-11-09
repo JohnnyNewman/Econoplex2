@@ -343,6 +343,9 @@ flowchart LR
 | WageAdjustment | applicants, places, current factor | new factor | `Fixed`, `ExcessDemand { step, min, max }` |
 | JobMatching | ranked applications per agent, places per job, apprentice places | matches | `FirstCome` (today's), `DeferredAcceptance { apprentice_wage, apprentice_share_min, apprentice_share_max }` |
 | Migration | the value of staying vs. moving to each town | value of each move | `Weighted` (today's migrate rule), `Utility` |
+| Subsistence | a finished food run, the workers, their larders | food kept per household, food cover of a food job | `None`, `Keep { share, larder_meals }` |
+| Crowding | a town's land plots, buildings and residents | daily rent per adult | `None`, `Rent { base, per_plot, per_building, rate, exponent, sticky_days }` |
+| Culture | an agent's outlook, a town's culture vector | fit, -1..1; the town's culture after a day | centred cosine; EMA over `memory_days` |
 
 **Today's model stays as one implementation:**
 - `decision.model: Features` keeps the current feature-matrix scoring, with
@@ -441,3 +444,62 @@ The migration plan changes accordingly:
     - apprentice share stays within its bounds and grows when trained workers are
       short and worth more
     - beginners get into trades they couldn't enter by output alone
+
+## Subsistence, crowding and culture (2026-11-09)
+
+Three additions came from comparing the utility model with today's. With all three
+in place, Utility + matching + subsistence matches today's population with no
+hunger (PRs #30, #31 and the culture PR).
+
+- **Subsistence** (`decision.subsistence`): food workers' households keep a share of
+  each edible output in a small larder and eat from it before buying. Kept food is
+  pay in kind: it counts as produced, the team is paid only for what it delivered,
+  overflow goes to the town, and a dead agent's larder returns to the town. In the
+  utility valuation, a food job also covers the worker's own food need.
+- **Crowding** (`decision.crowding`): a town's housing comes from its land and its
+  buildings. Each adult pays rent that rises with residents per place to live, into
+  the treasury (ledger flow `Rent`). Rents are sticky (they follow crowding over
+  about two months). Job choice values wealth after the coming weeks' rent, and
+  utility migration counts rent against pay.
+- **Culture** (`decision.culture`):
+  - **The agent's culture vector** is the ideological block of its mind (tradition,
+    faith, liberty). These axes already change through social influence, pass to
+    children and steer partner choice, so culture is what people believe, not a
+    label. New ideological axes added to the mind block become culture axes
+    automatically.
+  - **A town's culture vector** is bottom-up. Every day it moves toward the average
+    outlook of its residents, with a time constant of `memory_days` (365). A town
+    therefore keeps its character when newcomers arrive and changes only as they
+    settle in. A scenario may seed it per town (`culture: Some([t, f, l])`), and the
+    founding residents are drawn around the seed.
+  - **Fit** is the centred cosine of the two vectors, each measured from the neutral
+    point 0.5. It is 1 for the same outlook, 0 for unrelated or neutral, and -1 for
+    opposite.
+  - **One culture term in migration.** Fit replaces the old "outlook closeness"
+    (1 − Euclidean distance to the residents' current mean) in both migration
+    rules, with its own weight (`culture_weight`).
+
+```mermaid
+flowchart LR
+  A[agent outlook<br/>tradition, faith, liberty] --> F["fit = cos(a − ½, c − ½)"]
+  R[residents' outlooks] -- daily mean --> C[town culture<br/>EMA over memory_days]
+  S[scenario seed, optional] --> C
+  C --> F
+  F -- culture_weight × fit --> M[migration value of each town]
+  M --> D{best town beats home<br/>by min_gain?}
+  D -- yes --> MV[household moves]
+  MV -. changes .-> R
+```
+
+**Next: the migration rework.** The utility migration rule becomes four weighted
+terms, with distance cost and `min_gain` as the threshold against constant hopping:
+- economic strength: pay of the agent's own trade, food per head, crowding
+- culture fit
+- social network: trust, friends and family in the town vs. home
+- safety: recent raids, deaths, military protection
+
+It also adds two behaviours:
+- **Households decide as a unit:** the move sums the members' gains.
+- **Limited knowledge:** agents only weigh towns they know, through friends or family
+  there, passing traders or having lived there before; what they know fades over time
+  and is noisier for less-known towns.

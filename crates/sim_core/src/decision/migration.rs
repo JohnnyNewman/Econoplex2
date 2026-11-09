@@ -1,7 +1,7 @@
 //! Migration value: what living in a town is worth to an agent weighing a move.
 //!
 //! Interface: a view of one town as the agent sees it (food per resident, danger,
-//! how close its people are in outlook, trusted people there, how well the agent's
+//! how well the agent fits its culture, trusted people there, how well the agent's
 //! trade sells there, the pay a worker-day of that trade brings there, the road from
 //! home) and the agent's own situation. Output: a value; the agent moves to the best
 //! town if it beats home by `min_gain`.
@@ -18,8 +18,8 @@ pub struct TownView {
     pub food_per_capita: f32,
     /// 1 if the town was beaten in a raid this year.
     pub danger: f32,
-    /// 0..1: how close the town's average outlook is to the agent's.
-    pub closeness: f32,
+    /// -1..1: how well the agent fits the town's culture (`decision::culture::fit`).
+    pub culture_fit: f32,
     /// Trust the agent places in people living there (capped at 1).
     pub friends: f32,
     /// How the agent's trade sells there against the average town, clamped -1..2.
@@ -55,9 +55,11 @@ pub enum MigrationValueParams {
     #[default]
     Weighted,
     /// Utility of needs in the town (pay over the horizon, food, safety), plus
-    /// `social_weight` × (closeness + friends) and the welcome, minus
+    /// `culture_weight` × culture fit, `social_weight` × friends and the welcome, minus
     /// `distance_cost` per 1000 road units; move when the gain exceeds `min_gain`.
     Utility {
+        #[serde(default = "one")]
+        culture_weight: f32,
         social_weight: f32,
         distance_cost: f32,
         min_gain: f32,
@@ -66,12 +68,16 @@ pub enum MigrationValueParams {
     },
 }
 
+fn one() -> f32 {
+    1.0
+}
+
 /// The weights of the original rule (from the `migration` section).
 pub struct Weighted {
     pub food_weight: f32,
     pub food_reference: f32,
     pub danger_weight: f32,
-    pub ideology_weight: f32,
+    pub culture_weight: f32,
     pub trade_weight: f32,
     pub trust_weight: f32,
     pub distance_cost: f32,
@@ -83,7 +89,7 @@ impl Migration for Weighted {
         let base = self.food_weight * (t.food_per_capita / self.food_reference.max(1e-6)).min(2.0)
             - self.danger_weight * t.danger;
         let v = base
-            + self.ideology_weight * t.closeness
+            + self.culture_weight * t.culture_fit
             + self.trade_weight * t.sells
             + self.trust_weight * t.friends
             + t.welcome;
@@ -100,6 +106,7 @@ impl Migration for Weighted {
 }
 
 pub struct UtilityMigration {
+    pub culture_weight: f32,
     pub social_weight: f32,
     pub distance_cost: f32,
     pub min_gain: f32,
@@ -116,7 +123,10 @@ impl Migration for UtilityMigration {
         // Food feels as secure as the town's stores; a town beaten in a raid feels unsafe.
         n[FOOD] = n[FOOD].min((t.food_per_capita / self.food_reference.max(1e-6)).min(1.0));
         n[SAFETY] *= 1.0 - 0.5 * t.danger;
-        u.value(&n, me.weights) + self.social_weight * (t.closeness + t.friends) + t.welcome
+        u.value(&n, me.weights)
+            + self.culture_weight * t.culture_fit
+            + self.social_weight * t.friends
+            + t.welcome
             - self.distance_cost * t.road / 1000.0
     }
 
@@ -135,18 +145,20 @@ pub fn build(
             food_weight: m.food_weight,
             food_reference: m.food_reference,
             danger_weight: m.danger_weight,
-            ideology_weight: m.ideology_weight,
+            culture_weight: m.culture_weight,
             trade_weight: m.trade_weight,
             trust_weight,
             distance_cost: m.distance_cost,
             min_gain: m.min_gain,
         }),
         MigrationValueParams::Utility {
+            culture_weight,
             social_weight,
             distance_cost,
             min_gain,
             food_reference,
         } => Box::new(UtilityMigration {
+            culture_weight,
             social_weight,
             distance_cost,
             min_gain,
@@ -164,7 +176,7 @@ mod tests {
         TownView {
             food_per_capita: food,
             danger: 0.0,
-            closeness: 0.5,
+            culture_fit: 0.5,
             friends: 0.0,
             sells: 0.0,
             pay,
@@ -176,6 +188,7 @@ mod tests {
 
     fn rule() -> UtilityMigration {
         UtilityMigration {
+            culture_weight: 1.0,
             social_weight: 0.3,
             distance_cost: 0.1,
             min_gain: 0.05,
@@ -204,5 +217,11 @@ mod tests {
             ..town(1.0, 3.0, 0.0)
         };
         assert!(v(&town(1.0, 3.0, 0.0)) > v(&crowded));
+        // A town whose culture fits draws more, all else equal.
+        let fits = TownView {
+            culture_fit: 0.9,
+            ..town(1.0, 3.0, 0.0)
+        };
+        assert!(v(&fits) > v(&town(1.0, 3.0, 0.0)));
     }
 }
