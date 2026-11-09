@@ -31,6 +31,33 @@ pub struct ValuationParams {
     /// at today's prices (0: only realised pay counts, and an untried job shows
     /// none).
     pub posted_pay_days: f32,
+    /// What an agent expects a job to pay it.
+    pub pay_basis: PayBasis,
+}
+
+/// `decision.valuation.pay_basis` in models.ron.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+pub enum PayBasis {
+    /// The job's average pay per worker-day here (failures included), scaled by
+    /// the agent's success chance against a typical worker's.
+    #[default]
+    Average,
+    /// The agent's own success chance times what a successful worker-day pays
+    /// here. A hard job whose beginners mostly fail still shows what it pays those
+    /// who can do it, so the learning value prices mastering it at that pay.
+    OwnSuccess,
+}
+
+impl PayBasis {
+    /// Pay of a worker-day for a typical worker, the unit `job_value` and the
+    /// learning value take: from the average (`average`, failures included) or
+    /// from the pay of a success (`success`).
+    pub fn typical_pay(self, average: f32, success: f32, typical_success: f32) -> f32 {
+        match self {
+            PayBasis::Average => average,
+            PayBasis::OwnSuccess => success * typical_success,
+        }
+    }
 }
 
 impl Default for ValuationParams {
@@ -40,6 +67,7 @@ impl Default for ValuationParams {
             discount: 0.97,
             typical_success: 0.7,
             posted_pay_days: 90.0,
+            pay_basis: PayBasis::Average,
         }
     }
 }
@@ -131,6 +159,18 @@ mod tests {
             median_wealth: 30.0,
             weights: w,
         }
+    }
+
+    #[test]
+    fn own_success_shows_what_a_hard_trade_pays_those_who_can_do_it() {
+        // A hard job: beginners mostly fail, so its average pay is low, but a
+        // success pays well.
+        let (average, success, typical) = (2.0, 10.0, 0.7);
+        assert_eq!(
+            PayBasis::Average.typical_pay(average, success, typical),
+            2.0
+        );
+        assert!((PayBasis::OwnSuccess.typical_pay(average, success, typical) - 7.0).abs() < 1e-6);
     }
 
     #[test]

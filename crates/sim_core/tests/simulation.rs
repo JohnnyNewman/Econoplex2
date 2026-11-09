@@ -1678,3 +1678,45 @@ fn towns_post_pay_for_jobs_nobody_has_tried() {
     let (_, shown) = run(0.0);
     assert_eq!(shown, 0.0);
 }
+
+#[test]
+fn scarce_goods_loosen_their_price_caps_and_successes_are_tracked() {
+    use sim_core::config::ScarcityCap;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let run = |cap: ScarcityCap| {
+        let (db, mut params, scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+        params.market.scarcity_cap = cap;
+        let max = params.market.max_price_factor;
+        let mut s = Simulation::new(db, params, &scenario);
+        run_years(&mut s, 1);
+        let db = s.world.resource::<sim_core::Db>();
+        let towns = s.world.resource::<sim_core::Towns>();
+        // Highest price relative to its base among ordinary goods.
+        let top = towns
+            .0
+            .iter()
+            .flat_map(|t| {
+                (0..db.content.products.len())
+                    .filter(|&p| db.coin[p] <= 0.0 && db.opens[p].is_none())
+                    .map(move |p| t.price[p] / db.base_price[p].max(1e-6))
+            })
+            .fold(0.0f32, f32::max);
+        // A success pays at least the average (which counts failures as nothing).
+        let tracked = towns.0.iter().all(|t| {
+            t.success_pay
+                .iter()
+                .zip(&t.pay_rate)
+                .all(|(s, a)| *s >= *a - 1e-3)
+        });
+        (top, max, tracked)
+    };
+    let (top, max, tracked) = run(ScarcityCap::Fixed);
+    assert!(top <= max + 1e-3, "a price passed its fixed cap: {top}");
+    assert!(tracked, "a success paid less than the average");
+    let (top, max, _) = run(ScarcityCap::Loosen {
+        rate: 0.01,
+        max_factor: 50.0,
+    });
+    assert!(top > max, "no scarce good's cap loosened: {top}");
+    assert!(top <= 50.0 + 1e-3, "a cap passed its ceiling: {top}");
+}

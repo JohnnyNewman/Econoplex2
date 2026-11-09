@@ -283,12 +283,20 @@ impl Choice<'_> {
                 let prof = dot(&store.cap[i], &m.skill) + dot(&store.equip_vec[i], &m.skill);
                 let eff = (prof + physique_bonus(&store.phys[i], m, params.physique.weight)) * sf;
                 let success = self.models.success.probability(eff, m.difficulty);
+                let town = &self.towns.0[t];
                 let pay = pay_factor
-                    * expectations::expected_pay(
-                        &store.pay_expect[i],
-                        r,
-                        self.towns.0[t].pay_rate[r as usize],
-                    );
+                    * match d.valuation.pay_basis {
+                        valuation::PayBasis::Average => expectations::expected_pay(
+                            &store.pay_expect[i],
+                            r,
+                            town.pay_rate[r as usize],
+                        ),
+                        basis => basis.typical_pay(
+                            town.pay_rate[r as usize],
+                            town.success_pay.get(r as usize).copied().unwrap_or(0.0),
+                            d.valuation.typical_success,
+                        ),
+                    };
                 let fatigue = params.needs.fatigue_per_work_day * (0.5 + m.phys_total);
                 // A day of practice raises the agent's skill along the recipe by about
                 // rate x aptitude x room left x (success, failures teaching less).
