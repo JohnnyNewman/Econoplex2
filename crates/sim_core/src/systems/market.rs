@@ -464,7 +464,9 @@ pub fn firm_finances(
             f.cash -= out;
             let members = owners.get(&domain[k]);
             let tax = match members {
-                Some(m) if !m.is_empty() => out * profit_tax.clamp(0.0, 1.0),
+                Some(m) if !m.is_empty() => {
+                    out * town.policy.profit_tax.unwrap_or(profit_tax).clamp(0.0, 1.0)
+                }
                 _ => out,
             };
             town.treasury += tax;

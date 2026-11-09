@@ -93,6 +93,9 @@ pub struct Policy {
     /// Share of every wage the treasury takes back as income tax.
     #[serde(default)]
     pub income_tax: f32,
+    /// Share of workshops' payouts taken as profit tax; `None` keeps models.ron's.
+    #[serde(default)]
+    pub profit_tax: Option<f32>,
     /// Share of value added the town market pays its makers as wages; `None` keeps
     /// models.ron's.
     #[serde(default)]
@@ -208,6 +211,9 @@ pub enum Order {
 pub enum Tax {
     Wealth,
     Income,
+    /// The share of workshops' payouts the treasury takes (with
+    /// `market.firms: Workshops`).
+    Profit,
 }
 
 impl Order {
@@ -242,7 +248,7 @@ impl Order {
     /// raid <town> <target>
     /// build <town> <building> [<x> <y>]
     /// mint <town> auto|on|off
-    /// tax <town> wealth|income <rate>|auto  e.g. tax Greenvale income 0.1
+    /// tax <town> wealth|income|profit <rate>|auto  e.g. tax Greenvale income 0.1
     /// wages <town> <share>|auto             e.g. wages Greenvale 0.6
     /// spending <town> <rate>|auto           e.g. spending Greenvale 4
     /// procure <town> <product> <amount>     e.g. procure Greenvale cloth 50 (0 cancels)
@@ -318,12 +324,12 @@ impl Order {
                 town: town(t)?,
                 war: if *w == "auto" { War::Auto } else { War::Defend },
             }),
-            ["tax", t, kind @ ("wealth" | "income"), rate] => Ok(Order::Tax {
+            ["tax", t, kind @ ("wealth" | "income" | "profit"), rate] => Ok(Order::Tax {
                 town: town(t)?,
-                tax: if *kind == "wealth" {
-                    Tax::Wealth
-                } else {
-                    Tax::Income
+                tax: match *kind {
+                    "wealth" => Tax::Wealth,
+                    "income" => Tax::Income,
+                    _ => Tax::Profit,
                 },
                 rate: match *rate {
                     "auto" => None,
@@ -449,6 +455,7 @@ pub fn apply_orders(
                 Tax::Wealth => {
                     p.wealth_tax = rate.map(|r| r.clamp(0.0, params.policy.max_wealth_tax))
                 }
+                Tax::Profit => p.profit_tax = rate.map(|r| r.clamp(0.0, 1.0)),
                 Tax::Income => {
                     p.income_tax = rate.unwrap_or(0.0).clamp(0.0, params.policy.max_income_tax)
                 }

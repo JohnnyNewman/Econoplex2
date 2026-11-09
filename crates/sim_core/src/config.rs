@@ -700,6 +700,8 @@ pub struct GovernorParams {
     pub loan_rate: f32,
     pub loan_days: u32,
     pub max_loan_share: f32,
+    /// Highest profit tax a governor sets (steps of `income_tax_step`).
+    pub max_profit_tax: f32,
 }
 
 impl Default for GovernorParams {
@@ -731,6 +733,7 @@ impl Default for GovernorParams {
             loan_rate: 0.1,
             loan_days: 240,
             max_loan_share: 0.3,
+            max_profit_tax: 0.5,
             personalities: vec![
                 ("balanced".into(), crate::governor::Personality::default()),
                 (

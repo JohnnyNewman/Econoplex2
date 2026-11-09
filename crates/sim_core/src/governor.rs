@@ -285,6 +285,10 @@ pub fn govern(
 
         // --- treasury: tax when broke, mint if it stays broke; spend when flush
         let wealth_tax = p.wealth_tax.unwrap_or(mp.wealth_tax);
+        let default_profit_tax = match mp.firms {
+            crate::firms::FirmsParams::Workshops { profit_tax, .. } => profit_tax,
+            crate::firms::FirmsParams::Treasury => 0.0,
+        };
         let low = gp.treasury_low * personality.thrift;
         let high = gp.treasury_high * personality.thrift;
         if st.treasury < low {
@@ -298,6 +302,22 @@ pub fn govern(
                         rate: Some(rate),
                     },
                     format!("raised the wealth tax to {rate:.2}/yr: treasury low"),
+                ));
+            } else if params.market.firms.on()
+                && p.profit_tax.unwrap_or(default_profit_tax) < gp.max_profit_tax
+            {
+                let rate = (p.profit_tax.unwrap_or(default_profit_tax) + gp.income_tax_step)
+                    .min(gp.max_profit_tax);
+                orders.push((
+                    Order::Tax {
+                        town: tid,
+                        tax: Tax::Profit,
+                        rate: Some(rate),
+                    },
+                    format!(
+                        "raised the profit tax to {:.0}%: treasury low, wealth tax at its cap",
+                        rate * 100.0
+                    ),
                 ));
             } else if p.income_tax < gp.max_income_tax {
                 let rate = (p.income_tax + gp.income_tax_step).min(gp.max_income_tax);
@@ -335,7 +355,23 @@ pub fn govern(
             }
         }
         if st.treasury > high {
-            if p.income_tax > 0.0 {
+            if params.market.firms.on()
+                && p.profit_tax.unwrap_or(default_profit_tax) > default_profit_tax
+            {
+                let rate = (p.profit_tax.unwrap_or(default_profit_tax) - gp.income_tax_step)
+                    .max(default_profit_tax);
+                orders.push((
+                    Order::Tax {
+                        town: tid,
+                        tax: Tax::Profit,
+                        rate: Some(rate),
+                    },
+                    format!(
+                        "lowered the profit tax to {:.0}%: treasury full",
+                        rate * 100.0
+                    ),
+                ));
+            } else if p.income_tax > 0.0 {
                 let rate = (p.income_tax - gp.income_tax_step).max(0.0);
                 orders.push((
                     Order::Tax {
