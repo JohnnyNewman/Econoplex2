@@ -178,6 +178,9 @@ pub struct DecisionParams {
     /// Component: the rent a town's crowding costs its residents.
     #[serde(default)]
     pub crowding: crate::decision::crowding::CrowdingParams,
+    /// How towns' culture vectors follow their residents.
+    #[serde(default)]
+    pub culture: crate::decision::culture::CultureParams,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -462,8 +465,9 @@ pub struct MigrationParams {
     /// Weight of what the agent's own trade sells for there, relative to the
     /// average over towns.
     pub trade_weight: f32,
-    /// Weight of ideological closeness to the town's mean.
-    pub ideology_weight: f32,
+    /// Weight of cultural fit with the town (see `decision::culture`).
+    #[serde(alias = "ideology_weight")]
+    pub culture_weight: f32,
     /// Utility lost for a town raided this year.
     pub danger_weight: f32,
     /// Utility lost per 1000 map units of road.
@@ -564,6 +568,10 @@ pub struct TownSpec {
     /// in models.ron); none is balanced.
     #[serde(default)]
     pub governor: Option<String>,
+    /// Starting culture (one value 0..1 per ideological axis: tradition, faith,
+    /// liberty). The first residents are drawn around it; none picks a distinct one.
+    #[serde(default)]
+    pub culture: Option<Vec<f32>>,
 }
 
 /// Rules of the AI town governments (see `governor.rs`). Thresholds are per resident

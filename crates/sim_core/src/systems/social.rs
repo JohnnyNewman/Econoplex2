@@ -13,9 +13,38 @@ use sim_data::dims::{mind, MIND_DIM};
 
 const AXES: usize = MIND_DIM - mind::IDEOLOGY_START;
 
+/// Each town's culture moves a day toward its residents' average outlook.
+fn follow_culture(store: &AgentStore, towns: &mut Towns, params: &Params) {
+    for town in towns.0.iter_mut() {
+        if town.residents.is_empty() {
+            continue;
+        }
+        let mut mean = [0.0f32; AXES];
+        for &i in &town.residents {
+            for (k, v) in mean.iter_mut().enumerate() {
+                *v += store.mind[i as usize][mind::IDEOLOGY_START + k];
+            }
+        }
+        let n = town.residents.len() as f32;
+        mean.iter_mut().for_each(|v| *v /= n);
+        if town.culture.len() != AXES {
+            // No seed: the town starts where its people are.
+            let seed = std::mem::take(&mut town.culture);
+            town.culture = (0..AXES)
+                .map(|k| seed.get(k).copied().unwrap_or(mean[k]))
+                .collect();
+        }
+        crate::decision::culture::follow(
+            &mut town.culture,
+            &mean,
+            params.decision.culture.memory_days,
+        );
+    }
+}
+
 pub fn socialize(
     mut store: ResMut<AgentStore>,
-    towns: Res<Towns>,
+    mut towns: ResMut<Towns>,
     models: Res<Models>,
     params: Res<Params>,
     clock: Res<SimClock>,
@@ -24,6 +53,7 @@ pub fn socialize(
 ) {
     let mut rng = seed.rng(clock.tick, streams::SOCIAL);
     let store = &mut *store;
+    follow_culture(store, &mut towns, &params);
     let tp = &params.trust;
     store.fade_trust(1.0 - tp.fade);
     let mut noise = [0.0f32; 2 * AXES];

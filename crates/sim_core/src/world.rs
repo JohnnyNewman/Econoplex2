@@ -173,6 +173,10 @@ pub struct Town {
     /// Daily rent each adult resident pays (see `decision::crowding`).
     #[serde(default)]
     pub rent: f32,
+    /// The town's culture, one value per ideological axis; follows its residents
+    /// slowly (see `decision::culture`). Empty until first set.
+    #[serde(default)]
+    pub culture: Vec<f32>,
     /// Goods delivered for government orders since the start, by product.
     #[serde(default)]
     pub procured: Vec<f32>,
@@ -490,6 +494,7 @@ pub fn setup(world: &mut World, db: Db, params: ModelParams, scenario: &Scenario
             wage_factor: vec![1.0; db.recipes.len()],
             apprentice_share: vec![0.0; db.recipes.len()],
             rent: 0.0,
+            culture: spec.culture.clone().unwrap_or_default(),
         });
 
         // Starting trades follow what the town can actually run, with food work weighted
@@ -525,7 +530,11 @@ pub fn setup(world: &mut World, db: Db, params: ModelParams, scenario: &Scenario
             let mut mind = temperament;
             // Each town starts with its own cultural center on the ideological axes.
             for (k, m) in mind.iter_mut().enumerate().skip(mind::IDEOLOGY_START) {
-                let center = 0.5 + 0.25 * ((ti * 3 + k) as f32 * 1.7).sin();
+                let center = spec
+                    .culture
+                    .as_ref()
+                    .and_then(|c| c.get(k - mind::IDEOLOGY_START).copied())
+                    .unwrap_or_else(|| 0.5 + 0.25 * ((ti * 3 + k) as f32 * 1.7).sin());
                 *m = (center + rng.random_range(-0.15..0.15f32)).clamp(0.0, 1.0);
             }
             let mut cap = vec![0.0; db.cap_dim];
