@@ -30,8 +30,8 @@ use std::collections::HashMap;
 use std::path::Path;
 
 /// Bumped whenever the save layout changes incompatibly.
-/// 2: the ledger gained income tax (18 flows).
-pub const SAVE_VERSION: u32 = 2;
+/// 2: the ledger gained income tax (18 flows). 3: agents' pay expectations.
+pub const SAVE_VERSION: u32 = 3;
 
 /// One simulation entity and its components.
 #[derive(Serialize, Deserialize)]
@@ -373,6 +373,9 @@ pub fn restore(
     world.insert_resource(store);
     world.insert_resource(Towns(towns));
     world.insert_resource(Models::from_params(&params));
+    world.insert_resource(crate::decision::DecisionModels::from_params(
+        &params.decision,
+    ));
     world.insert_resource(crate::terrain::Terrain::build(&scenario));
     world.insert_resource(crate::world::player_town(&scenario));
     world.insert_resource(ScenarioSpec(scenario));

@@ -143,6 +143,23 @@ pub struct DecisionParams {
     pub value_scale: f32,
     /// How many candidate jobs each agent considers per decision (sampled), plus resting.
     pub candidates: usize,
+    /// Which decision model picks jobs: `Features` (the weighted feature matrix
+    /// above). More arrive with the utility-based components (see
+    /// docs/design/agent-decisions.md).
+    #[serde(default)]
+    pub model: DecisionModel,
+    /// Component: how agents form price and pay expectations.
+    #[serde(default)]
+    pub expectations: crate::decision::expectations::ExpectationsParams,
+    /// Component: how agents value the state of their needs.
+    #[serde(default)]
+    pub utility: crate::decision::utility::UtilityParams,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DecisionModel {
+    #[default]
+    Features,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

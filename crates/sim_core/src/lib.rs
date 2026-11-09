@@ -8,6 +8,7 @@
 pub mod components;
 pub mod config;
 pub mod db;
+pub mod decision;
 pub mod goal;
 pub mod governor;
 pub mod ledger;

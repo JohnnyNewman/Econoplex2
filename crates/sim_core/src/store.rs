@@ -73,6 +73,10 @@ pub struct AgentStore {
     pub target: Vec<(f32, f32)>,
     /// Personal ties: who this agent trusts, and how much (see `trust.rs`).
     pub ties: Vec<[crate::trust::Tie; crate::trust::TIES]>,
+    /// Expected pay per worker-day for the jobs the agent has done (recipe, pay);
+    /// see `decision::expectations`.
+    #[serde(default)]
+    pub pay_expect: Vec<Vec<(u32, f32)>>,
 }
 
 /// Everything needed to create an agent.
@@ -137,6 +141,7 @@ impl AgentStore {
         self.target.push(a.target);
         self.ties
             .push([crate::trust::Tie::NONE; crate::trust::TIES]);
+        self.pay_expect.push(Vec::new());
         idx
     }
 

@@ -1134,3 +1134,39 @@ fn governors_do_not_swing_back_and_forth() {
         );
     }
 }
+
+#[test]
+fn agents_learn_what_their_jobs_pay() {
+    // The expectations component tracks realised pay; the town's public rate is the
+    // prior for jobs an agent hasn't done. Neither changes the run yet.
+    let mut s = full(5);
+    run_years(&mut s, 1);
+    let towns = s.world.resource::<sim_core::Towns>();
+    let store = s.world.resource::<sim_core::AgentStore>();
+    let db = s.world.resource::<sim_core::Db>();
+    let bake = db.content.recipe("bake_bread").unwrap();
+    for town in &towns.0 {
+        assert!(
+            town.pay_rate[bake as usize] > 0.0,
+            "{}: bread pays nothing",
+            town.name
+        );
+    }
+    // Bakers expect roughly what baking has paid in their town.
+    let mut checked = 0;
+    for i in 0..store.len() {
+        if !store.alive[i] {
+            continue;
+        }
+        if let Some(&(_, e)) = store.pay_expect[i].iter().find(|e| e.0 == bake) {
+            let public = towns.0[store.town[i] as usize].pay_rate[bake as usize];
+            assert!(e >= 0.0 && e < 10.0 * public.max(0.01), "{e} vs {public}");
+            checked += 1;
+        }
+    }
+    assert!(checked > 50, "only {checked} agents ever baked");
+    assert!(store
+        .pay_expect
+        .iter()
+        .all(|l| l.len() <= sim_core::decision::expectations::KEEP));
+}

@@ -160,6 +160,10 @@ pub struct Town {
     pub moves: MoveCounters,
     /// Levers the town's government has set (see `policy.rs`).
     pub policy: crate::policy::Policy,
+    /// What a worker-day at each recipe has paid here lately (public knowledge; a
+    /// moving average of realised pay, failures included).
+    #[serde(default)]
+    pub pay_rate: Vec<f32>,
     /// Goods delivered for government orders since the start, by product.
     #[serde(default)]
     pub procured: Vec<f32>,
@@ -470,6 +474,7 @@ pub fn setup(world: &mut World, db: Db, params: ModelParams, scenario: &Scenario
             policy: crate::policy::Policy::new(db.content.products.len(), db.content.domains.len()),
             ledger: crate::ledger::Ledger::new(scenario.towns.len()),
             procured: vec![0.0; db.content.products.len()],
+            pay_rate: vec![0.0; db.recipes.len()],
         });
 
         // Starting trades follow what the town can actually run, with food work weighted
@@ -567,6 +572,9 @@ pub fn setup(world: &mut World, db: Db, params: ModelParams, scenario: &Scenario
     world.insert_resource(towns);
     world.insert_resource(db);
     world.insert_resource(models);
+    world.insert_resource(crate::decision::DecisionModels::from_params(
+        &params.decision,
+    ));
     world.insert_resource(Params(params));
     world.insert_resource(crate::terrain::Terrain::build(scenario));
     world.insert_resource(crate::profile::Profile::default());

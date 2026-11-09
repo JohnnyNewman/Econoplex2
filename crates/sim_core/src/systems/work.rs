@@ -281,9 +281,13 @@ fn jitter(p: (f32, f32), r: f32, rng: &mut impl Rng) -> (f32, f32) {
     (p.0 + rng.random_range(-r..r), p.1 + rng.random_range(-r..r))
 }
 
+/// Share of the way the public pay rate moves toward each realised step.
+const PAY_RATE_SMOOTHING: f32 = 0.05;
+
 #[allow(clippy::too_many_arguments)]
 pub fn produce(
     mut commands: Commands,
+    decision: Res<crate::decision::DecisionModels>,
     mut store: ResMut<AgentStore>,
     mut towns: ResMut<Towns>,
     db: Res<Db>,
@@ -383,6 +387,8 @@ pub fn produce(
         log.attempts += 1;
         log.runs[r as usize] += task.batches as u64;
         let t = task.town as usize;
+        // What each worker earned from this step (0 if it failed), per day worked.
+        let mut earned = 0.0f32;
         if success {
             log.successes += 1;
             let town = &mut towns.0[t];
@@ -512,6 +518,7 @@ pub fn produce(
             town.treasury += tax;
             town.ledger.add(crate::ledger::Flow::IncomeTax, tax);
             let wage = (pay - tax) / n as f32;
+            earned = wage;
             for &w in &workers {
                 store.wealth[w as usize] += wage;
                 let st = &mut store.state[w as usize];
@@ -522,6 +529,25 @@ pub fn produce(
                 let st = &mut store.state[w as usize];
                 st[state::HAPPINESS] = (st[state::HAPPINESS] - 0.03).max(0.0);
             }
+        }
+
+        // Pay expectations: the town's public rate, and each worker's own.
+        let days = (task.required / (n as f32).powf(params.work.work_exponent)).max(1.0);
+        let per_day = earned / days;
+        {
+            let rate = &mut towns.0[t].pay_rate[r as usize];
+            *rate += PAY_RATE_SMOOTHING * (per_day - *rate);
+        }
+        for &w in &workers {
+            let wi = w as usize;
+            let curiosity = store.mind[wi][sim_data::dims::mind::CURIOSITY];
+            crate::decision::expectations::remember(
+                &mut store.pay_expect[wi],
+                r,
+                per_day,
+                curiosity,
+                &*decision.expectations,
+            );
         }
 
         // Tool wear.
