@@ -12,9 +12,10 @@ pub trait WageAdjustment: Send + Sync {
 }
 
 /// `decision.wages` in models.ron.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub enum WageParams {
     /// Pay is the base share for every job.
+    #[default]
     Fixed,
     /// Each day the factor moves by `step × (target_fill − takers / places)`,
     /// clamped to `min..max`.
@@ -24,12 +25,6 @@ pub enum WageParams {
         min: f32,
         max: f32,
     },
-}
-
-impl Default for WageParams {
-    fn default() -> Self {
-        WageParams::Fixed
-    }
 }
 
 pub fn build(p: &WageParams) -> Box<dyn WageAdjustment> {
