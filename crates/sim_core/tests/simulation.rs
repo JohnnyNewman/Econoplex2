@@ -1524,10 +1524,14 @@ fn crowded_towns_charge_more_rent_and_the_books_still_balance() {
     // Rent follows residents per place to live.
     let crowding = |t: &sim_core::world::Town| {
         t.residents.len() as f32
-            / (100.0 + 12.0 * (t.nature_sites.len() + t.free_land as usize) as f32
+            / (100.0
+                + 12.0 * (t.nature_sites.len() + t.free_land as usize) as f32
                 + 8.0 * t.buildings.len() as f32)
     };
     let mut by: Vec<(f32, f32)> = towns.0.iter().map(|t| (crowding(t), t.rent)).collect();
     by.sort_by(|a, b| a.0.total_cmp(&b.0));
-    assert!(by.last().unwrap().1 > by[0].1, "the most crowded town is not dearer: {by:?}");
+    assert!(
+        by.last().unwrap().1 > by[0].1,
+        "the most crowded town is not dearer: {by:?}"
+    );
 }
