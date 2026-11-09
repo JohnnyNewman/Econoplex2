@@ -369,6 +369,8 @@ pub fn produce(
             .collect()
     };
 
+    let mut claims: Vec<Claim> = Vec::new();
+
     // Phase C, in task order: resolve each finished step.
     for ((e, r, workers), eff) in done.into_iter().zip(effs) {
         let Ok((_, task, parts)) = tasks.get_mut(e) else {
@@ -387,8 +389,6 @@ pub fn produce(
         log.attempts += 1;
         log.runs[r as usize] += task.batches as u64;
         let t = task.town as usize;
-        // What each worker earned from this step (0 if it failed), per day worked.
-        let mut earned = 0.0f32;
         if success {
             log.successes += 1;
             let town = &mut towns.0[t];
@@ -504,23 +504,22 @@ pub fn produce(
                 .iter()
                 .map(|&(p, q)| town.price[p as usize] * q * task.batches as f32)
                 .sum();
-            let share = town.policy.wage_share.unwrap_or(params.work.wage_share);
-            let pay = (share * (value - input_cost)).clamp(0.0, town.treasury.max(0.0));
-            town.treasury -= pay;
-            town.ledger.add(crate::ledger::Flow::Wages, pay);
-            // A subsidized product earns its makers a top-up, while the treasury lasts.
-            let subsidy = subsidy.clamp(0.0, town.treasury.max(0.0));
-            town.treasury -= subsidy;
-            town.ledger.add(crate::ledger::Flow::Subsidies, subsidy);
-            let pay = pay + subsidy;
-            // Income tax: the treasury keeps its share of every wage.
-            let tax = pay * town.policy.income_tax;
-            town.treasury += tax;
-            town.ledger.add(crate::ledger::Flow::IncomeTax, tax);
-            let wage = (pay - tax) / n as f32;
-            earned = wage;
+            // The team's claim on the town market: its share of the value added
+            // (the town's base share times this job's market factor), plus any
+            // subsidy. Claims are paid after all of today's steps, at one ratio.
+            let base = town.policy.wage_share.unwrap_or(params.work.wage_share);
+            let factor = town.wage_factor.get(r as usize).copied().unwrap_or(1.0);
+            let share = (base * factor).min(1.0);
+            let days = (task.required / (n as f32).powf(params.work.work_exponent)).max(1.0);
+            claims.push(Claim {
+                town: t,
+                recipe: r,
+                workers: workers.clone(),
+                wage: (share * (value - input_cost)).max(0.0),
+                subsidy,
+                days,
+            });
             for &w in &workers {
-                store.wealth[w as usize] += wage;
                 let st = &mut store.state[w as usize];
                 st[state::HAPPINESS] = (st[state::HAPPINESS] + 0.03).min(1.0);
             }
@@ -529,25 +528,16 @@ pub fn produce(
                 let st = &mut store.state[w as usize];
                 st[state::HAPPINESS] = (st[state::HAPPINESS] - 0.03).max(0.0);
             }
-        }
-
-        // Pay expectations: the town's public rate, and each worker's own.
-        let days = (task.required / (n as f32).powf(params.work.work_exponent)).max(1.0);
-        let per_day = earned / days;
-        {
-            let rate = &mut towns.0[t].pay_rate[r as usize];
-            *rate += PAY_RATE_SMOOTHING * (per_day - *rate);
-        }
-        for &w in &workers {
-            let wi = w as usize;
-            let curiosity = store.mind[wi][sim_data::dims::mind::CURIOSITY];
-            crate::decision::expectations::remember(
-                &mut store.pay_expect[wi],
-                r,
-                per_day,
-                curiosity,
-                &*decision.expectations,
-            );
+            // A failed step earns nothing.
+            let days = (task.required / (n as f32).powf(params.work.work_exponent)).max(1.0);
+            claims.push(Claim {
+                town: t,
+                recipe: r,
+                workers: workers.clone(),
+                wage: 0.0,
+                subsidy: 0.0,
+                days,
+            });
         }
 
         // Tool wear.
@@ -576,6 +566,83 @@ pub fn produce(
             quality,
         });
         commands.entity(e).despawn();
+    }
+
+    settle_wages(claims, &mut towns, store, &decision);
+}
+
+/// A finished step's claim on its town market.
+struct Claim {
+    town: usize,
+    recipe: u32,
+    workers: Vec<u32>,
+    wage: f32,
+    subsidy: f32,
+    /// Days the team worked on it.
+    days: f32,
+}
+
+/// Pay the day's claims. When a town's treasury can't cover all wages, every claim
+/// gets the same share of what it is owed, so pay still follows prices; subsidies are
+/// paid the same way from what is left. Then income tax, the workers' pay, and the pay
+/// expectations (public rate and each worker's own).
+fn settle_wages(
+    claims: Vec<Claim>,
+    towns: &mut Towns,
+    store: &mut AgentStore,
+    decision: &crate::decision::DecisionModels,
+) {
+    let n_towns = towns.0.len();
+    let mut owed = vec![(0.0f32, 0.0f32); n_towns];
+    for c in &claims {
+        owed[c.town].0 += c.wage;
+        owed[c.town].1 += c.subsidy;
+    }
+    let ratios: Vec<(f32, f32)> = towns
+        .0
+        .iter()
+        .zip(&owed)
+        .map(|(town, &(w, sub))| {
+            let budget = town.treasury.max(0.0);
+            let rw = if w > 0.0 { (budget / w).min(1.0) } else { 0.0 };
+            let left = (budget - w * rw).max(0.0);
+            let rs = if sub > 0.0 {
+                (left / sub).min(1.0)
+            } else {
+                0.0
+            };
+            (rw, rs)
+        })
+        .collect();
+    for c in claims {
+        let town = &mut towns.0[c.town];
+        let (rw, rs) = ratios[c.town];
+        let wage = c.wage * rw;
+        let subsidy = c.subsidy * rs;
+        town.treasury -= wage + subsidy;
+        town.ledger.add(crate::ledger::Flow::Wages, wage);
+        town.ledger.add(crate::ledger::Flow::Subsidies, subsidy);
+        let pay = wage + subsidy;
+        // Income tax: the treasury keeps its share of every wage.
+        let tax = pay * town.policy.income_tax;
+        town.treasury += tax;
+        town.ledger.add(crate::ledger::Flow::IncomeTax, tax);
+        let each = (pay - tax) / c.workers.len().max(1) as f32;
+        let per_day = each / c.days;
+        let rate = &mut town.pay_rate[c.recipe as usize];
+        *rate += PAY_RATE_SMOOTHING * (per_day - *rate);
+        for &w in &c.workers {
+            let wi = w as usize;
+            store.wealth[wi] += each;
+            let curiosity = store.mind[wi][sim_data::dims::mind::CURIOSITY];
+            crate::decision::expectations::remember(
+                &mut store.pay_expect[wi],
+                c.recipe,
+                per_day,
+                curiosity,
+                &*decision.expectations,
+            );
+        }
     }
 }
 

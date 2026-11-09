@@ -70,6 +70,10 @@
         choice: Logit(base: None, risk_weight: 0.0, diligence_weight: 0.0),
         // The utility model's look ahead: horizon in days and daily discount.
         valuation: (horizon_days: 30.0, discount: 0.97, typical_success: 0.7),
+        // Component: each job's pay factor on the town's base wage share. Fixed: 1.
+        // ExcessDemand: moves by step x (target_fill - takers / places) each day,
+        // within min..max: crowded jobs pay less, empty ones more.
+        wages: Fixed,
     ),
 
     social: BoundedConfidence(
