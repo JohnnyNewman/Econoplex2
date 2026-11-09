@@ -24,6 +24,18 @@ pub fn settle(
     let mp = &params.market;
     let np = db.content.products.len();
     // Demand-driven pricing: the stock each good's users need.
+    if mp.mint_money_per_capita > 0.0 {
+        for town in towns.0.iter_mut() {
+            let money = town.treasury
+                + town.firms.iter().map(|f| f.cash).sum::<f32>()
+                + town
+                    .residents
+                    .iter()
+                    .map(|&i| store.wealth[i as usize])
+                    .sum::<f32>();
+            town.money_per_capita = money / town.residents.len().max(1) as f32;
+        }
+    }
     firm_finances(&mut towns, &mut store, &db, &params);
     crate::consumption::spend(&mut towns, &mut store, &db, &params, clock.tick);
     let derived = derived_targets(&towns, &db, &params, &sites);

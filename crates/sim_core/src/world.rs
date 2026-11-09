@@ -209,6 +209,10 @@ pub struct Town {
     /// Trade credit written off this year (firms that closed owing it).
     #[serde(default)]
     pub credit_defaults: f32,
+    /// The town's money stock (treasury, residents, firms) per resident,
+    /// yesterday (for `market.mint_money_per_capita`).
+    #[serde(default)]
+    pub money_per_capita: f32,
     #[serde(default)]
     pub goods_today: Vec<f32>,
     #[serde(default)]
@@ -335,7 +339,10 @@ impl Town {
             crate::policy::Minting::On => true,
             crate::policy::Minting::Off => false,
             crate::policy::Minting::Auto => {
-                self.treasury < mp.mint_below_per_capita * self.residents.len().max(1) as f32
+                let n = self.residents.len().max(1) as f32;
+                self.treasury < mp.mint_below_per_capita * n
+                    || (mp.mint_money_per_capita > 0.0
+                        && self.money_per_capita < mp.mint_money_per_capita)
             }
         }
     }
@@ -403,7 +410,8 @@ pub struct WorkLog {
 pub const STARTING_SKILL_NOISE: f32 = 0.12;
 
 /// Build the world: lookup tables, models, towns, buildings, nature and agents.
-pub fn setup(world: &mut World, db: Db, params: ModelParams, scenario: &Scenario) {
+pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scenario) {
+    db.group_firms(params.market.firms.grouping());
     let models = Models::from_params(&params);
     let dpy = params.life.days_per_year;
     let seed = SimSeed(scenario.seed);
@@ -567,6 +575,7 @@ pub fn setup(world: &mut World, db: Db, params: ModelParams, scenario: &Scenario
             firms: crate::firms::new_firms(&db),
             loan_defaults: 0.0,
             credit_defaults: 0.0,
+            money_per_capita: 0.0,
             goods_today: Vec::new(),
             goods_use: Vec::new(),
             wage_factor: vec![1.0; db.recipes.len()],

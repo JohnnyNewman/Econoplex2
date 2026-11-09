@@ -45,6 +45,9 @@ pub enum FirmsParams {
         /// them from its sales. 0: cash only.
         #[serde(default)]
         credit_days: f32,
+        /// How work is grouped into firms (see `Grouping`).
+        #[serde(default)]
+        grouping: Grouping,
     },
 }
 
@@ -52,7 +55,26 @@ fn close_days_default() -> u32 {
     30
 }
 
+/// How a town's work is grouped into firms.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Grouping {
+    /// One firm per kind of workplace: each building type, each nature site
+    /// type, each guild trade without either.
+    #[default]
+    Kind,
+    /// One firm per guild domain: all of a domain's work in a town (its
+    /// buildings, its land) shares one firm and its cash.
+    Guild,
+}
+
 impl FirmsParams {
+    pub fn grouping(&self) -> Grouping {
+        match *self {
+            FirmsParams::Workshops { grouping, .. } => grouping,
+            FirmsParams::Treasury => Grouping::Kind,
+        }
+    }
+
     pub fn on(&self) -> bool {
         matches!(self, FirmsParams::Workshops { .. })
     }
@@ -287,7 +309,15 @@ pub fn last_year_totals(firms: &[Firm]) -> [f32; FIRM_FLOWS] {
     t
 }
 
-/// The firm a recipe's work belongs to.
+/// The firm a recipe's work belongs to, under a grouping.
+pub fn key_grouped(r: &crate::db::RecipeMeta, g: Grouping) -> FirmKey {
+    match g {
+        Grouping::Kind => key_of(r),
+        Grouping::Guild => FirmKey::Guild(r.domain),
+    }
+}
+
+/// The firm a recipe's work belongs to (one firm per kind of workplace).
 pub fn key_of(r: &crate::db::RecipeMeta) -> FirmKey {
     match (r.building, r.nature) {
         (Some(b), _) => FirmKey::Building(b),

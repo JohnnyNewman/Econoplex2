@@ -361,6 +361,11 @@ pub struct MarketParams {
     /// holds less than this per resident.
     #[serde(default = "default_mint_below")]
     pub mint_below_per_capita: f32,
+    /// A money-supply rule for the mint (auto): it also strikes coin while the
+    /// town's whole money stock (treasury, residents, firms) per resident is
+    /// below this. 0: off.
+    #[serde(default)]
+    pub mint_money_per_capita: f32,
     /// Share of a building type's slots in use above which the town wants another.
     pub build_threshold: f32,
     /// Price, as a share of base price, a town offers for a building type it lacks.
