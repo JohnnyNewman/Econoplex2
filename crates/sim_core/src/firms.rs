@@ -135,6 +135,29 @@ impl Firm {
     }
 }
 
+/// A town's firms, one per firm key, with empty accounts.
+pub fn new_firms(db: &crate::db::Db) -> Vec<Firm> {
+    db.firm_keys
+        .iter()
+        .map(|&k| Firm {
+            key: Some(k),
+            stock: vec![0.0; db.content.products.len()],
+            ..Default::default()
+        })
+        .collect()
+}
+
+/// Last year's totals over a town's firms, by flow.
+pub fn last_year_totals(firms: &[Firm]) -> [f32; FIRM_FLOWS] {
+    let mut t = [0.0; FIRM_FLOWS];
+    for f in firms {
+        for (k, v) in f.last_year.iter().enumerate() {
+            t[k] += v;
+        }
+    }
+    t
+}
+
 /// The firm a recipe's work belongs to.
 pub fn key_of(r: &crate::db::RecipeMeta) -> FirmKey {
     match (r.building, r.nature) {

@@ -28,6 +28,7 @@ use bevy_ecs::schedule::{ScheduleLabel, SingleThreadedExecutor};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
+pub mod firms;
 pub mod price_index;
 pub mod pricing;
 pub use config::{ModelParams, Scenario};

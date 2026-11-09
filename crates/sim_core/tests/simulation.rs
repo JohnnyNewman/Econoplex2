@@ -1792,3 +1792,22 @@ fn price_indices_and_money_stock_are_reported() {
         y.total_money
     );
 }
+
+#[test]
+fn every_town_has_its_workshops_with_books_ready() {
+    let s = sim(2);
+    let db = s.world.resource::<sim_core::Db>();
+    let towns = s.world.resource::<sim_core::Towns>();
+    assert!(!db.firm_keys.is_empty());
+    assert_eq!(db.recipe_firm.len(), db.recipes.len());
+    for t in &towns.0 {
+        assert_eq!(t.firms.len(), db.firm_keys.len());
+        // Off by default: firms hold nothing.
+        assert!(t.firms.iter().all(|f| f.cash == 0.0));
+    }
+    // Recipes that share a building share a firm.
+    for (r, m) in db.recipes.iter().enumerate() {
+        let k = db.firm_keys[db.recipe_firm[r]];
+        assert_eq!(k, sim_core::firms::key_of(m));
+    }
+}

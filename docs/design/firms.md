@@ -45,6 +45,8 @@ flowchart LR
   W -- income and wealth tax, rent --> T
   Mint -- new coin --> T
   T -- start-up grants --> F
+  T -- loans --> F
+  F -- repayments and interest --> T
 ```
 
 Money moves only between purses (residents, workshops, the market, the treasury,
@@ -109,6 +111,21 @@ demand-driven price, now with money behind it.
   town market at the floor price, and its building stands idle until a new owner
   puts up start-up capital.
 
+### Credit to firms (town loans)
+
+- **The lever:** the town government can lend treasury coin to a workshop:
+  - an amount, an interest rate and a term in days;
+  - the player orders a loan in the policy panel (or `loan TOWN FIRM AMOUNT RATE DAYS`);
+  - AI governors lend to firms in short trades with good expected margins, capping
+    total lending at a share of the treasury.
+- **Accounting:** a loan moves treasury coin to the firm's cash, so money is
+  conserved.
+  - The firm repays in equal daily instalments with interest out of its cash.
+  - A firm that closes with debt left books the rest as a default, a loss to the
+    treasury.
+- **Tracking:** loans are kept per firm and per town (outstanding, repaid, interest,
+  defaulted). They show in the economy panel and the CSV.
+
 ### Profit and taxes
 
 - **Profit** = sales − inputs − wages.
@@ -131,8 +148,9 @@ demand-driven price, now with money behind it.
   1. firm accounts and ledger flows, with no behaviour change (the market still pays)
   2. workshops sell to the market and pay wages from sales
   3. input purchases between workshops; caravans buy from workshops
-  4. posted wages per workshop, and apprentice places as the workshop's choice
-  5. profit tax and dividends; AI governors gain the profit-tax lever
+  4. start-up capital from owners, and closure when cash stays short (posted wages per workshop and apprentice places as its choice follow later)
+  5. treasury loans to firms (player order, AI rule, panel, CSV)
+  6. profit tax and dividends; AI governors gain the profit-tax lever
 - **Tests:**
   - money conserved across all purses
   - a workshop with no buyers stops paying, and its workers move on

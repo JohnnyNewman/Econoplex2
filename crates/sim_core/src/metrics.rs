@@ -76,6 +76,13 @@ pub struct TownStats {
     /// its ruler tribute), weighted by nominal consumption.
     #[serde(default)]
     pub empire_cpi: f32,
+    /// Workshops as firms (see `firms`): their cash at year end, and last year's
+    /// flows by `firms::FirmFlow` (sales, direct sales, inputs, wages, dividends,
+    /// profit tax, grants).
+    #[serde(default)]
+    pub firm_cash: f32,
+    #[serde(default)]
+    pub firm_flows: [f32; crate::firms::FIRM_FLOWS],
     /// Mean wealth of residents.
     pub mean_wealth: f32,
     /// Mean total trust adults place in others (positive ties only).
@@ -394,6 +401,8 @@ pub fn record(
             s.price_vol[k] = (v.mean(), v.p95());
         }
         s.cpi = indices[ti];
+        s.firm_cash = town.firms.iter().map(|f| f.cash).sum();
+        s.firm_flows = crate::firms::last_year_totals(&town.firms);
         s.purchasing_power = 100.0 / indices[ti].fisher.max(1e-6);
         s.real_exchange_rate =
             crate::price_index::real_exchange_rate(&year_prices[ti].price, &world_p, &world_q);
