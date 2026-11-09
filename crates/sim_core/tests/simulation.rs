@@ -1811,3 +1811,44 @@ fn every_town_has_its_workshops_with_books_ready() {
         assert_eq!(k, sim_core::firms::key_of(m));
     }
 }
+
+#[test]
+fn workshops_pay_from_their_sales_and_money_is_conserved() {
+    use sim_core::firms::{FirmFlow, FirmsParams};
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, mut params, scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    params.market.firms = FirmsParams::Workshops {
+        start_cash: 100.0,
+        reserve_days: 10.0,
+        payout_rate: 0.05,
+        profit_tax: 0.2,
+        close_days: 30,
+    };
+    let mut s = Simulation::new(db, params, &scenario);
+    let money = |s: &Simulation| {
+        let towns = s.world.resource::<sim_core::Towns>();
+        let minted: f64 = towns
+            .0
+            .iter()
+            .map(|t| t.ledger.total[sim_core::ledger::Flow::Minted as usize])
+            .sum();
+        sim_core::world::total_money(s.world.resource::<sim_core::AgentStore>(), towns) - minted
+    };
+    let before = money(&s);
+    run_years(&mut s, 2);
+    let after = money(&s);
+    assert!(
+        ((after - before) / before).abs() < 1e-3,
+        "money changed from {before} to {after}"
+    );
+    let towns = s.world.resource::<sim_core::Towns>();
+    let y = sim_core::firms::last_year_totals(&towns.0[0].firms);
+    // Firms sold goods and paid wages out of what they took in.
+    assert!(y[FirmFlow::Sales as usize] + y[FirmFlow::DirectSales as usize] > 0.0);
+    assert!(y[FirmFlow::Wages as usize] > 0.0);
+    // The treasury no longer pays the wages of private work.
+    let l = &towns.0[0].ledger;
+    assert!(l.last_year[sim_core::ledger::Flow::Wages as usize] < y[FirmFlow::Wages as usize]);
+    let m = s.world.resource::<sim_core::metrics::Metrics>();
+    assert!(m.latest().unwrap().population > 1000, "the towns collapsed");
+}

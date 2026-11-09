@@ -198,6 +198,18 @@
         // (blocked_workers workers each); final goods keep the per-resident target.
         // Example: pricing: Demand(cover_days: 10.0, blocked_workers: 2.0),
         pricing: StockTarget,
+        // Who buys output and pays wages. Treasury: the town market buys every
+        // output and pays its makers from the treasury. Workshops(...): each
+        // town's workplaces of one kind are a firm with cash and stock; the market
+        // buys from firms only what it wants; firms buy inputs and pay wages from
+        // their cash; cash above reserve_days of wages is paid out (payout_rate a
+        // day) to the guild members of the firm's domain, less profit_tax to the
+        // treasury. A new firm, or one short of cash for close_days, raises
+        // start_cash: a treasury grant (a fair share of half the treasury), then
+        // its owners (each up to a fifth of their wealth); with too little it
+        // closes until capital comes. Example:
+        // firms: Workshops(start_cash: 100.0, reserve_days: 10.0, payout_rate: 0.05, profit_tax: 0.2, close_days: 30),
+        firms: Treasury,
         // Price dynamics per price class (each good's class is in the content:
         // price_class, else food is Essential and the rest Commodity; Labour is the
         // jobs' wage factors). Inertia: Partial(speed) moves the log price speed x
