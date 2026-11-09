@@ -101,6 +101,13 @@
         // utility model counts that as covering the worker's own food need. Example:
         // subsistence: Keep(share: 0.2, larder_meals: 10.0),
         subsistence: None,
+        // Component: crowding. None: no rent. Rent(...): housing = base + per_plot x
+        // land plots + per_building x buildings; each adult pays rate x (residents /
+        // housing)^exponent a day to the treasury,
+        // following crowding over sticky_days. Job choice and utility migration
+        // see wealth after the coming weeks' rent. Example:
+        // crowding: Rent(base: 100.0, per_plot: 12.0, per_building: 8.0, rate: 0.3, exponent: 2.0, sticky_days: 60.0),
+        crowding: None,
     ),
 
     social: BoundedConfidence(

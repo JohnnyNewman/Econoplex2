@@ -11,6 +11,7 @@
 //! - [`matching`]: who gets which place, with apprentice places.
 //! - [`migration::Migration`]: what living in another town is worth.
 //! - [`subsistence`]: how much of their food output workers' households keep.
+//! - [`crowding`]: the rent a town's crowding costs its residents.
 //! - [`valuation`]: what working a job or resting is worth to an agent (the
 //!   utility model's wiring of expectations and utility).
 //!
@@ -19,6 +20,7 @@
 //! that use it gather them.
 
 pub mod choice;
+pub mod crowding;
 pub mod expectations;
 pub mod learning;
 pub mod matching;

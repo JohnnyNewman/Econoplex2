@@ -169,6 +169,7 @@ pub fn migrate(
                 sells: trade.map_or(0.0, |p| {
                     (towns.0[t].price[p] / mean_price[p].max(1e-6) - 1.0).clamp(-1.0, 2.0)
                 }),
+                rent: towns.0[t].rent,
                 pay: store.last_recipe[i].map_or(0.0, |r| {
                     towns.0[t].pay_rate.get(r as usize).copied().unwrap_or(0.0)
                 }),

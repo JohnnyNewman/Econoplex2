@@ -1486,3 +1486,48 @@ fn households_keep_food_and_the_books_still_balance() {
         .filter(|&i| !store.alive[i])
         .all(|i| store.larder[i].is_empty()));
 }
+
+#[test]
+fn crowded_towns_charge_more_rent_and_the_books_still_balance() {
+    use sim_core::decision::crowding::CrowdingParams;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, mut params, scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    params.decision.crowding = CrowdingParams::Rent {
+        base: 100.0,
+        per_plot: 12.0,
+        per_building: 8.0,
+        rate: 0.3,
+        exponent: 2.0,
+        sticky_days: 60.0,
+    };
+    let mut s = Simulation::new(db, params, &scenario);
+    let money = |s: &Simulation| {
+        let towns = s.world.resource::<sim_core::Towns>();
+        let minted: f64 = towns
+            .0
+            .iter()
+            .map(|t| t.ledger.total[sim_core::ledger::Flow::Minted as usize])
+            .sum();
+        sim_core::world::total_money(s.world.resource::<sim_core::AgentStore>(), towns) - minted
+    };
+    let before = money(&s);
+    run_years(&mut s, 1);
+    let after = money(&s);
+    assert!(((after - before) / before).abs() < 1e-3, "money changed");
+    let towns = s.world.resource::<sim_core::Towns>();
+    let rent: f64 = towns
+        .0
+        .iter()
+        .map(|t| t.ledger.total[sim_core::ledger::Flow::Rent as usize])
+        .sum();
+    assert!(rent > 0.0, "no rent was paid");
+    // Rent follows residents per place to live.
+    let crowding = |t: &sim_core::world::Town| {
+        t.residents.len() as f32
+            / (100.0 + 12.0 * (t.nature_sites.len() + t.free_land as usize) as f32
+                + 8.0 * t.buildings.len() as f32)
+    };
+    let mut by: Vec<(f32, f32)> = towns.0.iter().map(|t| (crowding(t), t.rent)).collect();
+    by.sort_by(|a, b| a.0.total_cmp(&b.0));
+    assert!(by.last().unwrap().1 > by[0].1, "the most crowded town is not dearer: {by:?}");
+}
