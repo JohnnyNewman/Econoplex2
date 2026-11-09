@@ -133,7 +133,9 @@ pub fn assign(
     // stays too worn for the next: a cursor per kind skips it for good instead of
     // scanning every site again (big towns have hundreds of fields).
     let nk = db.content.nature.len();
-    let mut nature: Vec<Vec<Vec<(Entity, f32, (f32, f32))>>> = towns
+    // (site, amount left, position), per town and kind.
+    type Site = (Entity, f32, (f32, f32));
+    let mut nature: Vec<Vec<Vec<Site>>> = towns
         .0
         .iter()
         .map(|town| {
