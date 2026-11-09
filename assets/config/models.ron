@@ -208,7 +208,9 @@
         // start_cash: a treasury grant (a fair share of half the treasury), then
         // its owners (each up to a fifth of their wealth); with too little it
         // closes until capital comes. Example:
-        // firms: Workshops(start_cash: 100.0, reserve_days: 10.0, payout_rate: 0.05, profit_tax: 0.2, close_days: 30),
+        // credit_days > 0: trade credit; a firm takes inputs on account up to
+        // credit_days of its recent daily sales and pays from its sales. Example:
+        // firms: Workshops(start_cash: 100.0, reserve_days: 10.0, payout_rate: 0.05, profit_tax: 0.2, close_days: 30, credit_days: 10.0),
         firms: Treasury,
         // What households buy for their own use. None: food and tools only.
         // Basket(...): each adult keeps a household stock of the listed goods

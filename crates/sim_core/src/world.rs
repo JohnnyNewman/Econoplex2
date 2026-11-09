@@ -206,6 +206,9 @@ pub struct Town {
     #[serde(default)]
     pub loan_defaults: f32,
     /// Household goods bought today, and their daily average over about a month.
+    /// Trade credit written off this year (firms that closed owing it).
+    #[serde(default)]
+    pub credit_defaults: f32,
     #[serde(default)]
     pub goods_today: Vec<f32>,
     #[serde(default)]
@@ -563,6 +566,7 @@ pub fn setup(world: &mut World, db: Db, params: ModelParams, scenario: &Scenario
             worker_days: 0.0,
             firms: crate::firms::new_firms(&db),
             loan_defaults: 0.0,
+            credit_defaults: 0.0,
             goods_today: Vec::new(),
             goods_use: Vec::new(),
             wage_factor: vec![1.0; db.recipes.len()],

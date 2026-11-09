@@ -88,6 +88,11 @@ pub struct TownStats {
     pub loans_outstanding: f32,
     #[serde(default)]
     pub loan_defaults: f32,
+    /// Trade credit: owed on account at year end, and written off this year.
+    #[serde(default)]
+    pub trade_credit: f32,
+    #[serde(default)]
+    pub credit_defaults: f32,
     /// Mean wealth of residents.
     pub mean_wealth: f32,
     /// Mean total trust adults place in others (positive ties only).
@@ -410,6 +415,8 @@ pub fn record(
         s.firm_flows = crate::firms::last_year_totals(&town.firms);
         s.loans_outstanding = crate::firms::outstanding(&town.firms);
         s.loan_defaults = town.loan_defaults;
+        s.trade_credit = town.firms.iter().map(|f| f.owed()).sum();
+        s.credit_defaults = town.credit_defaults;
         s.purchasing_power = 100.0 / indices[ti].fisher.max(1e-6);
         s.real_exchange_rate =
             crate::price_index::real_exchange_rate(&year_prices[ti].price, &world_p, &world_q);
@@ -473,6 +480,7 @@ pub fn record(
         t.price_days = 0;
         t.worker_days = 0.0;
         t.loan_defaults = 0.0;
+        t.credit_defaults = 0.0;
     }
 }
 
