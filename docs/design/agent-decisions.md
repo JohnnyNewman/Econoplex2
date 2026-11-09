@@ -491,15 +491,62 @@ flowchart LR
   MV -. changes .-> R
 ```
 
-**Next: the migration rework.** The utility migration rule becomes four weighted
-terms, with distance cost and `min_gain` as the threshold against constant hopping:
-- economic strength: pay of the agent's own trade, food per head, crowding
-- culture fit
-- social network: trust, friends and family in the town vs. home
-- safety: recent raids, deaths, military protection
+### Migration rework
 
-It also adds two behaviours:
-- **Households decide as a unit:** the move sums the members' gains.
-- **Limited knowledge:** agents only weigh towns they know, through friends or family
-  there, passing traders or having lived there before; what they know fades over time
-  and is noisier for less-known towns.
+**Utility migration has four weighted terms** (`decision.migration: Utility((...))`):
+
+V(town) = economy_weight × E + culture_weight × fit + social_weight × S + safety_weight × Z + welcome − distance_cost × road / 1000
+
+- **E, economic strength:** the utility of the agent's needs there. It uses wealth
+  plus (pay of the agent's own trade − rent) over the horizon, and food per head
+  against `food_reference`. Crowding enters here through rent, not as a separate
+  term.
+- **fit:** culture fit (above).
+- **S, social network** = 1 − exp(−(trust in people there + `kin_tie` × family
+  there)). Family means parents and children outside the household. Friends and
+  family at home make leaving costly.
+- **Z, safety:** a raid lost this year and people lost (fallen or carried off, per
+  resident) threaten a town; its soldiers (against `guard_share` per resident)
+  halve the threat at full strength.
+- Defaults: economy 1.0, culture 1.0, social 0.4, safety 0.4. Economic strength and
+  culture are the main terms. `min_gain` (0.3 per adult) and the road's cost are the
+  threshold against hopping.
+
+**Households decide as a unit (both rules).**
+- The household is the agent, an idle partner at home and their dependent children.
+- Each member values each town with its own outlook, ties, trade and needs.
+- The household sums the values, with children weighted by `child_weight` (1).
+- It moves to the best town it knows if the sum beats home by `min_gain` per adult.
+
+**Limited knowledge** (`decision.knowledge: Limited(...)`, the default for both
+rules). Agents only weigh towns they know at least `min_known`. Knowledge is the
+largest of:
+- their social network there
+- trade between home and the town (hearsay, at most `trade_known` = 0.4)
+- the memory of having lived there, which fades over `memory_days`
+
+Estimates of pay and food are off by up to `noise` × (1 − knowledge), one draw per
+household and town. `All` restores full knowledge.
+
+Optional, not built yet (only if the numbers need them): move propensity falling
+with age and owned workshops or guild rank, and admission caps from the immigration
+lever and free housing.
+
+**Results (20 years, 4 seeds):**
+
+| setup | pop | starve % | gini | moves |
+| --- | --- | --- | --- | --- |
+| default (Weighted), agent decides alone, all towns known (#33) | 1989 | 0 | 0.60 | 196 |
+| default (Weighted), household + knowledge | 1984 | 0 | 0.65 | 60 |
+| Utility + matching + subsistence + four-term migration | 2008 | 0 | 0.34 | 65 |
+| same, crowding Rent(rate 0.3) | 2054 | 0 | 0.37 | 720 |
+
+In the utility setup, town sizes at year 20 (seed 42) are 517 / 503 / 512 / 412:
+no town absorbs everyone.
+
+Moving is rare once households decide together. Both partners must gain on
+average, and home holds their friends, family and culture. Lowering `min_gain`
+barely changes this, because most households simply see no better town.
+
+Rent at rate 0.3 is too strong against typical wealth under utility migration and
+causes heavy hopping, so crowding stays off.

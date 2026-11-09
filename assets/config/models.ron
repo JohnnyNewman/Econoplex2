@@ -89,12 +89,16 @@
         //     max: 0.3, step: 0.05, trainee_output: 0.5, retention: 0.8, payoff_days: 0.5)),
         matching: FirstCome,
         // Component: what living in another town is worth. Weighted: the
-        // `migration` section's weighted sum. Utility: utility of needs there
-        // (pay of the agent's trade over the horizon, food, safety), plus
-        // culture_weight x culture fit + social_weight x friends, minus
-        // distance_cost per 1000 road units; move when it beats home by min_gain.
-        // Example:
-        // migration: Utility(culture_weight: 1.0, social_weight: 0.5, distance_cost: 0.1, min_gain: 0.5, food_reference: 3.0),
+        // `migration` section's weighted sum. Utility: four weighted terms,
+        //   economy_weight x economic strength (utility of needs with the pay of the
+        //     agent's own trade minus rent over the horizon, and food per head)
+        //   + culture_weight x culture fit + social_weight x social network (trust
+        //     and family there) + safety_weight x safety (raids, losses, soldiers),
+        // minus distance_cost per 1000 road units. Households sum their members'
+        // values and move when the best known town beats home by min_gain per
+        // member. Example:
+        // migration: Utility((economy_weight: 1.0, culture_weight: 1.0, social_weight: 0.4,
+        //     safety_weight: 0.4, distance_cost: 0.1, min_gain: 0.3, food_reference: 3.0)),
         migration: Weighted,
         // Component: subsistence. None: all output goes to the town's stores.
         // Keep(share, larder_meals): food workers' households keep `share` of each
@@ -112,6 +116,13 @@
         // Town culture: each town's culture vector follows its residents' average
         // outlook over memory_days (a scenario may seed it per town).
         culture: (memory_days: 365.0),
+        // Component: what agents know of other towns. All: every town, exactly.
+        // Limited: towns known through trust and family there (the social network),
+        // trade with home (up to trade_known; trade_scale: goods per day for ~2/3 of
+        // that), or having
+        // lived there (fading over memory_days). Towns known less than min_known are
+        // not weighed; estimates of pay and food are off by up to noise x (1 - known).
+        knowledge: Limited(min_known: 0.1, trade_scale: 2.0, trade_known: 0.4, memory_days: 3650.0, noise: 0.5),
     ),
 
     social: BoundedConfidence(
@@ -245,6 +256,14 @@
         culture_weight: 1.0,
         danger_weight: 0.3,
         distance_cost: 0.2,
+        // Family living in a town counts as this much trust (social network).
+        kin_tie: 0.5,
+        // Soldiers per resident at which a town counts as fully guarded (safety).
+        guard_share: 0.05,
+        // Households decide together: members' gains are summed, a dependent
+        // child's counting child_weight (adults 1); the move must beat home by
+        // min_gain per adult.
+        child_weight: 1.0,
     ),
 
     // Personal ties. Coworkers come to trust each other, chance meetings bring like

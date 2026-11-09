@@ -167,12 +167,15 @@ fn sword_towns_raise_squads_and_raid() {
 
 #[test]
 fn households_migrate_and_carry_their_skills() {
-    let mut s = sim(7);
-    let dpy = s.world.resource::<sim_core::SimClock>().days_per_year;
+    // Households decide together and know only some towns, so moves are rare: use
+    // full-size towns and let people weigh moving more often.
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    scenario.seed = 7;
+    params.migration.consider = 0.5;
+    let mut s = Simulation::new(db, params, &scenario);
     let before: Vec<u16> = s.world.resource::<sim_core::AgentStore>().town.clone();
-    for _ in 0..5 * dpy {
-        s.step();
-    }
+    run_years(&mut s, 3);
     let m = s.world.resource::<sim_core::metrics::Metrics>();
     let arrived: u32 = m
         .years
@@ -186,7 +189,7 @@ fn households_migrate_and_carry_their_skills() {
         .flat_map(|y| &y.towns)
         .map(|t| t.moves.left)
         .sum();
-    assert!(arrived > 0, "nobody migrated in 5 years");
+    assert!(arrived > 0, "nobody migrated in 3 years");
     assert_eq!(arrived, left, "every arrival leaves somewhere");
     // Movers are founders who now live in another town; their skills came with them.
     let store = s.world.resource::<sim_core::AgentStore>();
@@ -1434,13 +1437,7 @@ fn utility_migration_moves_households_and_respects_closed_borders() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
     scenario.seed = 3;
-    params.decision.migration = MigrationValueParams::Utility {
-        culture_weight: 1.0,
-        social_weight: 0.5,
-        distance_cost: 0.1,
-        min_gain: 0.5,
-        food_reference: 3.0,
-    };
+    params.decision.migration = MigrationValueParams::Utility(Default::default());
     let mut s = Simulation::new(db, params, &scenario);
     s.order("immigration Greenvale closed").unwrap();
     run_years(&mut s, 4);
@@ -1602,4 +1599,50 @@ fn town_cultures_come_from_their_people_and_draw_those_who_fit() {
     let strong = mean_fit(&run(4.0, false));
     let none = mean_fit(&run(0.0, false));
     assert!(strong > none, "fit {strong} with culture vs {none} without");
+}
+
+#[test]
+fn households_only_move_to_towns_they_know() {
+    use sim_core::decision::knowledge::KnowledgeParams;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let run = |knowledge: KnowledgeParams| {
+        let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+        scenario.seed = 5;
+        params.migration.consider = 0.5;
+        params.migration.min_gain = 0.1;
+        params.decision.knowledge = knowledge;
+        let mut s = Simulation::new(db, params, &scenario);
+        run_years(&mut s, 2);
+        let m = s.world.resource::<sim_core::metrics::Metrics>();
+        let moved: u32 = m
+            .years
+            .iter()
+            .flat_map(|y| &y.towns)
+            .map(|t| t.moves.arrived)
+            .sum();
+        let store = s.world.resource::<sim_core::AgentStore>();
+        let remembered = (0..store.len())
+            .filter(|&i| !store.lived_in[i].is_empty())
+            .count();
+        (moved, remembered)
+    };
+    // Knowing every town, people move, and movers remember their old home.
+    let (all, remembered) = run(KnowledgeParams::All);
+    assert!(all > 0, "nobody moved knowing every town");
+    assert!(remembered > 0, "no mover remembers an old home");
+    // Founders have no ties abroad, and here trade tells them nothing: only the few
+    // who come to know another town (through captives' families and friends taken
+    // in raids) can move there.
+    let (limited, _) = run(KnowledgeParams::Limited {
+        min_known: 0.1,
+        trade_scale: 2.0,
+        trade_known: 0.0,
+        memory_days: 3650.0,
+        noise: 0.5,
+    });
+    eprintln!("moved knowing every town: {all}, knowing only through ties: {limited}");
+    assert!(
+        4 * limited < all,
+        "knowledge did not hold people back: {limited} vs {all}"
+    );
 }

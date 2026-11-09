@@ -181,6 +181,9 @@ pub struct DecisionParams {
     /// How towns' culture vectors follow their residents.
     #[serde(default)]
     pub culture: crate::decision::culture::CultureParams,
+    /// Component: which towns agents know about, and how well.
+    #[serde(default)]
+    pub knowledge: crate::decision::knowledge::KnowledgeParams,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -472,6 +475,29 @@ pub struct MigrationParams {
     pub danger_weight: f32,
     /// Utility lost per 1000 map units of road.
     pub distance_cost: f32,
+    /// Trust one family member (parent or child) living in a town counts as, for
+    /// the social network there.
+    #[serde(default = "kin_tie_default")]
+    pub kin_tie: f32,
+    /// Soldiers per resident at which a town counts as fully guarded (for safety).
+    #[serde(default = "guard_share_default")]
+    pub guard_share: f32,
+    /// How much a dependent child's gain counts in its household's decision to
+    /// move (adults count 1).
+    #[serde(default = "child_weight_default")]
+    pub child_weight: f32,
+}
+
+fn child_weight_default() -> f32 {
+    1.0
+}
+
+fn kin_tie_default() -> f32 {
+    0.5
+}
+
+fn guard_share_default() -> f32 {
+    0.05
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

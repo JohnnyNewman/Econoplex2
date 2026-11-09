@@ -352,6 +352,7 @@ pub fn restore(
     map.all(&mut store.entity);
     // Saves from before larders existed.
     store.larder.resize(store.len(), Vec::new());
+    store.lived_in.resize(store.len(), Vec::new());
     for i in 0..store.len() {
         store.equipped[i] = map.opt(store.equipped[i]);
         store.weapon[i] = map.opt(store.weapon[i]);

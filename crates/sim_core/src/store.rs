@@ -81,6 +81,10 @@ pub struct AgentStore {
     /// `decision::subsistence`.
     #[serde(default)]
     pub larder: Vec<Vec<(u32, f32)>>,
+    /// Towns the agent used to live in, and how well it still remembers them
+    /// (see `decision::knowledge`).
+    #[serde(default)]
+    pub lived_in: Vec<Vec<(u16, f32)>>,
 }
 
 /// Everything needed to create an agent.
@@ -147,6 +151,7 @@ impl AgentStore {
             .push([crate::trust::Tie::NONE; crate::trust::TIES]);
         self.pay_expect.push(Vec::new());
         self.larder.push(Vec::new());
+        self.lived_in.push(Vec::new());
         idx
     }
 
