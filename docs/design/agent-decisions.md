@@ -1,6 +1,7 @@
 # Agent decisions: how they work today, and a more principled replacement
 
-Status: **proposal, for discussion**. No code changes until we agree on the direction.
+Status: **agreed direction** (2026-11-09). Nils's decisions are under "Decisions"
+at the end; implementation follows the migration plan in (d).
 
 ## Summary
 
@@ -322,18 +323,30 @@ green.
 
 ---
 
-## Decisions for Nils
+## Decisions (2026-11-09)
 
-1. **Horizon and foresight.** Should agents be myopic (a few weeks, cheap, more
-   mistakes), or plan over years (skills, migration, savings; costlier and less
-   emergent)? I suggest weeks, plus a discounted skill-investment term.
-2. **How much equality of opportunity in hiring.** Matching by expected output gives
-   the best-suited worker the job, which is efficient but makes beginners struggle to
-   get in. Alternatives are a share of places reserved for apprentices, or ranking by
-   trust and guild ties (more "who you know"). Which fits the game you want?
-3. **Do wages move?**
-   - Today wages are a fixed share of value added, and only prices move.
-   - With matching, queues could push each job's pay up or down, a real labour
-     market. That is more realistic, but it adds a second price system the player has
-     to read.
-   - Alternatively, queues only shift expectations and wages stay a policy lever.
+1. **Horizon: weeks.** Agents plan a few weeks ahead (`H` ≈ 30 days), plus the
+   discounted skill-investment term for learning.
+2. **Pay follows market forces.**
+   - Each job's pay is no longer a fixed share of value added. It moves with the
+     balance of applicants and places.
+   - A job with a queue pays less. A job with unfilled places pays more, up to its
+     value added.
+   - Hiring goes by the market too: scarce places go to the applicants with the
+     highest expected output, with no reserved places. Beginners compete by
+     accepting lower-paid or easier work and learning there.
+   - Concretely: a per-town, per-recipe **wage factor** multiplies the town's base
+     wage share. Every day it moves by a small step against the excess demand for
+     that job (applicants − places) / places, and is clamped to a range in
+     `models.ron`.
+     - The player's and governors' `wages` lever sets the **base** share; the
+       market factor rides on top.
+     - Agents' expected pay learns from the realised pay, so the loop is
+       queue → wage → expectation → choice.
+3. **Hiring fairness:** follows from 2 (market-based, by expected output). If
+   beginners turn out to be shut out of whole trades, a reserved apprentice share is
+   the fallback.
+
+The migration plan gains one step, before matching (5): **flexible pay** (wage
+factor per town and job, with the tests "a queued job's pay falls, an understaffed
+job's pay rises", "the ledger still balances", and "pay stays within its range").
