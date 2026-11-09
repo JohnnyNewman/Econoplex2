@@ -213,6 +213,9 @@ pub struct Town {
     /// yesterday (for `market.mint_money_per_capita`).
     #[serde(default)]
     pub money_per_capita: f32,
+    /// What this town owes each other town for food imported on credit.
+    #[serde(default)]
+    pub debts: Vec<f32>,
     #[serde(default)]
     pub goods_today: Vec<f32>,
     #[serde(default)]
@@ -576,6 +579,7 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
             loan_defaults: 0.0,
             credit_defaults: 0.0,
             money_per_capita: 0.0,
+            debts: Vec::new(),
             goods_today: Vec::new(),
             goods_use: Vec::new(),
             wage_factor: vec![1.0; db.recipes.len()],

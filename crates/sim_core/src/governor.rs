@@ -207,6 +207,26 @@ pub fn govern(
             }
         }
 
+        // A hungry town short of money buys food from its neighbours on credit;
+        // once fed, it stops.
+        if hungry && p.food_imports == crate::policy::Imports::Off {
+            orders.push((
+                Order::Imports {
+                    town: tid,
+                    imports: crate::policy::Imports::Auto,
+                },
+                "started food imports from neighbours: food is short".into(),
+            ));
+        } else if fed && p.food_imports == crate::policy::Imports::Auto {
+            orders.push((
+                Order::Imports {
+                    town: tid,
+                    imports: crate::policy::Imports::Off,
+                },
+                "stopped food imports: the town is fed".into(),
+            ));
+        }
+
         // A hungry town with land to spare also has a field cleared: subsidies don't
         // help when the fields are the limit.
         if hungry && town.free_land > 0 {

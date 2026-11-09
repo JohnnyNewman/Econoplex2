@@ -93,6 +93,11 @@ pub struct TownStats {
     pub trade_credit: f32,
     #[serde(default)]
     pub credit_defaults: f32,
+    /// Food import debts: what this town owes others, and what others owe it.
+    #[serde(default)]
+    pub debt_owed: f32,
+    #[serde(default)]
+    pub debt_lent: f32,
     /// Mean wealth of residents.
     pub mean_wealth: f32,
     /// Mean total trust adults place in others (positive ties only).
@@ -417,6 +422,8 @@ pub fn record(
         s.loan_defaults = town.loan_defaults;
         s.trade_credit = town.firms.iter().map(|f| f.owed()).sum();
         s.credit_defaults = town.credit_defaults;
+        s.debt_owed = town.debts.iter().sum();
+        s.debt_lent = towns.0.iter().filter_map(|o| o.debts.get(ti)).sum();
         s.purchasing_power = 100.0 / indices[ti].fisher.max(1e-6);
         s.real_exchange_rate =
             crate::price_index::real_exchange_rate(&year_prices[ti].price, &world_p, &world_q);

@@ -294,6 +294,35 @@ pub enum Pricing {
     },
 }
 
+/// `market.imports` in models.ron: emergency food imports.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ImportParams {
+    /// Food units bought from one neighbour per good per trade round, at most.
+    pub amount: f32,
+    /// With imports on auto: buy while food per resident is below this share of
+    /// `food_target_per_capita`.
+    pub hungry_below: f32,
+    /// A seller only sells stock above this share of its own food target.
+    pub seller_keeps: f32,
+    /// Yearly interest on import debts.
+    pub debt_rate: f32,
+    /// Share of the treasury above its reserve paid toward debts each day.
+    pub repay_share: f32,
+}
+
+impl Default for ImportParams {
+    fn default() -> Self {
+        ImportParams {
+            amount: 1000.0,
+            hungry_below: 0.5,
+            seller_keeps: 0.5,
+            debt_rate: 0.05,
+            repay_share: 0.05,
+        }
+    }
+}
+
 /// `market.scarcity_cap` in models.ron: how far a scarce good's price may rise.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub enum ScarcityCap {
@@ -366,6 +395,9 @@ pub struct MarketParams {
     /// below this. 0: off.
     #[serde(default)]
     pub mint_money_per_capita: f32,
+    /// Emergency food imports (see `policy::Imports`).
+    #[serde(default)]
+    pub imports: ImportParams,
     /// Share of a building type's slots in use above which the town wants another.
     pub build_threshold: f32,
     /// Price, as a share of base price, a town offers for a building type it lacks.

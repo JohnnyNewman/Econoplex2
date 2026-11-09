@@ -39,7 +39,18 @@ pub struct School {
     pub seats: u32,
 }
 
-/// Who decides when the squad marches.
+/// Emergency food imports (see `market.imports`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum Imports {
+    /// No emergency imports (caravans still trade as usual).
+    #[default]
+    Off,
+    /// Buy food from neighbours every trade round.
+    On,
+    /// Buy food from neighbours while the town is short of it.
+    Auto,
+}
+
 /// Whether the town strikes coin (see `Policy::mint_wanted`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum Minting {
@@ -52,6 +63,7 @@ pub enum Minting {
     Off,
 }
 
+/// Who decides when the squad marches.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum War {
     /// The squad raids whenever it sees a good chance (the AI towns).
@@ -109,6 +121,9 @@ pub struct Policy {
     /// rise until it is delivered; delivered goods go to public use.
     #[serde(default)]
     pub procurement: Vec<(u32, f32)>,
+    /// Emergency food imports from neighbouring towns.
+    #[serde(default)]
+    pub food_imports: Imports,
 }
 
 impl Policy {
@@ -195,6 +210,11 @@ pub enum Order {
         product: u32,
         amount: f32,
     },
+    /// Emergency food imports: buy food from neighbours, on credit if broke.
+    Imports {
+        town: u16,
+        imports: Imports,
+    },
     /// Lend `amount` of treasury coin to one of the town's firms (index into
     /// `Db::firm_keys`), at a yearly `rate`, repaid over `days` (needs
     /// `market.firms: Workshops`).
@@ -232,7 +252,8 @@ impl Order {
             | Order::Wages { town, .. }
             | Order::Spending { town, .. }
             | Order::Procure { town, .. }
-            | Order::Loan { town, .. } => town,
+            | Order::Loan { town, .. }
+            | Order::Imports { town, .. } => town,
         }
     }
 
@@ -252,6 +273,7 @@ impl Order {
     /// wages <town> <share>|auto             e.g. wages Greenvale 0.6
     /// spending <town> <rate>|auto           e.g. spending Greenvale 4
     /// procure <town> <product> <amount>     e.g. procure Greenvale cloth 50 (0 cancels)
+    /// imports <town> on|off|auto            emergency food imports from neighbours
     /// loan <town> <firm> <amount> <rate> <days>  e.g. loan Ironhold smithy 100 0.1 240
     ///   (a firm is named by its building, nature site or guild domain)
     /// ```
@@ -360,6 +382,14 @@ impl Order {
                     })
                     .ok_or_else(|| format!("no good `{p}` to order"))?,
                 amount: number(amount)?.max(0.0),
+            }),
+            ["imports", t, m @ ("on" | "off" | "auto")] => Ok(Order::Imports {
+                town: town(t)?,
+                imports: match *m {
+                    "on" => Imports::On,
+                    "auto" => Imports::Auto,
+                    _ => Imports::Off,
+                },
             }),
             ["loan", t, f, amount, rate, days] => Ok(Order::Loan {
                 town: town(t)?,
@@ -499,6 +529,7 @@ pub fn apply_orders(
                     }
                 }
             }
+            Order::Imports { imports, .. } => p.food_imports = imports,
             Order::Raid { town: t, target } => {
                 p.raid_order = (target != t).then_some(target);
             }
