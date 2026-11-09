@@ -78,16 +78,32 @@ pub fn spawn_skill_labels(mut commands: Commands, db: Res<Db>) {
 }
 
 /// Keep labels next to their nodes (outside the circle) at constant screen size.
+#[allow(clippy::too_many_arguments)]
 pub fn update_skill_labels(
     db: Res<Db>,
     overlay: Res<Overlay>,
+    towns: Res<Towns>,
+    store: Res<AgentStore>,
+    selection: Res<crate::Selection>,
     camera: Single<&Transform, (With<Camera2d>, Without<SkillLabel>)>,
-    mut labels: Query<(&SkillLabel, &mut Transform, &mut Visibility)>,
+    mut labels: Query<(&SkillLabel, &mut Transform, &mut Visibility, &mut TextColor)>,
 ) {
     let center = camera.translation.truncate();
     let zoom = camera.scale.x;
     let pos = product_space_layout(&db, center, 220.0 * zoom);
-    for (l, mut tf, mut vis) in &mut labels {
+    let lit = if overlay.product_space {
+        lit_skills(&db, &towns, &shown_profile(&db, &store, selection.0))
+    } else {
+        Vec::new()
+    };
+    for (l, mut tf, mut vis, mut color) in &mut labels {
+        if let Some(&on) = lit.get(l.0) {
+            color.0 = if on {
+                Color::srgb(0.95, 0.95, 0.95)
+            } else {
+                Color::srgba(0.6, 0.6, 0.6, 0.35)
+            };
+        }
         *vis = if overlay.product_space {
             Visibility::Inherited
         } else {
@@ -275,6 +291,7 @@ pub fn draw_world(
             &mut gizmos,
             &db,
             &store,
+            &towns,
             selection.0,
             camera.translation.truncate(),
             camera.scale.x,
@@ -317,6 +334,7 @@ pub fn draw_world(
             &mut gizmos,
             &db,
             &store,
+            &towns,
             selection.0,
             camera.translation.truncate(),
             camera.scale.x,
@@ -330,25 +348,50 @@ fn draw_product_space(
     gizmos: &mut Gizmos,
     db: &Db,
     store: &AgentStore,
+    towns: &Towns,
     selected: Option<u32>,
     center: Vec2,
     zoom: f32,
 ) {
     let ns = db.content.skills.len();
     let pos = product_space_layout(db, center, 220.0 * zoom);
+    let profile = shown_profile(db, store, selected);
+    let lit = lit_skills(db, towns, &profile);
     for a in 0..ns {
         for b in (a + 1)..ns {
             let sim = db.embedding.similarity(a, b);
             if sim > 0.2 {
+                // Links to skills nobody can practise yet fade with them.
+                let fade = if lit[a] && lit[b] { 1.0 } else { 0.25 };
                 gizmos.line_2d(
                     pos[a],
                     pos[b],
-                    Color::srgba(0.8, 0.8, 0.9, (sim - 0.15) * 0.8),
+                    Color::srgba(0.8, 0.8, 0.9, (sim - 0.15) * 0.8 * fade),
                 );
             }
         }
     }
-    let profile: Vec<f32> = match selected {
+    let nd = db.domain_dirs.len();
+    for s in 0..ns {
+        let d = db.content.domain(&db.content.skills[s].domain).unwrap() as usize;
+        let level = (profile[s] / 1.5).clamp(0.0, 1.0);
+        if lit[s] {
+            gizmos.circle_2d(
+                pos[s],
+                (6.0 + 14.0 * level) * zoom,
+                domain_color(d, nd, level),
+            );
+        } else {
+            // Dimmed: nobody makes anything with it, nobody knows it yet.
+            gizmos.circle_2d(pos[s], 5.0 * zoom, Color::srgba(0.5, 0.5, 0.5, 0.3));
+        }
+    }
+}
+
+/// Skill levels shown: the selected agent's, or the population mean.
+pub fn shown_profile(db: &Db, store: &AgentStore, selected: Option<u32>) -> Vec<f32> {
+    let ns = db.content.skills.len();
+    match selected {
         Some(i) if store.alive[i as usize] => db.skill_profile(&store.cap[i as usize]),
         _ => {
             let mut sum = vec![0.0; ns];
@@ -363,17 +406,29 @@ fn draw_product_space(
             }
             sum.iter().map(|v| v / n.max(1.0)).collect()
         }
-    };
-    let nd = db.domain_dirs.len();
-    for s in 0..ns {
-        let d = db.content.domain(&db.content.skills[s].domain).unwrap() as usize;
-        let level = (profile[s] / 1.5).clamp(0.0, 1.0);
-        gizmos.circle_2d(
-            pos[s],
-            (6.0 + 14.0 * level) * zoom,
-            domain_color(d, nd, level),
-        );
     }
+}
+
+/// Skills lit in the product space: some town made something with them last
+/// year, or the shown agent (or population) has some skill in them. The rest
+/// are dimmed, so the part of the space the economy has reached stands out.
+pub fn lit_skills(db: &Db, towns: &Towns, profile: &[f32]) -> Vec<bool> {
+    let mut lit: Vec<bool> = profile.iter().map(|&v| v > 0.2).collect();
+    for m in &db.recipes {
+        let made = m.outputs.iter().any(|&(p, _)| {
+            towns.0.iter().any(|t| {
+                t.produced_last_year
+                    .get(p as usize)
+                    .is_some_and(|&q| q > 0.0)
+            })
+        });
+        if made {
+            if let Some(l) = lit.get_mut(m.skill_idx as usize) {
+                *l = true;
+            }
+        }
+    }
+    lit
 }
 
 pub fn camera_controls(

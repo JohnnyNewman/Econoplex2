@@ -2203,3 +2203,30 @@ fn history_logs_events_and_monthly_samples_and_saves_keep_them() {
     let b = Simulation::from_save(sim_core::save::from_str(&text).unwrap(), content).unwrap();
     assert_eq!(b.world.resource::<History>().events.len(), n);
 }
+
+#[test]
+fn a_compact_binary_save_loads_identically_and_is_much_smaller() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let paths = AssetPaths::from_root(&root);
+    let mut a = full(5);
+    run_years(&mut a, 1);
+    let bytes = sim_core::save::to_bytes(&a.world).unwrap();
+    let text = sim_core::save::to_string(&a.world).unwrap();
+    assert!(bytes.starts_with(sim_core::save::BINARY_MAGIC));
+    assert!(
+        bytes.len() * 3 < text.len(),
+        "{} vs {}",
+        bytes.len(),
+        text.len()
+    );
+    let content = sim_data::Content::load_dir(&paths.content).unwrap();
+    let mut b =
+        Simulation::from_save(sim_core::save::from_bytes(&bytes).unwrap(), content).unwrap();
+    assert_eq!(a.state_hash(), b.state_hash());
+    for _ in 0..60 {
+        a.step();
+        b.step();
+    }
+    assert_eq!(a.state_hash(), b.state_hash());
+    assert!(sim_core::save::from_bytes(text.as_bytes()).is_err());
+}

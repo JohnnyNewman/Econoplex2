@@ -16,7 +16,7 @@ Requires Rust 1.85 or newer.
 # The game (Bevy 2D view)
 cargo run --release -p game
 
-# Start the game from a save (F5 quicksaves to saves/quicksave.ron, F9 loads it)
+# Start the game from a save (F5 quicksaves to saves/quicksave.bin, F9 loads it)
 cargo run --release -p game -- --load game.ron
 
 # Headless: 30 years, metrics per year
@@ -65,7 +65,7 @@ The first build compiles Bevy and takes a while.
 | Esc | Deselect |
 | E | Economy panel and trade flows on the map (on at start) |
 | Tab | Next town in the economy panel |
-| F5 / F9 | Quicksave to `saves/quicksave.ron` / load it again |
+| F5 / F9 | Quicksave to `saves/quicksave.bin` (compact binary) / load it again |
 
 Agents are colored by their best skill domain; brightness shows how good they are.
 Children are grey and follow a working parent as apprentices.

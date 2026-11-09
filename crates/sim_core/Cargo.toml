@@ -13,3 +13,5 @@ ron.workspace = true
 rand.workspace = true
 rand_chacha.workspace = true
 rayon.workspace = true
+rmp-serde.workspace = true
+flate2.workspace = true
