@@ -247,6 +247,18 @@ impl Choice<'_> {
     /// The utility model: each option's expected utility of the agent's needs over
     /// the coming weeks (see `decision::valuation`).
     fn utility_scores(&self, store: &AgentStore, i: usize, jobs: &[u32]) -> (f32, Vec<f32>) {
+        self.utility_scores_paid(store, i, jobs, 1.0)
+    }
+
+    /// Utility scores when the agent would get `pay_factor` of a worker's pay (an
+    /// apprentice place pays less).
+    fn utility_scores_paid(
+        &self,
+        store: &AgentStore,
+        i: usize,
+        jobs: &[u32],
+        pay_factor: f32,
+    ) -> (f32, Vec<f32>) {
         use crate::decision::{expectations, utility, valuation};
         let (db, params) = (self.db, self.params);
         let d = &params.decision;
@@ -269,11 +281,12 @@ impl Choice<'_> {
                 let prof = dot(&store.cap[i], &m.skill) + dot(&store.equip_vec[i], &m.skill);
                 let eff = (prof + physique_bonus(&store.phys[i], m, params.physique.weight)) * sf;
                 let success = self.models.success.probability(eff, m.difficulty);
-                let pay = expectations::expected_pay(
-                    &store.pay_expect[i],
-                    r,
-                    self.towns.0[t].pay_rate[r as usize],
-                );
+                let pay = pay_factor
+                    * expectations::expected_pay(
+                        &store.pay_expect[i],
+                        r,
+                        self.towns.0[t].pay_rate[r as usize],
+                    );
                 let fatigue = params.needs.fatigue_per_work_day * (0.5 + m.phys_total);
                 // A day of practice raises the agent's skill along the recipe by about
                 // rate x aptitude x room left x (success, failures teaching less).
@@ -363,6 +376,7 @@ pub fn decide(
 ) {
     let (decision, models) = models;
     decisions.jobs.clear();
+    decisions.apprentices.clear();
     // Median resident wealth per town, for the standing need.
     let median_wealth: Vec<f32> = towns
         .0
@@ -539,53 +553,223 @@ pub fn decide(
             .collect()
     };
 
-    // Phase 2, in agent order: pick among the jobs still open, each agent with a
-    // random stream of its own, and take the job.
-    let mut pool: Vec<u32> = Vec::new();
-    for (&i, (rest, job_scores)) in idle.iter().zip(&scores) {
-        let t = store.town[i] as usize;
-        let mut rng = seed.agent_rng(clock.tick, streams::DECIDE, i);
-        let choice = ctx.pick(
-            store,
-            i,
-            &open_jobs[t],
-            |r| open(&slots_left, &capacity, t, r),
-            *rest,
-            |r| job_scores[slot_of[t][r as usize] as usize],
-            &mut pool,
-            &mut rng,
-        );
-        match choice {
-            None => {
-                store.activity[i] = Activity::Resting;
-                let c = towns.0[t].pos;
-                store.target[i] = (
-                    c.0 + rng.random_range(-45.0..45.0f32),
-                    c.1 + rng.random_range(-45.0..45.0f32),
-                );
+    // How many wanted each job today (for the wage factors).
+    let mut demand = vec![vec![0.0f32; db.recipes.len()]; towns.0.len()];
+    let matching = &params.decision.matching;
+    if let crate::decision::matching::MatchingParams::DeferredAcceptance {
+        apprentice_wage,
+        share: share_params,
+    } = matching
+    {
+        use crate::decision::matching::{deferred_acceptance, Opt, Places};
+        let n_towns = towns.0.len();
+        // Places per job at the start of the day, split into regular and apprentice.
+        let places: Vec<Vec<Places>> = (0..n_towns)
+            .map(|t| {
+                open_jobs[t]
+                    .iter()
+                    .map(|&r| {
+                        let total = places_start[t][r as usize].floor().max(0.0) as u32;
+                        let share = towns.0[t]
+                            .apprentice_share
+                            .get(r as usize)
+                            .copied()
+                            .unwrap_or(0.0);
+                        let app = (total as f32 * share).floor() as u32;
+                        Places {
+                            regular: total - app,
+                            apprentice: app,
+                        }
+                    })
+                    .collect()
+            })
+            .collect();
+        // Every idle agent ranks its options (regular and apprentice places above
+        // resting), in parallel, with its own random stream.
+        let utility_model = params.decision.model == crate::config::DecisionModel::Utility;
+        let lists: Vec<Vec<Opt>> = {
+            let store = &*store;
+            let (open_jobs, places) = (&open_jobs, &places);
+            idle.par_iter()
+                .zip(&scores)
+                .map(|(&i, (rest, job_scores))| {
+                    let t = store.town[i] as usize;
+                    let jobs = &open_jobs[t];
+                    let app_scores: Vec<f32> = if utility_model {
+                        ctx.utility_scores_paid(store, i, jobs, *apprentice_wage).1
+                    } else {
+                        // The feature model has no pay term: an apprentice place is
+                        // just a little less attractive than a regular one.
+                        job_scores
+                            .iter()
+                            .map(|v| v - 0.5 * params.decision.temperature)
+                            .collect()
+                    };
+                    let mut options = Vec::with_capacity(jobs.len() * 2);
+                    for (k, &v) in job_scores.iter().enumerate() {
+                        options.push((2 * k as u32, v));
+                        if places[t][k].apprentice > 0 {
+                            options.push((2 * k as u32 + 1, app_scores[k]));
+                        }
+                    }
+                    let mut rng = seed.agent_rng(clock.tick, streams::DECIDE, i);
+                    let rng: &mut dyn rand::RngCore = &mut rng;
+                    decision
+                        .choice
+                        .rank(*rest, &options, &store.mind[i], rng)
+                        .into_iter()
+                        .map(|id| Opt {
+                            job: id / 2,
+                            apprentice: id % 2 == 1,
+                        })
+                        .collect()
+                })
+                .collect()
+        };
+        // Stable matching per town: regular places go to the best hands, apprentice
+        // places to those with the most to learn.
+        let mut matched: Vec<Option<Opt>> = vec![None; idle.len()];
+        for t in 0..n_towns {
+            let members: Vec<usize> = (0..idle.len())
+                .filter(|&k| store.town[idle[k]] as usize == t)
+                .collect();
+            if members.is_empty() {
+                continue;
             }
-            Some(r) => {
-                capacity[t][r as usize] -= 1.0;
-                let building = db.recipes[r as usize].building;
-                if let Some(b) = building {
-                    slots_left[t][b as usize] -= 1.0;
+            let town_lists: Vec<Vec<Opt>> = members.iter().map(|&k| lists[k].clone()).collect();
+            for l in &town_lists {
+                if let Some(first) = l.first() {
+                    demand[t][open_jobs[t][first.job as usize] as usize] += 1.0;
                 }
-                if capacity[t][r as usize] < 1.0
-                    || building.is_some_and(|b| slots_left[t][b as usize] < 1.0)
-                {
-                    open_jobs[t].retain(|&q| open(&slots_left, &capacity, t, q));
-                }
-                log.chosen[r as usize] += 1;
-                decisions.jobs.push((i as u32, r));
             }
+            let store_ref = &*store;
+            let jobs = &open_jobs[t];
+            let rank = |a: usize, opt: Opt| {
+                let i = idle[members[a]];
+                let m = &db.recipes[jobs[opt.job as usize] as usize];
+                let prof =
+                    dot(&store_ref.cap[i], &m.skill) + dot(&store_ref.equip_vec[i], &m.skill);
+                if opt.apprentice {
+                    store_ref.aptitude[i] * (1.0 - prof / mastery).max(0.0)
+                } else {
+                    prof - m.difficulty
+                }
+            };
+            let result = deferred_acceptance(&town_lists, &places[t], rank);
+            for (a, m) in result.into_iter().enumerate() {
+                matched[members[a]] = m;
+            }
+        }
+        // Building slots are shared by the jobs inside: keep the first matches.
+        let mut used: Vec<Vec<f32>> = slots_left.iter().map(|v| vec![0.0; v.len()]).collect();
+        for (k, m) in matched.iter_mut().enumerate() {
+            let Some(opt) = *m else { continue };
+            let t = store.town[idle[k]] as usize;
+            let r = open_jobs[t][opt.job as usize];
+            if let Some(b) = db.recipes[r as usize].building {
+                if used[t][b as usize] + 1.0 > slots_left[t][b as usize] {
+                    *m = None;
+                    continue;
+                }
+                used[t][b as usize] += 1.0;
+            }
+        }
+        // Take the jobs; whoever has no match rests.
+        for (k, m) in matched.into_iter().enumerate() {
+            let i = idle[k];
+            let t = store.town[i] as usize;
+            match m {
+                Some(opt) => {
+                    let r = open_jobs[t][opt.job as usize];
+                    capacity[t][r as usize] -= 1.0;
+                    if let Some(b) = db.recipes[r as usize].building {
+                        slots_left[t][b as usize] -= 1.0;
+                    }
+                    log.chosen[r as usize] += 1;
+                    decisions.jobs.push((i as u32, r));
+                    if opt.apprentice {
+                        decisions.apprentices.push(i as u32);
+                    }
+                }
+                None => {
+                    let mut rng = seed.agent_rng(clock.tick, streams::DECIDE + 100, i);
+                    store.activity[i] = Activity::Resting;
+                    let c = towns.0[t].pos;
+                    store.target[i] = (
+                        c.0 + rng.random_range(-45.0..45.0f32),
+                        c.1 + rng.random_range(-45.0..45.0f32),
+                    );
+                }
+            }
+        }
+        decisions.apprentices.sort_unstable();
+
+        // Each month every workplace reconsiders its share of apprentice places.
+        if clock.tick.is_multiple_of(30) {
+            for town in towns.0.iter_mut() {
+                town.apprentice_share
+                    .resize(db.recipes.len(), share_params.min);
+                let base = town.policy.wage_share.unwrap_or(params.work.wage_share);
+                for r in 0..db.recipes.len() {
+                    let factor = town.wage_factor.get(r).copied().unwrap_or(1.0);
+                    let gain = share_params.gain(
+                        (base * factor).min(1.0),
+                        *apprentice_wage,
+                        (factor - 1.0).max(0.0),
+                    );
+                    town.apprentice_share[r] = share_params.adjust(town.apprentice_share[r], gain);
+                }
+            }
+        }
+    } else {
+        // Phase 2, in agent order: pick among the jobs still open, each agent with a
+        // random stream of its own, and take the job.
+        let mut pool: Vec<u32> = Vec::new();
+        for (&i, (rest, job_scores)) in idle.iter().zip(&scores) {
+            let t = store.town[i] as usize;
+            let mut rng = seed.agent_rng(clock.tick, streams::DECIDE, i);
+            let choice = ctx.pick(
+                store,
+                i,
+                &open_jobs[t],
+                |r| open(&slots_left, &capacity, t, r),
+                *rest,
+                |r| job_scores[slot_of[t][r as usize] as usize],
+                &mut pool,
+                &mut rng,
+            );
+            match choice {
+                None => {
+                    store.activity[i] = Activity::Resting;
+                    let c = towns.0[t].pos;
+                    store.target[i] = (
+                        c.0 + rng.random_range(-45.0..45.0f32),
+                        c.1 + rng.random_range(-45.0..45.0f32),
+                    );
+                }
+                Some(r) => {
+                    capacity[t][r as usize] -= 1.0;
+                    let building = db.recipes[r as usize].building;
+                    if let Some(b) = building {
+                        slots_left[t][b as usize] -= 1.0;
+                    }
+                    if capacity[t][r as usize] < 1.0
+                        || building.is_some_and(|b| slots_left[t][b as usize] < 1.0)
+                    {
+                        open_jobs[t].retain(|&q| open(&slots_left, &capacity, t, q));
+                    }
+                    log.chosen[r as usize] += 1;
+                    decisions.jobs.push((i as u32, r));
+                }
+            }
+        }
+        for &(i, r) in &decisions.jobs {
+            demand[store.town[i as usize] as usize][r as usize] += 1.0;
         }
     }
 
     // Each job's pay moves with how many took it against its places.
-    let mut takers = vec![vec![0.0f32; db.recipes.len()]; towns.0.len()];
-    for &(i, r) in &decisions.jobs {
-        takers[store.town[i as usize] as usize][r as usize] += 1.0;
-    }
+    let takers = demand;
     for (t, town) in towns.0.iter_mut().enumerate() {
         town.wage_factor.resize(db.recipes.len(), 1.0);
         for r in 0..db.recipes.len() {

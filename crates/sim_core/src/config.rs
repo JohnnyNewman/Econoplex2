@@ -166,6 +166,9 @@ pub struct DecisionParams {
     /// Component: the value of the skill a job teaches (used by the utility model).
     #[serde(default)]
     pub learning: crate::decision::learning::LearningValueParams,
+    /// Component: who gets which place, and apprentice places.
+    #[serde(default)]
+    pub matching: crate::decision::matching::MatchingParams,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]

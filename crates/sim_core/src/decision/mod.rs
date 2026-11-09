@@ -8,6 +8,7 @@
 //! - [`choice::ChoiceRule`]: how the values of the options become a decision.
 //! - [`wages::WageAdjustment`]: how a job's pay moves with workers and places.
 //! - [`learning::LearningValue`]: what the skill a job teaches is worth later.
+//! - [`matching`]: who gets which place, with apprentice places.
 //! - [`valuation`]: what working a job or resting is worth to an agent (the
 //!   utility model's wiring of expectations and utility).
 //!
@@ -18,6 +19,7 @@
 pub mod choice;
 pub mod expectations;
 pub mod learning;
+pub mod matching;
 pub mod utility;
 pub mod valuation;
 pub mod wages;

@@ -1343,3 +1343,76 @@ fn valuing_skills_draws_the_young_into_work_they_are_still_learning() {
         "learning work {with:.3} with vs {without:.3} without"
     );
 }
+
+#[test]
+fn matching_gives_beginners_apprentice_places_and_keeps_the_books() {
+    use sim_core::decision::matching::{ApprenticeShareParams, MatchingParams};
+    use sim_core::ledger::{sum_group, Group};
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    scenario.seed = 7;
+    params.decision.model = sim_core::config::DecisionModel::Utility;
+    params.decision.choice = sim_core::decision::choice::ChoiceParams::Logit {
+        base: Some(0.05),
+        risk_weight: 0.0,
+        diligence_weight: 0.0,
+    };
+    params.decision.matching = MatchingParams::DeferredAcceptance {
+        apprentice_wage: 0.4,
+        share: ApprenticeShareParams::default(),
+    };
+    let mut s = Simulation::new(db, params, &scenario);
+    run_years(&mut s, 1);
+    let before: Vec<f32> = s
+        .world
+        .resource::<sim_core::Towns>()
+        .0
+        .iter()
+        .map(|t| t.treasury)
+        .collect();
+    let (mut apprentices, mut beginners) = (0usize, 0usize);
+    for _ in 0..120 {
+        s.step();
+        let d = s.world.resource::<sim_core::world::Decisions>();
+        let store = s.world.resource::<sim_core::AgentStore>();
+        let db = s.world.resource::<sim_core::Db>();
+        apprentices += d.apprentices.len();
+        // Beginners: apprentices whose skill is below the job's difficulty.
+        for &(i, r) in &d.jobs {
+            if d.apprentices.binary_search(&i).is_ok() {
+                let m = &db.recipes[r as usize];
+                let prof: f32 = store.cap[i as usize]
+                    .iter()
+                    .zip(&m.skill)
+                    .map(|(a, b)| a * b)
+                    .sum();
+                beginners += (prof < m.difficulty) as usize;
+            }
+        }
+    }
+    assert!(apprentices > 0, "no apprentice places were taken");
+    assert!(beginners > 0, "no beginner got an apprentice place");
+    let towns = s.world.resource::<sim_core::Towns>();
+    let p = ApprenticeShareParams::default();
+    for town in &towns.0 {
+        assert!(town
+            .apprentice_share
+            .iter()
+            .all(|&x| (p.min..=p.max).contains(&x)));
+    }
+    assert!(towns
+        .0
+        .iter()
+        .any(|t| t.apprentice_share.iter().any(|&x| x > 0.0)));
+    for (t, town) in towns.0.iter().enumerate() {
+        let l = &town.ledger.last_year;
+        let net = sum_group(l, Group::Taxed)
+            + sum_group(l, Group::Spent)
+            + sum_group(l, Group::Minted)
+            + sum_group(l, Group::ExternalIn)
+            - sum_group(l, Group::Issued)
+            - sum_group(l, Group::ExternalOut);
+        let change = town.treasury - before[t];
+        assert!((net - change).abs() < 1e-3 * sum_group(l, Group::Issued).max(1.0));
+    }
+}
