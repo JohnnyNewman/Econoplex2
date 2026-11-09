@@ -596,7 +596,7 @@ But it fails on three counts:
    - The learning-value term doesn't help measurably once untried jobs show a
      posted pay.
 2. **Fewer kinds of goods are made** (18.9 vs 23.1).
-3. **Utility scoring is about 3–4× slower per tick.**
+3. ~~Utility scoring is about 3–4× slower per tick.~~ Correction: that figure came from runs sharing the CPU. Single 40-year runs measure 5.2 vs 3.8 ms per tick (1.4×), within the 2× target.
 
 Not adopted from this comparison:
 - **Rent** (C) causes heavy hopping even at rate 0.1 (2358 moves).
@@ -613,4 +613,37 @@ Not adopted from this comparison:
   sample of jobs.
 - **Then re-run this comparison.** Switch when swords and diversity are within one
   seed-sd of A and speed is within 2×.
+
+## Price module (2026-11-09)
+
+Prices are now a swappable module (`sim_core::pricing`, `market.*` in models.ron).
+The defaults keep the legacy rule, so the default state hash is unchanged.
+
+- **Targets** (`market.pricing`):
+  - `StockTarget` (legacy): a fixed stock per resident.
+  - `Demand(cover_days, blocked_workers)`: goods used as inputs aim for `cover_days`
+    of their trades' daily use, plus what profitable trades held up only by their
+    shortage would use. Final goods keep the per-resident target; food gets both.
+- **Price classes:** each good has a class in the content (`price_class`; otherwise
+  food is essential and the rest commodities), and labour is the jobs' wage factors.
+  `market.price_classes` sets each class's dynamics:
+  - an inertia model (`Partial`, `Sticky` asymmetric, or `Smoothed` over a memory)
+  - a daily cap
+  - a floor and a ceiling
+
+  `market.price_overrides` sets them per good. None: the legacy rule.
+- **Metrics:** per town and year, the price volatility per class (mean and 95th
+  percentile of the absolute daily log change). It is in the CSV.
+
+**What it showed.** Neither demand-driven targets nor price classes restore the
+utility model's sword chain (20 years, 4 seeds: 2–11 swords), and both cut Features'
+swords (931 → 350–613). The block is monetary, not prices:
+- Three of four town treasuries sit near zero (4–26, against 10–15 thousand in
+  wages a year).
+- Fair rationing then pays a fraction of every claim. In Ironhold wood-choppers get
+  0.5 a day against a posted 4.2, and smelters 7.3 against 56.6.
+- Towns earn mainly from selling food and tools, but bread is in a large glut at
+  its floor price.
+
+The circular flow of money through the town market is the next thing to fix.
 

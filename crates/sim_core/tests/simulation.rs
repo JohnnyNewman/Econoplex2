@@ -1720,3 +1720,47 @@ fn scarce_goods_loosen_their_price_caps_and_successes_are_tracked() {
     assert!(top > max, "no scarce good's cap loosened: {top}");
     assert!(top <= 50.0 + 1e-3, "a cap passed its ceiling: {top}");
 }
+
+#[test]
+fn price_classes_bound_daily_moves_and_volatility_is_reported() {
+    use sim_core::pricing::*;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, mut params, scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    let class = |speed: f32, max_daily: f32| ClassParams {
+        inertia: Inertia::Partial { speed },
+        max_daily,
+        floor: 0.05,
+        ceiling: 20.0,
+    };
+    params.market.pricing = sim_core::config::Pricing::Demand {
+        cover_days: 10.0,
+        blocked_workers: 2.0,
+    };
+    params.market.price_classes = Some(PriceClasses {
+        essential: class(0.5, 0.01),
+        commodity: class(0.08, 0.08),
+        labour: ClassParams {
+            inertia: Inertia::Sticky {
+                up: 0.02,
+                down: 0.005,
+            },
+            ..class(0.0, 0.01)
+        },
+    });
+    let mut s = Simulation::new(db, params, &scenario);
+    run_years(&mut s, 2);
+    let m = s.world.resource::<sim_core::metrics::Metrics>();
+    let y = m.latest().unwrap();
+    for t in &y.towns {
+        let (ess, ess_p95) = t.price_vol[0];
+        // Essentials never move more than 1 % a day (the p95 is a histogram bin edge).
+        assert!(
+            ess <= 0.01 + 1e-4,
+            "{}: essentials moved {ess} a day",
+            t.name
+        );
+        assert!(ess_p95 <= 0.012, "{}: essentials' p95 {ess_p95}", t.name);
+        // Commodities are allowed to move faster, and do.
+        assert!(t.price_vol[1].0 > 0.0);
+    }
+}

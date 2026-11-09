@@ -50,6 +50,10 @@ pub struct TownStats {
     pub minted: f32,
     /// Latest technology era of anything the town made this year.
     pub era: u8,
+    /// Price volatility this year per price class (essential, commodity, labour):
+    /// mean and 95th percentile of the absolute daily change of the log price.
+    #[serde(default)]
+    pub price_vol: [(f32, f32); 3],
     /// Mean wealth of residents.
     pub mean_wealth: f32,
     /// Mean total trust adults place in others (positive ties only).
@@ -306,6 +310,9 @@ pub fn record(
         s.ruler = town.ruler;
         s.starving =
             town.starving as f32 / (s.population.max(1) * clock.days_per_year as usize) as f32;
+        for (k, v) in town.price_vol.iter().enumerate().take(3) {
+            s.price_vol[k] = (v.mean(), v.p95());
+        }
         s.mean_wealth = town
             .residents
             .iter()
@@ -342,6 +349,7 @@ pub fn record(
         t.war = Default::default();
         t.moves = Default::default();
         t.starving = 0;
+        t.price_vol.clear();
     }
 }
 

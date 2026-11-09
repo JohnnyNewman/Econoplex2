@@ -90,6 +90,30 @@ pub struct ProductDef {
     /// buildings break bootstrap loops such as planks needing a workshop.
     #[serde(default)]
     pub starter: bool,
+    /// How the good's price moves (see `sim_core::pricing`); none: food is
+    /// essential, everything else a commodity.
+    #[serde(default)]
+    pub price_class: Option<PriceClass>,
+}
+
+impl ProductDef {
+    pub fn price_class(&self) -> PriceClass {
+        self.price_class
+            .unwrap_or(if self.category == Category::Food {
+                PriceClass::Essential
+            } else {
+                PriceClass::Commodity
+            })
+    }
+}
+
+/// How a good's price moves: essentials (food, fuel, clothing) smoothly and
+/// within a tight daily cap, commodities faster. Labour is the class of wages.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, Deserialize)]
+pub enum PriceClass {
+    Essential,
+    Commodity,
+    Labour,
 }
 
 /// One production step. A product such as a level-3 longsword is the end of a chain of steps.

@@ -193,8 +193,10 @@ pub fn assign(
                 }
             }
             let mut input_quality: f32 = 1.0;
+            town.input_today.resize(town.stock.len(), 0.0);
             for &(p, q) in &m.inputs {
                 town.stock[p as usize] -= q * batches as f32;
+                town.input_today[p as usize] += q * batches as f32;
                 input_quality = input_quality.min(town.quality[p as usize]);
             }
             pending.push(PendingTask {

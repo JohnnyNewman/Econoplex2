@@ -45,6 +45,8 @@ pub struct Db {
     pub foods: Vec<(u32, f32)>,
     pub base_price: Vec<f32>,
     pub is_food: Vec<bool>,
+    /// Products some recipe takes as an input.
+    pub is_input: Vec<bool>,
     /// Land products: the nature kind each one opens.
     pub opens: Vec<Option<u32>>,
     /// Face value of coin products (0 for everything else).
@@ -91,7 +93,7 @@ impl Db {
         }
 
         let food_potential = food_potential(&content);
-        let recipes = content
+        let recipes: Vec<RecipeMeta> = content
             .recipes
             .iter()
             .map(|r| {
@@ -153,6 +155,12 @@ impl Db {
             .collect();
 
         let coin = content.products.iter().map(|p| p.coin).collect();
+        let mut is_input: Vec<bool> = vec![false; content.products.len()];
+        for m in &recipes {
+            for &(p, _) in &m.inputs {
+                is_input[p as usize] = true;
+            }
+        }
         Db {
             cap_dim,
             coin,
@@ -165,6 +173,7 @@ impl Db {
             foods,
             base_price,
             is_food,
+            is_input,
             opens,
         }
     }

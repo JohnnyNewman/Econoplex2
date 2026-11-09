@@ -192,6 +192,28 @@
         // day (up to max_factor x base); otherwise it falls back. Example:
         // scarcity_cap: Loosen(rate: 0.01, max_factor: 50.0),
         scarcity_cap: Fixed,
+        // StockTarget: every good aims for a fixed stock per resident. Demand(...):
+        // goods used as inputs aim for cover_days of their trades' daily use plus
+        // what profitable trades held up only by their shortage would use
+        // (blocked_workers workers each); final goods keep the per-resident target.
+        // Example: pricing: Demand(cover_days: 10.0, blocked_workers: 2.0),
+        pricing: StockTarget,
+        // Price dynamics per price class (each good's class is in the content:
+        // price_class, else food is Essential and the rest Commodity; Labour is the
+        // jobs' wage factors). Inertia: Partial(speed) moves the log price speed x
+        // pressure a day; Sticky(up, down) moves at different speeds up and down;
+        // Smoothed(speed, memory_days) acts on the pressure averaged over
+        // memory_days. max_daily caps the daily change (share of the price); floor
+        // and ceiling bound it (x base price). None: the legacy rule (price_adjust,
+        // min/max_price_factor). Example:
+        // price_classes: Some((
+        //     essential: (inertia: Smoothed(speed: 0.05, memory_days: 10.0), max_daily: 0.02, floor: 0.3, ceiling: 4.0),
+        //     commodity: (inertia: Partial(speed: 0.08), max_daily: 0.08, floor: 0.05, ceiling: 20.0),
+        //     labour: (inertia: Sticky(up: 0.02, down: 0.005), max_daily: 0.01, floor: 0.5, ceiling: 2.0),
+        // )),
+        // price_overrides: [("iron", (inertia: Partial(speed: 0.04), max_daily: 0.04, floor: 0.2, ceiling: 20.0))],
+        price_classes: None,
+        price_overrides: [],
         trade_interval: 10,
         trade_amount: 6.0,
         // Per 1000 units of road: the straight road between neighbors is about 900.
