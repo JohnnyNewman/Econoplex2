@@ -70,6 +70,8 @@ pub fn sense(
                 let f = food as usize;
                 if town.stock[f] >= 1.0 + reserve[store.town[i] as usize][f] {
                     town.stock[f] -= 1.0;
+                    town.consumed_year.resize(town.stock.len(), 0.0);
+                    town.consumed_year[f] += 1.0;
                     st[HUNGER] = (st[HUNGER] - value).max(0.0);
                     let pay = town.price[f].min(store.wealth[i].max(0.0));
                     store.wealth[i] -= pay;

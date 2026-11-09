@@ -1764,3 +1764,31 @@ fn price_classes_bound_daily_moves_and_volatility_is_reported() {
         assert!(t.price_vol[1].0 > 0.0);
     }
 }
+
+#[test]
+fn price_indices_and_money_stock_are_reported() {
+    let mut s = sim(3);
+    run_years(&mut s, 3);
+    let m = s.world.resource::<sim_core::metrics::Metrics>();
+    // The first year is the base.
+    for t in &m.years[0].towns {
+        assert_eq!(t.cpi.laspeyres, 100.0);
+        assert_eq!(t.cpi.fisher, 100.0);
+    }
+    let y = m.latest().unwrap();
+    let mut money = 0.0f64;
+    for t in &y.towns {
+        assert!(t.cpi.fisher > 0.0 && t.cpi.fisher.is_finite(), "{}", t.name);
+        assert!((t.purchasing_power * t.cpi.fisher - 100.0).abs() < 1e-2);
+        assert!(t.real_exchange_rate > 0.0 && t.real_exchange_rate.is_finite());
+        assert!(t.velocity >= 0.0 && t.minted_share >= 0.0);
+        money += t.money_stock as f64;
+    }
+    // Every coin is in some town's treasury or a resident's purse (soldiers away
+    // on a raid and captives aside), so the towns' money adds up to the total.
+    assert!(
+        (money - y.total_money).abs() < 0.05 * y.total_money,
+        "{money} vs {}",
+        y.total_money
+    );
+}

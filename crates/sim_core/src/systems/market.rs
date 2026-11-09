@@ -212,6 +212,15 @@ pub fn settle(
         }
     }
 
+    // Today's prices, for the year's average (price indices).
+    for town in towns.0.iter_mut() {
+        town.price_sum.resize(np, 0.0);
+        for p in 0..np {
+            town.price_sum[p] += town.price[p] as f64;
+        }
+        town.price_days += 1;
+    }
+
     // Caravans: move bulk goods from cheap to expensive towns when the margin covers transport.
     if mp.trade_interval > 0 && clock.tick.is_multiple_of(mp.trade_interval as u64) {
         let n = towns.0.len();

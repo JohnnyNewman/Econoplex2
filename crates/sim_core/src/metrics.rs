@@ -54,6 +54,28 @@ pub struct TownStats {
     /// mean and 95th percentile of the absolute daily change of the log price.
     #[serde(default)]
     pub price_vol: [(f32, f32); 3],
+    /// Consumer price indices and sub-indices (see `price_index`).
+    #[serde(default)]
+    pub cpi: crate::price_index::TownIndex,
+    /// 100 / chained CPI.
+    #[serde(default)]
+    pub purchasing_power: f32,
+    /// The world basket's cost here over its cost at world prices (above 1: dearer).
+    #[serde(default)]
+    pub real_exchange_rate: f32,
+    /// Treasury plus residents' wealth.
+    #[serde(default)]
+    pub money_stock: f32,
+    /// Residents' market spending this year / money stock.
+    #[serde(default)]
+    pub velocity: f32,
+    /// Coin struck this year / money stock.
+    #[serde(default)]
+    pub minted_share: f32,
+    /// Chained CPI of the empire this town belongs to (itself and the towns paying
+    /// its ruler tribute), weighted by nominal consumption.
+    #[serde(default)]
+    pub empire_cpi: f32,
     /// Mean wealth of residents.
     pub mean_wealth: f32,
     /// Mean total trust adults place in others (positive ties only).
@@ -75,6 +97,9 @@ pub struct YearStats {
 #[derive(Resource, Default, serde::Serialize, serde::Deserialize)]
 pub struct Metrics {
     pub years: Vec<YearStats>,
+    /// Price-index state per town (see `price_index`).
+    #[serde(default)]
+    pub index: Vec<crate::price_index::IndexState>,
     last_attempts: u64,
     last_successes: u64,
 }
@@ -228,6 +253,61 @@ pub fn record(
         .map(|s| db.content.product(s))
         .collect();
 
+    // Price indices: the year's average prices and baskets per town.
+    let np = db.content.products.len();
+    let essential: Vec<bool> = db
+        .content
+        .products
+        .iter()
+        .map(|p| p.price_class() == crate::pricing::PriceClass::Essential)
+        .collect();
+    let year_prices: Vec<crate::price_index::YearPrices> = towns
+        .0
+        .iter()
+        .map(|t| {
+            let days = t.price_days.max(1) as f64;
+            let mut price: Vec<f32> = (0..np)
+                .map(|p| t.price_sum.get(p).map_or(t.price[p], |s| (s / days) as f32))
+                .collect();
+            if t.price_days == 0 {
+                price = t.price.clone();
+            }
+            let pad = |v: &Vec<f32>| {
+                let mut v = v.clone();
+                v.resize(np, 0.0);
+                v
+            };
+            crate::price_index::YearPrices {
+                price,
+                consumed: pad(&t.consumed_year),
+                inputs: pad(&t.inputs_year),
+                wage: t.ledger.last_year[crate::ledger::Flow::Wages as usize]
+                    / t.worker_days.max(1e-6),
+            }
+        })
+        .collect();
+    metrics.index.resize(towns.0.len(), Default::default());
+    let indices: Vec<crate::price_index::TownIndex> = year_prices
+        .iter()
+        .zip(metrics.index.iter_mut())
+        .map(|(y, st)| st.update(y, &essential))
+        .collect();
+    let (world_p, world_q) = crate::price_index::world_prices(&year_prices);
+    // Empires: each town's ruler, or itself.
+    let root = |t: usize| towns.0[t].ruler.map_or(t, |r| r as usize);
+    let mut empire = vec![(0.0f64, 0.0f64); towns.0.len()];
+    for (t, y) in year_prices.iter().enumerate() {
+        let w: f64 = y
+            .price
+            .iter()
+            .zip(&y.consumed)
+            .map(|(p, q)| *p as f64 * *q as f64)
+            .sum();
+        let e = &mut empire[root(t)];
+        e.0 += w * indices[t].fisher as f64;
+        e.1 += w;
+    }
+
     let mut ys = YearStats {
         year: clock.year(),
         ..Default::default()
@@ -313,6 +393,27 @@ pub fn record(
         for (k, v) in town.price_vol.iter().enumerate().take(3) {
             s.price_vol[k] = (v.mean(), v.p95());
         }
+        s.cpi = indices[ti];
+        s.purchasing_power = 100.0 / indices[ti].fisher.max(1e-6);
+        s.real_exchange_rate =
+            crate::price_index::real_exchange_rate(&year_prices[ti].price, &world_p, &world_q);
+        let money = town.treasury
+            + town
+                .residents
+                .iter()
+                .map(|&i| store.wealth[i as usize])
+                .sum::<f32>();
+        s.money_stock = money;
+        // With no money (residents in debt for tools), velocity is undefined: 0.
+        let per_money = |x: f32| if money > 1.0 { x / money } else { 0.0 };
+        s.velocity = per_money(town.ledger.last_year_group(crate::ledger::Group::Spent));
+        s.minted_share = per_money(town.ledger.last_year_group(crate::ledger::Group::Minted));
+        let e = empire[root(ti)];
+        s.empire_cpi = if e.1 > 0.0 {
+            (e.0 / e.1) as f32
+        } else {
+            indices[ti].fisher
+        };
         s.mean_wealth = town
             .residents
             .iter()
@@ -350,6 +451,11 @@ pub fn record(
         t.moves = Default::default();
         t.starving = 0;
         t.price_vol.clear();
+        t.consumed_year.clear();
+        t.inputs_year.clear();
+        t.price_sum.clear();
+        t.price_days = 0;
+        t.worker_days = 0.0;
     }
 }
 
