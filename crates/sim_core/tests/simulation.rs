@@ -2077,3 +2077,61 @@ fn guild_firms_pool_a_domain_and_the_mint_answers_a_money_shortage() {
         .iter()
         .all(|t| t.money_per_capita > 0.0 && t.mint_wanted(mp)));
 }
+
+#[test]
+fn a_hungry_broke_town_imports_food_on_credit_and_recovers() {
+    // Brassmoor with two fields, no bread and an empty treasury.
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let run = |imports: bool| {
+        let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+        scenario.seed = 4;
+        params.governor.enabled = false;
+        let b = &mut scenario.towns[3];
+        for n in &mut b.nature {
+            if n.0 == "field" {
+                n.1 = 2;
+            }
+        }
+        b.stock.retain(|s| s.0 != "bread");
+        let mut s = Simulation::new(db, params, &scenario);
+        s.world.resource_mut::<sim_core::Towns>().0[3].treasury = 0.0;
+        if imports {
+            s.order("imports Brassmoor auto").unwrap();
+        }
+        let money = |s: &Simulation| {
+            let towns = s.world.resource::<sim_core::Towns>();
+            let minted: f64 = towns
+                .0
+                .iter()
+                .map(|t| t.ledger.total[sim_core::ledger::Flow::Minted as usize])
+                .sum();
+            sim_core::world::total_money(s.world.resource::<sim_core::AgentStore>(), towns) - minted
+        };
+        let before = money(&s);
+        let dpy = s.world.resource::<sim_core::SimClock>().days_per_year;
+        let mut owed_once = false;
+        for _ in 0..2 * dpy {
+            s.step();
+            owed_once |= s.world.resource::<sim_core::Towns>().0[3]
+                .debts
+                .iter()
+                .any(|&d| d > 0.0);
+        }
+        let after = money(&s);
+        assert!(((after - before) / before).abs() < 1e-3, "money changed");
+        let m = s.world.resource::<sim_core::metrics::Metrics>();
+        let starving: f32 = m.years.iter().map(|y| y.towns[3].starving).sum();
+        let pop = m.latest().unwrap().towns[3].population;
+        (starving, pop, owed_once)
+    };
+    let (starving_without, pop_without, _) = run(false);
+    let (starving_with, pop_with, owed) = run(true);
+    eprintln!("starving {starving_without} -> {starving_with}, pop {pop_without} -> {pop_with}");
+    assert!(owed, "the town never bought food on credit");
+    assert!(
+        starving_with < starving_without,
+        "imports didn't help: {starving_with} vs {starving_without}"
+    );
+    // Fed from its neighbours, the town keeps most of its people.
+    assert!(pop_with > pop_without + 50, "{pop_with} vs {pop_without}");
+}

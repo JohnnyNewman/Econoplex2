@@ -263,6 +263,14 @@
         // Money-supply rule: the mint (auto) also strikes coin while the town's
         // whole money stock per resident is below this (0: off).
         mint_money_per_capita: 0.0,
+        // Emergency food imports (order `imports <town> on|off|auto`; AI governors
+        // start them when hungry): each trade round an importing town buys up to
+        // `amount` (in effect: what it needs) of each food from each neighbour holding more than seller_keeps
+        // x its own food target, at the seller's price plus transport; what its
+        // treasury can't pay it owes, at debt_rate a year, repaying repay_share of
+        // its treasury above reserve each day. Auto imports while food per
+        // resident is below hungry_below x food_target_per_capita.
+        imports: (amount: 1000.0, hungry_below: 0.5, seller_keeps: 0.5, debt_rate: 0.05, repay_share: 0.05),
         // Construction: a town pays for a new building when the ones it has are this full.
         build_threshold: 0.75,
         new_building_appeal: 0.3,

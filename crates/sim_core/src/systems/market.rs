@@ -323,6 +323,8 @@ pub fn settle(
         }
     }
 
+    food_imports(&mut towns, &db, &params, &terrain, clock.tick);
+
     for mut n in sites.iter_mut() {
         n.amount = (n.amount + n.regrowth).min(n.capacity);
     }
@@ -529,6 +531,105 @@ pub fn firm_finances(
                     store.wealth[i as usize] += each;
                 }
                 f.book(crate::firms::FirmFlow::Dividends, out - tax);
+            }
+        }
+    }
+}
+
+/// Emergency food imports. Every trade round, a town importing (policy on, or
+/// auto while short of food) buys food from neighbours with stock to spare, at
+/// the seller's price plus transport, paying from its treasury and owing the
+/// rest. Each day a town with debts pays a share of its treasury above its
+/// reserve toward them; debts grow with interest.
+fn food_imports(towns: &mut Towns, db: &Db, params: &Params, terrain: &Terrain, tick: u64) {
+    use crate::policy::Imports;
+    let mp = &params.market;
+    let ip = &mp.imports;
+    let n = towns.0.len();
+    let dpy = params.life.days_per_year as f32;
+    for t in towns.0.iter_mut() {
+        t.debts.resize(n, 0.0);
+    }
+    // Interest and repayment.
+    for b in 0..n {
+        if towns.0[b].debts.iter().all(|&d| d <= 0.0) {
+            continue;
+        }
+        for d in towns.0[b].debts.iter_mut() {
+            *d *= 1.0 + ip.debt_rate.max(0.0) / dpy;
+        }
+        let reserve = mp.treasury_reserve_per_capita * towns.0[b].residents.len() as f32;
+        let owed: f32 = towns.0[b].debts.iter().sum();
+        let pay =
+            ((towns.0[b].treasury - reserve).max(0.0) * ip.repay_share.clamp(0.0, 1.0)).min(owed);
+        if pay <= 0.0 {
+            continue;
+        }
+        for a in 0..n {
+            let share = pay * towns.0[b].debts[a] / owed;
+            if share <= 0.0 {
+                continue;
+            }
+            towns.0[b].debts[a] -= share;
+            towns.0[b].treasury -= share;
+            towns.0[b].ledger.add(Flow::DebtRepaid, share);
+            towns.0[a].treasury += share;
+            towns.0[a].ledger.add(Flow::DebtReceived, share);
+        }
+    }
+    if mp.trade_interval == 0 || !tick.is_multiple_of(mp.trade_interval as u64) {
+        return;
+    }
+    for b in 0..n {
+        let pop = towns.0[b].residents.len().max(1) as f32;
+        let importing = match towns.0[b].policy.food_imports {
+            Imports::Off => false,
+            Imports::On => true,
+            Imports::Auto => {
+                towns.0[b].food_stock(db) / pop < ip.hungry_below * mp.food_target_per_capita
+            }
+        };
+        if !importing {
+            continue;
+        }
+        // Food still wanted, in food value.
+        let mut need = (mp.food_target_per_capita * pop - towns.0[b].food_stock(db)).max(0.0);
+        for &(f, value) in &db.foods {
+            let f = f as usize;
+            for a in 0..n {
+                if a == b || need <= 0.0 {
+                    continue;
+                }
+                let road = terrain.road(a, b);
+                if !road.is_finite() {
+                    continue;
+                }
+                let keep =
+                    ip.seller_keeps * mp.food_target_per_capita * towns.0[a].residents.len() as f32;
+                let spare = towns.0[a].stock[f] - keep / value.max(1e-3);
+                let amount = ip
+                    .amount
+                    .min(spare * 0.5)
+                    .min(need / value.max(1e-3))
+                    .floor();
+                if amount < 1.0 {
+                    continue;
+                }
+                let price = towns.0[a].price[f] * (1.0 + mp.transport_cost * road / 1000.0);
+                let cost = amount * price;
+                let paid = cost.min(towns.0[b].treasury.max(0.0));
+                let q = towns.0[a].quality[f];
+                towns.0[a].stock[f] -= amount;
+                towns.0[a].treasury += paid;
+                towns.0[a].ledger.add(Flow::TradeSales, paid);
+                towns.0[a].ledger.export(b, cost);
+                let tb = &mut towns.0[b];
+                tb.quality[f] = (tb.stock[f] * tb.quality[f] + amount * q) / (tb.stock[f] + amount);
+                tb.stock[f] += amount;
+                tb.treasury -= paid;
+                tb.ledger.add(Flow::TradePurchases, paid);
+                tb.debts[a] += cost - paid;
+                need -= amount * value;
             }
         }
     }
