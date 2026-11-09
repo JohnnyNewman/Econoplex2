@@ -202,6 +202,9 @@ pub struct Town {
     /// active with `market.firms: Workshops`).
     #[serde(default)]
     pub firms: Vec<crate::firms::Firm>,
+    /// Loan principal written off this year (firms that closed owing it).
+    #[serde(default)]
+    pub loan_defaults: f32,
     /// Market factor on the base wage share, per recipe (see `decision::wages`).
     #[serde(default)]
     pub wage_factor: Vec<f32>,
@@ -554,6 +557,7 @@ pub fn setup(world: &mut World, db: Db, params: ModelParams, scenario: &Scenario
             price_days: 0,
             worker_days: 0.0,
             firms: crate::firms::new_firms(&db),
+            loan_defaults: 0.0,
             wage_factor: vec![1.0; db.recipes.len()],
             apprentice_share: vec![0.0; db.recipes.len()],
             rent: 0.0,

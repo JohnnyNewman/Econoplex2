@@ -421,7 +421,42 @@ pub fn firm_finances(
             }
             f.closed = f.cash < 0.2 * start_cash;
         }
+        // Loans: each day's instalment, interest first, out of the firm's cash. A
+        // closed firm's overdue loans default: the rest is written off.
+        let dpy = params.life.days_per_year as f32;
+        for f in town.firms.iter_mut() {
+            let closed = f.closed;
+            let mut loans = std::mem::take(&mut f.loans);
+            for l in loans.iter_mut() {
+                let (interest, principal) = l.due(dpy);
+                let paid_i = interest.min(f.cash.max(0.0));
+                let paid_p = principal.min((f.cash - paid_i).max(0.0));
+                f.cash -= paid_i + paid_p;
+                f.book(crate::firms::FirmFlow::Interest, paid_i);
+                f.book(crate::firms::FirmFlow::Repayments, paid_p);
+                town.treasury += paid_i + paid_p;
+                town.ledger.add(Flow::LoanInterest, paid_i);
+                town.ledger.add(Flow::LoanRepayments, paid_p);
+                l.left -= paid_p;
+                l.days_left = l.days_left.saturating_sub(1);
+                if l.days_left == 0 && l.left > 1e-3 {
+                    if closed {
+                        town.loan_defaults += l.left;
+                        l.left = 0.0;
+                    } else {
+                        // Overdue: the rest falls due over another month.
+                        l.days_left = 30;
+                    }
+                }
+            }
+            loans.retain(|l| l.left > 1e-3);
+            f.loans = loans;
+        }
         for (k, f) in town.firms.iter_mut().enumerate() {
+            // No payouts while a firm owes the treasury.
+            if !f.loans.is_empty() {
+                continue;
+            }
             let out = f.payout(reserve_days, payout_rate);
             if out <= 0.0 {
                 continue;

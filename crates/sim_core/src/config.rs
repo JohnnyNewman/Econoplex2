@@ -691,6 +691,15 @@ pub struct GovernorParams {
     pub works_amount: f32,
     /// Named personalities a town can have.
     pub personalities: Vec<(String, crate::governor::Personality)>,
+    /// Loans to firms (with `market.firms: Workshops`): a governor lends
+    /// `loan_amount` at `loan_rate` over `loan_days` to a firm short of cash in a
+    /// trade whose goods sell at `shortage_ratio` of base price or more, while
+    /// the treasury is above its high mark and total lending stays under
+    /// `max_loan_share` of the treasury.
+    pub loan_amount: f32,
+    pub loan_rate: f32,
+    pub loan_days: u32,
+    pub max_loan_share: f32,
 }
 
 impl Default for GovernorParams {
@@ -718,6 +727,10 @@ impl Default for GovernorParams {
             idle_high: 0.15,
             public_works: vec!["cut_stone".into(), "brick".into(), "plank".into()],
             works_amount: 60.0,
+            loan_amount: 100.0,
+            loan_rate: 0.1,
+            loan_days: 240,
+            max_loan_share: 0.3,
             personalities: vec![
                 ("balanced".into(), crate::governor::Personality::default()),
                 (

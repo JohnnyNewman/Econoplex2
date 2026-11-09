@@ -31,7 +31,7 @@ use std::path::Path;
 
 /// Bumped whenever the save layout changes incompatibly.
 /// 2: the ledger gained income tax (18 flows). 3: agents' pay expectations.
-pub const SAVE_VERSION: u32 = 5;
+pub const SAVE_VERSION: u32 = 6;
 
 /// One simulation entity and its components.
 #[derive(Serialize, Deserialize)]

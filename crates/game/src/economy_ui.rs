@@ -249,12 +249,16 @@ pub fn economy_lines(
             );
             line(
                 format!(
-                    "      last year: sales {:.0}, inputs {:.0}, wages {:.0}, dividends {:.0}, profit tax {:.0}",
+                    "      last year: sales {:.0}, inputs {:.0}, wages {:.0}, dividends {:.0}, profit tax {:.0}, loans {:.0} (repaid {:.0}, interest {:.0}); owed now {:.0}",
                     y[0] + y[1],
                     y[2],
                     y[3],
                     y[4],
-                    y[5]
+                    y[5],
+                    y[8],
+                    y[9],
+                    y[10],
+                    sim_core::firms::outstanding(&town.firms)
                 ),
                 DIM,
             );

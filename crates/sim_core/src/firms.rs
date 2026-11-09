@@ -77,9 +77,13 @@ pub enum FirmFlow {
     Grants,
     /// Capital put in by the owners.
     Capital,
+    /// Loans received from the treasury, principal repaid, and interest paid.
+    Loans,
+    Repayments,
+    Interest,
 }
 
-pub const FIRM_FLOWS: usize = 8;
+pub const FIRM_FLOWS: usize = 11;
 
 impl FirmFlow {
     pub const ALL: [FirmFlow; FIRM_FLOWS] = [
@@ -91,6 +95,9 @@ impl FirmFlow {
         FirmFlow::ProfitTax,
         FirmFlow::Grants,
         FirmFlow::Capital,
+        FirmFlow::Loans,
+        FirmFlow::Repayments,
+        FirmFlow::Interest,
     ];
 
     pub fn name(self) -> &'static str {
@@ -103,6 +110,9 @@ impl FirmFlow {
             FirmFlow::ProfitTax => "profit tax",
             FirmFlow::Grants => "grants",
             FirmFlow::Capital => "owners' capital",
+            FirmFlow::Loans => "loans",
+            FirmFlow::Repayments => "repayments",
+            FirmFlow::Interest => "interest",
         }
     }
 }
@@ -134,6 +144,42 @@ pub struct Firm {
     pub short_days: u32,
     #[serde(default)]
     pub closed: bool,
+    /// Loans from the town's treasury still to repay.
+    #[serde(default)]
+    pub loans: Vec<Loan>,
+}
+
+/// A loan from the treasury to a firm, repaid in daily instalments with interest.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+pub struct Loan {
+    /// Principal still owed.
+    pub left: f32,
+    /// Yearly interest rate.
+    pub rate: f32,
+    pub days_left: u32,
+}
+
+impl Loan {
+    /// Today's instalment: (interest, principal), for a year of `days_per_year`.
+    pub fn due(&self, days_per_year: f32) -> (f32, f32) {
+        let interest = self.left * self.rate.max(0.0) / days_per_year.max(1.0);
+        let principal = self.left / self.days_left.max(1) as f32;
+        (interest, principal)
+    }
+}
+
+/// A firm's display name: its building, nature site or guild domain.
+pub fn firm_name(db: &crate::db::Db, key: FirmKey) -> String {
+    match key {
+        FirmKey::Building(b) => db.content.products[b as usize].id.clone(),
+        FirmKey::Nature(k) => db.content.nature[k as usize].id.clone(),
+        FirmKey::Guild(d) => db.content.domains[d as usize].clone(),
+    }
+}
+
+/// Outstanding principal over a town's firms.
+pub fn outstanding(firms: &[Firm]) -> f32 {
+    firms.iter().flat_map(|f| &f.loans).map(|l| l.left).sum()
 }
 
 impl Firm {
@@ -241,5 +287,25 @@ mod tests {
         f.book(FirmFlow::Wages, 20.0);
         f.end_day();
         assert!((f.wage_bill - (10.0 + (20.0 - 10.0) / 30.0)).abs() < 1e-5);
+    }
+
+    #[test]
+    fn a_loan_is_repaid_in_instalments_with_interest() {
+        let mut l = Loan {
+            left: 120.0,
+            rate: 0.1,
+            days_left: 120,
+        };
+        let (i, p) = l.due(120.0);
+        assert!((i - 0.1).abs() < 1e-6 && (p - 1.0).abs() < 1e-6);
+        let mut paid = 0.0;
+        while l.days_left > 0 {
+            let (i, p) = l.due(120.0);
+            paid += i + p;
+            l.left -= p;
+            l.days_left -= 1;
+        }
+        assert!(l.left.abs() < 1e-3);
+        assert!(paid > 120.0 && paid < 120.0 * 1.1);
     }
 }
