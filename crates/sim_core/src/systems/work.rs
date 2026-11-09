@@ -160,8 +160,15 @@ pub fn assign(
             // A team's daily work covers several runs of a short recipe.
             let rate = (team.len() as f32).powf(params.work.work_exponent);
             let mut batches = ((rate / m.duration).floor() as u32).max(1);
+            let firms_on = params.market.firms.on();
             for &(p, q) in &m.inputs {
-                batches = batches.min((town.stock[p as usize] / q).floor() as u32);
+                let have = town.stock[p as usize]
+                    + if firms_on {
+                        town.firm_stock(p as usize)
+                    } else {
+                        0.0
+                    };
+                batches = batches.min((have / q).floor() as u32);
             }
             if batches == 0 {
                 continue;
@@ -192,10 +199,40 @@ pub fn assign(
                     None => continue,
                 }
             }
+            // With firms, inputs are bought: from the market's stock first, then
+            // from other firms' stock, as many runs as the buyer (the firm, or the
+            // treasury for public work) can pay.
+            let buyer =
+                (firms_on && !crate::firms::is_public(&db, m)).then(|| db.recipe_firm[r as usize]);
+            if buyer.is_some_and(|f| town.firms[f].closed) {
+                continue;
+            }
+            if firms_on {
+                let per_batch: f32 = m
+                    .inputs
+                    .iter()
+                    .map(|&(p, q)| town.price[p as usize] * q)
+                    .sum();
+                let cash = match buyer {
+                    Some(f) => town.firms[f].cash,
+                    None => town.treasury,
+                };
+                if per_batch > 0.0 {
+                    batches = batches.min((cash.max(0.0) / per_batch).floor() as u32);
+                    if batches == 0 {
+                        continue;
+                    }
+                }
+                for &(p, q) in &m.inputs {
+                    take_input(town, p as usize, q * batches as f32, buyer);
+                }
+            }
             let mut input_quality: f32 = 1.0;
             town.input_today.resize(town.stock.len(), 0.0);
             for &(p, q) in &m.inputs {
-                town.stock[p as usize] -= q * batches as f32;
+                if !firms_on {
+                    town.stock[p as usize] -= q * batches as f32;
+                }
                 town.input_today[p as usize] += q * batches as f32;
                 town.inputs_year.resize(town.stock.len(), 0.0);
                 town.inputs_year[p as usize] += q * batches as f32;
@@ -290,6 +327,60 @@ pub fn assign(
 
 fn jitter(p: (f32, f32), r: f32, rng: &mut impl Rng) -> (f32, f32) {
     (p.0 + rng.random_range(-r..r), p.1 + rng.random_range(-r..r))
+}
+
+/// Takes `need` units of good `p` for a run, with firms on: from the market's
+/// stock first, then from firms' stock in order. The buyer (a firm, or the
+/// treasury for public work: `None`) pays each seller at the town price; a firm
+/// using its own stock, or the treasury the market's, pays nothing.
+fn take_input(town: &mut crate::world::Town, p: usize, need: f32, buyer: Option<usize>) {
+    use crate::firms::FirmFlow;
+    use crate::ledger::Flow;
+    let price = town.price[p];
+    let from_market = need.min(town.stock[p].max(0.0));
+    town.stock[p] -= from_market;
+    if let Some(f) = buyer {
+        let pay = from_market * price;
+        town.firms[f].cash -= pay;
+        town.firms[f].book(FirmFlow::Inputs, pay);
+        town.treasury += pay;
+        town.ledger.add(Flow::InputSales, pay);
+    }
+    let mut left = need - from_market;
+    // Own stock first, then the others.
+    let mut order: Vec<usize> = (0..town.firms.len()).collect();
+    if let Some(f) = buyer {
+        order.retain(|&k| k != f);
+        order.insert(0, f);
+    }
+    for k in order {
+        if left <= 1e-6 {
+            break;
+        }
+        let have = town.firms[k].stock.get(p).copied().unwrap_or(0.0);
+        let q = have.min(left);
+        if q <= 0.0 {
+            continue;
+        }
+        town.firms[k].stock[p] -= q;
+        left -= q;
+        if buyer == Some(k) {
+            continue;
+        }
+        let pay = q * price;
+        match buyer {
+            Some(f) => {
+                town.firms[f].cash -= pay;
+                town.firms[f].book(FirmFlow::Inputs, pay);
+            }
+            None => {
+                town.treasury -= pay;
+                town.ledger.add(Flow::MarketPurchases, pay);
+            }
+        }
+        town.firms[k].cash += pay;
+        town.firms[k].book(FirmFlow::Sales, pay);
+    }
 }
 
 /// Share of the way the public pay rate moves toward each realised step.
@@ -455,6 +546,9 @@ pub fn produce(
             let mut subsidy = 0.0;
             let keep = params.decision.subsistence.share();
             let larder_cap = params.decision.subsistence.larder_meals();
+            // The firm this work belongs to, unless the treasury runs it.
+            let firm = (params.market.firms.on() && !crate::firms::is_public(&db, m))
+                .then(|| db.recipe_firm[r as usize]);
             for &(p, q) in &m.outputs {
                 let q = q * task.batches as f32;
                 let pi = p as usize;
@@ -476,6 +570,26 @@ pub fn produce(
                 let q = q - kept;
                 value += town.price[pi] * q * (0.5 + quality);
                 subsidy += town.policy.subsidy[pi] * db.base_price[pi] * q;
+                // With workshops as firms, the goods are the firm's to sell; tools
+                // and weapons the market buys at once.
+                if let Some(fi) = firm {
+                    let cat = db.category(p);
+                    if cat.is_item() {
+                        let pay =
+                            (town.price[pi] * q * (0.5 + quality)).min(town.treasury.max(0.0));
+                        town.treasury -= pay;
+                        town.ledger.add(crate::ledger::Flow::MarketPurchases, pay);
+                        town.firms[fi].cash += pay;
+                        town.firms[fi].book(crate::firms::FirmFlow::Sales, pay);
+                    } else if db.coin[pi] <= 0.0
+                        && db.opens[pi].is_none()
+                        && cat != Category::Building
+                    {
+                        town.firms[fi].stock.resize(db.content.products.len(), 0.0);
+                        town.firms[fi].stock[pi] += q;
+                        continue;
+                    }
+                }
                 if db.coin[pi] > 0.0 {
                     // Struck coin is new money in the treasury, not a good in stock.
                     let minted = q * db.coin[pi];
@@ -604,6 +718,7 @@ pub fn produce(
                 subsidy,
                 days,
                 succeeded: true,
+                firm,
             });
             for &w in &workers {
                 let st = &mut store.state[w as usize];
@@ -625,6 +740,8 @@ pub fn produce(
                 subsidy: 0.0,
                 days,
                 succeeded: false,
+                firm: (params.market.firms.on() && !crate::firms::is_public(&db, m))
+                    .then(|| db.recipe_firm[r as usize]),
             });
         }
 
@@ -662,6 +779,7 @@ pub fn produce(
         store,
         &decision,
         params.decision.matching.apprentice_wage(),
+        params.market.firms,
     );
 }
 
@@ -678,6 +796,8 @@ struct Claim {
     days: f32,
     /// Whether the step succeeded (failed steps pay nothing).
     succeeded: bool,
+    /// The firm that pays the wage; none: the treasury.
+    firm: Option<usize>,
 }
 
 /// Pay the day's claims. When a town's treasury can't cover all wages, every claim
@@ -690,13 +810,42 @@ fn settle_wages(
     store: &mut AgentStore,
     decision: &crate::decision::DecisionModels,
     apprentice_wage: f32,
+    firms: crate::firms::FirmsParams,
 ) {
     let n_towns = towns.0.len();
+    let reserve_days = match firms {
+        crate::firms::FirmsParams::Workshops { reserve_days, .. } => reserve_days,
+        crate::firms::FirmsParams::Treasury => 0.0,
+    };
     let mut owed = vec![(0.0f32, 0.0f32); n_towns];
+    // Wages a firm owes today, per town and firm.
+    let mut firm_owed: Vec<Vec<f32>> = towns.0.iter().map(|t| vec![0.0; t.firms.len()]).collect();
     for c in &claims {
-        owed[c.town].0 += c.wage;
+        match c.firm {
+            Some(f) => firm_owed[c.town][f] += c.wage,
+            None => owed[c.town].0 += c.wage,
+        }
         owed[c.town].1 += c.subsidy;
     }
+    // Each firm pays its claims at one ratio, out of its cash.
+    let firm_ratio: Vec<Vec<f32>> = towns
+        .0
+        .iter()
+        .zip(&firm_owed)
+        .map(|(t, o)| {
+            t.firms
+                .iter()
+                .zip(o)
+                .map(|(f, &w)| {
+                    if w > 0.0 {
+                        (f.wage_budget(reserve_days) / w).min(1.0)
+                    } else {
+                        0.0
+                    }
+                })
+                .collect()
+        })
+        .collect();
     let ratios: Vec<(f32, f32)> = towns
         .0
         .iter()
@@ -716,10 +865,22 @@ fn settle_wages(
     for c in claims {
         let town = &mut towns.0[c.town];
         let (rw, rs) = ratios[c.town];
-        let wage = c.wage * rw;
         let subsidy = c.subsidy * rs;
-        town.treasury -= wage + subsidy;
-        town.ledger.add(crate::ledger::Flow::Wages, wage);
+        let wage = match c.firm {
+            Some(f) => {
+                let wage = c.wage * firm_ratio[c.town][f];
+                town.firms[f].cash -= wage;
+                town.firms[f].book(crate::firms::FirmFlow::Wages, wage);
+                town.treasury -= subsidy;
+                wage
+            }
+            None => {
+                let wage = c.wage * rw;
+                town.treasury -= wage + subsidy;
+                town.ledger.add(crate::ledger::Flow::Wages, wage);
+                wage
+            }
+        };
         town.ledger.add(crate::ledger::Flow::Subsidies, subsidy);
         let pay = wage + subsidy;
         // Income tax: the treasury keeps its share of every wage.

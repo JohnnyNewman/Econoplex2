@@ -35,7 +35,16 @@ pub enum FirmsParams {
         payout_rate: f32,
         /// Share of each payout the treasury takes as profit tax.
         profit_tax: f32,
+        /// Days a firm may lack the cash of a fifth of `start_cash` before it
+        /// raises new capital (a treasury grant, then its owners); with none, it
+        /// closes until capital comes.
+        #[serde(default = "close_days_default")]
+        close_days: u32,
     },
+}
+
+fn close_days_default() -> u32 {
+    30
 }
 
 impl FirmsParams {
@@ -66,9 +75,11 @@ pub enum FirmFlow {
     ProfitTax,
     /// Start-up cash from the treasury.
     Grants,
+    /// Capital put in by the owners.
+    Capital,
 }
 
-pub const FIRM_FLOWS: usize = 7;
+pub const FIRM_FLOWS: usize = 8;
 
 impl FirmFlow {
     pub const ALL: [FirmFlow; FIRM_FLOWS] = [
@@ -79,6 +90,7 @@ impl FirmFlow {
         FirmFlow::Dividends,
         FirmFlow::ProfitTax,
         FirmFlow::Grants,
+        FirmFlow::Capital,
     ];
 
     pub fn name(self) -> &'static str {
@@ -90,6 +102,7 @@ impl FirmFlow {
             FirmFlow::Dividends => "dividends",
             FirmFlow::ProfitTax => "profit tax",
             FirmFlow::Grants => "grants",
+            FirmFlow::Capital => "owners' capital",
         }
     }
 }
@@ -108,6 +121,19 @@ pub struct Firm {
     pub last_year: [f32; FIRM_FLOWS],
     /// Today's wages (rolled into `wage_bill` each day).
     pub wages_today: f32,
+    /// Inputs bought per day, averaged over about a month, and today's.
+    #[serde(default)]
+    pub input_bill: f32,
+    #[serde(default)]
+    pub inputs_today: f32,
+    /// Capital paid in (start-up grants, owners' capital): never paid out.
+    #[serde(default)]
+    pub capital: f32,
+    /// Days in a row it has been short of cash, and whether it is closed.
+    #[serde(default)]
+    pub short_days: u32,
+    #[serde(default)]
+    pub closed: bool,
 }
 
 impl Firm {
@@ -116,18 +142,30 @@ impl Firm {
         if f == FirmFlow::Wages {
             self.wages_today += amount;
         }
+        if f == FirmFlow::Inputs {
+            self.inputs_today += amount;
+        }
     }
 
-    /// Cash it may pay out today: `rate` of what is above `reserve_days` of wages.
+    /// Cash it may pay out today: `rate` of what is above `reserve_days` of its
+    /// wages and inputs.
     pub fn payout(&self, reserve_days: f32, rate: f32) -> f32 {
-        let reserve = reserve_days * self.wage_bill;
+        let reserve = (reserve_days * (self.wage_bill + self.input_bill)).max(self.capital);
         ((self.cash - reserve) * rate.clamp(0.0, 1.0)).max(0.0)
+    }
+
+    /// Cash it can spend on wages: what is above `reserve_days` of its inputs (the
+    /// working capital it keeps to buy the next inputs).
+    pub fn wage_budget(&self, reserve_days: f32) -> f32 {
+        (self.cash - reserve_days * self.input_bill).max(0.0)
     }
 
     /// Close the day's books.
     pub fn end_day(&mut self) {
         self.wage_bill += (self.wages_today - self.wage_bill) / 30.0;
         self.wages_today = 0.0;
+        self.input_bill += (self.inputs_today - self.input_bill) / 30.0;
+        self.inputs_today = 0.0;
     }
 
     pub fn end_year(&mut self) {
@@ -188,6 +226,16 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(f.payout(5.0, 0.5), 25.0);
+        // Paid-in capital is never paid out.
+        let idle = Firm {
+            cash: 30.0,
+            capital: 30.0,
+            ..Default::default()
+        };
+        assert_eq!(idle.payout(5.0, 0.5), 0.0);
+        // Working capital for inputs comes before wages.
+        f.input_bill = 4.0;
+        assert_eq!(f.wage_budget(5.0), 80.0);
         f.cash = 40.0;
         assert_eq!(f.payout(5.0, 0.5), 0.0);
         f.book(FirmFlow::Wages, 20.0);

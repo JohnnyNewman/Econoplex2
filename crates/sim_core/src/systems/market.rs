@@ -24,6 +24,7 @@ pub fn settle(
     let mp = &params.market;
     let np = db.content.products.len();
     // Demand-driven pricing: the stock each good's users need.
+    firm_finances(&mut towns, &mut store, &db, &params);
     let derived = derived_targets(&towns, &db, &params, &sites);
     // Each good's price dynamics: its class's, or its own override.
     let dynamics: Option<Vec<crate::pricing::ClassParams>> =
@@ -129,6 +130,16 @@ pub fn settle(
                 _ => per_capita * pop,
             };
             let target = wanted.max(1.0) + town.policy.ordered(p);
+            // With workshops as firms, the market buys from their stock what it
+            // wants, while the treasury can pay, and fills government orders.
+            if mp.firms.on()
+                && town
+                    .firms
+                    .iter()
+                    .any(|f| f.stock.get(p).is_some_and(|&s| s > 0.0))
+            {
+                buy_from_firms(town, p, target);
+            }
             let pressure = ((target - town.stock[p]) / target).clamp(-1.0, 1.0);
             let base = db.base_price[p];
             let cap = town
@@ -287,6 +298,151 @@ pub fn settle(
 
     for mut n in sites.iter_mut() {
         n.amount = (n.amount + n.regrowth).min(n.capacity);
+    }
+}
+
+/// The market buys good `p` from the town's firms (in firm order) up to its
+/// target stock, at the town price, while the treasury can pay; then delivers
+/// government orders from its stock.
+fn buy_from_firms(town: &mut crate::world::Town, p: usize, target: f32) {
+    let price = town.price[p].max(1e-6);
+    let mut want = (target - town.stock[p]).max(0.0);
+    for k in 0..town.firms.len() {
+        if want < 1e-3 || town.treasury <= 0.0 {
+            break;
+        }
+        let have = town.firms[k].stock.get(p).copied().unwrap_or(0.0);
+        let q = have.min(want).min(town.treasury / price);
+        if q <= 0.0 {
+            continue;
+        }
+        let pay = q * price;
+        town.firms[k].stock[p] -= q;
+        town.firms[k].cash += pay;
+        town.firms[k].book(crate::firms::FirmFlow::Sales, pay);
+        town.treasury -= pay;
+        town.ledger.add(Flow::MarketPurchases, pay);
+        town.stock[p] += q;
+        want -= q;
+    }
+    if let Some(o) = town
+        .policy
+        .procurement
+        .iter_mut()
+        .find(|o| o.0 as usize == p)
+    {
+        let delivered = town.stock[p].min(o.1);
+        o.1 -= delivered;
+        town.stock[p] -= delivered;
+        town.procured[p] += delivered;
+        town.policy.procurement.retain(|o| o.1 > 1e-3);
+    }
+}
+
+/// With workshops as firms: start-up cash from the treasury for firms that have
+/// none yet, and each firm's daily payout above its reserve to its owners (the
+/// town's guild members of its domain; the treasury if there are none), less
+/// the profit tax.
+pub fn firm_finances(
+    towns: &mut crate::world::Towns,
+    store: &mut AgentStore,
+    db: &Db,
+    params: &Params,
+) {
+    let crate::firms::FirmsParams::Workshops {
+        start_cash,
+        reserve_days,
+        payout_rate,
+        profit_tax,
+        close_days,
+    } = params.market.firms
+    else {
+        return;
+    };
+    // Each firm's domain: its guild, or the domain of its first recipe.
+    let domain: Vec<u32> = (0..db.firm_keys.len())
+        .map(|k| match db.firm_keys[k] {
+            crate::firms::FirmKey::Guild(d) => d,
+            _ => db
+                .recipes
+                .iter()
+                .enumerate()
+                .find(|(r, _)| db.recipe_firm[*r] == k)
+                .map_or(0, |(_, m)| m.domain),
+        })
+        .collect();
+    for town in towns.0.iter_mut() {
+        if town.firms.len() != db.firm_keys.len() {
+            town.firms = crate::firms::new_firms(db);
+        }
+        // Owners per domain.
+        let mut owners: std::collections::BTreeMap<u32, Vec<u32>> = Default::default();
+        for &i in &town.residents {
+            if let Some(g) = store.guild[i as usize] {
+                owners.entry(g.domain).or_default().push(i);
+            }
+        }
+        // Capital: a new firm, or one short of cash for `close_days`, raises
+        // `start_cash`: from the treasury (at most a fair share of half of it),
+        // then from its owners (each at most a fifth of their wealth). A firm that
+        // still has too little closes until capital comes.
+        let n = town.firms.len().max(1) as f32;
+        for (k, f) in town.firms.iter_mut().enumerate() {
+            if f.cash < 0.2 * start_cash {
+                f.short_days += 1;
+            } else {
+                f.short_days = 0;
+                f.closed = false;
+            }
+            if f.started && f.short_days < close_days {
+                continue;
+            }
+            f.started = true;
+            f.short_days = 0;
+            let mut need = (start_cash - f.cash).max(0.0);
+            let grant = need.min(0.5 * town.treasury.max(0.0) / n);
+            if grant > 0.0 {
+                town.treasury -= grant;
+                town.ledger.add(Flow::FirmGrants, grant);
+                f.cash += grant;
+                f.capital += grant;
+                f.book(crate::firms::FirmFlow::Grants, grant);
+                need -= grant;
+            }
+            if let Some(m) = owners.get(&domain[k]).filter(|m| !m.is_empty()) {
+                let ask = need / m.len() as f32;
+                for &i in m {
+                    let put = ask.min(0.2 * store.wealth[i as usize].max(0.0));
+                    store.wealth[i as usize] -= put;
+                    f.cash += put;
+                    f.capital += put;
+                    f.book(crate::firms::FirmFlow::Capital, put);
+                }
+            }
+            f.closed = f.cash < 0.2 * start_cash;
+        }
+        for (k, f) in town.firms.iter_mut().enumerate() {
+            let out = f.payout(reserve_days, payout_rate);
+            if out <= 0.0 {
+                continue;
+            }
+            f.cash -= out;
+            let members = owners.get(&domain[k]);
+            let tax = match members {
+                Some(m) if !m.is_empty() => out * profit_tax.clamp(0.0, 1.0),
+                _ => out,
+            };
+            town.treasury += tax;
+            town.ledger.add(Flow::ProfitTax, tax);
+            f.book(crate::firms::FirmFlow::ProfitTax, tax);
+            if let Some(m) = members.filter(|m| !m.is_empty()) {
+                let each = (out - tax) / m.len() as f32;
+                for &i in m {
+                    store.wealth[i as usize] += each;
+                }
+                f.book(crate::firms::FirmFlow::Dividends, out - tax);
+            }
+        }
     }
 }
 

@@ -65,6 +65,26 @@ pub fn sense(
                 st[HUNGER] = (st[HUNGER] - value).max(0.0);
             }
         }
+        // With firms, residents buy food straight from the firms that hold it
+        // first, then from the market.
+        if st[HUNGER] > p.eat_threshold && params.market.firms.on() {
+            'buy: for &(food, value) in &db.foods {
+                let f = food as usize;
+                for firm in town.firms.iter_mut() {
+                    if firm.stock.get(f).is_some_and(|&s| s >= 1.0) {
+                        firm.stock[f] -= 1.0;
+                        st[HUNGER] = (st[HUNGER] - value).max(0.0);
+                        let pay = town.price[f].min(store.wealth[i].max(0.0));
+                        store.wealth[i] -= pay;
+                        firm.cash += pay;
+                        firm.book(crate::firms::FirmFlow::DirectSales, pay);
+                        town.consumed_year.resize(town.stock.len(), 0.0);
+                        town.consumed_year[f] += 1.0;
+                        break 'buy;
+                    }
+                }
+            }
+        }
         if st[HUNGER] > p.eat_threshold {
             for &(food, value) in &db.foods {
                 let f = food as usize;

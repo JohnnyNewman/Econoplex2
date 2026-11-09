@@ -297,6 +297,14 @@ impl Town {
             .sum()
     }
 
+    /// Unsold stock of good `p` held by the town's firms.
+    pub fn firm_stock(&self, p: usize) -> f32 {
+        self.firms
+            .iter()
+            .map(|f| f.stock.get(p).copied().unwrap_or(0.0))
+            .sum()
+    }
+
     pub fn building_count(&self, def: u32) -> usize {
         self.buildings.iter().filter(|b| b.0 == def).count()
     }

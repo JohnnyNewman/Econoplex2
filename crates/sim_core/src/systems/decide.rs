@@ -28,8 +28,14 @@ pub fn glutted(db: &Db, town: &crate::world::Town, params: &Params, p: usize) ->
         mp.target_per_capita
     };
     let target = (per_capita * town.residents.len() as f32).max(1.0) + town.policy.ordered(p);
+    // Goods the town's firms hold unsold count too.
+    let unsold: f32 = town
+        .firms
+        .iter()
+        .map(|f| f.stock.get(p).copied().unwrap_or(0.0))
+        .sum();
     // A subsidized good is bought up to a larger stock.
-    town.stock[p] > mp.glut_factor * target * (1.0 + town.policy.subsidy[p])
+    town.stock[p] + unsold > mp.glut_factor * target * (1.0 + town.policy.subsidy[p])
 }
 
 /// Whether a recipe feeds people: it makes more food than its inputs hold,
@@ -113,7 +119,14 @@ pub fn job_capacity(
             }
             for &(p, q) in &m.inputs {
                 let held = if food { 0.0 } else { reserve[p as usize] };
-                cap = cap.min((town.stock[p as usize] - held).max(0.0) / q * m.duration);
+                // With firms, their unsold stock is on offer too.
+                let have = town.stock[p as usize]
+                    + if params.market.firms.on() {
+                        town.firm_stock(p as usize)
+                    } else {
+                        0.0
+                    };
+                cap = cap.min((have - held).max(0.0) / q * m.duration);
             }
             cap
         })
