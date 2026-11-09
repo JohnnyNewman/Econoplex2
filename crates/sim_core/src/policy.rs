@@ -192,6 +192,16 @@ pub enum Order {
         product: u32,
         amount: f32,
     },
+    /// Lend `amount` of treasury coin to one of the town's firms (index into
+    /// `Db::firm_keys`), at a yearly `rate`, repaid over `days` (needs
+    /// `market.firms: Workshops`).
+    Loan {
+        town: u16,
+        firm: u32,
+        amount: f32,
+        rate: f32,
+        days: u32,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -215,7 +225,8 @@ impl Order {
             | Order::Tax { town, .. }
             | Order::Wages { town, .. }
             | Order::Spending { town, .. }
-            | Order::Procure { town, .. } => town,
+            | Order::Procure { town, .. }
+            | Order::Loan { town, .. } => town,
         }
     }
 
@@ -235,6 +246,8 @@ impl Order {
     /// wages <town> <share>|auto             e.g. wages Greenvale 0.6
     /// spending <town> <rate>|auto           e.g. spending Greenvale 4
     /// procure <town> <product> <amount>     e.g. procure Greenvale cloth 50 (0 cancels)
+    /// loan <town> <firm> <amount> <rate> <days>  e.g. loan Ironhold smithy 100 0.1 240
+    ///   (a firm is named by its building, nature site or guild domain)
     /// ```
     pub fn parse(text: &str, db: &Db, towns: &Towns) -> Result<Order, String> {
         let w: Vec<&str> = text.split_whitespace().collect();
@@ -342,6 +355,17 @@ impl Order {
                     .ok_or_else(|| format!("no good `{p}` to order"))?,
                 amount: number(amount)?.max(0.0),
             }),
+            ["loan", t, f, amount, rate, days] => Ok(Order::Loan {
+                town: town(t)?,
+                firm: db
+                    .firm_keys
+                    .iter()
+                    .position(|&k| crate::firms::firm_name(db, k).eq_ignore_ascii_case(f))
+                    .ok_or_else(|| format!("no firm `{f}`"))? as u32,
+                amount: number(amount)?.max(0.0),
+                rate: number(rate)?.max(0.0),
+                days: number(days)?.max(1.0) as u32,
+            }),
             ["mint", t, m @ ("auto" | "on" | "off")] => Ok(Order::Mint {
                 town: town(t)?,
                 minting: match *m {
@@ -442,6 +466,30 @@ pub fn apply_orders(
                 p.procurement.retain(|o| o.0 != product);
                 if amount > 0.0 {
                     p.procurement.push((product, amount));
+                }
+            }
+            Order::Loan {
+                firm,
+                amount,
+                rate,
+                days,
+                ..
+            } => {
+                let f = firm as usize;
+                if params.market.firms.on() && f < town.firms.len() {
+                    let amount = amount.min(town.treasury.max(0.0));
+                    if amount > 0.0 {
+                        town.treasury -= amount;
+                        town.ledger.add(crate::ledger::Flow::LoansOut, amount);
+                        let firm = &mut town.firms[f];
+                        firm.cash += amount;
+                        firm.book(crate::firms::FirmFlow::Loans, amount);
+                        firm.loans.push(crate::firms::Loan {
+                            left: amount,
+                            rate,
+                            days_left: days.max(1),
+                        });
+                    }
                 }
             }
             Order::Raid { town: t, target } => {

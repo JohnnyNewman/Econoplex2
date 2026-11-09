@@ -405,6 +405,48 @@ pub fn govern(
             }
         }
 
+        // --- credit: lend to a firm in a short trade, while the treasury is flush
+        if params.market.firms.on() && town.treasury > high * town.residents.len() as f32 {
+            let lent = crate::firms::outstanding(&town.firms);
+            if lent + gp.loan_amount <= gp.max_loan_share * town.treasury {
+                let short = |k: usize| {
+                    db.recipes
+                        .iter()
+                        .enumerate()
+                        .filter(|(r, _)| db.recipe_firm[*r] == k)
+                        .flat_map(|(_, m)| m.outputs.iter())
+                        .map(|&(p, _)| st.price_ratio.get(p as usize).copied().unwrap_or(1.0))
+                        .fold(0.0f32, f32::max)
+                };
+                let pick = (0..town.firms.len())
+                    .filter(|&k| {
+                        let f = &town.firms[k];
+                        f.loans.is_empty() && f.cash < gp.loan_amount
+                    })
+                    .map(|k| (k, short(k)))
+                    .filter(|&(_, s)| s >= gp.shortage_ratio)
+                    .max_by(|a, b| a.1.total_cmp(&b.1).then(b.0.cmp(&a.0)));
+                if let Some((k, s)) = pick {
+                    orders.push((
+                        Order::Loan {
+                            town: tid,
+                            firm: k as u32,
+                            amount: gp.loan_amount,
+                            rate: gp.loan_rate,
+                            days: gp.loan_days,
+                        },
+                        format!(
+                            "lent {:.0} to the {} at {:.0}%: its goods sell at {:.1}x base",
+                            gp.loan_amount,
+                            crate::firms::firm_name(&db, db.firm_keys[k]),
+                            gp.loan_rate * 100.0,
+                            s
+                        ),
+                    ));
+                }
+            }
+        }
+
         for (order, why) in orders {
             queue.pending.push(order);
             note(st, tick, why);

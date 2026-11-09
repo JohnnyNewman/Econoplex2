@@ -305,6 +305,7 @@ Government orders (all towns, player's and AI):"
                 Order::Tax { .. } => "tax",
                 Order::Spending { .. } => "spending",
                 Order::Procure { .. } => "procure",
+                Order::Loan { .. } => "loan",
                 Order::Mint { .. } => "mint",
                 Order::Wages { .. } => "wages",
                 _ => "other",
@@ -594,13 +595,13 @@ fn write_csv(path: &std::path::Path, m: &Metrics) -> std::io::Result<()> {
     let mut f = std::fs::File::create(path)?;
     writeln!(
         f,
-        "year,town,population,adults,food_per_capita,diversity,rca_products,eci,specialization,mean_top_skill,masters,guild_members,tools_in_use,swords_1,swords_2,swords_3,treasury,mean_wealth,buildings,tradition,faith,liberty,ideology_spread,starving,migrants_in,migrants_out,captives_taken,captives_lost,ruler,conquests,revolts,tribute_paid,trust,trade_ties,issued,taxed,spent,external_in,external_out,minted,era,vol_essential,vol_essential_p95,vol_commodity,vol_commodity_p95,vol_labour,vol_labour_p95,cpi_laspeyres,cpi_fisher,inflation,cpi_essentials,ppi_commodities,wage_index,purchasing_power,real_exchange_rate,money_stock,velocity,minted_share,empire_cpi,firm_cash,firm_sales,firm_direct_sales,firm_inputs,firm_wages,firm_dividends,firm_profit_tax,firm_grants,firm_owner_capital"
+        "year,town,population,adults,food_per_capita,diversity,rca_products,eci,specialization,mean_top_skill,masters,guild_members,tools_in_use,swords_1,swords_2,swords_3,treasury,mean_wealth,buildings,tradition,faith,liberty,ideology_spread,starving,migrants_in,migrants_out,captives_taken,captives_lost,ruler,conquests,revolts,tribute_paid,trust,trade_ties,issued,taxed,spent,external_in,external_out,minted,era,vol_essential,vol_essential_p95,vol_commodity,vol_commodity_p95,vol_labour,vol_labour_p95,cpi_laspeyres,cpi_fisher,inflation,cpi_essentials,ppi_commodities,wage_index,purchasing_power,real_exchange_rate,money_stock,velocity,minted_share,empire_cpi,firm_cash,firm_sales,firm_direct_sales,firm_inputs,firm_wages,firm_dividends,firm_profit_tax,firm_grants,firm_owner_capital,firm_loans,firm_repayments,firm_interest,loans_outstanding,loan_defaults"
     )?;
     for y in &m.years {
         for t in &y.towns {
             writeln!(
                 f,
-                "{},{},{},{},{:.3},{},{},{:.3},{:.4},{:.4},{},{},{},{},{},{},{:.1},{:.2},{},{:.4},{:.4},{:.4},{:.4},{:.4},{},{},{},{},{},{},{},{:.1},{:.4},{:.4},{:.1},{:.1},{:.1},{:.1},{:.1},{:.1},{},{:.5},{:.5},{:.5},{:.5},{:.5},{:.5},{:.2},{:.2},{:.4},{:.2},{:.2},{:.2},{:.3},{:.4},{:.1},{:.3},{:.4},{:.2},{:.1},{:.1},{:.1},{:.1},{:.1},{:.1},{:.1},{:.1},{:.1}",
+                "{},{},{},{},{:.3},{},{},{:.3},{:.4},{:.4},{},{},{},{},{},{},{:.1},{:.2},{},{:.4},{:.4},{:.4},{:.4},{:.4},{},{},{},{},{},{},{},{:.1},{:.4},{:.4},{:.1},{:.1},{:.1},{:.1},{:.1},{:.1},{},{:.5},{:.5},{:.5},{:.5},{:.5},{:.5},{:.2},{:.2},{:.4},{:.2},{:.2},{:.2},{:.3},{:.4},{:.1},{:.3},{:.4},{:.2},{:.1},{:.1},{:.1},{:.1},{:.1},{:.1},{:.1},{:.1},{:.1},{:.1},{:.1},{:.1},{:.1},{:.1}",
                 y.year, t.name, t.population, t.adults, t.food_per_capita, t.diversity, t.rca_products, t.eci, t.specialization,
                 t.mean_top_skill, t.masters, t.guild_members, t.tools_in_use, t.swords[0], t.swords[1], t.swords[2], t.treasury, t.mean_wealth, t.buildings,
                 t.ideology[0], t.ideology[1], t.ideology[2], t.ideology_spread, t.starving,
@@ -610,7 +611,8 @@ fn write_csv(path: &std::path::Path, m: &Metrics) -> std::io::Result<()> {
                 t.price_vol[0].0, t.price_vol[0].1, t.price_vol[1].0, t.price_vol[1].1, t.price_vol[2].0, t.price_vol[2].1,
                 t.cpi.laspeyres, t.cpi.fisher, t.cpi.inflation, t.cpi.essentials, t.cpi.commodities, t.cpi.labour,
                 t.purchasing_power, t.real_exchange_rate, t.money_stock, t.velocity, t.minted_share, t.empire_cpi,
-                t.firm_cash, t.firm_flows[0], t.firm_flows[1], t.firm_flows[2], t.firm_flows[3], t.firm_flows[4], t.firm_flows[5], t.firm_flows[6], t.firm_flows[7]
+                t.firm_cash, t.firm_flows[0], t.firm_flows[1], t.firm_flows[2], t.firm_flows[3], t.firm_flows[4], t.firm_flows[5], t.firm_flows[6], t.firm_flows[7],
+                t.firm_flows[8], t.firm_flows[9], t.firm_flows[10], t.loans_outstanding, t.loan_defaults
             )?;
         }
     }

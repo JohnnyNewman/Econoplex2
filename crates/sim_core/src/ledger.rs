@@ -51,9 +51,13 @@ pub enum Flow {
     InputSales,
     FirmGrants,
     ProfitTax,
+    // Loans to firms (issued), their repayments and interest (taxed).
+    LoansOut,
+    LoanRepayments,
+    LoanInterest,
 }
 
-pub const FLOWS: usize = 23;
+pub const FLOWS: usize = 26;
 
 /// How the HUD groups flows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -94,6 +98,9 @@ impl Flow {
         Flow::InputSales,
         Flow::FirmGrants,
         Flow::ProfitTax,
+        Flow::LoansOut,
+        Flow::LoanRepayments,
+        Flow::LoanInterest,
     ];
 
     pub fn name(self) -> &'static str {
@@ -121,6 +128,9 @@ impl Flow {
             Flow::InputSales => "inputs sold",
             Flow::FirmGrants => "firm grants",
             Flow::ProfitTax => "profit tax",
+            Flow::LoansOut => "loans out",
+            Flow::LoanRepayments => "loan repayments",
+            Flow::LoanInterest => "loan interest",
         }
     }
 
@@ -128,8 +138,10 @@ impl Flow {
         use Flow::*;
         match self {
             Wages | Subsidies | SchoolFees | SoldierPay | PublicSpending | SettlementGrants
-            | MarketPurchases | FirmGrants => Group::Issued,
-            WealthTax | Estates | IncomeTax | Rent | ProfitTax => Group::Taxed,
+            | MarketPurchases | FirmGrants | LoansOut => Group::Issued,
+            WealthTax | Estates | IncomeTax | Rent | ProfitTax | LoanRepayments | LoanInterest => {
+                Group::Taxed
+            }
             FoodSales | ToolSales | InputSales => Group::Spent,
             TradeSales | TributeReceived | LootTaken => Group::ExternalIn,
             TradePurchases | TributePaid | LootLost => Group::ExternalOut,

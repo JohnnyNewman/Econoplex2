@@ -1852,3 +1852,50 @@ fn workshops_pay_from_their_sales_and_money_is_conserved() {
     let m = s.world.resource::<sim_core::metrics::Metrics>();
     assert!(m.latest().unwrap().population > 1000, "the towns collapsed");
 }
+
+#[test]
+fn towns_lend_to_workshops_and_get_repaid_with_interest() {
+    use sim_core::firms::FirmsParams;
+    use sim_core::ledger::Flow;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, mut params, scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    params.market.firms = FirmsParams::Workshops {
+        start_cash: 100.0,
+        reserve_days: 10.0,
+        payout_rate: 0.05,
+        profit_tax: 0.2,
+        close_days: 30,
+    };
+    params.governor.enabled = false;
+    let mut s = Simulation::new(db, params, &scenario);
+    let money = |s: &Simulation| {
+        let towns = s.world.resource::<sim_core::Towns>();
+        let minted: f64 = towns
+            .0
+            .iter()
+            .map(|t| t.ledger.total[Flow::Minted as usize])
+            .sum();
+        sim_core::world::total_money(s.world.resource::<sim_core::AgentStore>(), towns) - minted
+    };
+    let before = money(&s);
+    s.order("loan Ironhold field 60 0.2 60").unwrap();
+    assert!(s.order("loan Ironhold nowhere 60 0.2 60").is_err());
+    for _ in 0..100 {
+        s.step();
+    }
+    let towns = s.world.resource::<sim_core::Towns>();
+    let l = &towns.0[0].ledger;
+    let lent = l.total[Flow::LoansOut as usize];
+    let repaid = l.total[Flow::LoanRepayments as usize];
+    let interest = l.total[Flow::LoanInterest as usize];
+    assert!(lent > 0.0, "no loan was made");
+    // A farm with sales pays it back, with interest, within its term.
+    assert!(
+        repaid + towns.0[0].loan_defaults as f64 > 0.99 * lent,
+        "repaid {repaid} of {lent}"
+    );
+    assert!(interest > 0.0);
+    assert!(sim_core::firms::outstanding(&towns.0[0].firms) < 1.0);
+    let after = money(&s);
+    assert!(((after - before) / before).abs() < 1e-3, "money changed");
+}
