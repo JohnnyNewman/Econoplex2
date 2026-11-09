@@ -550,3 +550,67 @@ barely changes this, because most households simply see no better town.
 
 Rent at rate 0.3 is too strong against typical wealth under utility migration and
 causes heavy hopping, so crowding stays off.
+
+## Defaults decision: 40-year comparison (2026-11-09)
+
+Six seeds (42–47), 40 years each. Setups:
+- **A** today's default: `Features` + first-come + `Weighted` migration, with
+  households and limited knowledge.
+- **B** `Utility` + deferred acceptance with apprentice places + subsistence
+  `Keep(0.2, 10)` + four-term `Utility` migration.
+- **C** B + crowding `Rent(rate: 0.1)`.
+- **D** B + market pay `ExcessDemand(step: 0.02, target_fill: 0.8, min: 0.5, max: 2.0)`.
+
+Mean ± sd over seeds, year 40:
+
+| | A features | B utility | C + rent | D + market pay |
+| --- | --- | --- | --- | --- |
+| population | 4016 ± 117 | 4038 ± 219 | 4049 ± 174 | 4083 ± 163 |
+| starvation | 0 | 0 | 0 | 0 |
+| wealth Gini | 0.59 ± 0.15 | **0.35 ± 0.08** | 0.32 ± 0.08 | 0.45 ± 0.10 |
+| town size CV | 0.11 ± 0.05 | 0.08 ± 0.05 | 0.13 ± 0.04 | 0.08 ± 0.04 |
+| largest town's share | 0.29 | 0.28 | 0.29 | 0.28 |
+| ECI range | 2.60 ± 0.05 | 2.61 ± 0.10 | 2.67 ± 0.10 | 2.47 ± 0.13 |
+| products made (diversity) | 23.1 ± 2.0 | **18.9 ± 2.3** | 18.1 ± 1.5 | 18.9 ± 2.5 |
+| masters | 1675 ± 46 | 1824 ± 87 | 1789 ± 77 | 1794 ± 70 |
+| swords | 4137 ± 733 | **34 ± 62** | 212 ± 164 | 550 ± 819 |
+| moves (40 years) | 218 ± 67 | 280 ± 40 | 2358 ± 371 | 287 ± 52 |
+| ms per tick | 5.2 | **19.5** | 13.7 | 13.7 |
+
+(ms per tick were measured with four runs sharing the machine, so they compare
+setups, not absolute speed.)
+
+**Decision: keep `Features` as the default for now.** B matches A on population and
+hunger. It halves inequality, keeps town sizes as even, and trains more masters.
+But it fails on three counts:
+
+1. **The metal and military chain collapses.** Swords drop to about 1 % of A
+   (market pay gets to about 13 %, with a huge spread). Smelting is a **skill
+   trap** under utility choice:
+   - It is hard, so unskilled smelters fail often and their realised pay is low
+     (4.3 a day, against 7–8 for shearing or flax).
+   - So few people take it up and few get good at it.
+   - The iron price sits at its cap (5 × base) and can't rise to pull workers in.
+   - What little iron there is goes into tools, so blades are chosen but never
+     made.
+   - The learning-value term doesn't help measurably once untried jobs show a
+     posted pay.
+2. **Fewer kinds of goods are made** (18.9 vs 23.1).
+3. **Utility scoring is about 3–4× slower per tick.**
+
+Not adopted from this comparison:
+- **Rent** (C) causes heavy hopping even at rate 0.1 (2358 moves).
+- **Market pay** (D) raises inequality again and makes the military outcome erratic.
+
+**To make the switch viable:**
+- **Break the skill trap.** Candidates:
+  - expected pay conditional on the agent's own success rather than the average
+    realised pay
+  - a stronger or better-founded learning value
+  - apprentice places in hard trades priced on expected future pay
+  - price caps that scale with scarcity
+- **Bring utility scoring's cost down,** e.g. by caching need weights and scoring a
+  sample of jobs.
+- **Then re-run this comparison.** Switch when swords and diversity are within one
+  seed-sd of A and speed is within 2×.
+
