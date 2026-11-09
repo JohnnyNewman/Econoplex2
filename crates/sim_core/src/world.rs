@@ -198,6 +198,10 @@ pub struct Town {
     pub price_days: u32,
     #[serde(default)]
     pub worker_days: f32,
+    /// The town's workshops as firms, one per `Db::firm_keys` (see `firms`; only
+    /// active with `market.firms: Workshops`).
+    #[serde(default)]
+    pub firms: Vec<crate::firms::Firm>,
     /// Market factor on the base wage share, per recipe (see `decision::wages`).
     #[serde(default)]
     pub wage_factor: Vec<f32>,
@@ -335,7 +339,12 @@ pub fn total_money(store: &AgentStore, towns: &Towns) -> f64 {
         .filter(|&i| store.alive[i])
         .map(|i| store.wealth[i] as f64)
         .sum();
-    agents + towns.0.iter().map(|t| t.treasury as f64).sum::<f64>()
+    agents
+        + towns
+            .0
+            .iter()
+            .map(|t| t.treasury as f64 + t.firms.iter().map(|f| f.cash as f64).sum::<f64>())
+            .sum::<f64>()
 }
 
 /// Choices made in the decide step, consumed by assign.
@@ -536,6 +545,7 @@ pub fn setup(world: &mut World, db: Db, params: ModelParams, scenario: &Scenario
             price_sum: Vec::new(),
             price_days: 0,
             worker_days: 0.0,
+            firms: crate::firms::new_firms(&db),
             wage_factor: vec![1.0; db.recipes.len()],
             apprentice_share: vec![0.0; db.recipes.len()],
             rent: 0.0,

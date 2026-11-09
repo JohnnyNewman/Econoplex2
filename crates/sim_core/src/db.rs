@@ -47,6 +47,9 @@ pub struct Db {
     pub is_food: Vec<bool>,
     /// Products some recipe takes as an input.
     pub is_input: Vec<bool>,
+    /// The firms recipes belong to (see `firms`), and each recipe's firm index.
+    pub firm_keys: Vec<crate::firms::FirmKey>,
+    pub recipe_firm: Vec<usize>,
     /// Land products: the nature kind each one opens.
     pub opens: Vec<Option<u32>>,
     /// Face value of coin products (0 for everything else).
@@ -155,6 +158,14 @@ impl Db {
             .collect();
 
         let coin = content.products.iter().map(|p| p.coin).collect();
+        let mut firm_keys: Vec<crate::firms::FirmKey> =
+            recipes.iter().map(crate::firms::key_of).collect();
+        firm_keys.sort_unstable();
+        firm_keys.dedup();
+        let recipe_firm: Vec<usize> = recipes
+            .iter()
+            .map(|m| firm_keys.binary_search(&crate::firms::key_of(m)).unwrap())
+            .collect();
         let mut is_input: Vec<bool> = vec![false; content.products.len()];
         for m in &recipes {
             for &(p, _) in &m.inputs {
@@ -174,6 +185,8 @@ impl Db {
             base_price,
             is_food,
             is_input,
+            firm_keys,
+            recipe_firm,
             opens,
         }
     }

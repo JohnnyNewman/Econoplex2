@@ -239,6 +239,26 @@ pub fn economy_lines(
             },
             MINTED.with_alpha(0.75),
         );
+        // Workshops as firms: their cash now, and last year's flows.
+        if params.market.firms.on() {
+            let cash: f32 = town.firms.iter().map(|f| f.cash).sum();
+            let y = sim_core::firms::last_year_totals(&town.firms);
+            line(
+                format!("  workshops: {} firms, cash {cash:.0}", town.firms.len()),
+                TEXT,
+            );
+            line(
+                format!(
+                    "      last year: sales {:.0}, inputs {:.0}, wages {:.0}, dividends {:.0}, profit tax {:.0}",
+                    y[0] + y[1],
+                    y[2],
+                    y[3],
+                    y[4],
+                    y[5]
+                ),
+                DIM,
+            );
+        }
         // Price level and the coin's strength here (last year; metrics only).
         if let Some(s) = stats {
             line(

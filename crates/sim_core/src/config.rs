@@ -325,6 +325,10 @@ pub struct MarketParams {
     /// What stock of each good the market aims for (and so where its price goes).
     #[serde(default)]
     pub pricing: Pricing,
+    /// Who buys output and pays wages: the treasury, or workshops as firms (see
+    /// `firms`).
+    #[serde(default)]
+    pub firms: crate::firms::FirmsParams,
     /// Price dynamics per price class (see `pricing`); none: the legacy rule.
     #[serde(default)]
     pub price_classes: Option<crate::pricing::PriceClasses>,

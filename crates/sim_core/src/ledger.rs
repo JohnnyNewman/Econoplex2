@@ -44,9 +44,16 @@ pub enum Flow {
     IncomeTax,
     // Taxed: what residents pay for a place to live (see `decision::crowding`).
     Rent,
+    // With workshops as firms (see `firms`): the market buying goods from firms
+    // (issued), firms buying inputs from the market (spent), start-up cash for
+    // firms (issued), and the profit tax on firms' payouts (taxed).
+    MarketPurchases,
+    InputSales,
+    FirmGrants,
+    ProfitTax,
 }
 
-pub const FLOWS: usize = 19;
+pub const FLOWS: usize = 23;
 
 /// How the HUD groups flows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -83,6 +90,10 @@ impl Flow {
         Flow::Minted,
         Flow::IncomeTax,
         Flow::Rent,
+        Flow::MarketPurchases,
+        Flow::InputSales,
+        Flow::FirmGrants,
+        Flow::ProfitTax,
     ];
 
     pub fn name(self) -> &'static str {
@@ -106,17 +117,20 @@ impl Flow {
             Flow::Minted => "minted",
             Flow::IncomeTax => "income tax",
             Flow::Rent => "rent",
+            Flow::MarketPurchases => "goods bought",
+            Flow::InputSales => "inputs sold",
+            Flow::FirmGrants => "firm grants",
+            Flow::ProfitTax => "profit tax",
         }
     }
 
     pub fn group(self) -> Group {
         use Flow::*;
         match self {
-            Wages | Subsidies | SchoolFees | SoldierPay | PublicSpending | SettlementGrants => {
-                Group::Issued
-            }
-            WealthTax | Estates | IncomeTax | Rent => Group::Taxed,
-            FoodSales | ToolSales => Group::Spent,
+            Wages | Subsidies | SchoolFees | SoldierPay | PublicSpending | SettlementGrants
+            | MarketPurchases | FirmGrants => Group::Issued,
+            WealthTax | Estates | IncomeTax | Rent | ProfitTax => Group::Taxed,
+            FoodSales | ToolSales | InputSales => Group::Spent,
             TradeSales | TributeReceived | LootTaken => Group::ExternalIn,
             TradePurchases | TributePaid | LootLost => Group::ExternalOut,
             Minted => Group::Minted,
@@ -206,8 +220,14 @@ pub fn close_day(mut towns: ResMut<Towns>, clock: Res<SimClock>) {
     let year_end = clock.tick > 0 && clock.day_of_year() == 0;
     for t in towns.0.iter_mut() {
         t.ledger.end_day();
+        for f in t.firms.iter_mut() {
+            f.end_day();
+        }
         if year_end {
             t.ledger.end_year();
+            for f in t.firms.iter_mut() {
+                f.end_year();
+            }
         }
     }
 }
