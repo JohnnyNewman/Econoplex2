@@ -34,6 +34,9 @@ pub struct ModelParams {
     pub migration: MigrationParams,
     pub trust: TrustParams,
     pub policy: PolicyParams,
+    /// AI town governments (`governor.rs`).
+    #[serde(default)]
+    pub governor: GovernorParams,
 }
 
 impl ModelParams {
@@ -512,6 +515,101 @@ pub struct TownSpec {
     /// Starting stock: (product id, quantity)
     #[serde(default)]
     pub stock: Vec<(String, f32)>,
+    /// The personality of the town's AI government (a name from `governor.personalities`
+    /// in models.ron); none is balanced.
+    #[serde(default)]
+    pub governor: Option<String>,
+}
+
+/// Rules of the AI town governments (see `governor.rs`). Thresholds are per resident
+/// or relative to the market's targets; steps are how far a lever moves per decision.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct GovernorParams {
+    pub enabled: bool,
+    /// Days between decisions.
+    pub interval: u32,
+    /// Days over which observations are averaged.
+    pub smoothing_days: f32,
+    /// Also govern the player's town (for headless comparisons).
+    pub govern_player_town: bool,
+    /// Food per resident, as a share of the market's food target, below which the
+    /// town subsidizes food, and above which it winds the subsidy down.
+    pub food_low: f32,
+    pub food_ok: f32,
+    pub subsidy_step: f32,
+    pub max_subsidy: f32,
+    /// A good the town makes counts as short at this price / base price, and as
+    /// recovered at the second.
+    pub shortage_ratio: f32,
+    pub recovered_ratio: f32,
+    /// Most non-food goods subsidized at once.
+    pub max_subsidized: usize,
+    /// Treasury per resident below which taxes rise, and above which they fall and
+    /// spending rises.
+    pub treasury_low: f32,
+    pub treasury_high: f32,
+    pub tax_step: f32,
+    pub income_tax_step: f32,
+    pub max_income_tax: f32,
+    pub spending_step: f32,
+    /// Highest spending rate, as a multiple of the default.
+    pub max_spending_factor: f32,
+    /// Decisions in a row with a low treasury before the mint is set to strike.
+    pub mint_after_checks: u32,
+    /// Share of adults idle above which the town orders public works.
+    pub idle_high: f32,
+    /// Goods ordered for public works (the first one the town makes) and how many.
+    pub public_works: Vec<String>,
+    pub works_amount: f32,
+    /// Named personalities a town can have.
+    pub personalities: Vec<(String, crate::governor::Personality)>,
+}
+
+impl Default for GovernorParams {
+    fn default() -> Self {
+        GovernorParams {
+            enabled: true,
+            interval: 30,
+            smoothing_days: 30.0,
+            govern_player_town: false,
+            food_low: 0.5,
+            food_ok: 1.0,
+            subsidy_step: 0.2,
+            max_subsidy: 0.6,
+            shortage_ratio: 3.0,
+            recovered_ratio: 1.3,
+            max_subsidized: 3,
+            treasury_low: 1.0,
+            treasury_high: 2.4,
+            tax_step: 0.25,
+            income_tax_step: 0.05,
+            max_income_tax: 0.25,
+            spending_step: 0.5,
+            max_spending_factor: 2.0,
+            mint_after_checks: 3,
+            idle_high: 0.15,
+            public_works: vec!["cut_stone".into(), "brick".into(), "plank".into()],
+            works_amount: 60.0,
+            personalities: vec![
+                ("balanced".into(), crate::governor::Personality::default()),
+                (
+                    "frugal".into(),
+                    crate::governor::Personality {
+                        thrift: 1.5,
+                        ambition: 0.6,
+                    },
+                ),
+                (
+                    "expansionist".into(),
+                    crate::governor::Personality {
+                        thrift: 0.7,
+                        ambition: 1.5,
+                    },
+                ),
+            ],
+        }
+    }
 }
 
 #[derive(Debug)]

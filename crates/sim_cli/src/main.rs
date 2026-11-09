@@ -265,6 +265,7 @@ fn main() {
     print_final(&sim);
     print_match(&sim);
     print_eras(&sim);
+    print_governors(&sim);
     if args.profile {
         print_profile(sim.world.resource::<sim_core::profile::Profile>(), ticks);
     }
@@ -279,6 +280,44 @@ fn main() {
         write_csv(&path, sim.world.resource::<Metrics>())
             .unwrap_or_else(|e| die(&format!("cannot write CSV: {e}")));
         println!("wrote {}", path.display());
+    }
+}
+
+/// What the AI governments did: orders by kind, and each town's latest decisions.
+fn print_governors(sim: &Simulation) {
+    use sim_core::policy::Order;
+    let queue = sim.world.resource::<sim_core::policy::OrderQueue>();
+    let towns = sim.world.resource::<sim_core::Towns>();
+    let govs = sim.world.resource::<sim_core::governor::Governors>();
+    if queue.log.is_empty() {
+        return;
+    }
+    let dpy = sim.world.resource::<sim_core::SimClock>().days_per_year as u64;
+    println!(
+        "
+Government orders (all towns, player's and AI):"
+    );
+    for (t, town) in towns.0.iter().enumerate() {
+        let mut kinds: std::collections::BTreeMap<&str, usize> = Default::default();
+        for (_, o) in queue.log.iter().filter(|(_, o)| o.town() as usize == t) {
+            let k = match o {
+                Order::Subsidy { .. } => "subsidy",
+                Order::Tax { .. } => "tax",
+                Order::Spending { .. } => "spending",
+                Order::Procure { .. } => "procure",
+                Order::Mint { .. } => "mint",
+                Order::Wages { .. } => "wages",
+                _ => "other",
+            };
+            *kinds.entry(k).or_default() += 1;
+        }
+        let list: Vec<String> = kinds.iter().map(|(k, n)| format!("{k} {n}")).collect();
+        println!("  {:<11} {}", town.name, list.join(", "));
+        if let Some(g) = govs.towns.get(t) {
+            for (tick, why) in g.decisions.iter().rev().take(2) {
+                println!("      y{} d{:<3} {why}", tick / dpy, tick % dpy);
+            }
+        }
     }
 }
 

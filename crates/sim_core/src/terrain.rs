@@ -350,6 +350,7 @@ mod tests {
             nature: Vec::new(),
             buildings: Vec::new(),
             stock: Vec::new(),
+            governor: None,
         }
     }
 

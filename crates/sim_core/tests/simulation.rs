@@ -692,8 +692,12 @@ fn a_town_short_of_money_builds_a_mint_and_strikes_coin() {
     let coin = db.content.product("coin").unwrap() as usize;
     assert!(towns.0.iter().all(|t| t.stock[coin] == 0.0));
 
-    // A town that turns minting off strikes nothing, even with a mint.
-    let mut s = full(42);
+    // A town that turns minting off strikes nothing, even with a mint. (With AI
+    // governments on, a broke town would turn it back on; that is their call.)
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, mut params, scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    params.governor.enabled = false;
+    let mut s = Simulation::new(db, params, &scenario);
     for t in ["Ironhold", "Greenvale", "Timberwick", "Brassmoor"] {
         s.order(&format!("mint {t} off")).unwrap();
     }
@@ -990,4 +994,143 @@ fn an_order_that_eats_into_food_is_flagged_but_not_capped() {
     let db = s.world.resource::<sim_core::Db>();
     let bread = db.content.product("bread").unwrap() as usize;
     assert!(s.world.resource::<sim_core::Towns>().0[1].procured[bread] > 0.0);
+}
+
+fn decided(s: &Simulation, town: usize, words: &str) -> bool {
+    s.world.resource::<sim_core::governor::Governors>().towns[town]
+        .decisions
+        .iter()
+        .any(|d| d.1.contains(words))
+}
+
+#[test]
+fn governors_pull_the_players_levers_through_the_order_queue() {
+    // AI towns govern themselves with the player's own orders; the player's town
+    // (Greenvale) is left alone.
+    let mut s = full(3);
+    run_years(&mut s, 1);
+    let log = &s.world.resource::<sim_core::policy::OrderQueue>().log;
+    let by_town = |t: u16| log.iter().filter(|(_, o)| o.town() == t).count();
+    assert!(
+        by_town(0) + by_town(2) + by_town(3) > 0,
+        "no AI town gave an order"
+    );
+    // Greenvale gets only the scenario's day-0 orders, if any; nothing later.
+    assert!(log.iter().all(|(tick, o)| o.town() != 1 || *tick == 0));
+
+    // Switched off, nobody governs.
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    scenario.seed = 3;
+    params.governor.enabled = false;
+    let mut s = Simulation::new(db, params, &scenario);
+    run_years(&mut s, 1);
+    assert!(s
+        .world
+        .resource::<sim_core::policy::OrderQueue>()
+        .log
+        .is_empty());
+}
+
+#[test]
+fn a_hungry_town_subsidizes_food_then_winds_it_down() {
+    // Brassmoor with two fields and no bread to start: it goes hungry in year one.
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    scenario.seed = 4;
+    let b = &mut scenario.towns[3];
+    for n in &mut b.nature {
+        if n.0 == "field" {
+            n.1 = 2;
+        }
+    }
+    b.stock.retain(|s| s.0 != "bread");
+    let mut s = Simulation::new(db, params, &scenario);
+    run_years(&mut s, 1);
+    assert!(
+        decided(&s, 3, "food is short"),
+        "no food decision while hungry"
+    );
+    run_years(&mut s, 3);
+    // Fed again: the hunger is over and the food subsidies are wound down.
+    let m = s.world.resource::<sim_core::metrics::Metrics>();
+    assert_eq!(m.latest().unwrap().towns[3].starving, 0.0);
+    assert!(decided(&s, 3, "enough food"));
+    let db = s.world.resource::<sim_core::Db>();
+    let town = &s.world.resource::<sim_core::Towns>().0[3];
+    assert!(db
+        .foods
+        .iter()
+        .all(|&(f, _)| town.policy.subsidy[f as usize] == 0.0));
+}
+
+#[test]
+fn a_broke_town_raises_taxes_and_mints() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, mut params, scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    params.market.starting_coins = 0.0;
+    let mut s = Simulation::new(db, params, &scenario);
+    for _ in 0..150 {
+        s.step();
+    }
+    let broke: Vec<usize> = (0..4)
+        .filter(|&t| t != 1 && decided(&s, t, "raised the wealth tax"))
+        .collect();
+    assert!(!broke.is_empty(), "no broke town raised its taxes");
+    assert!(
+        broke.iter().any(|&t| decided(&s, t, "mint to strike coin")),
+        "no broke town set its mint to strike"
+    );
+}
+
+#[test]
+fn governors_do_not_swing_back_and_forth() {
+    use sim_core::policy::{Order, Tax};
+    // Forty years: every town's wealth tax should move in long runs, not flip.
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    scenario.seed = 2;
+    for t in &mut scenario.towns {
+        t.population = 60;
+    }
+    params.governor.govern_player_town = true;
+    let mut s = Simulation::new(db, params, &scenario);
+    run_years(&mut s, 40);
+    let log = &s.world.resource::<sim_core::policy::OrderQueue>().log;
+    for t in 0..4u16 {
+        let rates: Vec<f32> = log
+            .iter()
+            .filter_map(|(_, o)| match o {
+                Order::Tax {
+                    town,
+                    tax: Tax::Wealth,
+                    rate,
+                } if *town == t => Some(rate.unwrap_or(0.5)),
+                _ => None,
+            })
+            .collect();
+        let mut reversals = 0;
+        let mut last = 0.0f32;
+        for w in rates.windows(2) {
+            let d = w[1] - w[0];
+            if d != 0.0 {
+                if last != 0.0 && d.signum() != last.signum() {
+                    reversals += 1;
+                }
+                last = d;
+            }
+        }
+        assert!(
+            reversals <= 4,
+            "town {t}: wealth tax reversed {reversals} times"
+        );
+        let subsidies = log
+            .iter()
+            .filter(|(_, o)| matches!(o, Order::Subsidy { town, .. } if *town == t))
+            .count();
+        assert!(
+            subsidies <= 80,
+            "town {t}: {subsidies} subsidy changes in 40 years"
+        );
+    }
 }

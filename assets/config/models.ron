@@ -205,4 +205,36 @@
         settlement_grant: 2.0,
         max_army_share: 0.3,
     ),
+
+    // AI town governments (governor.rs): every town but the player's pulls the
+    // player's levers by the same orders, from its own smoothed numbers.
+    governor: (
+        enabled: true,
+        interval: 30,            // days between decisions
+        smoothing_days: 30.0,
+        govern_player_town: false,
+        food_low: 0.5,           // food per resident vs the market's food target
+        food_ok: 1.0,
+        subsidy_step: 0.2,
+        max_subsidy: 0.6,
+        shortage_ratio: 3.0,     // price / base price that counts as a shortage
+        recovered_ratio: 1.3,
+        max_subsidized: 3,
+        treasury_low: 1.0,       // per resident
+        treasury_high: 2.4,      // below the market's 3.0 reserve, above which surplus is paid out
+        tax_step: 0.25,
+        income_tax_step: 0.05,
+        max_income_tax: 0.25,
+        spending_step: 0.5,
+        max_spending_factor: 2.0,
+        mint_after_checks: 3,
+        idle_high: 0.15,         // share of adults idle that triggers public works
+        public_works: ["cut_stone", "brick", "plank"],
+        works_amount: 60.0,
+        personalities: [
+            ("balanced", (thrift: 1.0, ambition: 1.0)),
+            ("frugal", (thrift: 1.5, ambition: 0.6)),
+            ("expansionist", (thrift: 0.7, ambition: 1.5)),
+        ],
+    ),
 )

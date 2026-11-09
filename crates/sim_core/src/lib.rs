@@ -9,6 +9,7 @@ pub mod components;
 pub mod config;
 pub mod db;
 pub mod goal;
+pub mod governor;
 pub mod ledger;
 pub mod metrics;
 pub mod models;
@@ -77,6 +78,7 @@ pub fn build_schedule() -> Schedule {
                 ledger::close_day,
                 metrics::record,
                 goal::evaluate,
+                governor::govern,
                 profile::mark::<12>,
             )
                 .chain(),
