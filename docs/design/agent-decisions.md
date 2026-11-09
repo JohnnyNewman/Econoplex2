@@ -536,7 +536,7 @@ lever and free housing.
 
 | setup | pop | starve % | gini | moves |
 | --- | --- | --- | --- | --- |
-| default (Weighted), agent decides alone | 1986 | 0 | 0.59 | 198 |
+| default (Weighted), agent decides alone, all towns known (#33) | 1989 | 0 | 0.60 | 196 |
 | default (Weighted), household + knowledge | 1984 | 0 | 0.65 | 60 |
 | Utility + matching + subsistence + four-term migration | 2008 | 0 | 0.34 | 65 |
 | same, crowding Rent(rate 0.3) | 2054 | 0 | 0.37 | 720 |
