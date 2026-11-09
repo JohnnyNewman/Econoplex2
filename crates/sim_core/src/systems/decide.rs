@@ -14,6 +14,7 @@ use crate::store::{Activity, AgentStore};
 use crate::world::{Decisions, Params, SimClock, SimSeed, Towns};
 use bevy_ecs::prelude::*;
 use rand::Rng;
+use rayon::prelude::*;
 use sim_data::dims::*;
 use sim_data::Category;
 
@@ -176,6 +177,114 @@ pub fn preference_weights(params: &Params, mind: &MindVec, state: &StateVec) -> 
     })
 }
 
+/// What every agent's job choice reads; shared by the parallel pass.
+struct Choice<'a> {
+    db: &'a Db,
+    params: &'a Params,
+    feasible: &'a [Vec<u32>],
+    profit: &'a [Vec<f32>],
+    mean_profit: &'a [f32],
+    scarcity: &'a [f32],
+    charters: &'a [Vec<bool>],
+    mastery: f32,
+}
+
+impl Choice<'_> {
+    /// How much agent `i` would like resting (first) and each job in `jobs`.
+    /// A score depends only on the agent and the job, so every agent's scores can
+    /// be worked out in parallel before anyone picks.
+    fn scores(&self, store: &AgentStore, i: usize, jobs: &[u32]) -> (f32, Vec<f32>) {
+        let (db, params) = (self.db, self.params);
+        let d = &params.decision;
+        let t = store.town[i] as usize;
+        let st = store.state[i];
+        let w = preference_weights(params, &store.mind[i], &st);
+        let sf = state_factor(&st, &params.needs);
+        let fatigue = st[state::FATIGUE];
+        let rest = [0.0, 0.0, 1.5 * fatigue, 0.0, 0.0, fatigue];
+        let job_scores = jobs
+            .iter()
+            .map(|&r| {
+                let m = &db.recipes[r as usize];
+                // Effective capability (own plus tool) along the recipe's skill.
+                let prof = dot(&store.cap[i], &m.skill) + dot(&store.equip_vec[i], &m.skill);
+                let eff = (prof + physique_bonus(&store.phys[i], m, params.physique.weight)) * sf;
+                let margin = eff - m.difficulty;
+                let in_guild = store.guild[i].is_some_and(|g| g.domain == m.domain);
+                // A chartered guild draws people into its trade, members or not.
+                let guild_pull = if in_guild {
+                    1.0
+                } else if self.charters[t][m.domain as usize] {
+                    params.policy.charter_pull
+                } else {
+                    0.0
+                };
+                let f = [
+                    ((self.profit[t][r as usize] - self.mean_profit[t]) / d.value_scale).tanh()
+                        * crate::models::sigmoid(6.0 * margin),
+                    // Centered success chance: rewards fit, not trivially easy work.
+                    crate::models::sigmoid(6.0 * margin) - 0.5,
+                    -(0.3 + m.phys_total) * (0.5 + fatigue),
+                    (1.0 - (prof / self.mastery).min(1.0)) * if margin > -0.3 { 1.0 } else { 0.2 },
+                    guild_pull,
+                    m.food_out * 0.25 * self.scarcity[t] * (0.5 + st[state::HUNGER]),
+                ];
+                dot(&w, &f)
+            })
+            .collect();
+        (dot(&w, &rest), job_scores)
+    }
+
+    /// Agent `i` weighs a random sample of the jobs still open (plus its habitual
+    /// job, if still open) against resting, and picks one by softmax. `None` is
+    /// rest. `score(r)` looks up the agent's score for job `r`.
+    #[allow(clippy::too_many_arguments)]
+    fn pick(
+        &self,
+        store: &AgentStore,
+        i: usize,
+        open_jobs: &[u32],
+        open: impl Fn(u32) -> bool,
+        rest: f32,
+        score: impl Fn(u32) -> f32,
+        pool: &mut Vec<u32>,
+        rng: &mut impl Rng,
+    ) -> Option<u32> {
+        let d = &self.params.decision;
+        let t = store.town[i] as usize;
+        pool.clear();
+        pool.extend_from_slice(open_jobs);
+        let k = d.candidates.min(pool.len());
+        for j in 0..k {
+            let swap = rng.random_range(j..pool.len());
+            pool.swap(j, swap);
+        }
+        pool.truncate(k);
+        if let Some(last) = store.last_recipe[i] {
+            if open(last) && self.feasible[t].contains(&last) && !pool.contains(&last) {
+                pool.push(last);
+            }
+        }
+        // Softmax sample over rest and the candidates.
+        let max = pool.iter().map(|&r| score(r)).fold(rest, f32::max);
+        let temp = d.temperature.max(1e-4);
+        let weight = |s: f32| ((s - max) / temp).exp();
+        let total = weight(rest) + pool.iter().map(|&r| weight(score(r))).sum::<f32>();
+        let mut x = rng.random::<f32>() * total;
+        x -= weight(rest);
+        if x <= 0.0 {
+            return None;
+        }
+        for &r in pool.iter() {
+            x -= weight(score(r));
+            if x <= 0.0 {
+                return Some(r);
+            }
+        }
+        None
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn decide(
     mut store: ResMut<AgentStore>,
@@ -190,8 +299,6 @@ pub fn decide(
     mut log: ResMut<crate::world::WorkLog>,
 ) {
     decisions.jobs.clear();
-    let mut rng = seed.rng(clock.tick, streams::DECIDE);
-    let d = &params.decision;
     let mastery = params.mastery();
 
     // Per-town context, computed once.
@@ -290,83 +397,59 @@ pub fn decide(
         .collect();
 
     let charters: Vec<Vec<bool>> = towns.0.iter().map(|t| t.policy.charters.clone()).collect();
+    let ctx = Choice {
+        db: &db,
+        params: &params,
+        feasible: &feasible,
+        profit: &profit,
+        mean_profit: &mean_profit,
+        scarcity: &scarcity,
+        charters: &charters,
+        mastery,
+    };
 
-    let mut options: Vec<(Option<u32>, f32)> = Vec::with_capacity(d.candidates + 2);
-    let mut pool: Vec<u32> = Vec::new();
+    // Phase 1, in parallel: every idle agent scores the jobs its town has open at
+    // the start of the day. Jobs only close during the day, so these scores cover
+    // everything an agent can still pick.
     let store = &mut *store;
-    let mut cap: Vec<f32> = Vec::with_capacity(db.cap_dim);
-    for i in 0..store.len() {
-        if !store.alive[i] || store.activity[i] != Activity::Idle {
-            continue;
-        }
+    let idle: Vec<usize> = (0..store.len())
+        .filter(|&i| store.alive[i] && store.activity[i] == Activity::Idle)
+        .collect();
+    // Position of each recipe in its town's opening list.
+    let slot_of: Vec<Vec<u32>> = open_jobs
+        .iter()
+        .map(|jobs| {
+            let mut v = vec![u32::MAX; db.recipes.len()];
+            for (k, &r) in jobs.iter().enumerate() {
+                v[r as usize] = k as u32;
+            }
+            v
+        })
+        .collect();
+    let scores: Vec<(f32, Vec<f32>)> = {
+        let store = &*store;
+        let open_jobs = &open_jobs;
+        idle.par_iter()
+            .map(|&i| ctx.scores(store, i, &open_jobs[store.town[i] as usize]))
+            .collect()
+    };
+
+    // Phase 2, in agent order: pick among the jobs still open, each agent with a
+    // random stream of its own, and take the job.
+    let mut pool: Vec<u32> = Vec::new();
+    for (&i, (rest, job_scores)) in idle.iter().zip(&scores) {
         let t = store.town[i] as usize;
-        let st = store.state[i];
-        let w = preference_weights(&params, &store.mind[i], &st);
-        store.effective_cap_into(i, &mut cap);
-        let sf = state_factor(&st, &params.needs);
-
-        // Candidate list: a random sample of feasible jobs plus the agent's habitual job.
-        pool.clear();
-        pool.extend_from_slice(&open_jobs[t]);
-        let k = d.candidates.min(pool.len());
-        for j in 0..k {
-            let swap = rng.random_range(j..pool.len());
-            pool.swap(j, swap);
-        }
-        pool.truncate(k);
-        if let Some(last) = store.last_recipe[i] {
-            if open(&slots_left, &capacity, t, last)
-                && feasible[t].contains(&last)
-                && !pool.contains(&last)
-            {
-                pool.push(last);
-            }
-        }
-
-        options.clear();
-        let fatigue = st[state::FATIGUE];
-        let rest = [0.0, 0.0, 1.5 * fatigue, 0.0, 0.0, fatigue];
-        options.push((None, dot(&w, &rest)));
-        for &r in &pool {
-            let m = &db.recipes[r as usize];
-            let prof = dot(&cap, &m.skill);
-            let eff = (prof + physique_bonus(&store.phys[i], m, params.physique.weight)) * sf;
-            let margin = eff - m.difficulty;
-            let in_guild = store.guild[i].is_some_and(|g| g.domain == m.domain);
-            // A chartered guild draws people into its trade, members or not.
-            let guild_pull = if in_guild {
-                1.0
-            } else if charters[t][m.domain as usize] {
-                params.policy.charter_pull
-            } else {
-                0.0
-            };
-            let f = [
-                ((profit[t][r as usize] - mean_profit[t]) / d.value_scale).tanh()
-                    * crate::models::sigmoid(6.0 * margin),
-                // Centered success chance: rewards fit, not trivially easy work.
-                crate::models::sigmoid(6.0 * margin) - 0.5,
-                -(0.3 + m.phys_total) * (0.5 + fatigue),
-                (1.0 - (prof / mastery).min(1.0)) * if margin > -0.3 { 1.0 } else { 0.2 },
-                guild_pull,
-                m.food_out * 0.25 * scarcity[t] * (0.5 + st[state::HUNGER]),
-            ];
-            options.push((Some(r), dot(&w, &f)));
-        }
-
-        // Softmax sample.
-        let max = options.iter().map(|o| o.1).fold(f32::MIN, f32::max);
-        let temp = d.temperature.max(1e-4);
-        let total: f32 = options.iter().map(|o| ((o.1 - max) / temp).exp()).sum();
-        let mut x = rng.random::<f32>() * total;
-        let mut choice = options[0].0;
-        for o in &options {
-            x -= ((o.1 - max) / temp).exp();
-            if x <= 0.0 {
-                choice = o.0;
-                break;
-            }
-        }
+        let mut rng = seed.agent_rng(clock.tick, streams::DECIDE, i);
+        let choice = ctx.pick(
+            store,
+            i,
+            &open_jobs[t],
+            |r| open(&slots_left, &capacity, t, r),
+            *rest,
+            |r| job_scores[slot_of[t][r as usize] as usize],
+            &mut pool,
+            &mut rng,
+        );
         match choice {
             None => {
                 store.activity[i] = Activity::Resting;
