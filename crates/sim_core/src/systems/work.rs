@@ -128,6 +128,26 @@ pub fn assign(
             .then(ra.cmp(rb))
     });
 
+    // Each town's nature sites by kind, in the town's order, with their amounts.
+    // Amounts only go down while teams are placed, so a site too worn for one team
+    // stays too worn for the next: a cursor per kind skips it for good instead of
+    // scanning every site again (big towns have hundreds of fields).
+    let nk = db.content.nature.len();
+    let mut nature: Vec<Vec<Vec<(Entity, f32, (f32, f32))>>> = towns
+        .0
+        .iter()
+        .map(|town| {
+            let mut by_kind = vec![Vec::new(); nk];
+            for &e in &town.nature_sites {
+                if let Ok((n, p)) = sites.get(e) {
+                    by_kind[n.kind as usize].push((e, n.amount, (p.x, p.y)));
+                }
+            }
+            by_kind
+        })
+        .collect();
+    let mut cursor = vec![vec![0usize; nk]; towns.0.len()];
+
     let mut pending: Vec<PendingTask> = Vec::new();
     let mut place = vec![u32::MAX; store.len()];
     for ((t, r), agents) in groups {
@@ -147,15 +167,16 @@ pub fn assign(
             let mut pos = town.pos;
             if let Some(kind) = m.nature {
                 let mut found = None;
-                for &e in &town.nature_sites {
-                    if let Ok((mut n, p)) = sites.get_mut(e) {
-                        if n.kind == kind && n.amount >= out {
-                            batches = batches.min((n.amount / out).floor() as u32);
-                            n.amount -= out * batches as f32;
-                            found = Some((p.x, p.y));
-                            break;
-                        }
+                let list = &mut nature[t as usize][kind as usize];
+                let c = &mut cursor[t as usize][kind as usize];
+                while let Some(site) = list.get_mut(*c) {
+                    if site.1 >= out {
+                        batches = batches.min((site.1 / out).floor() as u32);
+                        site.1 -= out * batches as f32;
+                        found = Some(site.2);
+                        break;
                     }
+                    *c += 1;
                 }
                 match found {
                     Some(p) => pos = p,
@@ -182,6 +203,15 @@ pub fn assign(
                 pos,
                 batches,
             });
+        }
+    }
+
+    // Write the harvested amounts back.
+    for (e, amount, _) in nature.into_iter().flatten().flatten() {
+        if let Ok((mut n, _)) = sites.get_mut(e) {
+            if n.amount != amount {
+                n.amount = amount;
+            }
         }
     }
 
@@ -268,6 +298,8 @@ pub fn produce(
     order.sort_unstable();
     let store = &mut *store;
 
+    // Phase A: a day's work on every task; collect the ones that finish today.
+    let mut done: Vec<(Entity, u32, Vec<u32>)> = Vec::new();
     for (_, e) in order {
         let Ok((_, mut task, parts)) = tasks.get_mut(e) else {
             continue;
@@ -292,33 +324,52 @@ pub fn produce(
             store.worked_today[w as usize] = Some(r);
         }
         task.progress += (workers.len() as f32).powf(params.work.work_exponent);
-        if task.progress < task.required {
-            continue;
+        if task.progress >= task.required {
+            done.push((e, r, workers));
         }
+    }
 
-        // --- resolve the step
+    // Phase B, in parallel: each finishing team's effective skill. It reads only
+    // the team's own members, whom no other task touches, so it is the same as
+    // working it out task by task.
+    let effs: Vec<f32> = {
+        let store = &*store;
+        done.par_iter()
+            .map(|(_, r, workers)| {
+                let m = &db.recipes[*r as usize];
+                let n = workers.len();
+                let caps: Vec<CapVec> = workers
+                    .iter()
+                    .map(|&w| store.effective_cap(w as usize))
+                    .collect();
+                let team = models.pooling.pool(&caps);
+                let mut sorted = workers.clone();
+                sorted.sort_unstable();
+                // People who trust each other coordinate better.
+                let prof = dot(&team, &m.skill) - models.pooling.coordination_penalty(n)
+                    + params.trust.team_bonus * store.cohesion(workers, &sorted);
+                let pb: f32 = workers
+                    .iter()
+                    .map(|&w| physique_bonus(&store.phys[w as usize], m, params.physique.weight))
+                    .sum::<f32>()
+                    / n as f32;
+                let sf: f32 = workers
+                    .iter()
+                    .map(|&w| state_factor(&store.state[w as usize], &params.needs))
+                    .sum::<f32>()
+                    / n as f32;
+                (prof + pb) * sf
+            })
+            .collect()
+    };
+
+    // Phase C, in task order: resolve each finished step.
+    for ((e, r, workers), eff) in done.into_iter().zip(effs) {
+        let Ok((_, task, parts)) = tasks.get_mut(e) else {
+            continue;
+        };
+        let m = &db.recipes[r as usize];
         let n = workers.len();
-        let caps: Vec<CapVec> = workers
-            .iter()
-            .map(|&w| store.effective_cap(w as usize))
-            .collect();
-        let team = models.pooling.pool(&caps);
-        let mut sorted = workers.clone();
-        sorted.sort_unstable();
-        // People who trust each other coordinate better.
-        let prof = dot(&team, &m.skill) - models.pooling.coordination_penalty(n)
-            + params.trust.team_bonus * store.cohesion(&workers, &sorted);
-        let pb: f32 = workers
-            .iter()
-            .map(|&w| physique_bonus(&store.phys[w as usize], m, params.physique.weight))
-            .sum::<f32>()
-            / n as f32;
-        let sf: f32 = workers
-            .iter()
-            .map(|&w| state_factor(&store.state[w as usize], &params.needs))
-            .sum::<f32>()
-            / n as f32;
-        let eff = (prof + pb) * sf;
         // A building always goes up once the work is done; skill shows in its quality.
         let success = m.builds.is_some()
             || rng.random::<f32>() < models.success.probability(eff, m.difficulty);
