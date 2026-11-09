@@ -415,6 +415,9 @@ pub const STARTING_SKILL_NOISE: f32 = 0.12;
 /// Build the world: lookup tables, models, towns, buildings, nature and agents.
 pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scenario) {
     db.group_firms(params.market.firms.grouping());
+    // A world generated from the seed, if the scenario asks for one.
+    let resolved = crate::worldgen::resolve(scenario, &db);
+    let scenario = &resolved;
     let models = Models::from_params(&params);
     let dpy = params.life.days_per_year;
     let seed = SimSeed(scenario.seed);

@@ -2135,3 +2135,42 @@ fn a_hungry_broke_town_imports_food_on_credit_and_recovers() {
     // Fed from its neighbours, the town keeps most of its people.
     assert!(pop_with > pop_without + 50, "{pop_with} vs {pop_without}");
 }
+
+#[test]
+fn a_world_generated_from_the_seed_runs_and_is_reproducible() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let run = |seed: u64| {
+        let (db, params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+        scenario.seed = seed;
+        scenario.generate = Some(sim_core::worldgen::GenSpec {
+            towns: 6,
+            ..Default::default()
+        });
+        let mut s = Simulation::new(db, params, &scenario);
+        run_years(&mut s, 1);
+        let spec = &s.world.resource::<sim_core::world::ScenarioSpec>().0;
+        // The stored scenario is the generated world (so saves keep it).
+        assert!(spec.generate.is_none());
+        let names: Vec<String> = spec.towns.iter().map(|t| t.name.clone()).collect();
+        (
+            names,
+            s.state_hash(),
+            s.world
+                .resource::<sim_core::metrics::Metrics>()
+                .latest()
+                .unwrap()
+                .clone(),
+        )
+    };
+    let (names, hash, y) = run(11);
+    assert_eq!(names.len(), 6);
+    assert!(y
+        .towns
+        .iter()
+        .all(|t| t.population > 100 && t.starving < 0.02));
+    // Same seed, same world and same run; another seed, another world.
+    let (names2, hash2, _) = run(11);
+    assert_eq!((names.clone(), hash), (names2, hash2));
+    let (names3, _, _) = run(12);
+    assert_ne!(names, names3);
+}
