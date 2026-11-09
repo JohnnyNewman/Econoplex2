@@ -9,6 +9,7 @@
 //! - [`wages::WageAdjustment`]: how a job's pay moves with workers and places.
 //! - [`learning::LearningValue`]: what the skill a job teaches is worth later.
 //! - [`matching`]: who gets which place, with apprentice places.
+//! - [`migration::Migration`]: what living in another town is worth.
 //! - [`valuation`]: what working a job or resting is worth to an agent (the
 //!   utility model's wiring of expectations and utility).
 //!
@@ -20,6 +21,7 @@ pub mod choice;
 pub mod expectations;
 pub mod learning;
 pub mod matching;
+pub mod migration;
 pub mod utility;
 pub mod valuation;
 pub mod wages;
@@ -34,9 +36,20 @@ pub struct DecisionModels {
     pub choice: Box<dyn choice::ChoiceRule>,
     pub wages: Box<dyn wages::WageAdjustment>,
     pub learning: Box<dyn learning::LearningValue>,
+    pub migration: Box<dyn migration::Migration>,
 }
 
 impl DecisionModels {
+    pub fn from_model_params(m: &crate::config::ModelParams) -> Self {
+        let mut d = Self::from_params(&m.decision);
+        d.migration = migration::build(
+            &m.decision.migration,
+            &m.migration,
+            m.trust.migration_weight,
+        );
+        d
+    }
+
     pub fn from_params(p: &crate::config::DecisionParams) -> Self {
         DecisionModels {
             expectations: expectations::build(&p.expectations),
@@ -44,6 +57,11 @@ impl DecisionModels {
             choice: choice::build(&p.choice, p.temperature),
             wages: wages::build(&p.wages),
             learning: learning::build(&p.learning),
+            migration: migration::build(
+                &p.migration,
+                &crate::config::MigrationParams::default(),
+                0.0,
+            ),
         }
     }
 }

@@ -169,6 +169,9 @@ pub struct DecisionParams {
     /// Component: who gets which place, and apprentice places.
     #[serde(default)]
     pub matching: crate::decision::matching::MatchingParams,
+    /// Component: what living in another town is worth to an agent.
+    #[serde(default)]
+    pub migration: crate::decision::migration::MigrationValueParams,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -437,7 +440,7 @@ pub struct TrustParams {
     pub migration_weight: f32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct MigrationParams {
     /// Days between migration rounds.
     pub interval: u32,

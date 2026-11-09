@@ -88,6 +88,13 @@
         // matching: DeferredAcceptance(apprentice_wage: 0.4, share: (min: 0.0,
         //     max: 0.3, step: 0.05, trainee_output: 0.5, retention: 0.8, payoff_days: 0.5)),
         matching: FirstCome,
+        // Component: what living in another town is worth. Weighted: the
+        // `migration` section's weighted sum. Utility: utility of needs there
+        // (pay of the agent's trade over the horizon, food, safety), plus
+        // social_weight x (outlook closeness + friends), minus distance_cost per
+        // 1000 road units; move when it beats home by min_gain. Example:
+        // migration: Utility(social_weight: 0.5, distance_cost: 0.1, min_gain: 0.5, food_reference: 3.0),
+        migration: Weighted,
     ),
 
     social: BoundedConfidence(

@@ -373,9 +373,7 @@ pub fn restore(
     world.insert_resource(store);
     world.insert_resource(Towns(towns));
     world.insert_resource(Models::from_params(&params));
-    world.insert_resource(crate::decision::DecisionModels::from_params(
-        &params.decision,
-    ));
+    world.insert_resource(crate::decision::DecisionModels::from_model_params(&params));
     world.insert_resource(crate::terrain::Terrain::build(&scenario));
     world.insert_resource(crate::world::player_town(&scenario));
     world.insert_resource(ScenarioSpec(scenario));
