@@ -31,7 +31,7 @@ use std::path::Path;
 
 /// Bumped whenever the save layout changes incompatibly.
 /// 2: the ledger gained income tax (18 flows). 3: agents' pay expectations.
-pub const SAVE_VERSION: u32 = 6;
+pub const SAVE_VERSION: u32 = 7;
 
 /// One simulation entity and its components.
 #[derive(Serialize, Deserialize)]
@@ -353,6 +353,8 @@ pub fn restore(
     // Saves from before larders existed.
     store.larder.resize(store.len(), Vec::new());
     store.lived_in.resize(store.len(), Vec::new());
+    store.owned.resize(store.len(), Vec::new());
+    store.comfort.resize(store.len(), 0.0);
     for i in 0..store.len() {
         store.equipped[i] = map.opt(store.equipped[i]);
         store.weapon[i] = map.opt(store.weapon[i]);

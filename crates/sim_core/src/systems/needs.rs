@@ -120,8 +120,14 @@ pub fn sense(
             Activity::Working(_) => {}
         }
 
-        let target =
+        let mut target =
             0.7 - 0.5 * st[HUNGER] - 0.3 * st[FATIGUE] + 0.2 * (store.wealth[i] / 50.0).tanh();
+        // Household goods make a home comfortable (see `consumption`).
+        if let crate::consumption::ConsumptionParams::Basket { comfort_weight, .. } =
+            &params.market.consumption
+        {
+            target += comfort_weight * (store.comfort[i] - 0.5);
+        }
         st[HAPPINESS] =
             (st[HAPPINESS] + p.happiness_rate * (target - st[HAPPINESS])).clamp(0.0, 1.0);
     }

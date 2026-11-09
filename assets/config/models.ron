@@ -210,6 +210,19 @@
         // closes until capital comes. Example:
         // firms: Workshops(start_cash: 100.0, reserve_days: 10.0, payout_rate: 0.05, profit_tax: 0.2, close_days: 30),
         firms: Treasury,
+        // What households buy for their own use. None: food and tools only.
+        // Basket(...): each adult keeps a household stock of the listed goods
+        // (each lasts life_days; it wants `want` x taste (0.5 + the named mind
+        // dimension) x (wealth / town median)^elasticity); every `interval` days it
+        // spends up to spend_share of its wealth on what it lacks most, from firms
+        // or the market. Owning what it wants raises happiness by comfort_weight.
+        // Example:
+        // consumption: Basket(spend_share: 0.3, interval: 7, elasticity: 0.5, comfort_weight: 0.2, goods: [
+        //     (good: "clothes", want: 2.0, life_days: 240.0, taste: Some("ambition")),
+        //     (good: "pot", want: 3.0, life_days: 360.0, taste: Some("tradition")),
+        //     (good: "ale", want: 2.0, life_days: 7.0, taste: Some("sociability")),
+        // ]),
+        consumption: None,
         // Price dynamics per price class (each good's class is in the content:
         // price_class, else food is Essential and the rest Commodity; Labour is the
         // jobs' wage factors). Inertia: Partial(speed) moves the log price speed x

@@ -128,6 +128,22 @@ pub fn job_capacity(
                     };
                 cap = cap.min((have - held).max(0.0) / q * m.duration);
             }
+            // With workshops as firms, a firm offers only the places whose inputs
+            // it can pay for (so nobody waits at a workshop that can't start).
+            if params.market.firms.on() && !crate::firms::is_public(db, m) {
+                let f = &town.firms[db.recipe_firm[r]];
+                if f.closed {
+                    return 0.0;
+                }
+                let per_batch: f32 = m
+                    .inputs
+                    .iter()
+                    .map(|&(p, q)| town.price[p as usize] * q)
+                    .sum();
+                if per_batch > 0.0 {
+                    cap = cap.min(f.cash.max(0.0) / per_batch * m.duration);
+                }
+            }
             cap
         })
         .collect()
