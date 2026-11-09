@@ -2174,3 +2174,32 @@ fn a_world_generated_from_the_seed_runs_and_is_reproducible() {
     let (names3, _, _) = run(12);
     assert_ne!(names, names3);
 }
+
+#[test]
+fn history_logs_events_and_monthly_samples_and_saves_keep_them() {
+    use sim_core::history::{EventKind, History, SAMPLE_DAYS};
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let paths = AssetPaths::from_root(&root);
+    let mut a = full(11);
+    a.order("subsidy Greenvale bread 0.3").unwrap();
+    run_years(&mut a, 2);
+    let h = a.world.resource::<History>();
+    let towns = a.world.resource::<sim_core::Towns>().0.len();
+    // One sample per town and month.
+    let months = a.tick() / SAMPLE_DAYS;
+    assert_eq!(h.samples.len() as u64, months * towns as u64);
+    // The player's order and the towns' building are in the log.
+    assert!(h
+        .events
+        .iter()
+        .any(|e| e.kind == EventKind::Order && e.text.contains("subsidy on bread")));
+    assert!(h.events.iter().any(|e| e.kind == EventKind::Built));
+    // Events come in order of time.
+    assert!(h.events.windows(2).all(|w| w[0].tick <= w[1].tick));
+    // A saved game keeps its history.
+    let n = h.events.len();
+    let text = sim_core::save::to_string(&a.world).unwrap();
+    let content = sim_data::Content::load_dir(&paths.content).unwrap();
+    let b = Simulation::from_save(sim_core::save::from_str(&text).unwrap(), content).unwrap();
+    assert_eq!(b.world.resource::<History>().events.len(), n);
+}

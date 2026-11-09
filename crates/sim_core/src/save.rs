@@ -167,6 +167,8 @@ pub struct SaveFile {
     pub match_state: crate::goal::MatchState,
     #[serde(default)]
     pub governors: crate::governor::Governors,
+    #[serde(default)]
+    pub history: crate::history::History,
 }
 
 impl SaveFile {
@@ -228,6 +230,7 @@ struct SaveRef<'a> {
     metrics: &'a Metrics,
     match_state: &'a crate::goal::MatchState,
     governors: &'a crate::governor::Governors,
+    history: &'a crate::history::History,
 }
 
 /// Fingerprint of the content a world was built from (FNV-1a, stable across builds).
@@ -264,6 +267,7 @@ pub fn to_string(world: &World) -> Result<String, String> {
         metrics: world.resource::<Metrics>(),
         match_state: world.resource::<crate::goal::MatchState>(),
         governors: world.resource::<crate::governor::Governors>(),
+        history: world.resource::<crate::history::History>(),
     };
     let config = ron::ser::PrettyConfig::new().depth_limit(2);
     ron::ser::to_string_pretty(&save, config).map_err(|e| format!("cannot write save: {e}"))
@@ -329,6 +333,7 @@ pub fn restore(
         metrics,
         match_state,
         governors,
+        history,
         ..
     } = save;
     let mut db = Db::build(
@@ -392,6 +397,7 @@ pub fn restore(
     world.insert_resource(decisions);
     world.insert_resource(work_log);
     world.insert_resource(metrics);
+    world.insert_resource(history);
     world.insert_resource(match_state);
     world.insert_resource(governors);
     Ok(())

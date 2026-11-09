@@ -4,7 +4,7 @@
 //! econoplex-sim [--years N] [--seed S] [--scale F] [--assets DIR] [--csv FILE]
 //!               [--set path=value]... [--sweep path=v1,v2,...]... [--seeds N]
 //!               [--order DAY:ORDER]... [--save FILE] [--load FILE]
-//!               [--generate N] [--map-svg FILE]
+//!               [--generate N] [--map-svg FILE] [--events FILE] [--history FILE]
 //!               [--embedding] [--hash] [--profile] [--quiet]
 //! ```
 //!
@@ -47,6 +47,9 @@ struct Args {
     generate: Option<u32>,
     /// Write the map as an SVG picture and exit.
     map_svg: Option<PathBuf>,
+    /// Write the event log / the monthly history as CSV after the run.
+    events: Option<PathBuf>,
+    history: Option<PathBuf>,
 }
 
 fn parse_args() -> Args {
@@ -69,6 +72,8 @@ fn parse_args() -> Args {
         orders: Vec::new(),
         generate: None,
         map_svg: None,
+        events: None,
+        history: None,
     };
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
@@ -96,6 +101,8 @@ fn parse_args() -> Args {
             }
             "--assets" => a.assets = Some(PathBuf::from(val())),
             "--csv" => a.csv = Some(PathBuf::from(val())),
+            "--events" => a.events = Some(PathBuf::from(val())),
+            "--history" => a.history = Some(PathBuf::from(val())),
             "--set" => {
                 let v = val();
                 let (k, x) = v
@@ -150,6 +157,8 @@ fn parse_args() -> Args {
                      --scale F      multiply every town's population and land (e.g. 10 for ~12,000 agents)\n\
                      --generate N   generate a world of N towns from the seed (instead of the scenario's)\n\
                      --map-svg FILE write the map (towns, land, rivers, hills) as an SVG picture and exit\n\
+                     --events FILE  write the event log (raids, conquests, buildings, famines, orders) as CSV\n\
+                     --history FILE write monthly samples per town as CSV\n\
                      --assets DIR   assets folder (default: discovered)\n\
                      --csv FILE     write per-town yearly metrics as CSV (batch mode: one row per run)\n\
                      --set P=V      override a parameter in models.ron, e.g. military.tribute_share=0.3\n\
@@ -312,6 +321,69 @@ fn main() {
             .unwrap_or_else(|e| die(&format!("cannot write CSV: {e}")));
         println!("wrote {}", path.display());
     }
+    if let Some(path) = &args.events {
+        write_events(path, &sim).unwrap_or_else(|e| die(&format!("cannot write events: {e}")));
+        println!("wrote {}", path.display());
+    }
+    if let Some(path) = &args.history {
+        write_history(path, &sim).unwrap_or_else(|e| die(&format!("cannot write history: {e}")));
+        println!("wrote {}", path.display());
+    }
+}
+
+/// The event log as CSV: day, year, day of year, town, kind, text.
+fn write_events(path: &std::path::Path, sim: &Simulation) -> std::io::Result<()> {
+    let h = sim.world.resource::<sim_core::history::History>();
+    let towns = sim.world.resource::<sim_core::Towns>();
+    let dpy = sim.world.resource::<sim_core::SimClock>().days_per_year as u64;
+    let mut f = std::fs::File::create(path)?;
+    writeln!(f, "day,year,day_of_year,town,kind,text")?;
+    for e in &h.events {
+        writeln!(
+            f,
+            "{},{},{},{},{},\"{}\"",
+            e.tick,
+            e.tick / dpy,
+            e.tick % dpy,
+            towns
+                .0
+                .get(e.town as usize)
+                .map_or("?", |t| t.name.as_str()),
+            e.kind.name(),
+            e.text.replace('"', "'")
+        )?;
+    }
+    Ok(())
+}
+
+/// The monthly samples as CSV, one row per town and month.
+fn write_history(path: &std::path::Path, sim: &Simulation) -> std::io::Result<()> {
+    let h = sim.world.resource::<sim_core::history::History>();
+    let towns = sim.world.resource::<sim_core::Towns>();
+    let name = |t: u16| towns.0.get(t as usize).map_or("?", |t| t.name.as_str());
+    let mut f = std::fs::File::create(path)?;
+    writeln!(
+        f,
+        "day,town,population,food_per_capita,treasury,mean_wealth,soldiers,buildings,starving,bread_price,ruler"
+    )?;
+    for s in &h.samples {
+        writeln!(
+            f,
+            "{},{},{},{:.3},{:.1},{:.2},{},{},{},{:.3},{}",
+            s.tick,
+            name(s.town),
+            s.population,
+            s.food_per_capita,
+            s.treasury,
+            s.mean_wealth,
+            s.soldiers,
+            s.buildings,
+            s.starving,
+            s.bread_price,
+            s.ruler.map_or("", name)
+        )?;
+    }
+    Ok(())
 }
 
 /// What the AI governments did: orders by kind, and each town's latest decisions.

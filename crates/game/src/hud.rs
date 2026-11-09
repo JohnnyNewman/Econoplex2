@@ -125,6 +125,7 @@ pub fn update_hud(
     player: Res<sim_core::policy::PlayerTown>,
     toast: Res<crate::saving::Toast>,
     time: Res<Time>,
+    history: Res<sim_core::history::History>,
     goal: (
         Res<sim_core::world::ScenarioSpec>,
         Res<sim_core::goal::MatchState>,
@@ -227,6 +228,23 @@ pub fn update_hud(
     }
     if latest.is_none() {
         s.push_str("(complexity and swords appear after the first year)\n");
+    }
+    // The latest events (see `sim_core::history`), newest first.
+    let recent: Vec<String> = history
+        .recent(5)
+        .map(|e| {
+            format!(
+                "  y{} d{:>3}  {}",
+                e.tick / clock.days_per_year as u64,
+                e.tick % clock.days_per_year as u64,
+                e.text
+            )
+        })
+        .collect();
+    if !recent.is_empty() {
+        s.push_str("\nlatest events\n");
+        s.push_str(&recent.join("\n"));
+        s.push('\n');
     }
     if let Some(msg) = toast.current(time.elapsed_secs_f64()) {
         s.push_str(&format!(
