@@ -291,6 +291,50 @@ fn jitter(p: (f32, f32), r: f32, rng: &mut impl Rng) -> (f32, f32) {
 /// Share of the way the public pay rate moves toward each realised step.
 const PAY_RATE_SMOOTHING: f32 = 0.05;
 
+/// What a worker-day at recipe `r` would pay in this town at today's prices: the
+/// workers' share of the value added (plus subsidy) of one run, over the days one
+/// worker needs for it, at a typical worker's success rate.
+pub fn posted_pay(town: &crate::world::Town, db: &Db, params: &Params, r: usize) -> f32 {
+    let m = &db.recipes[r];
+    let out: f32 = m
+        .outputs
+        .iter()
+        .map(|&(p, q)| {
+            let p = p as usize;
+            (town.price[p] + town.policy.subsidy[p] * db.base_price[p]) * q
+        })
+        .sum();
+    let inputs: f32 = m
+        .inputs
+        .iter()
+        .map(|&(p, q)| town.price[p as usize] * q)
+        .sum();
+    let base = town.policy.wage_share.unwrap_or(params.work.wage_share);
+    let factor = town.wage_factor.get(r).copied().unwrap_or(1.0);
+    let share = (base * factor).min(1.0);
+    share * (out - inputs).max(0.0) * params.decision.valuation.typical_success
+        / m.duration.max(1.0)
+}
+
+/// Every day each town's public pay rate drifts toward the posted pay at today's
+/// prices, over `decision.valuation.posted_pay_days`. Realised pay pulls much
+/// harder (each finished step), so for jobs people do the rate is what they
+/// earn; a job nobody has tried yet still shows what it would pay, instead of
+/// nothing, and so can be tried.
+pub fn post_pay(towns: &mut crate::world::Towns, db: &Db, params: &Params) {
+    let days = params.decision.valuation.posted_pay_days;
+    if days <= 0.0 {
+        return;
+    }
+    for town in towns.0.iter_mut() {
+        town.pay_rate.resize(db.recipes.len(), 0.0);
+        for r in 0..db.recipes.len() {
+            let posted = posted_pay(town, db, params, r);
+            town.pay_rate[r] += (posted - town.pay_rate[r]) / days.max(1.0);
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn produce(
     mut commands: Commands,
