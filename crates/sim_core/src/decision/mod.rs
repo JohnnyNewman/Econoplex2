@@ -10,6 +10,7 @@
 //! - [`learning::LearningValue`]: what the skill a job teaches is worth later.
 //! - [`matching`]: who gets which place, with apprentice places.
 //! - [`migration::Migration`]: what living in another town is worth.
+//! - [`subsistence`]: how much of their food output workers' households keep.
 //! - [`valuation`]: what working a job or resting is worth to an agent (the
 //!   utility model's wiring of expectations and utility).
 //!
@@ -22,6 +23,7 @@ pub mod expectations;
 pub mod learning;
 pub mod matching;
 pub mod migration;
+pub mod subsistence;
 pub mod utility;
 pub mod valuation;
 pub mod wages;

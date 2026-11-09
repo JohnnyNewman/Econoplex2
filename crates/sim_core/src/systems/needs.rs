@@ -36,6 +36,14 @@ pub fn sense(
 
         st[HUNGER] += p.hunger_per_day;
         if st[HUNGER] > p.eat_threshold {
+            // The household's own food first.
+            if let Some((_, value)) =
+                crate::decision::subsistence::take_meal(&mut store.larder[i], &db.foods)
+            {
+                st[HUNGER] = (st[HUNGER] - value).max(0.0);
+            }
+        }
+        if st[HUNGER] > p.eat_threshold {
             for &(food, value) in &db.foods {
                 let f = food as usize;
                 if town.stock[f] >= 1.0 + reserve[store.town[i] as usize][f] {

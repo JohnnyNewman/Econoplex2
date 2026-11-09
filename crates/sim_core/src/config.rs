@@ -172,6 +172,9 @@ pub struct DecisionParams {
     /// Component: what living in another town is worth to an agent.
     #[serde(default)]
     pub migration: crate::decision::migration::MigrationValueParams,
+    /// Component: food workers' households keep part of what they make.
+    #[serde(default)]
+    pub subsistence: crate::decision::subsistence::SubsistenceParams,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]

@@ -312,7 +312,35 @@ impl Choice<'_> {
                             typical_success: d.valuation.typical_success,
                             age_years: store.age_years(i, self.days_per_year),
                         });
-                valuation::job_value(u, &d.valuation, &situation, pay, success, fatigue, learned)
+                // Food the household would keep from a day of this job, in meals.
+                let keep = d.subsistence.share();
+                let cover = if keep > 0.0 {
+                    let (meals, relief) = m
+                        .outputs
+                        .iter()
+                        .filter(|o| db.is_food[o.0 as usize])
+                        .fold((0.0, 0.0f32), |(n, r), &(p, q)| {
+                            let v = db.foods.iter().find(|f| f.0 == p).map_or(0.0, |f| f.1);
+                            (n + q, r.max(v))
+                        });
+                    crate::decision::subsistence::food_cover(
+                        keep * meals / m.duration.max(1e-3),
+                        relief,
+                        params.needs.hunger_per_day,
+                    )
+                } else {
+                    0.0
+                };
+                valuation::job_value_fed(
+                    u,
+                    &d.valuation,
+                    &situation,
+                    pay,
+                    success,
+                    fatigue,
+                    learned,
+                    cover,
+                )
             })
             .collect();
         (rest, job_scores)

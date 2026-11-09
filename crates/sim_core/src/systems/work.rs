@@ -401,12 +401,29 @@ pub fn produce(
             let town = &mut towns.0[t];
             let mut value = 0.0;
             let mut subsidy = 0.0;
+            let keep = params.decision.subsistence.share();
+            let larder_cap = params.decision.subsistence.larder_meals();
             for &(p, q) in &m.outputs {
                 let q = q * task.batches as f32;
                 let pi = p as usize;
+                town.produced_this_year[pi] += q;
+                // Households keep part of the food they make; the rest goes to market.
+                let mut kept = 0.0;
+                if keep > 0.0 && db.is_food[pi] && db.coin[pi] <= 0.0 {
+                    let each = q * keep / workers.len() as f32;
+                    for &w in &workers {
+                        let back = crate::decision::subsistence::store(
+                            &mut store.larder[w as usize],
+                            p,
+                            each,
+                            larder_cap,
+                        );
+                        kept += each - back;
+                    }
+                }
+                let q = q - kept;
                 value += town.price[pi] * q * (0.5 + quality);
                 subsidy += town.policy.subsidy[pi] * db.base_price[pi] * q;
-                town.produced_this_year[pi] += q;
                 if db.coin[pi] > 0.0 {
                     // Struck coin is new money in the treasury, not a good in stock.
                     let minted = q * db.coin[pi];
