@@ -168,3 +168,45 @@ demand-driven price, now with money behind it.
 | Scope | large (5 PRs) | small (1 PR) | medium (2 PRs) |
 | New player levers | profit tax, workshop grants | spending rate | borrowing limit, rate |
 | Risk | firm failures, cash hoarding | inflation if overdone | debt spirals |
+
+## Results: 40-year comparison (2026-11-09)
+
+Six seeds (42–47), 40 years, mean ± sd. The workshop setup is
+`Workshops(start_cash: 50, reserve_days: 5, payout_rate: 0.2, profit_tax: 0.2, close_days: 30, credit_days: 30)`
+with `pricing: Demand(cover_days: 10, blocked_workers: 2)`. Consumption is the
+example basket in models.ron (clothes, pots, ale).
+
+| | A Features, treasury (default) | B A + consumption | C Features, workshops + consumption | D Utility, treasury + consumption | E Utility, workshops + consumption |
+| --- | --- | --- | --- | --- | --- |
+| population | 4016 ± 117 | 3916 ± 300 | 3044 ± 201 | 4028 ± 256 | 2975 ± 234 |
+| starvation % | 0 | 0 | 0.04 | 0 | 0.07 |
+| kinds of goods | 23.1 ± 2.0 | 21.9 ± 2.9 | 8.3 ± 2.1 | 19.2 ± 0.9 | 10.4 ± 1.6 |
+| swords | 4137 ± 733 | 4221 ± 729 | 0 | 140 ± 297 | 0 |
+| mean wealth | 46 | 44 | 6.5 | 15 | 7.2 |
+| wealth Gini | 0.59 | 0.70 | 0.38 | 0.38 | 0.23 |
+| moves | 218 | 184 | 116 | 343 | 2222 |
+| ms per tick (6 runs sharing the CPU) | 4.9 | 5.0 | 3.0 | 10.8 | 5.0 |
+
+**Decision: no default changes.**
+- Workshops (C, E) lose a quarter of the population, about two-thirds of the
+  variety and all swords, so `market.firms` stays `Treasury`.
+- Household consumption under the treasury market (B) is roughly neutral: variety
+  and swords within the seed spread, slightly lower population, higher
+  inequality. It stays off as well.
+- The utility model with consumption (D) has more swords than before (140, up
+  from 34) but still far fewer than Features, so `decision.model` stays
+  `Features`.
+
+**Why workshops fall short.** Their money is too thin for the chains. Most of a
+town's coin ends up as working capital spread over about 40 workshops.
+Input-using workshops can't pay for a batch, and households are too poor to buy
+much (mean wealth 6–7 against 46). Trade credit, loans and place caps each helped
+a little.
+
+The remaining options:
+- fewer, larger firms (one per building instance or per guild, not per kind);
+- prices that adjust the money supply's purchasing power (the price indices show
+  strong deflation in glutted towns);
+- letting the mint respond to firms' demand for money (it only answers the
+  treasury today).
+
