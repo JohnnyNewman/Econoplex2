@@ -292,6 +292,68 @@ flowchart LR
 
 ---
 
+## Module boundaries
+
+Decision-making is built from separate components, each behind a trait in
+`sim_core::decision`. Each is chosen in `models.ron`, the same way the existing models
+(`team_pooling`, `learning`, `diffusion`, ...) are today, and each has its own params
+block and its own unit tests. A component sees only its inputs below. It doesn't
+reach into the agent store or another component's internals. The decide, matching
+and wage systems wire them together.
+
+```mermaid
+flowchart LR
+  subgraph inputs[Read-only inputs]
+    obs[market observations: prices, realised pay per town and job]
+    ag[agent view: needs state, mind, capability along a skill, wealth, age]
+    job[job offer: recipe, output, difficulty, physical load, regular or apprentice]
+  end
+  E[Expectations<br/>forecast price and pay]
+  U[Utility<br/>needs to value]
+  L[LearningValue<br/>value of skill gained]
+  C[ChoiceRule<br/>argmax or logit]
+  W[WageAdjustment<br/>queues to pay factor]
+  M[JobMatching<br/>places, apprentices]
+  G[Migration<br/>value of moving]
+  obs --> E
+  ag --> E
+  E -- expected pay, price --> U
+  ag --> U
+  job --> U
+  ag --> L
+  job --> L
+  E --> L
+  U -- value per action --> C
+  L -- investment value --> C
+  E --> G
+  U --> G
+  G -- value of moving --> C
+  C -- ranked applications --> M
+  M -- matches, queues, unfilled places --> W
+  W -- pay factor --> obs
+  M -- jobs taken --> out[assign: teams and tasks]
+```
+
+| Component | Trait input | Trait output | Implementations |
+| --- | --- | --- | --- |
+| Expectations | the agent's last expectation, an observed price or pay, the agent's curiosity | the new expectation | `Fixed` (use the current price), `Adaptive` (EMA with rate from curiosity) |
+| Utility | needs state, need weights from the mind, a planned change to the needs (food bought, fatigue added, standing gained) | utility value | `Crra { rho }` |
+| LearningValue | skill gain along a skill, expected pay of jobs using it, horizon, discount | present value | `None`, `Discounted { horizon_days, discount }` |
+| ChoiceRule | values per option, the agent's temperature, a random stream | chosen option, or a ranked list for matching | `Argmax`, `Logit { base_temperature }` |
+| WageAdjustment | applicants, places, current factor | new factor | `Fixed`, `ExcessDemand { step, min, max }` |
+| JobMatching | ranked applications per agent, places per job, apprentice places | matches | `FirstCome` (today's), `DeferredAcceptance { apprentice_wage, apprentice_share_min, apprentice_share_max }` |
+| Migration | the value of staying vs. moving to each town | value of each move | `Weighted` (today's migrate rule), `Utility` |
+
+**Today's model stays as one implementation:**
+- `decision.model: Features` keeps the current feature-matrix scoring, with
+  `JobMatching::FirstCome`, `WageAdjustment::Fixed` and `Migration::Weighted`.
+- `decision.model: Utility` composes the new components.
+- Components can be mixed: for example `Features` scoring with `DeferredAcceptance`
+  matching, to test one change at a time.
+
+All seven implementation PRs keep this structure: each adds or changes one component
+(plus its params block and tests) and the wiring that uses it.
+
 ## (d) Migration plan
 
 Everything is behind `decision.model: Features | Utility` in `models.ron`. `Features`
