@@ -1416,3 +1416,37 @@ fn matching_gives_beginners_apprentice_places_and_keeps_the_books() {
         assert!((net - change).abs() < 1e-3 * sum_group(l, Group::Issued).max(1.0));
     }
 }
+
+#[test]
+fn utility_migration_moves_households_and_respects_closed_borders() {
+    use sim_core::decision::migration::MigrationValueParams;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    scenario.seed = 3;
+    params.decision.migration = MigrationValueParams::Utility {
+        social_weight: 0.5,
+        distance_cost: 0.1,
+        min_gain: 0.5,
+        food_reference: 3.0,
+    };
+    let mut s = Simulation::new(db, params, &scenario);
+    s.order("immigration Greenvale closed").unwrap();
+    run_years(&mut s, 4);
+    let m = s.world.resource::<sim_core::metrics::Metrics>();
+    let arrived: u32 = m
+        .years
+        .iter()
+        .flat_map(|y| &y.towns)
+        .map(|t| t.moves.arrived)
+        .sum();
+    let left: u32 = m
+        .years
+        .iter()
+        .flat_map(|y| &y.towns)
+        .map(|t| t.moves.left)
+        .sum();
+    assert!(arrived > 0, "nobody moved");
+    assert_eq!(arrived, left, "every arrival leaves somewhere");
+    let into_greenvale: u32 = m.years.iter().map(|y| y.towns[1].moves.arrived).sum();
+    assert_eq!(into_greenvale, 0, "closed borders let people in");
+}

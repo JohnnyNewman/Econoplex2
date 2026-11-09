@@ -48,7 +48,9 @@ pub fn migrate(
     clock: Res<SimClock>,
     seed: Res<SimSeed>,
     terrain: Res<crate::terrain::Terrain>,
+    decision: Res<crate::decision::DecisionModels>,
 ) {
+    use crate::decision::migration::{MoverView, TownView};
     let mp = &params.migration;
     if mp.interval == 0 || !clock.tick.is_multiple_of(mp.interval as u64) || towns.0.len() < 2 {
         return;
@@ -59,20 +61,40 @@ pub fn migrate(
     let n_towns = towns.0.len();
 
     // --- what each town offers everyone
-    let base: Vec<f32> = towns
+    let food_pc: Vec<f32> = towns
+        .0
+        .iter()
+        .map(|t| t.food_stock(&db) / t.residents.len().max(1) as f32)
+        .collect();
+    let danger: Vec<f32> = towns
         .0
         .iter()
         .map(|t| {
-            let food = t.food_stock(&db) / t.residents.len().max(1) as f32;
-            let danger = if t.war.attacked > t.war.defended {
+            if t.war.attacked > t.war.defended {
                 1.0
             } else {
                 0.0
-            };
-            mp.food_weight * (food / mp.food_reference.max(1e-6)).min(2.0)
-                - mp.danger_weight * danger
+            }
         })
         .collect();
+    let median_wealth: Vec<f32> = towns
+        .0
+        .iter()
+        .map(|t| {
+            let mut w: Vec<f32> = t
+                .residents
+                .iter()
+                .map(|&i| store.wealth[i as usize])
+                .collect();
+            if w.is_empty() {
+                return 1.0;
+            }
+            let mid = w.len() / 2;
+            *w.select_nth_unstable_by(mid, f32::total_cmp).1
+        })
+        .collect();
+    let horizon = params.decision.valuation.horizon_weight();
+    let u = &*decision.utility;
     let ideology: Vec<[f32; IDEOLOGY]> = towns
         .0
         .iter()
@@ -124,38 +146,55 @@ pub fn migrate(
                 friends[store.town[tie.other as usize] as usize] += tie.value;
             }
         }
-        let utility = |t: usize| {
+        // How the agent sees each town; the migration component values it.
+        let weights =
+            crate::decision::utility::need_weights(&params.decision.utility, &store.mind[i]);
+        let st = store.state[i];
+        let me = MoverView {
+            state: &st,
+            wealth: store.wealth[i],
+            median_wealth: median_wealth[home],
+            weights: &weights,
+        };
+        let view = |t: usize, road: f32| {
             let mut d2 = 0.0;
             for (k, m) in ideology[t].iter().enumerate() {
                 d2 += (store.mind[i][mind::IDEOLOGY_START + k] - m).powi(2);
             }
-            let closeness = 1.0 - d2.sqrt() / (IDEOLOGY as f32).sqrt();
-            let sells = trade.map_or(0.0, |p| {
-                (towns.0[t].price[p] / mean_price[p].max(1e-6) - 1.0).clamp(-1.0, 2.0)
-            });
-            base[t]
-                + mp.ideology_weight * closeness
-                + mp.trade_weight * sells
-                + params.trust.migration_weight * friends[t].min(1.0)
-                + if towns.0[t].policy.immigration == Immigration::Encouraged {
+            TownView {
+                food_per_capita: food_pc[t],
+                danger: danger[t],
+                closeness: 1.0 - d2.sqrt() / (IDEOLOGY as f32).sqrt(),
+                friends: friends[t].min(1.0),
+                sells: trade.map_or(0.0, |p| {
+                    (towns.0[t].price[p] / mean_price[p].max(1e-6) - 1.0).clamp(-1.0, 2.0)
+                }),
+                pay: store.last_recipe[i].map_or(0.0, |r| {
+                    towns.0[t].pay_rate.get(r as usize).copied().unwrap_or(0.0)
+                }),
+                welcome: if towns.0[t].policy.immigration == Immigration::Encouraged {
                     params.policy.immigration_bonus
                 } else {
                     0.0
-                }
+                },
+                road,
+            }
         };
-        let stay = utility(home);
+        let stay = decision.migration.value(&me, &view(home, 0.0), u, horizon);
         let mut best: Option<(usize, f32)> = None;
         for t in 0..n_towns {
             if t == home || towns.0[t].policy.immigration == Immigration::Closed {
                 continue;
             }
-            let u = utility(t) - mp.distance_cost * dist(home, t, &towns) / 1000.0;
-            if best.is_none_or(|b| u > b.1) {
-                best = Some((t, u));
+            let v = decision
+                .migration
+                .value(&me, &view(t, dist(home, t, &towns)), u, horizon);
+            if best.is_none_or(|b| v > b.1) {
+                best = Some((t, v));
             }
         }
-        let Some((to, u)) = best else { continue };
-        if u - stay < mp.min_gain {
+        let Some((to, v)) = best else { continue };
+        if v - stay < decision.migration.min_gain() {
             continue;
         }
 

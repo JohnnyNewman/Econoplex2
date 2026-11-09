@@ -583,9 +583,7 @@ pub fn setup(world: &mut World, db: Db, params: ModelParams, scenario: &Scenario
     world.insert_resource(towns);
     world.insert_resource(db);
     world.insert_resource(models);
-    world.insert_resource(crate::decision::DecisionModels::from_params(
-        &params.decision,
-    ));
+    world.insert_resource(crate::decision::DecisionModels::from_model_params(&params));
     world.insert_resource(Params(params));
     world.insert_resource(crate::terrain::Terrain::build(scenario));
     world.insert_resource(crate::profile::Profile::default());
