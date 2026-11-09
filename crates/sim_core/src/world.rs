@@ -170,6 +170,9 @@ pub struct Town {
     /// Share of each job's places offered to apprentices (see `decision::matching`).
     #[serde(default)]
     pub apprentice_share: Vec<f32>,
+    /// Daily rent each adult resident pays (see `decision::crowding`).
+    #[serde(default)]
+    pub rent: f32,
     /// Goods delivered for government orders since the start, by product.
     #[serde(default)]
     pub procured: Vec<f32>,
@@ -486,6 +489,7 @@ pub fn setup(world: &mut World, db: Db, params: ModelParams, scenario: &Scenario
             pay_rate: vec![0.0; db.recipes.len()],
             wage_factor: vec![1.0; db.recipes.len()],
             apprentice_share: vec![0.0; db.recipes.len()],
+            rent: 0.0,
         });
 
         // Starting trades follow what the town can actually run, with food work weighted

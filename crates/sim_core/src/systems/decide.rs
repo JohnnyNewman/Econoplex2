@@ -265,9 +265,11 @@ impl Choice<'_> {
         let t = store.town[i] as usize;
         let st = store.state[i];
         let weights = utility::need_weights(&d.utility, &store.mind[i]);
+        // Wealth after the rent of the coming weeks.
+        let rent = self.towns.0[t].rent * d.valuation.horizon_weight();
         let situation = valuation::Situation {
             state: &st,
-            wealth: store.wealth[i],
+            wealth: (store.wealth[i] - rent).max(0.0),
             median_wealth: self.median_wealth[t],
             weights: &weights,
         };

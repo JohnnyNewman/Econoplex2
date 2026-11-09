@@ -42,9 +42,11 @@ pub enum Flow {
     Minted,
     // Taxed: the share of wages the treasury takes back.
     IncomeTax,
+    // Taxed: what residents pay for a place to live (see `decision::crowding`).
+    Rent,
 }
 
-pub const FLOWS: usize = 18;
+pub const FLOWS: usize = 19;
 
 /// How the HUD groups flows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -80,6 +82,7 @@ impl Flow {
         Flow::LootLost,
         Flow::Minted,
         Flow::IncomeTax,
+        Flow::Rent,
     ];
 
     pub fn name(self) -> &'static str {
@@ -102,6 +105,7 @@ impl Flow {
             Flow::LootLost => "loot lost",
             Flow::Minted => "minted",
             Flow::IncomeTax => "income tax",
+            Flow::Rent => "rent",
         }
     }
 
@@ -111,7 +115,7 @@ impl Flow {
             Wages | Subsidies | SchoolFees | SoldierPay | PublicSpending | SettlementGrants => {
                 Group::Issued
             }
-            WealthTax | Estates | IncomeTax => Group::Taxed,
+            WealthTax | Estates | IncomeTax | Rent => Group::Taxed,
             FoodSales | ToolSales => Group::Spent,
             TradeSales | TributeReceived | LootTaken => Group::ExternalIn,
             TradePurchases | TributePaid | LootLost => Group::ExternalOut,

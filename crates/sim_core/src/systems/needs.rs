@@ -26,11 +26,33 @@ pub fn sense(
         .map(|town| super::decide::food_reserve(&db, town, &params))
         .collect();
 
+    // Rent from crowding, the same for every adult in a town. Rents are sticky:
+    // they follow crowding over about two months, so a town that just filled up
+    // does not send everyone away at once.
+    let crowding = &params.decision.crowding;
+    for town in towns.0.iter_mut() {
+        let housing = crowding.housing(
+            town.nature_sites.len() + town.free_land as usize,
+            town.buildings.len(),
+        );
+        let target = crowding.rent(town.residents.len(), housing);
+        town.rent += (target - town.rent) / crowding.stickiness_days();
+    }
+
     for i in 0..store.len() {
         if !store.alive[i] {
             continue;
         }
         store.worked_today[i] = None;
+        if !matches!(store.activity[i], Activity::Child | Activity::Captive) {
+            let town = &mut towns.0[store.town[i] as usize];
+            let pay = town.rent.min(store.wealth[i].max(0.0));
+            if pay > 0.0 {
+                store.wealth[i] -= pay;
+                town.treasury += pay;
+                town.ledger.add(crate::ledger::Flow::Rent, pay);
+            }
+        }
         let town = &mut towns.0[store.town[i] as usize];
         let st = &mut store.state[i];
 

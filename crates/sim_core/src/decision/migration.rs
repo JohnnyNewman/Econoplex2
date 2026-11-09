@@ -26,6 +26,8 @@ pub struct TownView {
     pub sells: f32,
     /// What a worker-day of the agent's trade pays there.
     pub pay: f32,
+    /// Daily rent there (see `decision::crowding`).
+    pub rent: f32,
     /// Bonus for encouraged immigration.
     pub welcome: f32,
     /// Road length from home (0 for home).
@@ -108,7 +110,7 @@ impl Migration for UtilityMigration {
     fn value(&self, me: &MoverView, t: &TownView, u: &dyn Utility, horizon: f32) -> f32 {
         let mut n = needs(
             me.state,
-            me.wealth + t.pay.max(0.0) * horizon,
+            (me.wealth + (t.pay.max(0.0) - t.rent) * horizon).max(0.0),
             me.median_wealth,
         );
         // Food feels as secure as the town's stores; a town beaten in a raid feels unsafe.
@@ -166,6 +168,7 @@ mod tests {
             friends: 0.0,
             sells: 0.0,
             pay,
+            rent: 0.0,
             welcome: 0.0,
             road,
         }
@@ -195,5 +198,11 @@ mod tests {
         assert!(v(&town(2.0, 3.0, 0.0)) > v(&town(0.5, 3.0, 0.0)));
         assert!(v(&town(1.0, 3.0, 0.0)) > v(&town(1.0, 0.3, 0.0)));
         assert!(v(&town(1.0, 3.0, 0.0)) > v(&town(1.0, 3.0, 2000.0)));
+        // A crowded town's rent eats into its pay.
+        let crowded = TownView {
+            rent: 0.5,
+            ..town(1.0, 3.0, 0.0)
+        };
+        assert!(v(&town(1.0, 3.0, 0.0)) > v(&crowded));
     }
 }

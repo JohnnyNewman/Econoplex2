@@ -175,6 +175,9 @@ pub struct DecisionParams {
     /// Component: food workers' households keep part of what they make.
     #[serde(default)]
     pub subsistence: crate::decision::subsistence::SubsistenceParams,
+    /// Component: the rent a town's crowding costs its residents.
+    #[serde(default)]
+    pub crowding: crate::decision::crowding::CrowdingParams,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
