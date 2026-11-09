@@ -42,6 +42,28 @@
             [   0.0,   0.0,    0.2,  0.0 ],  // social
             [   3.0,   0.0,    0.0,  0.0 ],  // need
         ],
+        // Which model picks jobs. Features: the weights above. The utility-based
+        // components below are being built (docs/design/agent-decisions.md); each
+        // can be swapped on its own.
+        model: Features,
+        // Component: price and pay expectations. Adaptive moves base_rate +
+        // curiosity_rate x curiosity of the way toward each observation; Fixed
+        // expects the last observation.
+        expectations: Adaptive(base_rate: 0.05, curiosity_rate: 0.2),
+        // Component: utility of needs (food, rest, safety, standing). Crra: each
+        // need counts (s^(1-rho) - 1) / (1 - rho) times its weight; weight =
+        // base + mind_weights . mind.
+        utility: (
+            model: Crra(rho: 1.5),
+            base: [1.5, 0.8, 0.6, 0.3],
+            mind_weights: [
+                //  amb   dil   cur   soc   risk  trad  faith lib
+                [   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0 ],  // food
+                [   0.0, -0.4,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0 ],  // rest
+                [   0.0,  0.0,  0.0,  0.0, -0.5,  0.0,  0.0,  0.0 ],  // safety
+                [   0.8,  0.0,  0.0,  0.3,  0.0,  0.0,  0.0,  0.0 ],  // standing
+            ],
+        ),
     ),
 
     social: BoundedConfidence(
