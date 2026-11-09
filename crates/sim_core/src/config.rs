@@ -329,6 +329,9 @@ pub struct MarketParams {
     /// `firms`).
     #[serde(default)]
     pub firms: crate::firms::FirmsParams,
+    /// What households buy for their own use (see `consumption`).
+    #[serde(default)]
+    pub consumption: crate::consumption::ConsumptionParams,
     /// Price dynamics per price class (see `pricing`); none: the legacy rule.
     #[serde(default)]
     pub price_classes: Option<crate::pricing::PriceClasses>,

@@ -1941,3 +1941,54 @@ fn the_profit_tax_is_a_town_lever() {
     assert_eq!(rate, Some(0.0));
     assert!(dividends > 0.0, "no owner ever got a dividend untaxed");
 }
+
+#[test]
+fn households_buy_goods_for_comfort_and_the_books_balance() {
+    use sim_core::consumption::{BasketGood, ConsumptionParams};
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, mut params, scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    let good = |g: &str, want: f32, life: f32, taste: &str| BasketGood {
+        good: g.into(),
+        want,
+        life_days: life,
+        taste: Some(taste.into()),
+    };
+    params.market.consumption = ConsumptionParams::Basket {
+        spend_share: 0.3,
+        interval: 7,
+        elasticity: 0.5,
+        comfort_weight: 0.2,
+        goods: vec![
+            good("clothes", 2.0, 240.0, "ambition"),
+            good("pot", 3.0, 360.0, "tradition"),
+            good("ale", 2.0, 7.0, "sociability"),
+        ],
+    };
+    let mut s = Simulation::new(db, params, &scenario);
+    let money = |s: &Simulation| {
+        let towns = s.world.resource::<sim_core::Towns>();
+        let minted: f64 = towns
+            .0
+            .iter()
+            .map(|t| t.ledger.total[sim_core::ledger::Flow::Minted as usize])
+            .sum();
+        sim_core::world::total_money(s.world.resource::<sim_core::AgentStore>(), towns) - minted
+    };
+    let before = money(&s);
+    run_years(&mut s, 2);
+    let after = money(&s);
+    assert!(((after - before) / before).abs() < 1e-3, "money changed");
+    let towns = s.world.resource::<sim_core::Towns>();
+    let bought: f64 = towns
+        .0
+        .iter()
+        .map(|t| t.ledger.total[sim_core::ledger::Flow::HouseholdGoods as usize])
+        .sum();
+    assert!(bought > 0.0, "nobody bought household goods");
+    let store = s.world.resource::<sim_core::AgentStore>();
+    let comfy = (0..store.len())
+        .filter(|&i| store.alive[i] && store.comfort[i] > 0.0)
+        .count();
+    assert!(comfy > 0, "nobody owns anything");
+    assert!(store.comfort.iter().all(|c| (0.0..=1.0).contains(c)));
+}

@@ -55,9 +55,11 @@ pub enum Flow {
     LoansOut,
     LoanRepayments,
     LoanInterest,
+    // Spent: household goods bought at the town market (see `consumption`).
+    HouseholdGoods,
 }
 
-pub const FLOWS: usize = 26;
+pub const FLOWS: usize = 27;
 
 /// How the HUD groups flows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,6 +103,7 @@ impl Flow {
         Flow::LoansOut,
         Flow::LoanRepayments,
         Flow::LoanInterest,
+        Flow::HouseholdGoods,
     ];
 
     pub fn name(self) -> &'static str {
@@ -131,6 +134,7 @@ impl Flow {
             Flow::LoansOut => "loans out",
             Flow::LoanRepayments => "loan repayments",
             Flow::LoanInterest => "loan interest",
+            Flow::HouseholdGoods => "household goods",
         }
     }
 
@@ -142,7 +146,7 @@ impl Flow {
             WealthTax | Estates | IncomeTax | Rent | ProfitTax | LoanRepayments | LoanInterest => {
                 Group::Taxed
             }
-            FoodSales | ToolSales | InputSales => Group::Spent,
+            FoodSales | ToolSales | InputSales | HouseholdGoods => Group::Spent,
             TradeSales | TributeReceived | LootTaken => Group::ExternalIn,
             TradePurchases | TributePaid | LootLost => Group::ExternalOut,
             Minted => Group::Minted,

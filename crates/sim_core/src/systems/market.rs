@@ -25,6 +25,7 @@ pub fn settle(
     let np = db.content.products.len();
     // Demand-driven pricing: the stock each good's users need.
     firm_finances(&mut towns, &mut store, &db, &params);
+    crate::consumption::spend(&mut towns, &mut store, &db, &params, clock.tick);
     let derived = derived_targets(&towns, &db, &params, &sites);
     // Each good's price dynamics: its class's, or its own override.
     let dynamics: Option<Vec<crate::pricing::ClassParams>> =
@@ -47,6 +48,12 @@ pub fn settle(
         for p in 0..np {
             let today = std::mem::take(&mut town.input_today[p]);
             town.input_use[p] += (today - town.input_use[p]) / crate::ledger::MONTH_DAYS;
+        }
+        town.goods_use.resize(np, 0.0);
+        town.goods_today.resize(np, 0.0);
+        for p in 0..np {
+            let today = std::mem::take(&mut town.goods_today[p]);
+            town.goods_use[p] += (today - town.goods_use[p]) / crate::ledger::MONTH_DAYS;
         }
     }
     // Public pay rates: yesterday's prices for jobs nobody has tried lately.
@@ -124,8 +131,16 @@ pub fn settle(
             };
             // Goods the government ordered raise the stock the market wants.
             let wanted = match (&derived, mp.pricing) {
-                (Some(d), crate::config::Pricing::Demand { .. }) if db.is_input[p] => {
-                    d[ti][p] + if db.is_food[p] { per_capita * pop } else { 0.0 }
+                (Some(d), crate::config::Pricing::Demand { cover_days, .. }) => {
+                    // Inputs: what trades use; final goods: the per-resident
+                    // target; food both; plus what households buy.
+                    let households = cover_days * town.goods_use.get(p).copied().unwrap_or(0.0);
+                    households
+                        + if db.is_input[p] {
+                            d[ti][p] + if db.is_food[p] { per_capita * pop } else { 0.0 }
+                        } else {
+                            per_capita * pop
+                        }
                 }
                 _ => per_capita * pop,
             };
