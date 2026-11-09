@@ -361,6 +361,7 @@ mod tests {
             seed: 1,
             player: None,
             goal: None,
+            generate: None,
             towns: vec![town(-400.0, 0.0), town(400.0, 0.0)],
             terrain: Some(TerrainSpec {
                 rivers: vec![RiverSpec {

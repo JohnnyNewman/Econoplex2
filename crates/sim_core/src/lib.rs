@@ -32,6 +32,7 @@ pub mod consumption;
 pub mod firms;
 pub mod price_index;
 pub mod pricing;
+pub mod worldgen;
 pub use config::{ModelParams, Scenario};
 pub use db::Db;
 pub use store::AgentStore;

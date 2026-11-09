@@ -4,6 +4,7 @@
 //! econoplex-sim [--years N] [--seed S] [--scale F] [--assets DIR] [--csv FILE]
 //!               [--set path=value]... [--sweep path=v1,v2,...]... [--seeds N]
 //!               [--order DAY:ORDER]... [--save FILE] [--load FILE]
+//!               [--generate N] [--map-svg FILE]
 //!               [--embedding] [--hash] [--profile] [--quiet]
 //! ```
 //!
@@ -42,6 +43,10 @@ struct Args {
     orders: Vec<(u64, String)>,
     save: Option<PathBuf>,
     load: Option<PathBuf>,
+    /// Generate a world of this many towns from the seed.
+    generate: Option<u32>,
+    /// Write the map as an SVG picture and exit.
+    map_svg: Option<PathBuf>,
 }
 
 fn parse_args() -> Args {
@@ -62,6 +67,8 @@ fn parse_args() -> Args {
         save: None,
         load: None,
         orders: Vec::new(),
+        generate: None,
+        map_svg: None,
     };
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
@@ -125,6 +132,14 @@ fn parse_args() -> Args {
             "--embedding" => a.embedding = true,
             "--tech-tree" => a.tech_tree = true,
             "--hash" => a.hash = true,
+            "--generate" => {
+                a.generate = Some(
+                    val()
+                        .parse()
+                        .unwrap_or_else(|_| die("--generate expects a number of towns")),
+                )
+            }
+            "--map-svg" => a.map_svg = Some(PathBuf::from(val())),
             "--quiet" => a.quiet = true,
             "--profile" => a.profile = true,
             "-h" | "--help" => {
@@ -133,6 +148,8 @@ fn parse_args() -> Args {
                      --years N      simulated years (default 20)\n\
                      --seed S       override the scenario seed\n\
                      --scale F      multiply every town's population and land (e.g. 10 for ~12,000 agents)\n\
+                     --generate N   generate a world of N towns from the seed (instead of the scenario's)\n\
+                     --map-svg FILE write the map (towns, land, rivers, hills) as an SVG picture and exit\n\
                      --assets DIR   assets folder (default: discovered)\n\
                      --csv FILE     write per-town yearly metrics as CSV (batch mode: one row per run)\n\
                      --set P=V      override a parameter in models.ron, e.g. military.tribute_share=0.3\n\
@@ -186,6 +203,20 @@ fn main() {
     }
     if let Some(s) = args.seed {
         scenario.seed = s;
+    }
+    if let Some(n) = args.generate {
+        scenario.generate = Some(sim_core::worldgen::GenSpec {
+            towns: n.max(2),
+            ..Default::default()
+        });
+    }
+    if let Some(path) = &args.map_svg {
+        let s = sim_core::worldgen::resolve(&scenario, &db);
+        let terrain = sim_core::terrain::Terrain::build(&s);
+        std::fs::write(path, sim_core::worldgen::map_svg(&s, &terrain))
+            .unwrap_or_else(|e| die(&format!("cannot write {}: {e}", path.display())));
+        println!("wrote {} ({} towns)", path.display(), s.towns.len());
+        return;
     }
     for t in &mut scenario.towns {
         t.population = (t.population as f32 * args.scale).round() as u32;

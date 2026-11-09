@@ -12,6 +12,11 @@
     // closest to the goal wins. Off for now (endless play); for example:
     // goal: Some((product: "longsword_3", amount: 5.0, max_starving: 0.02, years: 40)),
     goal: None,
+    // Generate the towns, their land and the rivers from the seed instead of the
+    // fixed towns below (or run the CLI with --generate N). For example:
+    // generate: Some((towns: 5, population: (240, 340), half_size: (1000.0, 750.0),
+    //     min_distance: 450.0, rivers: 1, sites: 3.0)),
+    generate: None,
     towns: [
         (
             name: "Ironhold", position: (-450.0, 250.0), population: 300,

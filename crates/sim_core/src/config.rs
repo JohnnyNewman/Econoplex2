@@ -609,6 +609,9 @@ pub struct Scenario {
     /// How the match is won; none for endless play.
     #[serde(default)]
     pub goal: Option<GoalSpec>,
+    /// Generate the towns and terrain from the seed instead (see `worldgen`).
+    #[serde(default)]
+    pub generate: Option<crate::worldgen::GenSpec>,
 }
 
 /// How a match is won (see [`crate::goal`]).
