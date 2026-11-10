@@ -6,7 +6,7 @@
 //! and bloom. It only reads the scenario; the simulation itself does not run yet.
 //!
 //! econoplex3d [--seed S] [--towns N] [--hour H] [--pbr] [--terrain-view N] [--grid-step K]
-//!     [--fog-view N] [--no-fog] [--days N] [--speed 0-4] [--paused] [--focus-town I] [--view-from YAW,PITCH,DIST]
+//!     [--fog-view N] [--no-fog] [--days N] [--speed 0-4] [--paused] [--focus-town I] [--focus X,Z] [--view-from YAW,PITCH,DIST]
 //!     [--shot FILE]
 //! econoplex3d --playground [--hour H] [--view N] [--toon-view N] [--pbr] [--face-sun] [--shot FILE]
 //!     (shader playground)
@@ -24,6 +24,7 @@ mod camera;
 mod fog;
 mod hud;
 mod live;
+mod nature;
 mod outline;
 mod playground;
 mod sky;
@@ -35,6 +36,8 @@ struct Args {
     /// Start view: focus town index, and optional yaw, pitch, distance.
     focus_town: usize,
     view_from: Option<(f32, f32, f32)>,
+    /// Start focus on the ground (3D x, z), overrides the town.
+    focus: Option<(f32, f32)>,
     seed: u64,
     towns: u32,
 }
@@ -84,6 +87,7 @@ fn main() {
         towns: 5,
         focus_town: 0,
         view_from: None,
+        focus: None,
     };
     let (mut shot, mut hour, mut view, mut playground, mut face_sun) =
         (None, None, None, false, false);
@@ -117,6 +121,17 @@ fn main() {
             }
             "--no-fog" => fog_settings.on = false,
             "--focus-town" => args.focus_town = it.next().and_then(|v| v.parse().ok()).unwrap_or(0),
+            "--focus" => {
+                let v: Vec<f32> = it
+                    .next()
+                    .unwrap_or_default()
+                    .split(',')
+                    .filter_map(|x| x.parse().ok())
+                    .collect();
+                if let [x, z] = v[..] {
+                    args.focus = Some((x, z));
+                }
+            }
             "--view-from" => {
                 // yaw,pitch,distance (degrees, degrees, world units)
                 let v: Vec<f32> = it
@@ -198,6 +213,7 @@ fn main() {
             camera::WorldCameraPlugin,
             live::LivePlugin,
             outline::OutlinePlugin,
+            nature::NaturePlugin,
         ))
         .insert_resource(clock)
         .insert_resource(toon_settings)
@@ -245,12 +261,16 @@ fn height(t: &Terrain, p: (f32, f32)) -> f32 {
     hill * 9.0 + roll
 }
 
+#[allow(clippy::too_many_arguments)]
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut toons: ResMut<Assets<toon::ToonMaterial>>,
     mut terrains: ResMut<Assets<terrain::TerrainMaterial>>,
     mut images: ResMut<Assets<Image>>,
+    mut trees: ResMut<Assets<nature::TreeMaterial>>,
+    mut grass: ResMut<Assets<nature::GrassMaterial>>,
+    mut buffers: ResMut<Assets<bevy::render::storage::ShaderBuffer>>,
     world: Res<World3d>,
     args: Res<Args>,
 ) {
@@ -309,10 +329,11 @@ fn setup(
     let trunk = meshes.add(Cylinder::new(0.12, 0.8));
     let crown = meshes.add(Cone::new(0.7, 2.0));
     let wood = toons.add(toon::toon(Color::srgb(0.40, 0.28, 0.18)));
+    // Crowns sway in the wind (shader step 06, sway.wesl); trunks stand still.
     let leaves = [
-        toons.add(toon::toon(Color::srgb(0.22, 0.42, 0.22))),
-        toons.add(toon::toon(Color::srgb(0.30, 0.50, 0.24))),
-        toons.add(toon::toon(Color::srgb(0.18, 0.36, 0.24))),
+        trees.add(nature::tree_material(Color::srgb(0.22, 0.42, 0.22))),
+        trees.add(nature::tree_material(Color::srgb(0.30, 0.50, 0.24))),
+        trees.add(nature::tree_material(Color::srgb(0.18, 0.36, 0.24))),
     ];
     for c in 0..t.width * t.height {
         let p = t.center(c);
@@ -343,6 +364,57 @@ fn setup(
                 .with_scale(Vec3::splat(0.8 + jitter * 0.6)),
         ));
     }
+    // --- grass (shader step 06): blades over the meadows, away from towns,
+    // rivers and steep slopes; a few per square unit, jittered by a hash.
+    let mut blades = Vec::new();
+    let mut rng = 0x9E37_79B9_7F4A_7C15u64 ^ world.scenario.seed;
+    let mut rand = move || {
+        rng = rng.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = rng;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        ((z ^ (z >> 31)) >> 40) as f32 / (1u64 << 24) as f32
+    };
+    let cell3 = t.cell / SCALE;
+    let per_cell = (cell3 * cell3 * 14.0) as usize;
+    for c in 0..t.width * t.height {
+        let p = t.center(c);
+        if t.water[c] {
+            continue;
+        }
+        let near_town = s.towns.iter().any(|tw| {
+            ((tw.position.0 - p.0).powi(2) + (tw.position.1 - p.1).powi(2)).sqrt() < 260.0
+        });
+        if near_town {
+            continue;
+        }
+        // Not on steep ground: compare heights across the cell.
+        let d = t.cell * 0.5;
+        let slope = ((height(t, (p.0 + d, p.1)) - height(t, (p.0 - d, p.1))).abs()
+            + (height(t, (p.0, p.1 + d)) - height(t, (p.0, p.1 - d))).abs())
+            / cell3;
+        if slope > 0.9 {
+            continue;
+        }
+        for _ in 0..per_cell {
+            let q = (p.0 + (rand() - 0.5) * t.cell, p.1 + (rand() - 0.5) * t.cell);
+            blades.push(nature::Blade {
+                pos: Vec3::new(q.0 / SCALE, height(t, q), -q.1 / SCALE),
+                height: 0.35 + rand() * 0.35,
+                lean: rand() * std::f32::consts::TAU,
+                tint: rand(),
+            });
+        }
+    }
+    let chunks = nature::spawn_grass(
+        &mut commands,
+        &mut meshes,
+        &mut buffers,
+        &mut grass,
+        &blades,
+        25.0,
+    );
+    info!("grass: {} blades in {} chunks", blades.len(), chunks);
     // --- towns: buildings and houses come from the live simulation (live.rs)
     // --- light: the sun with soft shadows; the sky plugin points it and sets its
     // colour and the ambient light from the time of day.
@@ -366,6 +438,9 @@ fn setup(
         .map_or(Vec3::ZERO, |tw| {
             Vec3::new(tw.position.0 / SCALE, 0.0, -tw.position.1 / SCALE)
         });
+    let focus = args.focus.map_or(focus, |(x, z)| {
+        Vec3::new(x, height(t, (x * SCALE, -z * SCALE)), z)
+    });
     let (yaw, pitch, distance) = args.view_from.unwrap_or((-0.67, 0.49, 102.0));
     let min = Vec2::new(
         t.origin.0 / SCALE,
@@ -374,6 +449,13 @@ fn setup(
     let max = Vec2::new(
         (t.origin.0 + t.width as f32 * t.cell) / SCALE,
         -t.origin.1 / SCALE,
+    );
+    info!(
+        "map from {min} to {max} (3D units); towns at {:?}",
+        s.towns
+            .iter()
+            .map(|tw| (tw.position.0 / SCALE, -tw.position.1 / SCALE))
+            .collect::<Vec<_>>()
     );
     let cam = camera::WorldCamera::new(
         focus,

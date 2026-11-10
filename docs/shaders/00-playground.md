@@ -121,3 +121,5 @@ side, so the GPU never has to run both.
 - **Step 04:** distance and height fog ([04-fog](04-fog.md)), in the world view
   and the playground. `F` switches it on and off.
 - **Step 05:** rim light and outlines ([05-rim-outline](05-rim-outline.md)).
+- **Step 06:** grass and trees in the wind ([06-grass](06-grass.md)), in the world
+  view. `G` hides the grass.
