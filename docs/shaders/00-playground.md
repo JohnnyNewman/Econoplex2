@@ -16,7 +16,9 @@ cargo run --release -p game3d -- --playground
 | mouse wheel, `+` / `-` | zoom |
 | `[` / `]` | move the time of day |
 | `T` | let time run |
-| `0`–`4` | debug views (0 = final image, 4 = free for your own) |
+| `Tab` | which shader the number keys control (sky or toon) |
+| `0`–`4` | debug views of that shader (0 = final image) |
+| `M` | toon lighting or Bevy's PBR lighting |
 
 Options: `--hour H` starts at another time, `--view N` starts in a debug view,
 `--face-sun` starts looking toward the sun, and `--shot FILE` saves a screenshot after 60 frames and quits.
@@ -109,6 +111,8 @@ side, so the GPU never has to run both.
 ## What comes next
 
 - **Step 01:** the sky ([01-sky](01-sky.md)), live now.
-- **Step 02:** soft toon lighting on the test shapes.
+- **Step 02:** soft toon lighting ([02-toon](02-toon.md)), live now. `M`
+  compares it with Bevy's PBR lighting; `Tab` switches the number keys between
+  the sky's and the toon shader's debug views.
 - **Step 03:** the terrain's vertex shader.
 - **Step 04:** fog.

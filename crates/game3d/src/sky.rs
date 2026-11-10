@@ -11,8 +11,8 @@
 //!   for that sun height. They go to the GPU as one small uniform block.
 //! - The GPU (the shader) does the per-pixel work.
 //!
-//! Keys: `[` / `]` move the time of day, `T` lets time run, `0`–`4` pick a debug
-//! view (0 final, 1 view direction, 2 gradient parameter, 3 sun term, 4 free for
+//! Keys: `[` / `]` move the time of day, `T` lets time run, `Tab` picks which
+//! shader the number keys control, and `0`–`4` pick its debug view (for the sky: (0 final, 1 view direction, 2 gradient parameter, 3 sun term, 4 free for
 //! the exercises).
 
 use bevy::light::{NotShadowCaster, NotShadowReceiver};
@@ -37,6 +37,7 @@ impl Plugin for SkyPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(MaterialPlugin::<SkyMaterial>::default())
             .init_resource::<SkyClock>()
+            .init_resource::<DebugTarget>()
             .add_systems(Startup, spawn_sky)
             .add_systems(Update, (sky_keys, update_sky, follow_camera).chain());
     }
@@ -118,6 +119,28 @@ impl SkyClock {
     ];
 }
 
+/// Which shader the number keys (debug views) control; `Tab` cycles.
+#[derive(Resource, Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum DebugTarget {
+    #[default]
+    Sky,
+    Toon,
+}
+
+/// The number key pressed this frame (0–4), if any.
+pub fn digit_pressed(keys: &ButtonInput<KeyCode>) -> Option<u32> {
+    [
+        KeyCode::Digit0,
+        KeyCode::Digit1,
+        KeyCode::Digit2,
+        KeyCode::Digit3,
+        KeyCode::Digit4,
+    ]
+    .iter()
+    .position(|k| keys.just_pressed(*k))
+    .map(|i| i as u32)
+}
+
 /// Marks the sky sphere.
 #[derive(Component)]
 pub struct Sky;
@@ -176,7 +199,18 @@ fn spawn_sky(
     ));
 }
 
-fn sky_keys(keys: Res<ButtonInput<KeyCode>>, time: Res<Time>, mut clock: ResMut<SkyClock>) {
+fn sky_keys(
+    keys: Res<ButtonInput<KeyCode>>,
+    time: Res<Time>,
+    mut clock: ResMut<SkyClock>,
+    mut target: ResMut<DebugTarget>,
+) {
+    if keys.just_pressed(KeyCode::Tab) {
+        *target = match *target {
+            DebugTarget::Sky => DebugTarget::Toon,
+            DebugTarget::Toon => DebugTarget::Sky,
+        };
+    }
     if keys.just_pressed(KeyCode::KeyT) {
         clock.running = !clock.running;
     }
@@ -191,16 +225,9 @@ fn sky_keys(keys: Res<ButtonInput<KeyCode>>, time: Res<Time>, mut clock: ResMut<
         clock.hour -= 3.0 * dt;
     }
     clock.hour = clock.hour.rem_euclid(24.0);
-    let views = [
-        KeyCode::Digit0,
-        KeyCode::Digit1,
-        KeyCode::Digit2,
-        KeyCode::Digit3,
-        KeyCode::Digit4,
-    ];
-    for (i, k) in views.iter().enumerate() {
-        if keys.just_pressed(*k) {
-            clock.debug = i as u32;
+    if *target == DebugTarget::Sky {
+        if let Some(v) = digit_pressed(&keys) {
+            clock.debug = v;
         }
     }
 }
@@ -239,7 +266,7 @@ fn update_sky(
         light.color = Color::linear_rgb(sun_rgb.x / 6.0, sun_rgb.y / 6.0, sun_rgb.z / 6.0);
     }
     ambient.color = Color::linear_rgb(zenith.x, zenith.y, zenith.z).mix(&Color::WHITE, 0.5);
-    ambient.brightness = 60.0 + 300.0 * day;
+    ambient.brightness = 40.0 + 220.0 * day;
 }
 
 /// Keep the sphere centred on the camera, so the sky is always "infinitely" far.
