@@ -5,8 +5,9 @@
 //! of low-poly houses, under a procedural sky (shader step 01) with distance fog
 //! and bloom. It only reads the scenario; the simulation itself does not run yet.
 //!
-//! econoplex3d [--seed S] [--towns N] [--hour H] [--shot FILE]
-//! econoplex3d --playground [--hour H] [--view N] [--face-sun] [--shot FILE]   (shader playground)
+//! econoplex3d [--seed S] [--towns N] [--hour H] [--pbr] [--shot FILE]
+//! econoplex3d --playground [--hour H] [--view N] [--toon-view N] [--pbr] [--face-sun] [--shot FILE]
+//!     (shader playground)
 
 use bevy::light::{CascadeShadowConfigBuilder, DirectionalLightShadowMap};
 use bevy::mesh::{Indices, PrimitiveTopology};
@@ -19,6 +20,7 @@ use std::path::PathBuf;
 
 mod playground;
 mod sky;
+mod toon;
 
 #[derive(Resource, Clone)]
 struct Args {
@@ -59,6 +61,7 @@ fn main() {
     let mut args = Args { seed: 7, towns: 5 };
     let (mut shot, mut hour, mut view, mut playground, mut face_sun) =
         (None, None, None, false, false);
+    let mut toon_settings = toon::ToonSettings::default();
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -69,11 +72,15 @@ fn main() {
             "--view" => view = it.next().and_then(|v| v.parse().ok()),
             "--playground" => playground = true,
             "--face-sun" => face_sun = true,
+            "--toon-view" => {
+                toon_settings.debug = it.next().and_then(|v| v.parse().ok()).unwrap_or(0).min(4)
+            }
+            "--pbr" => toon_settings.on = false,
             other => eprintln!("ignoring unknown argument `{other}`"),
         }
     }
     if playground {
-        playground::run(hour, view, face_sun, shot);
+        playground::run(hour, view, face_sun, toon_settings, shot);
         return;
     }
     let mut clock = sky::SkyClock::default();
@@ -104,8 +111,9 @@ fn main() {
         .insert_resource(World3d { scenario, terrain })
         .insert_resource(args)
         .insert_resource(ShotPath(shot))
-        .add_plugins(sky::SkyPlugin)
+        .add_plugins((sky::SkyPlugin, toon::ToonPlugin))
         .insert_resource(clock)
+        .insert_resource(toon_settings)
         .add_systems(Startup, setup)
         .add_systems(Update, shoot)
         .run();
@@ -159,6 +167,7 @@ fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut toons: ResMut<Assets<toon::ToonMaterial>>,
     world: Res<World3d>,
 ) {
     let t = &world.terrain;
@@ -214,11 +223,8 @@ fn setup(
     mesh.compute_smooth_normals();
     commands.spawn((
         Mesh3d(meshes.add(mesh)),
-        MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: Color::WHITE,
-            perceptual_roughness: 0.95,
-            ..default()
-        })),
+        // White base colour: the vertex colours (biomes, fields) show through.
+        MeshMaterial3d(toons.add(toon::toon(Color::WHITE))),
     ));
     // --- water plane
     commands.spawn((
@@ -234,11 +240,11 @@ fn setup(
     // --- trees: soft cones scattered on meadows and hills
     let trunk = meshes.add(Cylinder::new(0.12, 0.8));
     let crown = meshes.add(Cone::new(0.7, 2.0));
-    let wood = materials.add(Color::srgb(0.40, 0.28, 0.18));
+    let wood = toons.add(toon::toon(Color::srgb(0.40, 0.28, 0.18)));
     let leaves = [
-        materials.add(Color::srgb(0.22, 0.42, 0.22)),
-        materials.add(Color::srgb(0.30, 0.50, 0.24)),
-        materials.add(Color::srgb(0.18, 0.36, 0.24)),
+        toons.add(toon::toon(Color::srgb(0.22, 0.42, 0.22))),
+        toons.add(toon::toon(Color::srgb(0.30, 0.50, 0.24))),
+        toons.add(toon::toon(Color::srgb(0.18, 0.36, 0.24))),
     ];
     for c in 0..t.width * t.height {
         let p = t.center(c);
@@ -272,11 +278,11 @@ fn setup(
     // --- towns: houses around the centre, a hall in the middle
     let house = meshes.add(Cuboid::new(1.0, 0.8, 1.2));
     let roof = meshes.add(Cone::new(0.95, 0.7));
-    let walls = materials.add(Color::srgb(0.88, 0.82, 0.70));
+    let walls = toons.add(toon::toon(Color::srgb(0.88, 0.82, 0.70)));
     let roofs = [
-        materials.add(Color::srgb(0.66, 0.26, 0.20)),
-        materials.add(Color::srgb(0.50, 0.32, 0.22)),
-        materials.add(Color::srgb(0.36, 0.38, 0.46)),
+        toons.add(toon::toon(Color::srgb(0.66, 0.26, 0.20))),
+        toons.add(toon::toon(Color::srgb(0.50, 0.32, 0.22))),
+        toons.add(toon::toon(Color::srgb(0.36, 0.38, 0.46))),
     ];
     let hall = meshes.add(Cuboid::new(2.4, 1.6, 2.4));
     for (ti, tw) in s.towns.iter().enumerate() {

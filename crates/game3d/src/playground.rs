@@ -1,6 +1,7 @@
 //! The shader playground: one small scene for learning and trying shaders.
 //!
-//! `econoplex3d --playground [--hour H] [--view N] [--face-sun] [--shot FILE]`
+//! `econoplex3d --playground [--hour H] [--view N] [--toon-view N] [--pbr] [--face-sun]
+//! [--shot FILE]`
 //!
 //! - The sky (step 01) and a few test shapes on a ground plane. Later steps put
 //!   their materials on the shapes (toon lighting, rim light, ...).
@@ -12,7 +13,8 @@
 //!
 //! See docs/shaders/00-playground.md.
 
-use crate::sky::{SkyClock, SkyPlugin};
+use crate::sky::{DebugTarget, SkyClock, SkyPlugin};
+use crate::toon::{toon, ToonMaterial, ToonPlugin, ToonSettings};
 use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll};
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
@@ -29,7 +31,13 @@ struct Orbit {
 #[derive(Component)]
 struct Help;
 
-pub fn run(hour: Option<f32>, view: Option<u32>, face_sun: bool, shot: Option<std::path::PathBuf>) {
+pub fn run(
+    hour: Option<f32>,
+    view: Option<u32>,
+    face_sun: bool,
+    toon_settings: ToonSettings,
+    shot: Option<std::path::PathBuf>,
+) {
     let mut clock = SkyClock::default();
     if let Some(h) = hour {
         clock.hour = h.rem_euclid(24.0);
@@ -47,8 +55,9 @@ pub fn run(hour: Option<f32>, view: Option<u32>, face_sun: bool, shot: Option<st
             }),
             ..default()
         }))
-        .add_plugins(SkyPlugin)
+        .add_plugins((SkyPlugin, ToonPlugin))
         .insert_resource(clock)
+        .insert_resource(toon_settings)
         .insert_resource(crate::ShotPath(shot))
         .insert_resource(Orbit {
             // --face-sun: start looking toward the sun (the camera sits on the
@@ -70,16 +79,12 @@ pub fn run(hour: Option<f32>, view: Option<u32>, face_sun: bool, shot: Option<st
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<ToonMaterial>>,
 ) {
     // Ground: a large disc of grass colour.
     commands.spawn((
         Mesh3d(meshes.add(Circle::new(60.0))),
-        MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: Color::srgb(0.42, 0.58, 0.30),
-            perceptual_roughness: 1.0,
-            ..default()
-        })),
+        MeshMaterial3d(materials.add(toon(Color::srgb(0.42, 0.58, 0.30)))),
         Transform::from_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
     ));
     // Test shapes: smooth curvature (sphere, torus) shows lighting ramps best;
@@ -113,11 +118,7 @@ fn setup(
         }
         commands.spawn((
             Mesh3d(meshes.add(mesh)),
-            MeshMaterial3d(materials.add(StandardMaterial {
-                base_color: color,
-                perceptual_roughness: 0.8,
-                ..default()
-            })),
+            MeshMaterial3d(materials.add(toon(color))),
             tf,
         ));
     }
@@ -184,22 +185,35 @@ fn orbit_camera(
     }
 }
 
-fn update_help(clock: Res<SkyClock>, mut text: Query<&mut Text, With<Help>>) {
-    if !clock.is_changed() {
+fn update_help(
+    clock: Res<SkyClock>,
+    toon: Res<ToonSettings>,
+    target: Res<DebugTarget>,
+    mut text: Query<&mut Text, With<Help>>,
+) {
+    if !clock.is_changed() && !toon.is_changed() && !target.is_changed() {
         return;
     }
     let h = clock.hour;
+    let mark = |t: DebugTarget| if *target == t { ">" } else { " " };
     let line = format!(
-        "Shader playground - step 01 sky\n\
+        "Shader playground - steps 01 sky, 02 toon\n\
          time {:02}:{:02}  [ ] change  T run ({})\n\
-         view {}: {}  (keys 0-4)\n\
+         {} sky view {}: {}\n\
+         {} toon view {}: {}   M toon/PBR ({})\n\
+         Tab: which shader keys 0-4 control\n\
          drag / arrows orbit, wheel zoom\n\
-         edit assets/shaders/sky.wesl and save to reload",
+         edit assets/shaders/*.wesl and save to reload",
         h.floor() as u32,
         ((h.fract()) * 60.0) as u32,
         if clock.running { "on" } else { "off" },
+        mark(DebugTarget::Sky),
         clock.debug,
         SkyClock::VIEWS[clock.debug as usize],
+        mark(DebugTarget::Toon),
+        toon.debug,
+        ToonSettings::VIEWS[toon.debug as usize],
+        if toon.on { "toon" } else { "PBR" },
     );
     for mut t in &mut text {
         t.0 = line.clone();
