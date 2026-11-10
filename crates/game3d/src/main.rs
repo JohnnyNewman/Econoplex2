@@ -6,7 +6,7 @@
 //! and bloom. It only reads the scenario; the simulation itself does not run yet.
 //!
 //! econoplex3d [--seed S] [--towns N] [--hour H] [--pbr] [--terrain-view N] [--grid-step K]
-//!     [--fog-view N] [--no-fog] [--days N] [--speed 0-4] [--paused] [--focus-town I] [--focus X,Z] [--view-from YAW,PITCH,DIST]
+//!     [--fog-view N] [--no-fog] [--days N] [--speed 0-4] [--paused] [--trade] [--focus-town I] [--focus X,Z] [--view-from YAW,PITCH,DIST]
 //!     [--shot FILE]
 //! econoplex3d --playground [--hour H] [--view N] [--toon-view N] [--pbr] [--face-sun] [--shot FILE]
 //!     (shader playground)
@@ -28,6 +28,7 @@ mod hud;
 mod live;
 mod nature;
 mod outline;
+mod overlay;
 mod playground;
 mod sky;
 mod terrain;
@@ -100,6 +101,7 @@ fn main() {
     // The live simulation: fast-forward days, start speed (0-4), paused.
     let (mut days, mut speed, mut paused) = (0u64, 0usize, false);
     let mut no_outlines = false;
+    let mut trade = false;
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -116,6 +118,7 @@ fn main() {
             "--pbr" => toon_settings.on = false,
             "--no-rim" => toon_settings.rim = false,
             "--no-outlines" => no_outlines = true,
+            "--trade" => trade = true,
             "--terrain-view" => {
                 terrain_settings.debug = it.next().and_then(|v| v.parse().ok()).unwrap_or(0).min(4)
             }
@@ -220,12 +223,18 @@ fn main() {
             crowd::CrowdPlugin,
             crowd_compute::CrowdComputePlugin,
             ui::PanelsPlugin,
+            overlay::OverlayPlugin,
         ))
         .insert_resource(clock)
         .insert_resource(toon_settings)
         .insert_resource(terrain_settings)
         .insert_resource(fog_settings)
         .add_systems(PreStartup, apply_outline_start)
+        .insert_resource(if trade {
+            overlay::Overlay::Trade
+        } else {
+            overlay::Overlay::Off
+        })
         .add_systems(Startup, setup)
         .add_systems(Update, (shoot, hud::update_help))
         .run();
@@ -480,7 +489,7 @@ fn setup(
     hud::spawn_help(
         &mut commands,
         "Econoplex 3D (prototype)",
-        "WASD pan, Q/E or right-drag rotate, wheel zoom, Home reset",
+        "WASD pan, Q/E or right-drag rotate, wheel zoom, Home reset, V trade overlay",
     );
 }
 
