@@ -10,6 +10,7 @@
 //! building is drawn where the sim put it, appears when it is built and goes
 //! when it is gone.
 
+use crate::outline::Outlines;
 use crate::toon::{toon, ToonMaterial};
 use bevy::prelude::*;
 use std::collections::HashMap;
@@ -324,7 +325,12 @@ fn parts(kit: &Kit, kind: &str) -> Vec<(Handle<Mesh>, &'static str, Vec3, Vec3)>
 /// Spawn one building: a parent entity at the ground point with its parts as
 /// children, so the whole building can be removed again with one despawn.
 /// Land "buildings" (cleared fields, woodlots) are not drawn: `None`.
-pub fn spawn_building(commands: &mut Commands, kit: &Kit, b: &BuildingSpec) -> Option<Entity> {
+pub fn spawn_building(
+    commands: &mut Commands,
+    kit: &Kit,
+    outlines: &Outlines,
+    b: &BuildingSpec,
+) -> Option<Entity> {
     if b.kind == "field_plot" || b.kind == "woodlot" {
         return None;
     }
@@ -336,12 +342,15 @@ pub fn spawn_building(commands: &mut Commands, kit: &Kit, b: &BuildingSpec) -> O
         .with_scale(Vec3::splat(1.5));
     let parent = commands.spawn((root, Visibility::default())).id();
     for (mesh, colour, offset, scale) in parts(kit, &b.kind) {
-        commands.spawn((
-            Mesh3d(mesh),
-            MeshMaterial3d(kit.mat(colour)),
-            Transform::from_translation(offset).with_scale(scale),
-            ChildOf(parent),
-        ));
+        // Each part carries its own outline hull (step 05) as a child.
+        commands
+            .spawn((
+                Mesh3d(mesh.clone()),
+                MeshMaterial3d(kit.mat(colour)),
+                Transform::from_translation(offset).with_scale(scale),
+                ChildOf(parent),
+            ))
+            .with_child(outlines.hull(mesh));
     }
     Some(parent)
 }

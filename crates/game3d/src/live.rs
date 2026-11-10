@@ -18,6 +18,7 @@
 //! Keys: `Space` pause, `,` / `.` slower / faster.
 
 use crate::buildings::{spawn_building, BuildingSpec, Kit};
+use crate::outline::Outlines;
 use crate::sky::SkyClock;
 use crate::toon::{toon, ToonMaterial};
 use crate::{height, World3d, SCALE};
@@ -214,11 +215,12 @@ fn sync_scene(
     mut live: ResMut<LiveSim>,
     mut shown: ResMut<Shown>,
     kit: Option<Res<Kit>>,
+    outlines: Option<Res<Outlines>>,
     houses: Option<Res<HouseKit>>,
     world: Res<World3d>,
     mut clock: ResMut<SkyClock>,
 ) {
-    let (Some(kit), Some(hk)) = (kit, houses) else {
+    let (Some(kit), Some(hk), Some(outlines)) = (kit, houses, outlines) else {
         return;
     };
     // Take over the newest snapshot and the events since the last frame.
@@ -257,7 +259,7 @@ fn sync_scene(
                 at: ground(b.pos),
                 seed: (b.id as u32).wrapping_mul(2_654_435_761) >> 8 ^ ti as u32,
             };
-            if let Some(e) = spawn_building(&mut commands, &kit, &spec) {
+            if let Some(e) = spawn_building(&mut commands, &kit, &outlines, &spec) {
                 shown.buildings.insert(b.id, e);
             }
         }
@@ -319,12 +321,14 @@ fn sync_scene(
                         Mesh3d(hk.body.clone()),
                         MeshMaterial3d(hk.walls.clone()),
                         Transform::from_xyz(0.0, 0.4, 0.0),
-                    ));
+                    ))
+                    .with_child(outlines.hull(hk.body.clone()));
                     h.spawn((
                         Mesh3d(hk.roof.clone()),
                         MeshMaterial3d(hk.roofs[k as usize % 3].clone()),
                         Transform::from_xyz(0.0, 1.15, 0.0),
-                    ));
+                    ))
+                    .with_child(outlines.hull(hk.roof.clone()));
                 })
                 .id();
             list.push((house, Vec2::new(p.0, p.1)));

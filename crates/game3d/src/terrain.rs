@@ -209,7 +209,11 @@ pub fn spawn_terrain(
             terrain: TerrainUniform {
                 grid: Vec4::new(data.origin.x, data.origin.y, data.cell, 1.0),
                 dims: Vec4::new(data.width as f32, data.depth as f32, 0.0, 0.0),
-                toon: ToonUniform::default(),
+                // No rim light on the ground: hills would glow along every ridge.
+                toon: ToonUniform {
+                    rim: Vec4::ZERO,
+                    ..default()
+                },
             },
             heights: images.add(heights),
             biomes: images.add(biomes),
@@ -252,7 +256,7 @@ fn terrain_keys(
     }
     if *target == DebugTarget::Terrain {
         if let Some(v) = digit_pressed(&keys) {
-            settings.debug = v;
+            settings.debug = v.min(4);
         }
     }
 }

@@ -35,6 +35,7 @@ pub fn run(
     face_sun: bool,
     toon_settings: ToonSettings,
     fog_settings: crate::fog::FogSettings,
+    no_outlines: bool,
     shot: Option<std::path::PathBuf>,
 ) {
     let mut clock = SkyClock::default();
@@ -45,44 +46,54 @@ pub fn run(
         clock.debug = v.min(4);
     }
     let clock_hour = clock.hour;
-    App::new()
-        .add_plugins(DefaultPlugins.set(crate::asset_plugin()).set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "Econoplex shader playground".into(),
-                resolution: (1280, 720).into(),
-                ..default()
-            }),
+    let mut app = App::new();
+    if no_outlines {
+        app.insert_resource(crate::outline::OutlinesOff);
+    }
+    app.add_plugins(DefaultPlugins.set(crate::asset_plugin()).set(WindowPlugin {
+        primary_window: Some(Window {
+            title: "Econoplex shader playground".into(),
+            resolution: (1280, 720).into(),
             ..default()
-        }))
-        .add_plugins((SkyPlugin, ToonPlugin, TerrainPlugin, crate::fog::FogPlugin))
-        .insert_resource(clock)
-        .insert_resource(toon_settings)
-        .insert_resource(fog_settings)
-        .insert_resource(crate::ShotPath(shot))
-        .insert_resource(Orbit {
-            // --face-sun: start looking toward the sun (the camera sits on the
-            // opposite side of the shapes).
-            yaw: if face_sun {
-                let s = crate::sky::sun_direction(clock_hour);
-                (-s.x).atan2(-s.z)
-            } else {
-                -0.6
-            },
-            pitch: if face_sun { 0.02 } else { 0.12 },
-            distance: 14.0,
-        })
-        .add_systems(Startup, setup)
-        .add_systems(
-            Update,
-            (orbit_camera, crate::hud::update_help, crate::shoot),
-        )
-        .run();
+        }),
+        ..default()
+    }))
+    .add_plugins((
+        SkyPlugin,
+        ToonPlugin,
+        TerrainPlugin,
+        crate::fog::FogPlugin,
+        crate::outline::OutlinePlugin,
+    ))
+    .insert_resource(clock)
+    .insert_resource(toon_settings)
+    .insert_resource(fog_settings)
+    .insert_resource(crate::ShotPath(shot))
+    .insert_resource(Orbit {
+        // --face-sun: start looking toward the sun (the camera sits on the
+        // opposite side of the shapes).
+        yaw: if face_sun {
+            let s = crate::sky::sun_direction(clock_hour);
+            (-s.x).atan2(-s.z)
+        } else {
+            -0.6
+        },
+        pitch: if face_sun { 0.02 } else { 0.12 },
+        distance: 14.0,
+    })
+    .add_systems(Startup, setup.after(crate::outline::init_outline))
+    .add_systems(
+        Update,
+        (orbit_camera, crate::hud::update_help, crate::shoot),
+    )
+    .run();
 }
 
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ToonMaterial>>,
+    outlines: Res<crate::outline::Outlines>,
 ) {
     // Ground: a large disc of grass colour.
     commands.spawn((
@@ -119,11 +130,14 @@ fn setup(
         if at.x == 0.0 && at.z == 0.0 {
             tf.rotate_x(1.1);
         }
-        commands.spawn((
-            Mesh3d(meshes.add(mesh)),
-            MeshMaterial3d(materials.add(toon(color))),
-            tf,
-        ));
+        let mesh = meshes.add(mesh);
+        commands
+            .spawn((
+                Mesh3d(mesh.clone()),
+                MeshMaterial3d(materials.add(toon(color))),
+                tf,
+            ))
+            .with_child(outlines.hull(mesh));
     }
     // The sun; the sky plugin points it and sets its colour from the time of day.
     commands.spawn((

@@ -20,6 +20,7 @@ cargo run --release -p game3d -- --playground
 | `F` | fog on or off |
 | `0`–`4` | debug views of that shader (0 = final image) |
 | `M` | toon lighting or Bevy's PBR lighting |
+| `R` / `O` | rim light / outlines on or off (step 05) |
 
 Options: `--hour H` starts at another time, `--view N` starts in a debug view,
 `--face-sun` starts looking toward the sun, and `--shot FILE` saves a screenshot after 60 frames and quits.
@@ -119,3 +120,4 @@ side, so the GPU never has to run both.
   in the world view (`cargo run --release -p game3d`), not in the playground.
 - **Step 04:** distance and height fog ([04-fog](04-fog.md)), in the world view
   and the playground. `F` switches it on and off.
+- **Step 05:** rim light and outlines ([05-rim-outline](05-rim-outline.md)).
