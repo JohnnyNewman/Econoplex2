@@ -6,7 +6,7 @@
 //! and bloom. It only reads the scenario; the simulation itself does not run yet.
 //!
 //! econoplex3d [--seed S] [--towns N] [--hour H] [--pbr] [--terrain-view N] [--grid-step K]
-//!     [--fog-view N] [--no-fog]
+//!     [--fog-view N] [--no-fog] [--focus-town I] [--view-from YAW,PITCH,DIST]
 //!     [--shot FILE]
 //! econoplex3d --playground [--hour H] [--view N] [--toon-view N] [--pbr] [--face-sun] [--shot FILE]
 //!     (shader playground)
@@ -19,6 +19,7 @@ use sim_core::config::Scenario;
 use sim_core::terrain::Terrain;
 use std::path::PathBuf;
 
+mod camera;
 mod fog;
 mod hud;
 mod playground;
@@ -28,6 +29,9 @@ mod toon;
 
 #[derive(Resource, Clone)]
 struct Args {
+    /// Start view: focus town index, and optional yaw, pitch, distance.
+    focus_town: usize,
+    view_from: Option<(f32, f32, f32)>,
     seed: u64,
     towns: u32,
 }
@@ -62,7 +66,12 @@ struct World3d {
 const SCALE: f32 = 10.0;
 
 fn main() {
-    let mut args = Args { seed: 7, towns: 5 };
+    let mut args = Args {
+        seed: 7,
+        towns: 5,
+        focus_town: 0,
+        view_from: None,
+    };
     let (mut shot, mut hour, mut view, mut playground, mut face_sun) =
         (None, None, None, false, false);
     let mut toon_settings = toon::ToonSettings::default();
@@ -89,6 +98,19 @@ fn main() {
                 fog_settings.debug = it.next().and_then(|v| v.parse().ok()).unwrap_or(0).min(4)
             }
             "--no-fog" => fog_settings.on = false,
+            "--focus-town" => args.focus_town = it.next().and_then(|v| v.parse().ok()).unwrap_or(0),
+            "--view-from" => {
+                // yaw,pitch,distance (degrees, degrees, world units)
+                let v: Vec<f32> = it
+                    .next()
+                    .unwrap_or_default()
+                    .split(',')
+                    .filter_map(|x| x.parse().ok())
+                    .collect();
+                if let [y, p, d] = v[..] {
+                    args.view_from = Some((y.to_radians(), p.to_radians(), d));
+                }
+            }
             "--grid-step" => {
                 terrain_settings.step = it
                     .next()
@@ -136,6 +158,7 @@ fn main() {
             toon::ToonPlugin,
             terrain::TerrainPlugin,
             fog::FogPlugin,
+            camera::WorldCameraPlugin,
         ))
         .insert_resource(clock)
         .insert_resource(toon_settings)
@@ -189,6 +212,7 @@ fn setup(
     mut terrains: ResMut<Assets<terrain::TerrainMaterial>>,
     mut images: ResMut<Assets<Image>>,
     world: Res<World3d>,
+    args: Res<Args>,
 ) {
     let t = &world.terrain;
     let s = &world.scenario;
@@ -336,20 +360,35 @@ fn setup(
         }
         .build(),
     ));
-    // --- camera: tilted over the first town, with distance fog and bloom
-    let focus = s.towns.first().map_or(Vec3::ZERO, |tw| {
-        Vec3::new(tw.position.0 / SCALE, 0.0, -tw.position.1 / SCALE)
-    });
-    commands.spawn((
-        Camera3d::default(),
-        Transform::from_translation(focus + Vec3::new(-55.0, 48.0, 70.0))
-            .looking_at(focus, Vec3::Y),
-        Bloom::NATURAL,
-    ));
+    // --- camera: a strategy camera over a town (camera.rs), with bloom
+    let focus = s
+        .towns
+        .get(args.focus_town)
+        .or(s.towns.first())
+        .map_or(Vec3::ZERO, |tw| {
+            Vec3::new(tw.position.0 / SCALE, 0.0, -tw.position.1 / SCALE)
+        });
+    let (yaw, pitch, distance) = args.view_from.unwrap_or((-0.67, 0.49, 102.0));
+    let min = Vec2::new(
+        t.origin.0 / SCALE,
+        -(t.origin.1 + t.height as f32 * t.cell) / SCALE,
+    );
+    let max = Vec2::new(
+        (t.origin.0 + t.width as f32 * t.cell) / SCALE,
+        -t.origin.1 / SCALE,
+    );
+    let cam = camera::WorldCamera::new(
+        focus,
+        yaw,
+        pitch,
+        distance,
+        Vec4::new(min.x, min.y, max.x, max.y),
+    );
+    commands.spawn((Camera3d::default(), cam.transform(), cam, Bloom::NATURAL));
     hud::spawn_help(
         &mut commands,
         "Econoplex 3D (prototype)",
-        "camera: fixed for now",
+        "WASD pan, Q/E or right-drag rotate, wheel zoom, Home reset",
     );
 }
 
