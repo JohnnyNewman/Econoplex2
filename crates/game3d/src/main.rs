@@ -6,6 +6,7 @@
 //! and bloom. It only reads the scenario; the simulation itself does not run yet.
 //!
 //! econoplex3d [--seed S] [--towns N] [--hour H] [--pbr] [--terrain-view N] [--grid-step K]
+//!     [--fog-view N] [--no-fog]
 //!     [--shot FILE]
 //! econoplex3d --playground [--hour H] [--view N] [--toon-view N] [--pbr] [--face-sun] [--shot FILE]
 //!     (shader playground)
@@ -18,6 +19,7 @@ use sim_core::config::Scenario;
 use sim_core::terrain::Terrain;
 use std::path::PathBuf;
 
+mod fog;
 mod hud;
 mod playground;
 mod sky;
@@ -65,6 +67,7 @@ fn main() {
         (None, None, None, false, false);
     let mut toon_settings = toon::ToonSettings::default();
     let mut terrain_settings = terrain::TerrainSettings::default();
+    let mut fog_settings = fog::FogSettings::default();
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -82,6 +85,10 @@ fn main() {
             "--terrain-view" => {
                 terrain_settings.debug = it.next().and_then(|v| v.parse().ok()).unwrap_or(0).min(4)
             }
+            "--fog-view" => {
+                fog_settings.debug = it.next().and_then(|v| v.parse().ok()).unwrap_or(0).min(4)
+            }
+            "--no-fog" => fog_settings.on = false,
             "--grid-step" => {
                 terrain_settings.step = it
                     .next()
@@ -93,7 +100,7 @@ fn main() {
         }
     }
     if playground {
-        playground::run(hour, view, face_sun, toon_settings, shot);
+        playground::run(hour, view, face_sun, toon_settings, fog_settings, shot);
         return;
     }
     let mut clock = sky::SkyClock::default();
@@ -124,10 +131,16 @@ fn main() {
         .insert_resource(World3d { scenario, terrain })
         .insert_resource(args)
         .insert_resource(ShotPath(shot))
-        .add_plugins((sky::SkyPlugin, toon::ToonPlugin, terrain::TerrainPlugin))
+        .add_plugins((
+            sky::SkyPlugin,
+            toon::ToonPlugin,
+            terrain::TerrainPlugin,
+            fog::FogPlugin,
+        ))
         .insert_resource(clock)
         .insert_resource(toon_settings)
         .insert_resource(terrain_settings)
+        .insert_resource(fog_settings)
         .add_systems(Startup, setup)
         .add_systems(Update, (shoot, hud::update_help))
         .run();
@@ -172,7 +185,6 @@ fn height(t: &Terrain, p: (f32, f32)) -> f32 {
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
     mut toons: ResMut<Assets<toon::ToonMaterial>>,
     mut terrains: ResMut<Assets<terrain::TerrainMaterial>>,
     mut images: ResMut<Assets<Image>>,
@@ -225,12 +237,8 @@ fn setup(
     // --- water plane
     commands.spawn((
         Mesh3d(meshes.add(Plane3d::default().mesh().size(400.0, 400.0))),
-        MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: Color::srgba(0.30, 0.55, 0.75, 0.85),
-            perceptual_roughness: 0.2,
-            alpha_mode: AlphaMode::Blend,
-            ..default()
-        })),
+        // Opaque toon water, so it gets the same fog as everything else.
+        MeshMaterial3d(toons.add(toon::toon(Color::srgb(0.30, 0.52, 0.70)))),
         Transform::from_xyz(0.0, -0.6, 0.0),
     ));
     // --- trees: soft cones scattered on meadows and hills
@@ -336,16 +344,6 @@ fn setup(
         Camera3d::default(),
         Transform::from_translation(focus + Vec3::new(-55.0, 48.0, 70.0))
             .looking_at(focus, Vec3::Y),
-        DistanceFog {
-            color: Color::srgba(0.66, 0.76, 0.86, 1.0),
-            directional_light_color: Color::srgba(1.0, 0.92, 0.75, 0.5),
-            directional_light_exponent: 20.0,
-            falloff: FogFalloff::from_visibility_colors(
-                700.0,
-                Color::srgb(0.55, 0.62, 0.70),
-                Color::srgb(0.85, 0.88, 0.92),
-            ),
-        },
         Bloom::NATURAL,
     ));
     hud::spawn_help(

@@ -16,7 +16,8 @@ cargo run --release -p game3d -- --playground
 | mouse wheel, `+` / `-` | zoom |
 | `[` / `]` | move the time of day |
 | `T` | let time run |
-| `Tab` | which shader the number keys control (sky, toon, terrain) |
+| `Tab` | which shader the number keys control (sky, toon, terrain, fog) |
+| `F` | fog on or off |
 | `0`–`4` | debug views of that shader (0 = final image) |
 | `M` | toon lighting or Bevy's PBR lighting |
 
@@ -116,4 +117,5 @@ side, so the GPU never has to run both.
   the sky's and the toon shader's debug views.
 - **Step 03:** the terrain's vertex shader ([03-terrain](03-terrain.md)), live
   in the world view (`cargo run --release -p game3d`), not in the playground.
-- **Step 04:** fog.
+- **Step 04:** distance and height fog ([04-fog](04-fog.md)), in the world view
+  and the playground. `F` switches it on and off.

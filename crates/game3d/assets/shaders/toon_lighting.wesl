@@ -12,7 +12,23 @@ import bevy_pbr::render::{
     shadows::fetch_directional_shadow,
 };
 
+import super::fog::Fog;
+
 const PI: f32 = 3.14159265;
+
+// The toon uniform block of the materials; matches `ToonUniform` in
+// src/toon.rs (the terrain nests the same struct in its own block).
+struct Toon {
+    shadow_tint: vec4<f32>, // rgb: colour of the shadow side
+    ramp: vec4<f32>,        // x: wrap, y: band edge a, z: band edge b, w: softness
+    debug: vec4<f32>,       // x: debug view, y: 1 = toon, 0 = Bevy PBR lighting
+    fog: Fog,               // step 04
+};
+
+// The ramp parameters out of the uniform block.
+fn toon_params(t: Toon) -> ToonParams {
+    return ToonParams(t.shadow_tint.rgb, t.ramp.x, t.ramp.y, t.ramp.z, t.ramp.w);
+}
 
 struct ToonParams {
     shadow_tint: vec3<f32>, // colour of the shadow side

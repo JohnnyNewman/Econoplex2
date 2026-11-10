@@ -1,6 +1,7 @@
 //! The help text in the corner: time of day, which shader the number keys
 //! control, and each shader's current debug view.
 
+use crate::fog::FogSettings;
 use crate::sky::{DebugTarget, SkyClock};
 use crate::terrain::TerrainSettings;
 use crate::toon::ToonSettings;
@@ -35,10 +36,16 @@ pub fn update_help(
     clock: Res<SkyClock>,
     toon: Res<ToonSettings>,
     terrain: Res<TerrainSettings>,
+    fog: Res<FogSettings>,
     target: Res<DebugTarget>,
     mut text: Query<(&mut Text, &Help)>,
 ) {
-    if !clock.is_changed() && !toon.is_changed() && !terrain.is_changed() && !target.is_changed() {
+    if !clock.is_changed()
+        && !toon.is_changed()
+        && !terrain.is_changed()
+        && !fog.is_changed()
+        && !target.is_changed()
+    {
         return;
     }
     let h = clock.hour;
@@ -50,6 +57,7 @@ pub fn update_help(
          {} sky view {}: {}\n\
          {} toon view {}: {}   M toon/PBR ({})\n\
          {} terrain view {}: {}   L grid step {}\n\
+         {} fog view {}: {}   F fog ({})\n\
          Tab: which shader keys 0-4 control\n\
          {}\n\
          edit assets/shaders/*.wesl and save to reload",
@@ -68,6 +76,10 @@ pub fn update_help(
             terrain.debug,
             TerrainSettings::VIEWS[terrain.debug as usize],
             terrain.step,
+            mark(DebugTarget::Fog),
+            fog.debug,
+            FogSettings::VIEWS[fog.debug as usize],
+            if fog.on { "on" } else { "off" },
             help.camera,
         );
     }

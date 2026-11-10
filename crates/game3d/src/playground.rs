@@ -1,6 +1,7 @@
 //! The shader playground: one small scene for learning and trying shaders.
 //!
-//! `econoplex3d --playground [--hour H] [--view N] [--toon-view N] [--pbr] [--face-sun]
+//! `econoplex3d --playground [--hour H] [--view N] [--toon-view N] [--pbr]
+//! [--fog-view N] [--no-fog] [--face-sun]
 //! [--shot FILE]`
 //!
 //! - The sky (step 01) and a few test shapes on a ground plane. Later steps put
@@ -33,6 +34,7 @@ pub fn run(
     view: Option<u32>,
     face_sun: bool,
     toon_settings: ToonSettings,
+    fog_settings: crate::fog::FogSettings,
     shot: Option<std::path::PathBuf>,
 ) {
     let mut clock = SkyClock::default();
@@ -52,9 +54,10 @@ pub fn run(
             }),
             ..default()
         }))
-        .add_plugins((SkyPlugin, ToonPlugin, TerrainPlugin))
+        .add_plugins((SkyPlugin, ToonPlugin, TerrainPlugin, crate::fog::FogPlugin))
         .insert_resource(clock)
         .insert_resource(toon_settings)
+        .insert_resource(fog_settings)
         .insert_resource(crate::ShotPath(shot))
         .insert_resource(Orbit {
             // --face-sun: start looking toward the sun (the camera sits on the
