@@ -8,6 +8,8 @@
 **Where the code is:**
 - `crates/game3d/assets/shaders/terrain.wesl`: the vertex and fragment shaders
   (hot-reload);
+- `terrain_common.wesl`: the uniform block, the textures and the height lookup,
+  shared with `terrain_prepass.wesl`, the vertex shader of the shadow pass;
 - `crates/game3d/src/terrain.rs`: the material, the textures, the flat grid;
 - `crates/game3d/src/main.rs`: fills the textures from the generated world.
 
@@ -69,23 +71,15 @@ are `c` apart.
 
 ## The shader, line by line
 
-```wgsl
-// Shader step 03: terrain from a flat grid. Explained in docs/shaders/03-terrain.md.
-//
-// The vertex stage lifts each vertex of a flat grid to the height stored in a
-// texture and computes its normal from the neighbouring heights. The fragment
-// stage paints the biomes procedurally and lights them with the toon lighting
-// of step 02.
+`terrain_common.wesl`, shared by both passes:
 
-import bevy_pbr::render::{
-    mesh_functions,
-    forward_io::{Vertex, VertexOutput, FragmentOutput, decompress_vertex},
-    view_transformations::position_world_to_clip,
-    pbr_fragment::pbr_input_from_standard_material,
-    pbr_functions::{apply_pbr_lighting, main_pass_post_lighting_processing},
-};
-import super::toon_lighting::{Toon, toon_params, toon_terms};
-import super::fog::apply_fog;
+```wgsl
+// Shared by terrain.wesl (the main pass) and terrain_prepass.wesl (the shadow
+// pass): the terrain's uniform block, its textures, and the height lookup.
+// Both passes must lift the grid in exactly the same way, or the shadows
+// would not match the ground they fall on.
+
+import super::toon_lighting::Toon;
 
 // Matches `TerrainUniform` (with the nested `ToonUniform`) in src/terrain.rs.
 struct Terrain {
@@ -126,6 +120,37 @@ fn normal_at(t: vec2<i32>) -> vec3<f32> {
     return normalize(vec3<f32>(-dhdi / span, 1.0, dhdj / span));
 }
 
+// A flat grid vertex (world position, y = 0) lifted to the terrain height.
+fn displaced(flat: vec4<f32>) -> vec4<f32> {
+    let t = vec2<i32>(round(texel_coord(flat.xz)));
+    return vec4<f32>(flat.x, height_at(t), flat.z, 1.0);
+}
+```
+
+`terrain.wesl`, the main pass:
+
+```wgsl
+// Shader step 03: terrain from a flat grid. Explained in docs/shaders/03-terrain.md.
+//
+// The vertex stage lifts each vertex of a flat grid to the height stored in a
+// texture and computes its normal from the neighbouring heights. The fragment
+// stage paints the biomes procedurally and lights them with the toon lighting
+// of step 02.
+
+import bevy_pbr::render::{
+    mesh_functions,
+    forward_io::{Vertex, VertexOutput, FragmentOutput, decompress_vertex},
+    view_transformations::position_world_to_clip,
+    pbr_fragment::pbr_input_from_standard_material,
+    pbr_functions::{apply_pbr_lighting, main_pass_post_lighting_processing},
+};
+import super::toon_lighting::{Toon, toon_params, toon_terms};
+import super::fog::apply_fog;
+// The uniform block, the textures and the height helpers, shared with the
+// shadow pass (terrain_prepass.wesl).
+import super::terrain_common::{terrain, biomes, texel_coord, height_at, normal_at, displaced};
+
+
 // ---------------------------------------------------------------- vertex
 
 @vertex
@@ -137,9 +162,9 @@ fn vertex(vertex_in: Vertex) -> VertexOutput {
     let flat = mesh_functions::mesh_position_local_to_world(world_from_local, vec4<f32>(v.position, 1.0));
 
     // Displacement: the grid vertex sits exactly on a texel, so we round to it
-    // and lift the vertex to that texel's height.
+    // and lift the vertex to that texel's height (terrain_common.wesl).
     let t = vec2<i32>(round(texel_coord(flat.xz)));
-    let world = vec4<f32>(flat.x, height_at(t), flat.z, 1.0);
+    let world = displaced(flat);
 
     out.world_position = world;
     out.position = position_world_to_clip(world.xyz);   // world -> clip space
@@ -236,6 +261,44 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
 }
 ```
 
+`terrain_prepass.wesl`, the shadow pass (see *Shadows* below):
+
+```wgsl
+// The terrain's vertex shader for Bevy's prepass, which also renders the
+// shadow maps: the sun "looks" at the scene from its direction, and this shader
+// tells it where the terrain really is. Without it the shadow pass would see
+// the flat grid. See docs/shaders/03-terrain.md, exercise 3.
+
+import bevy_pbr::{
+    prepass::io::{Vertex, VertexOutput, decompress_vertex},
+    render::{mesh_functions, view_transformations::position_world_to_clip},
+};
+import super::terrain_common::displaced;
+
+@vertex
+fn vertex(vertex_in: Vertex) -> VertexOutput {
+    var out: VertexOutput;
+    let v = decompress_vertex(vertex_in, vertex_in.instance_index);
+    let world_from_local = mesh_functions::get_world_from_local(vertex_in.instance_index);
+    let flat = mesh_functions::mesh_position_local_to_world(world_from_local, vec4<f32>(v.position, 1.0));
+
+    // The same displacement as the main pass; here `view` is the light's view.
+    out.world_position = displaced(flat);
+    out.position = position_world_to_clip(out.world_position.xyz);
+@if(UNCLIPPED_DEPTH_ORTHO_EMULATION) {
+    // Directional-light shadows use an orthographic projection; Bevy keeps
+    // casters behind the near plane by clamping depth (as its own prepass does).
+    out.unclipped_depth = out.position.z;
+    out.position.z = min(out.position.z, 1.0);
+}
+@if(VERTEX_UVS_A)
+    out.uv = v.uv;
+@if(VERTEX_OUTPUT_INSTANCE_INDEX)
+    out.instance_index = vertex_in.instance_index;
+    return out;
+}
+```
+
 ```mermaid
 flowchart LR
   G["Flat grid mesh<br/>position, normal, uv"] --> VS["Vertex stage<br/>texel lookup, displacement<br/>normal by differences"]
@@ -265,12 +328,39 @@ flowchart LR
   the line only when the condition holds.
 - **Re-normalising in the fragment stage:** the interpolated normal is a blend
   of unit vectors, so it's slightly shorter than 1.
-- **Culling and shadows:**
-  - Bevy culls meshes by their bounding box, and our flat grid's box is flat.
-    `NoFrustumCulling` tells it not to.
-  - The shadow pass runs Bevy's own vertex shader, which knows nothing of our
-    heights, so it would cast the flat grid's shadow. For now the terrain
-    receives shadows but doesn't cast them (exercise 3).
+- **Culling:** Bevy culls meshes by their bounding box, and our flat grid's
+  box is flat. `NoFrustumCulling` tells it not to.
+
+### Shadows: the same displacement in a second pass
+
+A shadow map is a depth image rendered from the sun's point of view: for each
+texel, how far the nearest surface is from the sun. When the main pass lights a
+fragment, it looks up its position in that image. If something nearer to the
+sun covers it, the fragment is in shadow.
+
+- **The shadow map is rendered by Bevy's *prepass*,** with its own vertex
+  shader. That shader knows nothing of our heights: it would draw the flat
+  grid into the shadow map, and the hills would cast no shadows.
+- **So the terrain gives the prepass its own vertex shader**
+  (`MaterialExtension::prepass_vertex_shader`, `terrain_prepass.wesl`). It
+  lifts the grid exactly as the main pass does. Both import `displaced` from
+  `terrain_common.wesl`, so they can't drift apart.
+- **In the shadow pass, `view` is the sun's view.**
+  `position_world_to_clip` then projects into the shadow map instead of onto
+  the screen. The same code works for both.
+- **`UNCLIPPED_DEPTH_ORTHO_EMULATION`:** the sun's projection is orthographic.
+  Bevy keeps casters behind the near plane by clamping their depth, and our
+  prepass shader must do the same (copied from Bevy's own prepass).
+
+| hills cast shadows | before (the grid cast none) |
+| --- | --- |
+| ![](../images/shadows_on.jpg) | ![](../images/shadows_off.jpg) |
+
+Look at the right-hand side: the trees behind the hill now stand in its shadow.
+
+The dark round patches on the hills in the high views aren't shadows. They're
+the slopes facing away from the low sun, in the dark band of the toon ramp
+(view 2 of the toon shader, `n·l`, shows it).
 
 ## Debug views
 
@@ -306,6 +396,8 @@ Edit `terrain.wesl` with the world view running, and save after each change.
    green (spring) to gold (late summer) to brown stubble (after harvest).
    - Hard-code it first.
    - Then drive it from the time of day (`[` / `]`) through a uniform.
-3. **Shadow-casting terrain (harder; needs Rust):** give `TerrainExt` a
-   `prepass_vertex_shader()` that displaces like the main vertex shader, and
-   remove `NotShadowCaster`. The hills then cast shadows on the valleys.
+3. **Cheaper shadows:** the shadow map doesn't need the full grid.
+   - Give the shadow pass a coarser grid: in `terrain_prepass.wesl`, snap each
+     vertex to every second texel before lifting it.
+   - Does it show? Where? (Hint: look at shadow edges on steep slopes, and
+     think about which vertices the main pass and the shadow pass share.)

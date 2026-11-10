@@ -22,7 +22,6 @@ use crate::sky::{digit_pressed, DebugTarget};
 use crate::toon::{ToonSettings, ToonUniform};
 use bevy::asset::RenderAssetUsages;
 use bevy::camera::visibility::NoFrustumCulling;
-use bevy::light::NotShadowCaster;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::pbr::{ExtendedMaterial, MaterialExtension};
 use bevy::prelude::*;
@@ -76,6 +75,11 @@ impl MaterialExtension for TerrainExt {
     }
     fn fragment_shader() -> ShaderRef {
         SHADER.into()
+    }
+    /// The prepass, which also renders the shadow maps, must displace the
+    /// grid too, or the terrain would cast the shadow of a flat plane.
+    fn prepass_vertex_shader() -> ShaderRef {
+        "shaders/terrain_prepass.wesl".into()
     }
 }
 
@@ -231,9 +235,6 @@ pub fn spawn_terrain(
         // The mesh is flat, so its bounding box says nothing about the hills
         // the vertex shader makes: don't let Bevy cull it by that box.
         NoFrustumCulling,
-        // The shadow pass uses Bevy's own vertex shader, which would cast the
-        // shadow of the flat grid. Exercise: give it a prepass vertex shader.
-        NotShadowCaster,
     ));
 }
 
