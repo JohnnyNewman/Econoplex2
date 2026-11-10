@@ -174,7 +174,7 @@ fn parse_args() -> Args {
                                     build TOWN BUILDING [X Y] | mint TOWN auto|on|off\n\
                                     tax TOWN wealth|income RATE|auto | wages TOWN SHARE|auto\n\
                                     spending TOWN RATE|auto | procure TOWN PRODUCT AMOUNT\n\
-                     --save FILE    save the game at the end of the run
+                     --save FILE    save the game at the end of the run (FILE.bin: compact binary; else RON text)
                      --load FILE    continue a saved game (days in --order count from the load)
                      --profile      print wall-clock time per system\n\
                      --quiet        only print the summary"

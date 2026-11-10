@@ -35,7 +35,7 @@ pub fn quicksave_path() -> PathBuf {
     std::env::current_dir()
         .unwrap_or_default()
         .join("saves")
-        .join("quicksave.ron")
+        .join("quicksave.bin")
 }
 
 /// F5 saves, F9 loads the quicksave.

@@ -241,8 +241,8 @@ pub fn content_hash(content: &sim_data::Content) -> u64 {
     })
 }
 
-/// Serialize the simulation state of `world` to RON.
-pub fn to_string(world: &World) -> Result<String, String> {
+/// Everything a save holds, borrowed from `world`.
+fn save_ref(world: &World) -> SaveRef<'_> {
     // Archetype by archetype keeps entities in the order queries visit them.
     let entities: Vec<SavedEntity> = world
         .archetypes()
@@ -250,7 +250,7 @@ pub fn to_string(world: &World) -> Result<String, String> {
         .flat_map(|a| a.entities().iter().map(|e| e.id()))
         .filter_map(|id| SavedEntity::capture(world.entity(id)))
         .collect();
-    let save = SaveRef {
+    SaveRef {
         version: SAVE_VERSION,
         content_hash: content_hash(&world.resource::<Db>().content),
         cap_dim: world.resource::<Db>().cap_dim,
@@ -268,7 +268,12 @@ pub fn to_string(world: &World) -> Result<String, String> {
         match_state: world.resource::<crate::goal::MatchState>(),
         governors: world.resource::<crate::governor::Governors>(),
         history: world.resource::<crate::history::History>(),
-    };
+    }
+}
+
+/// Serialize the simulation state of `world` to RON.
+pub fn to_string(world: &World) -> Result<String, String> {
+    let save = save_ref(world);
     let config = ron::ser::PrettyConfig::new().depth_limit(2);
     ron::ser::to_string_pretty(&save, config).map_err(|e| format!("cannot write save: {e}"))
 }
@@ -284,15 +289,65 @@ pub fn from_str(text: &str) -> Result<SaveFile, String> {
     Ok(save)
 }
 
-pub fn save_to_file(world: &World, path: &Path) -> Result<(), String> {
-    let text = to_string(world)?;
-    std::fs::write(path, text).map_err(|e| format!("cannot write {}: {e}", path.display()))
+/// First bytes of a compact binary save.
+pub const BINARY_MAGIC: &[u8; 5] = b"EPXB1";
+
+/// Serialize the simulation state of `world` compactly: MessagePack with field
+/// names (so fields left out or added later still read), deflated,
+/// after `BINARY_MAGIC`.
+pub fn to_bytes(world: &World) -> Result<Vec<u8>, String> {
+    use std::io::Write;
+    let raw =
+        rmp_serde::to_vec_named(&save_ref(world)).map_err(|e| format!("cannot write save: {e}"))?;
+    let mut out = BINARY_MAGIC.to_vec();
+    let mut z = flate2::write::DeflateEncoder::new(&mut out, flate2::Compression::default());
+    z.write_all(&raw)
+        .map_err(|e| format!("cannot write save: {e}"))?;
+    z.finish().map_err(|e| format!("cannot write save: {e}"))?;
+    Ok(out)
 }
 
+/// Read a compact binary save (see `to_bytes`).
+pub fn from_bytes(bytes: &[u8]) -> Result<SaveFile, String> {
+    use std::io::Read;
+    let body = bytes
+        .strip_prefix(BINARY_MAGIC.as_slice())
+        .ok_or("not a binary save")?;
+    let mut raw = Vec::new();
+    flate2::read::DeflateDecoder::new(body)
+        .read_to_end(&mut raw)
+        .map_err(|e| format!("cannot read save: {e}"))?;
+    let save: SaveFile =
+        rmp_serde::from_slice(&raw).map_err(|e| format!("cannot read save: {e}"))?;
+    if save.version != SAVE_VERSION {
+        return Err(format!(
+            "save version {} is not supported (expected {SAVE_VERSION})",
+            save.version
+        ));
+    }
+    Ok(save)
+}
+
+/// Save to `path`: compact binary for a `.bin` file, readable RON otherwise.
+pub fn save_to_file(world: &World, path: &Path) -> Result<(), String> {
+    let data = if path.extension().is_some_and(|e| e == "bin") {
+        to_bytes(world)?
+    } else {
+        to_string(world)?.into_bytes()
+    };
+    std::fs::write(path, data).map_err(|e| format!("cannot write {}: {e}", path.display()))
+}
+
+/// Read a save in either format (told apart by its first bytes).
 pub fn read_file(path: &Path) -> Result<SaveFile, String> {
-    let text = std::fs::read_to_string(path)
-        .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
-    from_str(&text)
+    let bytes = std::fs::read(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+    if bytes.starts_with(BINARY_MAGIC) {
+        from_bytes(&bytes)
+    } else {
+        let text =
+            String::from_utf8(bytes).map_err(|_| format!("{} is not a save", path.display()))?;
+        from_str(&text)
+    }
 }
 
 /// Old entity id to new entity id.
