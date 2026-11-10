@@ -6,19 +6,19 @@
 //! and bloom. It only reads the scenario; the simulation itself does not run yet.
 //!
 //! econoplex3d [--seed S] [--towns N] [--hour H] [--pbr] [--terrain-view N] [--grid-step K]
-//!     [--fog-view N] [--no-fog] [--days N] [--speed 0-4] [--paused] [--trade] [--focus-town I] [--focus X,Z] [--view-from YAW,PITCH,DIST]
+//!     [--fog-view N] [--no-fog] [--days N] [--speed 0-4] [--paused] [--trade] [--bloom-view] [--focus-town I] [--focus X,Z] [--view-from YAW,PITCH,DIST]
 //!     [--shot FILE]
 //! econoplex3d --playground [--hour H] [--view N] [--toon-view N] [--pbr] [--face-sun] [--shot FILE]
 //!     (shader playground)
 
 use bevy::light::{CascadeShadowConfigBuilder, DirectionalLightShadowMap};
-use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{save_to_disk, Screenshot};
 use sim_core::config::Scenario;
 use sim_core::terrain::Terrain;
 use std::path::PathBuf;
 
+mod bloom;
 mod buildings;
 mod camera;
 mod crowd;
@@ -42,6 +42,8 @@ struct Args {
     view_from: Option<(f32, f32, f32)>,
     /// Start focus on the ground (3D x, z), overrides the town.
     focus: Option<(f32, f32)>,
+    /// Start with the bloom debug view (the glow alone).
+    bloom_view: bool,
     seed: u64,
     towns: u32,
 }
@@ -92,6 +94,7 @@ fn main() {
         focus_town: 0,
         view_from: None,
         focus: None,
+        bloom_view: false,
     };
     let (mut shot, mut hour, mut view, mut playground, mut face_sun) =
         (None, None, None, false, false);
@@ -119,6 +122,7 @@ fn main() {
             "--no-rim" => toon_settings.rim = false,
             "--no-outlines" => no_outlines = true,
             "--trade" => trade = true,
+            "--bloom-view" => args.bloom_view = true,
             "--terrain-view" => {
                 terrain_settings.debug = it.next().and_then(|v| v.parse().ok()).unwrap_or(0).min(4)
             }
@@ -224,6 +228,7 @@ fn main() {
             crowd_compute::CrowdComputePlugin,
             ui::PanelsPlugin,
             overlay::OverlayPlugin,
+            bloom::BloomPlugin,
         ))
         .insert_resource(clock)
         .insert_resource(toon_settings)
@@ -485,11 +490,21 @@ fn setup(
         distance,
         Vec4::new(min.x, min.y, max.x, max.y),
     );
-    commands.spawn((Camera3d::default(), cam.transform(), cam, Bloom::NATURAL));
+    // HDR, with our hand-written bloom (shader step 08, bloom.rs).
+    commands.spawn((
+        Camera3d::default(),
+        cam.transform(),
+        cam,
+        bevy::camera::Hdr,
+        bloom::BloomSettings {
+            debug: if args.bloom_view { 1.0 } else { 0.0 },
+            ..default()
+        },
+    ));
     hud::spawn_help(
         &mut commands,
         "Econoplex 3D (prototype)",
-        "WASD pan, Q/E or right-drag rotate, wheel zoom, Home reset, V trade overlay",
+        "WASD pan, Q/E or right-drag rotate, wheel zoom, Home reset, V trade overlay, B bloom, N glow only",
     );
 }
 
