@@ -526,7 +526,7 @@ mod tests {
         });
         let scenario = sim_core::worldgen::resolve(&scenario, &db);
         let sim = sim_core::Simulation::new(db, params, &scenario);
-        let snap = sim_core::view::ViewSnapshot::capture(&sim.world, &mut 0);
+        let snap = sim_core::view::ViewSnapshot::capture(&sim.world, &mut Default::default());
         for (town, spec) in snap.towns.iter().zip(&scenario.towns) {
             let mut kinds: Vec<&str> = town.buildings.iter().map(|b| b.kind.as_str()).collect();
             kinds.sort();

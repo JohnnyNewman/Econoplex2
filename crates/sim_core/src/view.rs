@@ -11,7 +11,7 @@
 //! capture) and the order queue ([`crate::policy::OrderQueue`]).
 
 use crate::db::Db;
-use crate::history::{Event, History};
+use crate::history::{Event, History, Sample};
 use crate::world::{SimClock, Towns};
 use bevy_ecs::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -86,6 +86,13 @@ pub struct PeopleView {
     pub doing: Vec<Doing>,
 }
 
+/// How much of the event log and the monthly history a view already has.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Seen {
+    pub events: usize,
+    pub samples: usize,
+}
+
 /// Everything a view needs for one tick.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ViewSnapshot {
@@ -98,12 +105,16 @@ pub struct ViewSnapshot {
     pub domains: u32,
     /// Events logged since the previous capture (oldest first).
     pub events: Vec<Event>,
+    /// Monthly history samples (one per town) recorded since the previous
+    /// capture.
+    pub samples: Vec<Sample>,
 }
 
 impl ViewSnapshot {
-    /// Copy what a view needs out of the world. `events_seen` is how many events
-    /// the view already has; it is advanced past the ones returned here.
-    pub fn capture(world: &World, events_seen: &mut usize) -> Self {
+    /// Copy what a view needs out of the world. `seen` says how much of the
+    /// event log and history the view already has; it is advanced past what is
+    /// returned here.
+    pub fn capture(world: &World, seen: &mut Seen) -> Self {
         let clock = world.resource::<SimClock>();
         let towns = world.resource::<Towns>();
         let db = world.resource::<Db>();
@@ -130,12 +141,14 @@ impl ViewSnapshot {
                     (None, Activity::Idle | Activity::Working(_)) => Doing::Idle,
                 });
         }
-        let events = world
+        let (events, samples) = world
             .get_resource::<History>()
             .map(|h| {
-                let new = h.events.get(*events_seen..).unwrap_or_default().to_vec();
-                *events_seen = h.events.len();
-                new
+                let new = h.events.get(seen.events..).unwrap_or_default().to_vec();
+                let samples = h.samples.get(seen.samples..).unwrap_or_default().to_vec();
+                seen.events = h.events.len();
+                seen.samples = h.samples.len();
+                (new, samples)
             })
             .unwrap_or_default();
         ViewSnapshot {
@@ -189,6 +202,7 @@ impl ViewSnapshot {
             people,
             domains: db.domain_dirs.len() as u32,
             events,
+            samples,
         }
     }
 
@@ -212,7 +226,7 @@ mod tests {
     #[test]
     fn capturing_does_not_change_the_simulation() {
         let (mut a, mut b) = (sim(), sim());
-        let mut seen = 0;
+        let mut seen = Seen::default();
         for _ in 0..40 {
             a.step();
             let _ = ViewSnapshot::capture(&a.world, &mut seen);
@@ -224,7 +238,7 @@ mod tests {
     #[test]
     fn snapshots_show_towns_buildings_and_new_events_once() {
         let mut s = sim();
-        let mut seen = 0;
+        let mut seen = Seen::default();
         let first = ViewSnapshot::capture(&s.world, &mut seen);
         assert!(!first.towns.is_empty());
         assert!(first.towns.iter().all(|t| !t.buildings.is_empty()));

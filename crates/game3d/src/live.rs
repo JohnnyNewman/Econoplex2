@@ -23,7 +23,7 @@ use crate::sky::SkyClock;
 use crate::toon::{toon, ToonMaterial};
 use crate::{height, World3d, SCALE};
 use bevy::prelude::*;
-use sim_core::history::Event;
+use sim_core::history::{Event, Sample};
 use sim_core::policy::{Order, OrderQueue};
 use sim_core::view::ViewSnapshot;
 use sim_core::Simulation;
@@ -54,6 +54,8 @@ struct Shared {
     orders: Vec<Order>,
     /// Orders as text (`tax Morstead wealth 0.75`), parsed on the sim thread.
     text_orders: Vec<String>,
+    /// History samples since the view last took them.
+    samples: Vec<Sample>,
     /// Orders the simulation could not parse, with the reason.
     errors: Vec<String>,
     quit: bool,
@@ -70,6 +72,8 @@ pub struct LiveSim {
     /// The latest events, newest first (the status line shows four, the event
     /// log more).
     pub recent: VecDeque<Event>,
+    /// The monthly history so far (one sample per town and month).
+    pub history: Vec<Sample>,
     /// Product names by def, and the building types a town can commission
     /// (product id, name).
     pub product_names: Vec<String>,
@@ -99,8 +103,9 @@ impl LiveSim {
                 )
             })
             .collect();
-        let mut seen = 0;
+        let mut seen = sim_core::view::Seen::default();
         let first = Arc::new(ViewSnapshot::capture(&sim.world, &mut seen));
+        let history = first.samples.clone();
         let shared = Arc::new(Mutex::new(Shared {
             latest: first.clone(),
             events: Vec::new(),
@@ -108,6 +113,7 @@ impl LiveSim {
             paused,
             orders: Vec::new(),
             text_orders: Vec::new(),
+            samples: Vec::new(),
             errors: Vec::new(),
             quit: false,
         }));
@@ -121,6 +127,7 @@ impl LiveSim {
             snapshot: first,
             shown_tick: None,
             recent: VecDeque::new(),
+            history,
             product_names,
             building_kinds,
         }
@@ -149,7 +156,7 @@ impl LiveSim {
 }
 
 /// The simulation thread: step at the game speed, publish after every tick.
-fn run(sim: &mut Simulation, shared: &Mutex<Shared>, mut seen: usize) {
+fn run(sim: &mut Simulation, shared: &Mutex<Shared>, mut seen: sim_core::view::Seen) {
     let mut next = Instant::now();
     loop {
         let (speed, paused, orders, texts, quit) = {
@@ -195,6 +202,7 @@ fn run(sim: &mut Simulation, shared: &Mutex<Shared>, mut seen: usize) {
         let snap = ViewSnapshot::capture(&sim.world, &mut seen);
         let mut s = shared.lock().unwrap();
         s.events.extend(snap.events.iter().cloned());
+        s.samples.extend(snap.samples.iter().cloned());
         s.latest = Arc::new(snap);
     }
 }
@@ -274,8 +282,10 @@ fn sync_scene(
         let mut s = live.shared.lock().unwrap();
         let latest = s.latest.clone();
         let events = std::mem::take(&mut s.events);
+        let samples = std::mem::take(&mut s.samples);
         drop(s);
         live.snapshot = latest;
+        live.history.extend(samples);
         for e in events {
             live.recent.push_front(e);
         }
