@@ -123,3 +123,5 @@ side, so the GPU never has to run both.
 - **Step 05:** rim light and outlines ([05-rim-outline](05-rim-outline.md)).
 - **Step 06:** grass and trees in the wind ([06-grass](06-grass.md)), in the world
   view. `G` hides the grass.
+- **Step 07:** the crowd walks in a compute shader ([07-crowds-compute](07-crowds-compute.md)).
+  `P` hides the people.

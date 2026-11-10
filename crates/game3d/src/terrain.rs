@@ -173,7 +173,7 @@ pub fn spawn_terrain(
     images: &mut Assets<Image>,
     materials: &mut Assets<TerrainMaterial>,
     data: &TerrainData,
-) {
+) -> Handle<Image> {
     let size = Extent3d {
         width: data.width as u32,
         height: data.depth as u32,
@@ -199,6 +199,7 @@ pub fn spawn_terrain(
         TextureFormat::Rgba8Unorm,
         RenderAssetUsages::RENDER_WORLD,
     );
+    let heights = images.add(heights);
     let material = ExtendedMaterial {
         base: StandardMaterial {
             base_color: Color::WHITE,
@@ -215,7 +216,7 @@ pub fn spawn_terrain(
                     ..default()
                 },
             },
-            heights: images.add(heights),
+            heights: heights.clone(),
             biomes: images.add(biomes),
         },
     };
@@ -240,6 +241,7 @@ pub fn spawn_terrain(
         // the vertex shader makes: don't let Bevy cull it by that box.
         NoFrustumCulling,
     ));
+    heights
 }
 
 fn terrain_keys(
