@@ -7,6 +7,9 @@
 //!   in the CLI's text syntax; the simulation applies it at its next tick, and
 //!   the panel shows the new value once the next snapshot arrives.
 //! - **Events:** the event log, newest first.
+//! - **History:** monthly line charts per town (population, treasury, food per
+//!   resident, mean wealth, bread price, soldiers, buildings), the selected town
+//!   drawn bold.
 //!
 //! The panels read only the snapshot (`LiveSim`) and act only through orders,
 //! like the 2D game, the CLI and the AI governors.
@@ -34,6 +37,8 @@ struct Panels {
     town: usize,
     build: usize,
     raid: usize,
+    /// Which history series the chart shows.
+    metric: usize,
     /// Orders sent, newest first, with the tick they were sent at.
     sent: Vec<(u64, String)>,
     errors: Vec<String>,
@@ -275,7 +280,7 @@ fn panels(
 
     // ---------------------------------------------------------------- Events
     egui::Window::new("Events")
-        .default_pos([1250.0, 620.0])
+        .default_pos([820.0, 860.0])
         .default_width(330.0)
         .default_open(false)
         .show(ctx, |ui| {
@@ -288,7 +293,122 @@ fn panels(
                 });
         });
 
+    // ---------------------------------------------------------------- History
+    egui::Window::new("History")
+        .default_pos([1220.0, 560.0])
+        .default_width(380.0)
+        .show(ctx, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                for (k, (label, _)) in METRICS.iter().enumerate() {
+                    ui.selectable_value(&mut state.metric, k, *label);
+                }
+            });
+            chart(
+                ui,
+                &live.history,
+                snap.towns.len(),
+                ti,
+                METRICS[state.metric].1,
+            );
+            ui.small(format!(
+                "{} (bold), monthly; {} samples",
+                snap.towns[ti].name,
+                live.history.len()
+            ));
+        });
+
     capture.pointer = ctx.egui_wants_pointer_input() || ctx.is_pointer_over_egui();
     capture.keyboard = ctx.egui_wants_keyboard_input();
     Ok(())
+}
+
+/// The history series a chart can show.
+type Metric = fn(&sim_core::history::Sample) -> f32;
+const METRICS: [(&str, Metric); 7] = [
+    ("people", |s| s.population as f32),
+    ("treasury", |s| s.treasury),
+    ("food / resident", |s| s.food_per_capita),
+    ("mean wealth", |s| s.mean_wealth),
+    ("bread price", |s| s.bread_price),
+    ("soldiers", |s| s.soldiers as f32),
+    ("buildings", |s| s.buildings as f32),
+];
+
+/// A line per town, drawn with egui's painter: x is time, y the metric, both
+/// scaled to the data's range.
+fn chart(
+    ui: &mut egui::Ui,
+    samples: &[sim_core::history::Sample],
+    towns: usize,
+    selected: usize,
+    metric: Metric,
+) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(360.0, 170.0), egui::Sense::hover());
+    let painter = ui.painter_at(rect);
+    painter.rect_filled(rect, 4.0, egui::Color32::from_black_alpha(90));
+    if samples.len() < 2 {
+        painter.text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            "the first samples come after a month",
+            egui::FontId::proportional(13.0),
+            egui::Color32::GRAY,
+        );
+        return;
+    }
+    let (t0, t1) = samples
+        .iter()
+        .fold((u64::MAX, 0), |(a, b), s| (a.min(s.tick), b.max(s.tick)));
+    let (v0, v1) = samples.iter().fold((f32::MAX, f32::MIN), |(a, b), s| {
+        let v = metric(s);
+        (a.min(v), b.max(v))
+    });
+    let (v0, v1) = if v1 - v0 < 1e-3 {
+        (v0 - 1.0, v1 + 1.0)
+    } else {
+        (v0, v1)
+    };
+    let inner = rect.shrink(8.0);
+    let at = |tick: u64, v: f32| {
+        egui::pos2(
+            inner.left() + inner.width() * (tick - t0) as f32 / (t1 - t0).max(1) as f32,
+            inner.bottom() - inner.height() * (v - v0) / (v1 - v0),
+        )
+    };
+    for town in 0..towns {
+        let points: Vec<egui::Pos2> = samples
+            .iter()
+            .filter(|s| s.town as usize == town)
+            .map(|s| at(s.tick, metric(s)))
+            .collect();
+        let hue = town as f32 / towns.max(1) as f32;
+        let color: egui::Color32 = egui::ecolor::Hsva::new(hue, 0.6, 0.95, 1.0).into();
+        let width = if town == selected { 2.6 } else { 1.0 };
+        let color = if town == selected {
+            color
+        } else {
+            color.gamma_multiply(0.6)
+        };
+        painter.add(egui::Shape::line(points, egui::Stroke::new(width, color)));
+    }
+    let label = |pos: egui::Pos2, align, text: String| {
+        painter.text(
+            pos,
+            align,
+            text,
+            egui::FontId::monospace(11.0),
+            egui::Color32::LIGHT_GRAY,
+        );
+    };
+    label(inner.left_top(), egui::Align2::LEFT_TOP, format!("{v1:.1}"));
+    label(
+        inner.left_bottom(),
+        egui::Align2::LEFT_BOTTOM,
+        format!("{v0:.1}"),
+    );
+    label(
+        inner.right_bottom(),
+        egui::Align2::RIGHT_BOTTOM,
+        format!("day {t1}"),
+    );
 }
