@@ -1,5 +1,26 @@
 # 07: Crowds from sim snapshots (compute shaders)
 
+> **Status (M4, part 1):** the crowd is drawn, but the walking runs on the CPU.
+>
+> - Every frame `crates/game3d/src/crowd.rs` moves each person toward their
+>   target from the newest snapshot and writes position, heading, colour and
+>   size into a storage buffer.
+> - `assets/shaders/people.wesl` draws everyone from one mesh, by vertex pulling
+>   as for the grass (step 06). It animates the walk procedurally: a bob of
+>   `|sin|` per stride, a forward lean, and a phase per person, so a crowd
+>   doesn't march in lockstep.
+> - Colours: workers by the skill domain of today's work, soldiers dark red,
+>   children small and pale, idle people light, resting ones blue-grey.
+>
+> Part 2, this step proper, moves the walking into a **compute shader**. The
+> CPU then only uploads targets when a tick arrives, and the GPU moves the
+> people every frame. The draft below is the plan for that.
+>
+> | a town's people | close up | going out to the fields |
+> | --- | --- | --- |
+> | ![](../images/crowd_town.jpg) | ![](../images/crowd_close.jpg) | ![](../images/crowd_fields.jpg) |
+
+
 **Concept:** general-purpose work on the GPU.
 - A **compute shader** runs in **workgroups** of threads.
 - It reads and writes **storage buffers**, and has no vertices or pixels.
