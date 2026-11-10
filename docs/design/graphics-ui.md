@@ -34,6 +34,19 @@ only three ways:
 Because nothing else crosses the boundary, rendering can't affect determinism: the
 same seed and orders give the same state hash with or without a renderer.
 
+**Implemented in M2:**
+- `sim_core::view::ViewSnapshot` is the per-tick snapshot. It carries the
+  calendar, per-town population, treasury, ruler and buildings (with stable
+  ids), plus the events since the last capture. A test checks that capturing
+  leaves the state hash unchanged.
+- `crates/game3d/src/live.rs` runs the `Simulation` on its own thread at the
+  game speed and publishes a snapshot after each tick. The view diffs
+  snapshots: buildings appear and go, houses follow population, and the
+  calendar sets the season.
+- Orders go back through a queue into the sim's `OrderQueue`.
+- Interpolation is not needed yet, because nothing moves between ticks. It
+  arrives with agents and caravans (M4).
+
 ```mermaid
 flowchart LR
   subgraph Sim thread

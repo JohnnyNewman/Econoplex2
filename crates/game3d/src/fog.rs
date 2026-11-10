@@ -15,7 +15,7 @@
 //! Keys: `F` fog on/off; with `Tab` on "fog", `0`–`4` pick a debug view
 //! (0 final, 1 fog amount, 2 distance part, 3 height part, 4 fog colour).
 
-use crate::sky::{digit_pressed, palette, sun_color, sun_direction, DebugTarget, SkyClock};
+use crate::sky::{digit_pressed, palette, sun_color, DebugTarget, SkyClock};
 use bevy::prelude::*;
 use bevy::render::render_resource::ShaderType;
 
@@ -104,7 +104,7 @@ fn fog_keys(
 
 /// Once per frame on the CPU: the fog colour follows the sky.
 fn update_fog_state(clock: Res<SkyClock>, settings: Res<FogSettings>, mut state: ResMut<FogState>) {
-    let dir = sun_direction(clock.hour);
+    let dir = clock.sun();
     let (horizon, _, _) = palette(dir.y);
     // Below the horizon there is no sun to glow through the fog.
     let glow = (dir.y * 8.0 + 0.5).clamp(0.0, 1.0) * 0.6;

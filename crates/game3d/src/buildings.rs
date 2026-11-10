@@ -6,9 +6,9 @@
 //! - one feature that tells the trade: a chimney, a tower with sails, a barrel,
 //!   stacked blocks.
 //!
-//! Positions and types come from the simulation: the scenario is set up in a
-//! throwaway sim world once, and every `Structure` entity is drawn where the sim
-//! put it. (In M2 these will come from the live simulation's snapshots.)
+//! Positions and types come from the simulation's snapshots (`live.rs`): every
+//! building is drawn where the sim put it, appears when it is built and goes
+//! when it is gone.
 
 use crate::toon::{toon, ToonMaterial};
 use bevy::prelude::*;
@@ -24,8 +24,10 @@ pub struct BuildingSpec {
     pub seed: u32,
 }
 
-/// Meshes and materials shared by all buildings.
-struct Kit {
+/// Meshes and materials shared by all buildings (a resource, so buildings can
+/// be added at any time).
+#[derive(Resource)]
+pub struct Kit {
     cube: Handle<Mesh>,
     gable: Handle<Mesh>,
     cone: Handle<Mesh>,
@@ -35,7 +37,7 @@ struct Kit {
 }
 
 impl Kit {
-    fn new(meshes: &mut Assets<Mesh>, toons: &mut Assets<ToonMaterial>) -> Self {
+    pub fn new(meshes: &mut Assets<Mesh>, toons: &mut Assets<ToonMaterial>) -> Self {
         // A gable roof: a triangle extruded along z (1 wide, 1 high, 1 deep).
         let gable = Extrusion::new(
             Triangle2d::new(
@@ -319,27 +321,27 @@ fn parts(kit: &Kit, kind: &str) -> Vec<(Handle<Mesh>, &'static str, Vec3, Vec3)>
     }
 }
 
-/// Spawn every building, oriented a little differently each.
-pub fn spawn_buildings(
-    commands: &mut Commands,
-    meshes: &mut Assets<Mesh>,
-    toons: &mut Assets<ToonMaterial>,
-    buildings: &[BuildingSpec],
-) {
-    let kit = Kit::new(meshes, toons);
-    for b in buildings {
-        // Land "buildings" (cleared fields, woodlots) are not structures to draw.
-        if b.kind == "field_plot" || b.kind == "woodlot" {
-            continue;
-        }
-        let rot = Quat::from_rotation_y((b.seed % 8) as f32 * std::f32::consts::FRAC_PI_4);
-        // Workplaces are drawn 1.5 times the size of a house, so they stand out.
-        let root = Transform::from_translation(b.at)
-            .with_rotation(rot)
-            .with_scale(Vec3::splat(1.5));
-        for (mesh, colour, offset, scale) in parts(&kit, &b.kind) {
-            let tf = root * Transform::from_translation(offset).with_scale(scale);
-            commands.spawn((Mesh3d(mesh), MeshMaterial3d(kit.mat(colour)), tf));
-        }
+/// Spawn one building: a parent entity at the ground point with its parts as
+/// children, so the whole building can be removed again with one despawn.
+/// Land "buildings" (cleared fields, woodlots) are not drawn: `None`.
+pub fn spawn_building(commands: &mut Commands, kit: &Kit, b: &BuildingSpec) -> Option<Entity> {
+    if b.kind == "field_plot" || b.kind == "woodlot" {
+        return None;
     }
+    // Oriented a little differently each; workplaces are drawn 1.5 times the
+    // size of a house, so they stand out.
+    let rot = Quat::from_rotation_y((b.seed % 8) as f32 * std::f32::consts::FRAC_PI_4);
+    let root = Transform::from_translation(b.at)
+        .with_rotation(rot)
+        .with_scale(Vec3::splat(1.5));
+    let parent = commands.spawn((root, Visibility::default())).id();
+    for (mesh, colour, offset, scale) in parts(kit, &b.kind) {
+        commands.spawn((
+            Mesh3d(mesh),
+            MeshMaterial3d(kit.mat(colour)),
+            Transform::from_translation(offset).with_scale(scale),
+            ChildOf(parent),
+        ));
+    }
+    Some(parent)
 }

@@ -6,7 +6,7 @@
 //! and bloom. It only reads the scenario; the simulation itself does not run yet.
 //!
 //! econoplex3d [--seed S] [--towns N] [--hour H] [--pbr] [--terrain-view N] [--grid-step K]
-//!     [--fog-view N] [--no-fog] [--focus-town I] [--view-from YAW,PITCH,DIST]
+//!     [--fog-view N] [--no-fog] [--days N] [--speed 0-4] [--paused] [--focus-town I] [--view-from YAW,PITCH,DIST]
 //!     [--shot FILE]
 //! econoplex3d --playground [--hour H] [--view N] [--toon-view N] [--pbr] [--face-sun] [--shot FILE]
 //!     (shader playground)
@@ -23,6 +23,7 @@ mod buildings;
 mod camera;
 mod fog;
 mod hud;
+mod live;
 mod playground;
 mod sky;
 mod terrain;
@@ -61,42 +62,6 @@ struct ShotPath(Option<PathBuf>);
 struct World3d {
     scenario: Scenario,
     terrain: Terrain,
-    /// Buildings as the simulation placed them: (type id, town, map position).
-    buildings: Vec<(String, u16, (f32, f32))>,
-}
-
-/// Set the scenario up in a throwaway simulation world and read where it puts
-/// each building. (M2 will read these from the running simulation instead.)
-fn sim_buildings(
-    paths: &sim_core::AssetPaths,
-    scenario: &Scenario,
-) -> Vec<(String, u16, (f32, f32))> {
-    use sim_core::components::{Pos, Product, Structure, TownId};
-    let (db, params, _) = sim_core::load(paths).expect("cannot load assets");
-    let mut sim = bevy::ecs::world::World::new();
-    sim_core::world::setup(&mut sim, db, params, scenario);
-    let mut q = sim.query_filtered::<(&Product, &TownId, &Pos), With<Structure>>();
-    let db = sim.resource::<sim_core::Db>();
-    let mut out: Vec<_> = q
-        .iter(&sim)
-        .map(|(p, town, pos)| {
-            (
-                db.content.products[p.def as usize].id.clone(),
-                town.0,
-                (pos.x, pos.y),
-            )
-        })
-        .collect();
-    // Query order is not guaranteed; sort so the view is the same every run.
-    out.sort_by(|a, b| {
-        (a.1, &a.0, a.2 .0.to_bits(), a.2 .1.to_bits()).cmp(&(
-            b.1,
-            &b.0,
-            b.2 .0.to_bits(),
-            b.2 .1.to_bits(),
-        ))
-    });
-    out
 }
 
 /// World units per 3D unit (the sim's map is about 2000 units across).
@@ -114,6 +79,8 @@ fn main() {
     let mut toon_settings = toon::ToonSettings::default();
     let mut terrain_settings = terrain::TerrainSettings::default();
     let mut fog_settings = fog::FogSettings::default();
+    // The live simulation: fast-forward days, start speed (0-4), paused.
+    let (mut days, mut speed, mut paused) = (0u64, 0usize, false);
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -148,6 +115,9 @@ fn main() {
                     args.view_from = Some((y.to_radians(), p.to_radians(), d));
                 }
             }
+            "--days" => days = it.next().and_then(|v| v.parse().ok()).unwrap_or(0),
+            "--speed" => speed = it.next().and_then(|v| v.parse().ok()).unwrap_or(0),
+            "--paused" => paused = true,
             "--grid-step" => {
                 terrain_settings.step = it
                     .next()
@@ -167,7 +137,7 @@ fn main() {
         clock.hour = h.rem_euclid(24.0);
     }
     let paths = sim_core::AssetPaths::discover();
-    let (db, _params, mut scenario) = sim_core::load(&paths).expect("cannot load assets");
+    let (db, params, mut scenario) = sim_core::load(&paths).expect("cannot load assets");
     scenario.seed = args.seed;
     scenario.generate = Some(sim_core::worldgen::GenSpec {
         towns: args.towns,
@@ -175,7 +145,12 @@ fn main() {
     });
     let scenario = sim_core::worldgen::resolve(&scenario, &db);
     let terrain = Terrain::build(&scenario);
-    let buildings = sim_buildings(&paths, &scenario);
+    // The simulation of this world, run ahead by `--days`, then on its own thread.
+    let mut sim = sim_core::Simulation::new(db, params, &scenario);
+    for _ in 0..days {
+        sim.step();
+    }
+    let live = live::LiveSim::start(sim, speed, paused);
 
     App::new()
         .add_plugins(DefaultPlugins.set(asset_plugin()).set(WindowPlugin {
@@ -188,11 +163,8 @@ fn main() {
         }))
         .insert_resource(ClearColor(Color::srgb(0.62, 0.74, 0.86)))
         .insert_resource(DirectionalLightShadowMap { size: 4096 })
-        .insert_resource(World3d {
-            scenario,
-            terrain,
-            buildings,
-        })
+        .insert_resource(World3d { scenario, terrain })
+        .insert_resource(live)
         .insert_resource(args)
         .insert_resource(ShotPath(shot))
         .add_plugins((
@@ -201,6 +173,7 @@ fn main() {
             terrain::TerrainPlugin,
             fog::FogPlugin,
             camera::WorldCameraPlugin,
+            live::LivePlugin,
         ))
         .insert_resource(clock)
         .insert_resource(toon_settings)
@@ -345,63 +318,7 @@ fn setup(
                 .with_scale(Vec3::splat(0.8 + jitter * 0.6)),
         ));
     }
-    // --- towns: the sim's buildings by type (buildings.rs), houses around them
-    let specs: Vec<buildings::BuildingSpec> = world
-        .buildings
-        .iter()
-        .enumerate()
-        .map(|(k, (kind, _town, p))| buildings::BuildingSpec {
-            kind: kind.clone(),
-            at: Vec3::new(p.0 / SCALE, height(t, *p), -p.1 / SCALE),
-            seed: k as u32 * 7 + 3,
-        })
-        .collect();
-    buildings::spawn_buildings(&mut commands, &mut meshes, &mut toons, &specs);
-    // Houses: a spiral around each town centre, leaving room for the buildings.
-    let house = meshes.add(Cuboid::new(1.0, 0.8, 1.2));
-    let roof = meshes.add(Cone::new(0.95, 0.7));
-    let walls = toons.add(toon::toon(Color::srgb(0.88, 0.82, 0.70)));
-    let roofs = [
-        toons.add(toon::toon(Color::srgb(0.66, 0.26, 0.20))),
-        toons.add(toon::toon(Color::srgb(0.50, 0.32, 0.22))),
-        toons.add(toon::toon(Color::srgb(0.36, 0.38, 0.46))),
-    ];
-    let taken: Vec<Vec2> = specs.iter().map(|b| Vec2::new(b.at.x, b.at.z)).collect();
-    for (ti, tw) in s.towns.iter().enumerate() {
-        let n = (tw.population / 6).max(12);
-        let mut placed = 0;
-        let mut k = 0u32;
-        while placed < n && k < n * 4 {
-            let a = k as f32 * 2.399_963 + ti as f32;
-            let r = 1.8 + (k as f32).sqrt() * 1.05;
-            k += 1;
-            let p = (
-                tw.position.0 + r * SCALE * a.cos(),
-                tw.position.1 + r * SCALE * a.sin(),
-            );
-            if t.cell_at(p).is_some_and(|c| t.water[c]) {
-                continue;
-            }
-            let ground = Vec2::new(p.0 / SCALE, -p.1 / SCALE);
-            if taken.iter().any(|b| b.distance(ground) < 3.2) {
-                continue;
-            }
-            placed += 1;
-            let y = height(t, p);
-            let at = Vec3::new(ground.x, y, ground.y);
-            let rot = Quat::from_rotation_y(a);
-            commands.spawn((
-                Mesh3d(house.clone()),
-                MeshMaterial3d(walls.clone()),
-                Transform::from_translation(at + Vec3::Y * 0.4).with_rotation(rot),
-            ));
-            commands.spawn((
-                Mesh3d(roof.clone()),
-                MeshMaterial3d(roofs[k as usize % 3].clone()),
-                Transform::from_translation(at + Vec3::Y * 1.15).with_rotation(rot),
-            ));
-        }
-    }
+    // --- towns: buildings and houses come from the live simulation (live.rs)
     // --- light: the sun with soft shadows; the sky plugin points it and sets its
     // colour and the ambient light from the time of day.
     commands.spawn((
@@ -476,26 +393,23 @@ fn shoot(
 mod tests {
     use super::*;
 
-    /// The 3D view shows exactly the buildings the scenario gives each town
-    /// (workshop, mill, bakery everywhere; furnace and smithy where the land has
-    /// ore), read from the sim.
+    /// The first snapshot of the simulation shows exactly the buildings the
+    /// scenario gives each town (workshop, mill, bakery everywhere; furnace and
+    /// smithy where the land has ore).
     #[test]
     fn every_town_gets_its_buildings() {
         let paths = sim_core::AssetPaths::discover();
-        let (db, _, mut scenario) = sim_core::load(&paths).unwrap();
+        let (db, params, mut scenario) = sim_core::load(&paths).unwrap();
         scenario.seed = 23;
         scenario.generate = Some(sim_core::worldgen::GenSpec {
             towns: 5,
             ..Default::default()
         });
         let scenario = sim_core::worldgen::resolve(&scenario, &db);
-        let b = sim_buildings(&paths, &scenario);
-        for (town, spec) in scenario.towns.iter().enumerate() {
-            let mut kinds: Vec<&str> = b
-                .iter()
-                .filter(|x| x.1 as usize == town)
-                .map(|x| x.0.as_str())
-                .collect();
+        let sim = sim_core::Simulation::new(db, params, &scenario);
+        let snap = sim_core::view::ViewSnapshot::capture(&sim.world, &mut 0);
+        for (town, spec) in snap.towns.iter().zip(&scenario.towns) {
+            let mut kinds: Vec<&str> = town.buildings.iter().map(|b| b.kind.as_str()).collect();
             kinds.sort();
             let mut want: Vec<&str> = spec.buildings.iter().map(String::as_str).collect();
             want.sort();
@@ -508,13 +422,11 @@ mod tests {
                 );
             }
         }
-        // The same every run.
-        assert_eq!(
-            b.iter().map(|x| x.2).collect::<Vec<_>>(),
-            sim_buildings(&paths, &scenario)
-                .iter()
-                .map(|x| x.2)
-                .collect::<Vec<_>>()
-        );
+    }
+
+    #[test]
+    fn houses_follow_population() {
+        assert_eq!(live::houses_for(0), 12);
+        assert_eq!(live::houses_for(600), 100);
     }
 }

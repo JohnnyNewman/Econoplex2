@@ -33,6 +33,7 @@ pub mod firms;
 pub mod history;
 pub mod price_index;
 pub mod pricing;
+pub mod view;
 pub mod worldgen;
 pub use config::{ModelParams, Scenario};
 pub use db::Db;
