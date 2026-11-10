@@ -1,5 +1,6 @@
 //! World rendering: towns, buildings, nature, agents, camera, selection.
 
+use crate::ui_compat::{Button, Interaction};
 use crate::Selection;
 use bevy::input::mouse::AccumulatedMouseScroll;
 use bevy::prelude::*;

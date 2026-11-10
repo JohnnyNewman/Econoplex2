@@ -14,6 +14,7 @@ mod hud;
 mod policy_ui;
 mod saving;
 mod terrain_view;
+mod ui_compat;
 mod view;
 
 use bevy::prelude::*;
@@ -60,7 +61,10 @@ fn main() {
             ..default()
         }),
         ..default()
-    }));
+    }))
+    // The button state the panels read (Bevy 0.20 UI widgets are part of
+    // DefaultPlugins with the bevy_ui_widgets feature).
+    .add_systems(PreUpdate, ui_compat::update_interaction);
 
     sim_core::world::setup(app.world_mut(), db, params, &scenario);
     // The player's squad marches only when ordered.
