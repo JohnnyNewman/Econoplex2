@@ -96,6 +96,9 @@ pub struct SkyClock {
     pub speed: f32,
     pub running: bool,
     pub debug: u32,
+    /// Fraction of the year, 0..1 (0.5 = midsummer). The live simulation sets
+    /// it from its calendar; it decides how high the sun climbs.
+    pub season: f32,
 }
 
 impl Default for SkyClock {
@@ -105,6 +108,7 @@ impl Default for SkyClock {
             speed: 1.0,
             running: false,
             debug: 0,
+            season: 0.5,
         }
     }
 }
@@ -151,8 +155,23 @@ pub struct Sky;
 /// highest at 12 (tilted toward +z), sets in the west at 18, and is below the
 /// horizon at night.
 pub fn sun_direction(hour: f32) -> Vec3 {
+    sun_direction_in(hour, 0.5)
+}
+
+/// The sun's direction at a time of day and a time of year: in winter (season
+/// 0) it climbs about half as high as at midsummer (season 0.5).
+pub fn sun_direction_in(hour: f32, season: f32) -> Vec3 {
     let a = (hour - 6.0) / 24.0 * std::f32::consts::TAU;
-    Vec3::new(a.cos(), a.sin() * 0.85, a.sin() * 0.45).normalize()
+    let summer = 0.5 - 0.5 * (season * std::f32::consts::TAU).cos(); // 0 winter, 1 summer
+    let lift = 0.85 * (0.55 + 0.45 * summer);
+    Vec3::new(a.cos(), a.sin() * lift, a.sin() * 0.45).normalize()
+}
+
+impl SkyClock {
+    /// Toward the sun, now.
+    pub fn sun(&self) -> Vec3 {
+        sun_direction_in(self.hour, self.season)
+    }
 }
 
 /// Colour (and HDR brightness) of the sun disc: warm when low, white when high.
@@ -251,7 +270,7 @@ fn update_sky(
     mut sun: Query<(&mut Transform, &mut DirectionalLight)>,
     mut ambient: ResMut<GlobalAmbientLight>,
 ) {
-    let dir = sun_direction(clock.hour);
+    let dir = clock.sun();
     let (horizon, zenith, ground) = palette(dir.y);
     let sun_rgb = sun_color(dir);
     for handle in &sky {
