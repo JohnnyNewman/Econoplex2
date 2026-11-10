@@ -1,0 +1,232 @@
+# How the town market works (default settings, 2026-11-10)
+
+This describes the market as the code runs it with the default `models.ron`
+(`market.firms: Treasury`, `pricing: StockTarget`, no price classes, no household
+consumption). The optional variants are summarised at the end. The numbers come
+from a run with seed 42 at the end of year 10.
+
+## Who holds what
+
+- **Each town has one market.** Its stock (`Town::stock`) is the town's warehouse,
+  and its till is the **town treasury**. The market is the only buyer of what
+  people make and the only seller of food and tools to residents. There are no
+  private firms by default.
+- **Residents** hold coin (`AgentStore::wealth`). It can go negative when they buy
+  tools on credit (up to `tool_credit` = 40).
+- **Money only moves between purses**: residents, the town treasuries, and other
+  towns' treasuries. The **mint** is the only source of new coin. The ledger books
+  every treasury flow by kind, and money conservation is tested.
+
+## The daily order of operations
+
+Each tick (day) runs the systems in this order:
+
+1. `apply_orders`: player and AI orders take effect (taxes, subsidies, government
+   orders, buildings, imports, ...).
+2. `needs::sense`: hunger and fatigue; **residents eat** from the market's stock
+   and pay for it; optional rent.
+3. `decide`: idle adults choose a job among those with open places, or rest.
+4. `work::assign`: teams form; **inputs are taken from the market's stock**.
+5. `work::produce`: a day's work. When a run finishes, its **output goes into the
+   market's stock**, and the team's **wage claim** is paid from the treasury.
+6. `learn`, `socialize`, `body`: skills, social ties, health.
+7. `market::settle`: **prices** update, food spoils, **wealth tax**, **public
+   spending**, food imports (if on), **caravans** every 10 days, nature regrows.
+8. `organize`: guilds and schools (school fees), and **residents buy tools** from
+   the armory.
+9. `military`: soldiers' pay, **tribute** every 30 days, raids and loot.
+10. `migrate`, then `lifecycle`: moves (settlement grants), births, deaths
+    (**estates** without heirs go to the treasury).
+11. `ledger::close_day`, `metrics`, `history`, `goal`, then **AI governors** set
+    the levers for the next day.
+
+## How goods reach the market and who pays the maker
+
+- **Job places:**
+  - A job (recipe) has places only while its inputs are in the market's stock
+    (beyond a one-day reserve kept for food chains), there's land left to work,
+    and its building has room.
+  - Nobody makes a good once the market holds more than `glut_factor` (10) × its
+    target stock.
+- **Inputs:** they leave the market's stock at the start of a run. Nobody pays for
+  them directly; their value is subtracted from the team's claim.
+- **The claim:** when a run succeeds, the output is added to the market's stock and
+  the team claims
+
+  `wage share` (0.5, the town's `wages` lever) × `market pay factor` (1 by default)
+  × (value of the output at today's price × (0.5 + quality) − value of the inputs)
+
+  plus any **subsidy** (the subsidised share × base price per unit). Failed runs
+  claim nothing.
+- **Paying out:** all of the day's claims in a town are paid from the treasury.
+  - If the treasury can't cover them all, every claim gets the same fraction
+    (`settle_wages`, "fair rationing"). Subsidies are paid from what is left.
+  - **Income tax** (the town's lever, 0 by default) takes its share straight
+    back.
+  - Each worker gets an equal share; an apprentice gets `apprentice_wage` of a
+    share when matching is on.
+- **Public pay rate:** realised pay per worker-day updates each job's public pay
+  rate, which agents use when they choose jobs.
+- **Government orders** (`procure`) raise the market's target stock for a good, so
+  its price and its makers' pay rise. Delivered units leave the stock for public
+  use.
+
+## How residents buy, and at which price
+
+- **Food:** when an agent's hunger passes `eat_threshold`, it eats one unit of the
+  best food the market holds (seed grain for the mills is held back).
+  - It pays the town price, or all its coin if that's less, into the treasury
+    (flow `food`).
+  - Food spoils at `food_spoilage` (0.5) a year.
+- **Tools:** a worker without a tool buys the best one it can afford from the
+  armory, at price × (0.5 + quality), on credit if needed (flow `tools`).
+- **Other goods:** nothing. With the defaults, households buy only food and tools.
+  The optional household consumption (`market.consumption`) adds clothes, pots,
+  ale and so on.
+
+## How prices are set (default: `pricing: StockTarget`)
+
+Each day, for every ordinary good:
+
+- **Target stock** = `target_per_capita` (0.3) × residents, or
+  `food_target_per_capita` (3) × residents for food, plus open government orders.
+- **Pressure** = (target − stock) / target, clamped to −1..1.
+- **Price** × exp(`price_adjust` (0.05) × pressure): at most about 5 % a day,
+  within `min_price_factor` (0.2) and `max_price_factor` (5) × base price.
+
+Some goods have their own rules:
+- **Buildings:** priced by how full the town's existing ones are, and how scarce
+  their goods are (`build_threshold` 0.75); a town's first of a kind sells at
+  `new_building_appeal` (0.3) × base.
+- **Land:** priced by how worn the town's sites are (`land_threshold` 0.7), until
+  `free_land` (6) plots are used.
+- **Coin:** worth its face value while the town wants coin, otherwise nothing.
+
+**Optional, demand-driven** (`pricing: Demand(cover_days, blocked_workers)`):
+- Goods used as inputs aim for `cover_days` of what the town's trades use a day,
+  plus what profitable trades blocked only by their shortage would use.
+- Final goods keep the per-resident target.
+- Price classes (`price_classes`) can add inertia, daily caps and wider bounds per
+  class.
+
+## Taxes, spending and where they go
+
+All of these are treasury flows (in the ledger):
+
+| flow | direction | rule |
+| --- | --- | --- |
+| wealth tax | resident → treasury | daily share of savings above `tax_free_wealth` (10), at `wealth_tax` (0.5) a year (town lever) |
+| income tax | resident → treasury | share of every wage (town lever, 0 by default) |
+| estates | resident → treasury | wealth of the dead without partner or children |
+| public spending | treasury → residents | `public_spending` (2) a year of the treasury above its reserve (3 per resident), split equally |
+| soldiers' pay | treasury → soldier | `soldier_pay` (0.8) a day |
+| school fees | treasury → teacher | `school_fee` (0.02) per pupil-day |
+| settlement grants | treasury → newcomers | `settlement_grant` (2) per person, with immigration encouraged |
+| subsidies | treasury → makers | per unit made, with the wages |
+
+## Trade, tribute and the mint
+
+- **Caravans** run every `trade_interval` (10) days, for each good and each pair of
+  towns.
+  - A caravan goes when the destination price beats the source price plus
+    transport (`transport_cost` 0.28 per 1000 road units). No caravan goes where no
+    road leads.
+  - It carries up to `trade_amount` (6) units, at most half the seller's stock,
+    and only what the buyer's treasury can pay.
+  - The buyer's treasury pays the destination price to the seller's treasury
+    (flows `trade purchases` / `trade sales`). Tools travel as items.
+- **Tribute:** every 30 days a conquered town pays its ruler `tribute_share` (20 %)
+  of its treasury. It can revolt when its soldiers outfight the ruler's hold.
+- **Loot:** a won raid takes a share of the loser's treasury and goods.
+- **Mint:** on auto, a town wants coin while its treasury is below
+  `mint_below_per_capita` (3) per resident. A mint (building) then strikes coin
+  from silver or copper at face value. Coin goes straight into the treasury as new
+  money (flow `minted`); the minters are paid like any other workers.
+
+```mermaid
+flowchart LR
+  R[Residents' purses]
+  T[Town treasury = market till]
+  S[(Market stock)]
+  O[Other towns' treasuries]
+  M[(Mint)]
+  R -- food, tools --> T
+  S -- food, tools --> R
+  W[Teams at work] -- output --> S
+  S -- inputs --> W
+  T -- wages, subsidies --> R
+  R -- wealth tax, income tax, estates, rent --> T
+  T -- public spending, soldiers' pay, school fees, grants --> R
+  T -- trade purchases, tribute --> O
+  O -- trade sales, tribute --> T
+  M -- new coin --> T
+```
+
+## Numbers from a typical run (seed 42, end of year 10)
+
+Two towns at the end of year 10. Ironhold rules Greenvale and Timberwick.
+
+| | Ironhold (ruler) | Greenvale (tributary) |
+| --- | --- | --- |
+| residents | 443 | 371 |
+| treasury | 978 | 9 |
+| residents' coin | 37,138 (top tenth hold 23,888) | 3,649 (debts −350) |
+| wages paid | 135,965 a year (1,133 a day) | 4,613 a year (38 a day) |
+| wealth tax taken | 103,393 (862 a day) | 1,612 (13 a day) |
+| income tax | 3,209 | 0 |
+| food sales | 23,395 | 2,649 |
+| tool sales | 2,065 | 427 |
+| trade sales / purchases | 25,808 / 23,365 | 6,282 / 6,385 |
+| minted | 840 | 0 |
+| bread: price, stock, target | 12.50 (cap 5×), 18, 1,329 | 0.66 (0.26×), 1,649, 1,113 |
+| grain: price, stock, target | 0.20 (floor), 1,533, 1,329 | 0.20 (floor), 2,030, 1,113 |
+| clothes: price, stock, target | 5.60 (floor), 461, 133 | 5.60 (floor), 577, 111 |
+
+The other two towns:
+- **Brassmoor:** 383 residents, treasury 1,803, residents' coin 11,756, wages
+  57,000 a year, minted 5,100.
+- **Timberwick:** 401 residents, treasury 649, residents' coin 448 net (debts
+  −2,643, mostly tools bought on credit).
+
+## Where money piles up and why treasuries run dry
+
+1. **The treasury is the only buyer.**
+   - Its income is food and tool sales, taxes, trade sales and the mint. Its
+     spending is mostly wages.
+   - Every coin of wages has to come back as purchases or taxes before it can pay
+     the next wage. In Ironhold most of it comes back through the **wealth tax**
+     (103k of 136k), not through purchases (25k).
+   - The treasury works more like a bank recycling savings than a shop.
+2. **Households only buy food and tools.**
+   - A glut drives food to its floor (Greenvale's bread at 0.26× base), and then
+     food sales bring in little.
+   - Nobody buys clothes, pots or most goods. They pile up at their floor price,
+     yet their makers were still paid when they made them.
+3. **Money flows to strong towns and stays there.**
+   - Trade surpluses, tribute, loot and migrants carrying their savings move coin
+     to the strongest town.
+   - By year 10, Ironhold's residents hold about two-thirds of all the coin in
+     the world. Greenvale's treasury holds 9.
+   - A poor town can't pay its makers, so it makes less, so it earns less. The
+     mint helps only towns that have a mint and silver or copper.
+4. **Within a town, money piles up with the rich.**
+   - The top tenth of Ironhold's residents hold 64 % of its residents' coin.
+   - The wealth tax pulls savings above 10 back each year, which is why it carries
+     so much.
+5. **Rationing then hides prices from labour.**
+   - When the treasury can't pay the day's claims, every claim is cut by the same
+     fraction.
+   - A scarce good's high price raises its makers' claim, but not the money behind
+     it.
+   - The current decision model doesn't choose jobs by pay, so it barely notices.
+     The utility model does, which is why its sword chain collapses.
+
+Optional fixes in `models.ron`, all off by default and compared in
+`agent-decisions.md` and `firms.md`:
+- demand-driven price targets;
+- price classes with inertia;
+- scarcity caps that loosen;
+- household consumption;
+- workshops as firms (with loans, trade credit and profit tax);
+- emergency food imports;
+- a money-supply rule for the mint.
