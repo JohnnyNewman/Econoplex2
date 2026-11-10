@@ -32,7 +32,7 @@ For a blade vertex at height fraction `h` (0 root, 1 tip), with the blade's base
 ## WGSL, line by line
 
 ```wgsl
-#import bevy_pbr::mesh_view_bindings::{view, globals}  // globals.time
+import bevy_pbr::render::mesh_view_bindings::{view, globals};  // globals.time
 
 // One blade's data; the array has one entry per instance.
 struct Blade {
@@ -43,10 +43,10 @@ struct Blade {
     _pad: vec2<f32>,    // keep 16-byte alignment for storage buffers
 };
 // A storage buffer: read-only array, any size, indexed in the shader.
-@group(#{MATERIAL_BIND_GROUP}) @binding(0) var<storage, read> blades: array<Blade>;
+@group(constants::MATERIAL_BIND_GROUP) @binding(0) var<storage, read> blades: array<Blade>;
 
 struct Wind { dir: vec2<f32>, amp: f32, freq: f32 };
-@group(#{MATERIAL_BIND_GROUP}) @binding(1) var<uniform> wind: Wind;
+@group(constants::MATERIAL_BIND_GROUP) @binding(1) var<uniform> wind: Wind;
 
 struct Vertex {
     @builtin(instance_index) instance: u32,  // which blade

@@ -1,30 +1,30 @@
 [package]
 name = "game3d"
-description = "Econoplex: 3D view prototype (graphics/UI subproject, milestone M1 preview)"
-version = "0.1.0"
-edition = "2021"
-license = "MIT OR Apache-2.0"
+description = "Econoplex: 3D view (graphics/UI subproject) and the shader playground"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
 
 [[bin]]
 name = "econoplex3d"
 path = "src/main.rs"
 
 [dependencies]
-sim_core = { path = "../sim_core" }
-sim_data = { path = "../sim_data" }
-# Bevy 0.19.1's 3D renderer needs bevy_anti_alias 0.19.1, which is not on
-# crates.io; the prototype uses Bevy 0.20 on its own. It only reads plain data
-# from sim_core (the scenario and terrain), never ECS types across versions.
-bevy = { version = "0.20", default-features = false, features = ["3d", "std", "multi_threaded", "bevy_winit", "png"] }
+sim_core.workspace = true
+sim_data.workspace = true
+# `file_watcher` reloads shaders (assets/shaders/*.wesl) while the app runs.
+bevy = { workspace = true, features = [
+    "3d",
+    "std",
+    "multi_threaded",
+    "bevy_winit",
+    "default_font",
+    "ui_api",
+    "ui_bevy_render",
+    "png",
+    "file_watcher",
+] }
 
+# Linux needs a windowing backend feature; Windows and macOS use their native one.
 [target.'cfg(target_os = "linux")'.dependencies]
-bevy = { version = "0.20", default-features = false, features = ["x11"] }
-
-# Its own workspace, so the main workspace (and CI) stay on Bevy 0.19 and fast.
-[workspace]
-
-[profile.dev]
-opt-level = 1
-
-[profile.dev.package."*"]
-opt-level = 3
+bevy = { workspace = true, features = ["x11"] }

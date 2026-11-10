@@ -32,7 +32,7 @@ A post-process pass over the finished image:
 ```wgsl
 // A full-screen post-process pass: one triangle covers the screen, the
 // fragment shader runs once per pixel of the finished image.
-#import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput
+import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput;
 
 struct Fog {
     world_from_clip: mat4x4<f32>,  // inverse(view_proj), set per frame

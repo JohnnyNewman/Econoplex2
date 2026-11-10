@@ -2,10 +2,11 @@
 //! docs/design/graphics-ui.md). It builds a world from the seed with
 //! `sim_core::worldgen` and shows it as a stylised 3D landscape: procedural
 //! terrain coloured by biome, rivers, scattered trees, and each town as a cluster
-//! of low-poly houses, under a low sun with distance fog and bloom. It only reads
-//! the scenario; the simulation itself does not run yet.
+//! of low-poly houses, under a procedural sky (shader step 01) with distance fog
+//! and bloom. It only reads the scenario; the simulation itself does not run yet.
 //!
-//! econoplex3d [--seed S] [--towns N] [--shot FILE]
+//! econoplex3d [--seed S] [--towns N] [--hour H] [--shot FILE]
+//! econoplex3d --playground [--hour H] [--view N] [--face-sun] [--shot FILE]   (shader playground)
 
 use bevy::light::{CascadeShadowConfigBuilder, DirectionalLightShadowMap};
 use bevy::mesh::{Indices, PrimitiveTopology};
@@ -16,12 +17,34 @@ use sim_core::config::Scenario;
 use sim_core::terrain::Terrain;
 use std::path::PathBuf;
 
+mod playground;
+mod sky;
+
 #[derive(Resource, Clone)]
 struct Args {
     seed: u64,
     towns: u32,
-    shot: Option<PathBuf>,
 }
+
+/// Bevy's asset plugin, pointed at `crates/game3d/assets` (shaders), so the
+/// shaders load and hot-reload whether the binary runs via `cargo run` or
+/// directly from `target/`.
+fn asset_plugin() -> AssetPlugin {
+    let dev = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets");
+    let file_path = if dev.exists() {
+        dev.to_string_lossy().into_owned()
+    } else {
+        "assets".to_string()
+    };
+    AssetPlugin {
+        file_path,
+        ..default()
+    }
+}
+
+/// Where to save a screenshot (then quit), if anywhere.
+#[derive(Resource)]
+struct ShotPath(Option<PathBuf>);
 
 #[derive(Resource)]
 struct World3d {
@@ -33,19 +56,29 @@ struct World3d {
 const SCALE: f32 = 10.0;
 
 fn main() {
-    let mut args = Args {
-        seed: 7,
-        towns: 5,
-        shot: None,
-    };
+    let mut args = Args { seed: 7, towns: 5 };
+    let (mut shot, mut hour, mut view, mut playground, mut face_sun) =
+        (None, None, None, false, false);
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
         match a.as_str() {
             "--seed" => args.seed = it.next().and_then(|v| v.parse().ok()).unwrap_or(7),
             "--towns" => args.towns = it.next().and_then(|v| v.parse().ok()).unwrap_or(5),
-            "--shot" => args.shot = it.next().map(PathBuf::from),
-            _ => {}
+            "--shot" => shot = it.next().map(PathBuf::from),
+            "--hour" => hour = it.next().and_then(|v| v.parse().ok()),
+            "--view" => view = it.next().and_then(|v| v.parse().ok()),
+            "--playground" => playground = true,
+            "--face-sun" => face_sun = true,
+            other => eprintln!("ignoring unknown argument `{other}`"),
         }
+    }
+    if playground {
+        playground::run(hour, view, face_sun, shot);
+        return;
+    }
+    let mut clock = sky::SkyClock::default();
+    if let Some(h) = hour {
+        clock.hour = h.rem_euclid(24.0);
     }
     let paths = sim_core::AssetPaths::discover();
     let (db, _params, mut scenario) = sim_core::load(&paths).expect("cannot load assets");
@@ -58,7 +91,7 @@ fn main() {
     let terrain = Terrain::build(&scenario);
 
     App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
+        .add_plugins(DefaultPlugins.set(asset_plugin()).set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Econoplex 3D (prototype)".into(),
                 resolution: (1600, 900).into(),
@@ -70,6 +103,9 @@ fn main() {
         .insert_resource(DirectionalLightShadowMap { size: 4096 })
         .insert_resource(World3d { scenario, terrain })
         .insert_resource(args)
+        .insert_resource(ShotPath(shot))
+        .add_plugins(sky::SkyPlugin)
+        .insert_resource(clock)
         .add_systems(Startup, setup)
         .add_systems(Update, shoot)
         .run();
@@ -276,26 +312,20 @@ fn setup(
             Transform::from_xyz(tw.position.0 / SCALE, y + 0.8, -tw.position.1 / SCALE),
         ));
     }
-    // --- light: low warm sun with soft shadows, cool sky light
+    // --- light: the sun with soft shadows; the sky plugin points it and sets its
+    // colour and the ambient light from the time of day.
     commands.spawn((
         DirectionalLight {
-            illuminance: 12_000.0,
-            color: Color::srgb(1.0, 0.93, 0.80),
             shadow_maps_enabled: true,
             ..default()
         },
-        Transform::from_xyz(-60.0, 50.0, 40.0).looking_at(Vec3::ZERO, Vec3::Y),
+        Transform::default(),
         CascadeShadowConfigBuilder {
             maximum_distance: 260.0,
             ..default()
         }
         .build(),
     ));
-    commands.insert_resource(GlobalAmbientLight {
-        color: Color::srgb(0.70, 0.80, 1.0),
-        brightness: 350.0,
-        ..default()
-    });
     // --- camera: tilted over the first town, with distance fog and bloom
     let focus = s.towns.first().map_or(Vec3::ZERO, |tw| {
         Vec3::new(tw.position.0 / SCALE, 0.0, -tw.position.1 / SCALE)
@@ -323,13 +353,14 @@ struct Shot {
     frames: u32,
 }
 
+/// With `--shot FILE`: save a screenshot after 60 frames, then quit.
 fn shoot(
     mut commands: Commands,
-    args: Res<Args>,
+    args: Res<ShotPath>,
     mut state: Local<Shot>,
     mut exit: MessageWriter<AppExit>,
 ) {
-    let Some(path) = &args.shot else { return };
+    let Some(path) = &args.0 else { return };
     state.frames += 1;
     if state.frames == 60 {
         commands
