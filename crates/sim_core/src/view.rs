@@ -28,6 +28,23 @@ pub struct BuildingView {
     pub pos: (f32, f32),
 }
 
+/// A town's government levers, with the defaults from models.ron filled in.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct PolicyView {
+    pub wealth_tax: f32,
+    pub income_tax: f32,
+    pub wage_share: f32,
+    pub public_spending: f32,
+    /// "open", "encouraged" or "closed".
+    pub immigration: String,
+    /// "auto", "on" or "off".
+    pub minting: String,
+    /// "auto" or "defend".
+    pub war: String,
+    /// Buildings ordered and not yet built.
+    pub commissions: u32,
+}
+
 /// One town, as a view sees it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TownView {
@@ -38,6 +55,9 @@ pub struct TownView {
     pub buildings: Vec<BuildingView>,
     /// The town this one pays tribute to, if conquered.
     pub ruler: Option<u16>,
+    pub policy: PolicyView,
+    /// Goods in the market: (product def, stock, price), for goods in stock.
+    pub market: Vec<(u32, f32, f32)>,
 }
 
 /// What a person is doing, as a view sees it.
@@ -140,6 +160,30 @@ impl ViewSnapshot {
                         })
                         .collect(),
                     ruler: t.ruler,
+                    policy: {
+                        let pol = &t.policy;
+                        let defaults = world.get_resource::<crate::world::Params>();
+                        let d = |f: fn(&crate::config::ModelParams) -> f32| {
+                            defaults.map_or(0.0, |p| f(&p.0))
+                        };
+                        PolicyView {
+                            wealth_tax: pol.wealth_tax.unwrap_or(d(|p| p.market.wealth_tax)),
+                            income_tax: pol.income_tax,
+                            wage_share: pol.wage_share.unwrap_or(d(|p| p.work.wage_share)),
+                            public_spending: pol
+                                .public_spending
+                                .unwrap_or(d(|p| p.market.public_spending)),
+                            immigration: format!("{:?}", pol.immigration).to_lowercase(),
+                            minting: format!("{:?}", pol.minting).to_lowercase(),
+                            war: format!("{:?}", pol.war).to_lowercase(),
+                            commissions: pol.commissions.len() as u32,
+                        }
+                    },
+                    market: (0..t.stock.len())
+                        .filter(|&p| t.stock[p] > 0.5)
+                        .filter(|&p| db.category(p as u32) != sim_data::Category::Building)
+                        .map(|p| (p as u32, t.stock[p], t.price[p]))
+                        .collect(),
                 })
                 .collect(),
             people,
@@ -185,6 +229,8 @@ mod tests {
         assert!(!first.towns.is_empty());
         assert!(first.towns.iter().all(|t| !t.buildings.is_empty()));
         assert!(first.towns.iter().all(|t| t.population > 0));
+        assert!(first.towns.iter().all(|t| !t.market.is_empty()));
+        assert!(first.towns.iter().all(|t| t.policy.wage_share > 0.0));
         let mut all_events = first.events.len();
         for _ in 0..400 {
             s.step();

@@ -32,6 +32,7 @@ mod playground;
 mod sky;
 mod terrain;
 mod toon;
+mod ui;
 
 #[derive(Resource, Clone)]
 struct Args {
@@ -218,6 +219,7 @@ fn main() {
             nature::NaturePlugin,
             crowd::CrowdPlugin,
             crowd_compute::CrowdComputePlugin,
+            ui::PanelsPlugin,
         ))
         .insert_resource(clock)
         .insert_resource(toon_settings)

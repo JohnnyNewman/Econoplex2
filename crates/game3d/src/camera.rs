@@ -21,6 +21,14 @@ impl Plugin for WorldCameraPlugin {
     }
 }
 
+/// Set by the UI each frame: whether the panels have the pointer or the
+/// keyboard (then the camera ignores them).
+#[derive(Resource, Default)]
+pub struct UiCapture {
+    pub pointer: bool,
+    pub keyboard: bool,
+}
+
 /// Where the camera looks from. Attach it to the `Camera3d` entity.
 #[derive(Component, Clone, Copy, Debug)]
 pub struct WorldCamera {
@@ -69,10 +77,13 @@ fn world_camera(
     scroll: Res<AccumulatedMouseScroll>,
     time: Res<Time>,
     mut cams: Query<(&mut WorldCamera, &mut Transform)>,
+    ui: Option<Res<UiCapture>>,
 ) {
+    // While the pointer or the keyboard is on a panel, the camera stays put.
+    let (pointer_free, keys_free) = ui.map_or((true, true), |u| (!u.pointer, !u.keyboard));
     let dt = time.delta_secs();
     for (mut c, mut tf) in &mut cams {
-        if keys.just_pressed(KeyCode::Home) {
+        if keys_free && keys.just_pressed(KeyCode::Home) {
             if let Some((f, y, p, d)) = c.home {
                 (c.focus, c.yaw, c.pitch, c.distance) = (f, y, p, d);
             }
@@ -80,13 +91,13 @@ fn world_camera(
         // Directions on the ground: "forward" is where the camera faces.
         let forward = -Vec3::new(c.yaw.sin(), 0.0, c.yaw.cos());
         let right = Vec3::new(-forward.z, 0.0, forward.x);
-        let key = |k: KeyCode| keys.pressed(k) as i32 as f32;
+        let key = |k: KeyCode| (keys_free && keys.pressed(k)) as i32 as f32;
         let speed = c.distance * 0.9;
         let mut pan = (forward * (key(KeyCode::KeyW) - key(KeyCode::KeyS))
             + right * (key(KeyCode::KeyD) - key(KeyCode::KeyA)))
             * speed
             * dt;
-        if mouse.pressed(MouseButton::Middle) {
+        if pointer_free && mouse.pressed(MouseButton::Middle) {
             let px = c.distance * 0.0015;
             pan += (-right * motion.delta.x + forward * motion.delta.y) * px;
         }
@@ -95,13 +106,13 @@ fn world_camera(
         c.focus.z = c.focus.z.clamp(c.bounds.y, c.bounds.w);
 
         c.yaw += (key(KeyCode::KeyQ) - key(KeyCode::KeyE)) * 1.5 * dt;
-        if mouse.pressed(MouseButton::Right) {
+        if pointer_free && mouse.pressed(MouseButton::Right) {
             c.yaw -= motion.delta.x * 0.005;
             c.pitch += motion.delta.y * 0.005;
         }
         c.pitch = c.pitch.clamp(0.12, 1.45);
 
-        if scroll.delta.y != 0.0 {
+        if pointer_free && scroll.delta.y != 0.0 {
             c.distance *= (1.0 - scroll.delta.y * 0.1).clamp(0.5, 1.5);
         }
         c.distance = c.distance.clamp(8.0, 260.0);
