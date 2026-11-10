@@ -22,6 +22,7 @@ use std::path::PathBuf;
 mod buildings;
 mod camera;
 mod crowd;
+mod crowd_compute;
 mod fog;
 mod hud;
 mod live;
@@ -216,6 +217,7 @@ fn main() {
             outline::OutlinePlugin,
             nature::NaturePlugin,
             crowd::CrowdPlugin,
+            crowd_compute::CrowdComputePlugin,
         ))
         .insert_resource(clock)
         .insert_resource(toon_settings)
@@ -306,7 +308,7 @@ fn setup(
             });
         }
     }
-    terrain::spawn_terrain(
+    let heights = terrain::spawn_terrain(
         &mut commands,
         &mut meshes,
         &mut images,
@@ -320,6 +322,12 @@ fn setup(
             biomes,
         },
     );
+    // The walking crowd (step 07) reads the same heightmap on the GPU.
+    commands.insert_resource(crowd::CrowdTerrain {
+        heights,
+        grid: Vec4::new(t.origin.0 / SCALE, -t.origin.1 / SCALE, t.cell / SCALE, 1.0),
+        dims: Vec4::new(w as f32, h as f32, 0.0, 0.0),
+    });
     // --- water plane
     commands.spawn((
         Mesh3d(meshes.add(Plane3d::default().mesh().size(400.0, 400.0))),

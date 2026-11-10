@@ -1,22 +1,24 @@
 //! M4: the people of the simulation as one crowd.
 //!
-//! Every frame:
-//! - each person walks toward their target from the newest snapshot (their
-//!   workplace, home or the squad's goal). The sim only knows where people are
-//!   heading once per tick; the view moves them smoothly in between;
-//! - the CPU writes one entry per person into a storage buffer: feet position,
-//!   heading, colour, size, and whether they are walking;
-//! - `people.wesl` draws them all from one mesh (vertex pulling, as for the
-//!   grass) and animates the walk.
+//! - **Per tick (CPU):** every person gets a fixed slot. When a new snapshot
+//!   arrives, the CPU writes each slot's target (their workplace, home or the
+//!   squad's goal), colour and size into the *targets* buffer.
+//! - **Per frame (GPU, step 07):** a compute shader (`walk.wesl`, run by
+//!   `crowd_compute.rs`) moves everyone toward their target and writes position,
+//!   heading, colour and size into the *people* buffer. The sim only says where
+//!   people are heading once per tick; the GPU moves them smoothly in between.
+//! - **Drawing:** `people.wesl` draws everyone from one mesh (vertex pulling,
+//!   as for the grass) straight from the people buffer, and animates the walk.
 //!
 //! Colours: workers by the skill domain of what they worked at today, soldiers
 //! dark red, children small and pale, idle people light, resting ones blue-grey.
 //! Key: `P` shows or hides the people.
 
+use crate::crowd_compute::{CrowdCompute, WalkParams};
 use crate::fog::FogState;
 use crate::live::LiveSim;
 use crate::toon::{ToonSettings, ToonUniform};
-use crate::{height, World3d, SCALE};
+use crate::SCALE;
 use bevy::asset::RenderAssetUsages;
 use bevy::camera::visibility::NoFrustumCulling;
 use bevy::light::NotShadowCaster;
@@ -41,9 +43,9 @@ pub struct CrowdPlugin;
 impl Plugin for CrowdPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(MaterialPlugin::<CrowdMaterial>::default())
-            .init_resource::<Walkers>()
+            .init_resource::<Slots>()
             .add_systems(Startup, spawn_crowd)
-            .add_systems(Update, (move_people, update_crowd_material));
+            .add_systems(Update, (update_targets, update_crowd_material));
     }
 }
 
@@ -128,17 +130,73 @@ fn crowd_mesh(n: usize) -> Mesh {
     mesh
 }
 
-/// The crowd entity, its buffer, and how many people its mesh has room for.
+/// The crowd entity, its material and buffers, and how many people they have
+/// room for.
 #[derive(Resource)]
 struct CrowdHandles {
     entity: Entity,
-    buffer: Handle<ShaderBuffer>,
+    material: Handle<CrowdMaterial>,
+    people: Handle<ShaderBuffer>,
+    targets: Handle<ShaderBuffer>,
     capacity: usize,
 }
 
-/// Where each person is right now (by agent id) and which way they face.
+/// The terrain heightmap and its placement, for the walking (set by main.rs
+/// when the terrain is built).
+#[derive(Resource, Clone)]
+pub struct CrowdTerrain {
+    pub heights: Handle<Image>,
+    /// x, z of texel (0, 0); texel spacing; height scale.
+    pub grid: Vec4,
+    /// Texels across and deep.
+    pub dims: Vec4,
+}
+
+/// Which slot each person (by agent id) has, and the free slots. A slot freed
+/// in one tick is reused only from the next one, so the GPU sees it empty for at
+/// least a frame and the next person in it appears at their goal.
 #[derive(Resource, Default)]
-struct Walkers(HashMap<u32, (Vec3, f32)>);
+struct Slots {
+    of: HashMap<u32, usize>,
+    free: Vec<usize>,
+    cooling: Vec<usize>,
+    next: usize,
+    tick: Option<u64>,
+}
+
+impl Slots {
+    /// Bring the slots up to date with the people of a new tick: free the slots
+    /// of those who are gone (reusable from the next tick), give newcomers one.
+    fn assign(&mut self, ids: &[u32]) {
+        let cooled = std::mem::take(&mut self.cooling);
+        self.free.extend(cooled);
+        let present: std::collections::HashSet<u32> = ids.iter().copied().collect();
+        let gone: Vec<(u32, usize)> = self
+            .of
+            .iter()
+            .filter(|(id, _)| !present.contains(id))
+            .map(|(&id, &s)| (id, s))
+            .collect();
+        for (id, s) in gone {
+            self.of.remove(&id);
+            self.cooling.push(s);
+        }
+        for &id in ids {
+            if !self.of.contains_key(&id) {
+                let s = self.free.pop().unwrap_or_else(|| {
+                    self.next += 1;
+                    self.next - 1
+                });
+                self.of.insert(id, s);
+            }
+        }
+    }
+}
+
+/// Empty buffers for `n` slots (8 floats each).
+fn zeros(n: usize) -> ShaderBuffer {
+    ShaderBuffer::from(vec![[0.0f32; 8]; n])
+}
 
 fn spawn_crowd(
     mut commands: Commands,
@@ -147,7 +205,8 @@ fn spawn_crowd(
     mut materials: ResMut<Assets<CrowdMaterial>>,
 ) {
     let capacity = 4096;
-    let buffer = buffers.add(ShaderBuffer::from(vec![[0.0f32; 8]; capacity]));
+    let people = buffers.add(zeros(capacity));
+    let targets = buffers.add(zeros(capacity));
     let material = materials.add(ExtendedMaterial {
         base: StandardMaterial {
             base_color: Color::WHITE,
@@ -158,13 +217,13 @@ fn spawn_crowd(
             crowd: CrowdUniform {
                 toon: ToonUniform::default(),
             },
-            people: buffer.clone(),
+            people: people.clone(),
         },
     });
     let entity = commands
         .spawn((
             Mesh3d(meshes.add(crowd_mesh(capacity))),
-            MeshMaterial3d(material),
+            MeshMaterial3d(material.clone()),
             Transform::default(),
             // The mesh's own bounds are one figure at the origin.
             NoFrustumCulling,
@@ -173,7 +232,9 @@ fn spawn_crowd(
         .id();
     commands.insert_resource(CrowdHandles {
         entity,
-        buffer,
+        material,
+        people,
+        targets,
         capacity,
     });
 }
@@ -209,84 +270,73 @@ fn look(doing: Doing, domains: u32) -> ([f32; 3], f32) {
     }
 }
 
+/// Per tick: slots and targets. Per frame: the compute pass's parameters.
 #[allow(clippy::too_many_arguments)]
-fn move_people(
+fn update_targets(
+    mut commands: Commands,
     time: Res<Time>,
     keys: Res<ButtonInput<KeyCode>>,
     live: Res<LiveSim>,
-    world: Res<World3d>,
-    mut walkers: ResMut<Walkers>,
+    terrain: Option<Res<CrowdTerrain>>,
+    mut slots: ResMut<Slots>,
     handles: Option<ResMut<CrowdHandles>>,
     mut buffers: ResMut<Assets<ShaderBuffer>>,
     mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<CrowdMaterial>>,
     mut crowd: Query<(&mut Mesh3d, &mut Visibility)>,
 ) {
-    let Some(mut handles) = handles else { return };
+    let (Some(mut handles), Some(terrain)) = (handles, terrain) else {
+        return;
+    };
     if keys.just_pressed(KeyCode::KeyP) {
         if let Ok((_, mut v)) = crowd.get_mut(handles.entity) {
             v.toggle_visible_hidden();
         }
     }
-    let dt = time.delta_secs().min(0.1);
     let snap = live.snapshot.clone();
-    let people = &snap.people;
-    let t = &world.terrain;
-    let mut data: Vec<[f32; 8]> = Vec::with_capacity(people.id.len());
-    let mut seen = Vec::with_capacity(people.id.len());
-    for k in 0..people.id.len() {
-        let id = people.id[k];
-        seen.push(id);
-        let target = Vec2::new(people.target[k].0, -people.target[k].1) / SCALE + jitter(id);
-        let entry = walkers
-            .0
-            .entry(id)
-            .or_insert_with(|| (Vec3::new(target.x, 0.0, target.y), 0.0));
-        let here = Vec2::new(entry.0.x, entry.0.z);
-        let to = target - here;
-        let dist = to.length();
-        // Walk; far-off targets (a new home, a raid) are reached quicker.
-        let step = (WALK.max(dist * 0.3) * dt).min(dist);
-        let walking = dist > 0.05;
-        let next = if walking {
-            here + to / dist * step
-        } else {
-            here
-        };
-        if walking {
-            entry.1 = to.x.atan2(to.y);
+    if slots.tick != Some(snap.tick) {
+        slots.tick = Some(snap.tick);
+        let people = &snap.people;
+        slots.assign(&people.id);
+        // Outgrown: bigger buffers and mesh (everyone reappears at their goal).
+        if slots.next > handles.capacity {
+            handles.capacity = (slots.next * 3 / 2).next_power_of_two();
+            handles.people = buffers.add(zeros(handles.capacity));
+            handles.targets = buffers.add(zeros(handles.capacity));
+            if let Some(mut m) = materials.get_mut(&handles.material) {
+                m.extension.people = handles.people.clone();
+            }
+            if let Ok((mut mesh, _)) = crowd.get_mut(handles.entity) {
+                mesh.0 = meshes.add(crowd_mesh(handles.capacity));
+            }
         }
-        let ground = height(t, (next.x * SCALE, -next.y * SCALE));
-        entry.0 = Vec3::new(next.x, ground, next.y);
-        let (rgb, size) = look(people.doing[k], snap.domains);
-        data.push([
-            entry.0.x,
-            entry.0.y,
-            entry.0.z,
-            entry.1,
-            rgb[0],
-            rgb[1],
-            rgb[2],
-            if walking { -size } else { size },
-        ]);
-    }
-    // Forget people who are gone (died, or no longer in the snapshot).
-    if walkers.0.len() > seen.len() {
-        let keep: std::collections::HashSet<u32> = seen.into_iter().collect();
-        walkers.0.retain(|id, _| keep.contains(id));
-    }
-    // Grow the mesh when the population outgrows it.
-    if data.len() > handles.capacity {
-        handles.capacity = (data.len() * 3 / 2).next_power_of_two();
-        if let Ok((mut mesh, _)) = crowd.get_mut(handles.entity) {
-            mesh.0 = meshes.add(crowd_mesh(handles.capacity));
+        // The targets, slot by slot (empty slots stay all zero: inactive).
+        let mut data = vec![[0.0f32; 8]; handles.capacity];
+        for k in 0..people.id.len() {
+            let id = people.id[k];
+            let goal = Vec2::new(people.target[k].0, -people.target[k].1) / SCALE + jitter(id);
+            let (rgb, size) = look(people.doing[k], snap.domains);
+            data[slots.of[&id]] = [goal.x, goal.y, 1.0, size, rgb[0], rgb[1], rgb[2], 0.0];
+        }
+        if let Some(mut buffer) = buffers.get_mut(&handles.targets) {
+            buffer.clear();
+            buffer.extend_from_slice(&data);
         }
     }
-    // Empty slots: size 0, so their figures collapse to a point.
-    data.resize(handles.capacity, [0.0; 8]);
-    if let Some(mut buffer) = buffers.get_mut(&handles.buffer) {
-        buffer.clear();
-        buffer.extend_from_slice(&data);
-    }
+    // Every frame: the compute pass's inputs (copied to the render world).
+    commands.insert_resource(CrowdCompute {
+        people: handles.people.clone(),
+        targets: handles.targets.clone(),
+        heights: terrain.heights.clone(),
+        params: WalkParams {
+            dt: time.delta_secs().min(0.1),
+            walk: WALK,
+            count: handles.capacity as u32,
+            pad: 0,
+            grid: terrain.grid,
+            dims: terrain.dims,
+        },
+    });
 }
 
 fn update_crowd_material(
@@ -312,6 +362,29 @@ mod tests {
     fn the_figure_has_the_vertex_count_the_shader_expects() {
         assert_eq!(figure().0.len(), VERTS_PER_PERSON);
         assert_eq!(crowd_mesh(3).count_vertices(), 3 * VERTS_PER_PERSON);
+    }
+
+    #[test]
+    fn people_keep_their_slot_and_freed_slots_wait_a_tick() {
+        let mut slots = Slots::default();
+        slots.assign(&[10, 11, 12]);
+        let s11 = slots.of[&11];
+        // 11 stays put while others come and go.
+        slots.assign(&[11, 12, 13]);
+        assert_eq!(slots.of[&11], s11);
+        let s10_freed = 0; // 10 had slot 0
+        assert!(
+            !slots.of.values().any(|&s| s == s10_freed),
+            "a freed slot is not reused in the same tick"
+        );
+        // From the next tick on, it can be.
+        slots.assign(&[11, 12, 13, 14]);
+        assert_eq!(slots.of[&14], s10_freed);
+        // Every person has a distinct slot.
+        let mut used: Vec<usize> = slots.of.values().copied().collect();
+        used.sort();
+        used.dedup();
+        assert_eq!(used.len(), slots.of.len());
     }
 
     #[test]

@@ -1,149 +1,312 @@
-# 07: Crowds from sim snapshots (compute shaders)
+# 07: The crowd walks on the GPU (compute shaders)
 
-> **Status (M4, part 1):** the crowd is drawn, but the walking runs on the CPU.
->
-> - Every frame `crates/game3d/src/crowd.rs` moves each person toward their
->   target from the newest snapshot and writes position, heading, colour and
->   size into a storage buffer.
-> - `assets/shaders/people.wesl` draws everyone from one mesh, by vertex pulling
->   as for the grass (step 06). It animates the walk procedurally: a bob of
->   `|sin|` per stride, a forward lean, and a phase per person, so a crowd
->   doesn't march in lockstep.
-> - Colours: workers by the skill domain of today's work, soldiers dark red,
->   children small and pale, idle people light, resting ones blue-grey.
->
-> Part 2, this step proper, moves the walking into a **compute shader**. The
-> CPU then only uploads targets when a tick arrives, and the GPU moves the
-> people every frame. The draft below is the plan for that.
->
-> | a town's people | close up | going out to the fields |
-> | --- | --- | --- |
-> | ![](../images/crowd_town.jpg) | ![](../images/crowd_close.jpg) | ![](../images/crowd_fields.jpg) |
+**Concept:** a compute shader is a function run thousands of times in parallel,
+with no triangles and no pixels. It reads and writes buffers; that's all.
+- Here it moves every person of the simulation, every frame, and writes the
+  results straight into the buffer the people are drawn from.
+- The CPU only says where people are heading, once per sim tick.
 
+**Where the code is:**
+- `crates/game3d/assets/shaders/walk.wesl`: the compute shader (hot-reloads);
+- `crates/game3d/src/crowd_compute.rs`: the pipeline, the bind group and the
+  dispatch;
+- `crates/game3d/src/crowd.rs`: slots, the targets buffer, the crowd mesh;
+- `crates/game3d/assets/shaders/people.wesl`: draws the people and animates
+  the walk (from M4 part 1).
 
-**Concept:** general-purpose work on the GPU.
-- A **compute shader** runs in **workgroups** of threads.
-- It reads and writes **storage buffers**, and has no vertices or pixels.
-- Its writes must be finished before the draw that reads them: **synchronisation**
-  between passes.
+**Try it:** `cargo run --release -p game3d -- --seed 23`, and zoom into a
+town. `P` hides the people.
 
-## What it does
+![](../images/crowd_compute.jpg)
 
-Each sim tick gives us, per agent: the previous and current position, the
-activity (walking, working, resting), the job and the town. That's up to 50,000
-entries.
-
-- **Compute pass, once per frame:**
-  - interpolates every agent between the two snapshots (by the frame's fraction
-    of a tick);
-  - snaps it to the terrain height;
-  - computes a facing direction and an animation phase (gait while walking, tool
-    swing while working);
-  - picks a LOD (mesh, impostor, dot) by distance to the camera;
-  - writes a compact `Instance` per agent into a buffer.
-- **Draw:** the instanced crowd reads those `Instance`s, like the grass in 06.
-- **Why on the GPU:** the CPU only uploads the two snapshots, about 1.2 MB per
-  tick, and never touches 50k instances per frame.
-
-## The math
-
-- **Interpolation:** `p = mix(p_prev, p_curr, α)`, where `α` is the time since
-  the last tick divided by the tick length.
-- **Facing:** `yaw = atan2(dx, dz)` of `p_curr − p_prev`, smoothed with the
-  previous yaw (`mix` on the unit circle).
-- **Gait phase:** `φ = fract(distance_walked / stride)`.
-  - Bob: `y += |sin(2πφ)| * 0.05`.
-  - Limbs swing with `sin(2πφ)` in the vertex shader.
-- **LOD:** `d = |p − camera|`; mesh below 60 m, impostor below 250 m, dot beyond.
-
-## WGSL, line by line
-
-```wgsl
-// Snapshot data, one entry per agent, uploaded each sim tick.
-struct Agent {
-    prev: vec2<f32>,     // world xz at the previous tick
-    curr: vec2<f32>,     // world xz at this tick
-    activity: u32,       // 0 idle, 1 walking, 2 working, 3 resting
-    job: u32,            // recipe index (picks the tool animation)
-    town: u32,
-    _pad: u32,
-};
-// What the draw reads: one per agent.
-struct Instance {
-    pos: vec3<f32>,
-    yaw: f32,
-    phase: f32,          // animation phase 0..1
-    lod: u32,            // 0 mesh, 1 impostor, 2 dot
-    anim: u32,           // which animation (walk, scythe, hammer, ...)
-    _pad: u32,
-};
-struct Frame { camera: vec4<f32>, alpha: f32, dt: f32, count: u32, _pad: u32 };
-
-@group(0) @binding(0) var<storage, read> agents: array<Agent>;
-@group(0) @binding(1) var<storage, read_write> instances: array<Instance>;
-@group(0) @binding(2) var<uniform> frame: Frame;
-@group(0) @binding(3) var height_tex: texture_2d<f32>;  // terrain heightmap (03)
-@group(0) @binding(4) var height_smp: sampler;
-
-// 64 threads per workgroup; Rust dispatches ceil(count / 64) workgroups.
-@compute @workgroup_size(64)
-fn update(@builtin(global_invocation_id) id: vec3<u32>) {
-    let i = id.x;                       // one thread per agent
-    if i >= frame.count { return; }     // the last workgroup may overhang
-    let a = agents[i];
-
-    // Smooth motion between ticks.
-    let xz = mix(a.prev, a.curr, frame.alpha);
-    let uv = xz / 2000.0 + 0.5;
-    let y = textureSampleLevel(height_tex, height_smp, uv, 0.0).r * 12.0;
-
-    // Facing: where it is going; keep the old yaw when standing still.
-    let step = a.curr - a.prev;
-    var yaw = instances[i].yaw;
-    if dot(step, step) > 1e-6 { yaw = atan2(step.x, step.y); }
-
-    // Animation phase: walking advances with distance, work with time.
-    var phase = instances[i].phase;
-    if a.activity == 1u { phase = fract(phase + length(step) * frame.dt / 0.8); }
-    if a.activity == 2u { phase = fract(phase + frame.dt * 0.9); }
-
-    // LOD by distance to the camera.
-    let d = distance(vec3(xz.x, y, xz.y), frame.camera.xyz);
-    let lod = select(select(2u, 1u, d < 250.0), 0u, d < 60.0);
-
-    instances[i] = Instance(vec3(xz.x, y, xz.y), yaw, phase, lod, a.job, 0u);
-}
-```
-
-**Synchronisation:**
-- The compute pass runs in its own render-graph node *before* the main 3D pass.
-- wgpu inserts the barrier between the compute write and the vertex read of
-  `instances`, because both use the same buffer in successive passes.
-- The draw then reads `instances[instance_index]`.
-- Drawing per LOD needs a separate list per LOD, built with an atomic counter per
-  LOD and an indirect draw. That is exercise 2.
+## The data flow
 
 ```mermaid
 flowchart LR
-  SIM[Sim thread\nsnapshot per tick] -->|upload ~1.2 MB| AG[(agents buffer)]
-  AG --> CS[Compute pass\nworkgroups of 64\ninterpolate, height, yaw,\nphase, LOD]
-  HM[(heightmap)] --> CS
-  CS --> IN[(instances buffer)]
-  IN -->|barrier| VS[Instanced draw\nvertex stage reads instance]
-  VS --> FS[Fragment\ntoon shading] --> O[Colour target]
+  SIM["Sim thread<br/>a tick: targets"] -->|snapshot| CPU["crowd.rs, per tick:<br/>slot per person,<br/>targets buffer"]
+  CPU -->|upload| TB[("targets<br/>goal, colour, size")]
+  TB --> CS["walk.wesl, compute,<br/>per frame:<br/>one invocation per person"]
+  HM[("heightmap<br/>from step 03")] --> CS
+  CS -->|writes| PB[("people<br/>pos, heading, colour, size")]
+  PB --> VS["people.wesl, vertex stage:<br/>figure + walk animation"]
+  VS --> FS["fragment: toon, fog"]
 ```
 
-## Debug views
+- **Per tick (CPU):** each person (by their agent id) keeps a fixed *slot*.
+  When a snapshot arrives, the CPU writes each slot's goal, colour and size into
+  the targets buffer and uploads it.
+- **Per frame (GPU):** `walk.wesl` runs once per slot:
+  1. read the slot's target and the person's last position;
+  2. step toward the goal;
+  3. look up the ground height in the terrain's heightmap;
+  4. write the new position, heading, colour and size.
+- **Drawing:** the people shader reads that same buffer. No copy back to the
+  CPU, ever. The CPU never even learns where anyone is.
 
-- **LOD bands:** colour instances by `lod` (red mesh, yellow impostor, blue dot).
-- **Phase:** colour by `phase`, so walkers flicker in step and workers pulse.
-- **Interpolation off:** set `alpha = 1`, to see agents jump once per tick.
+### Why slots
+
+The GPU keeps each person's position from one frame to the next, so a person
+must stay in the same buffer entry while they live. `Slots` maps agent id to
+slot.
+- When someone dies, their slot is freed, but only reusable from the *next*
+  tick.
+- So the GPU sees it empty for at least a frame, and the next person to get it
+  appears at their goal instead of sliding over from where the old occupant
+  stood.
+
+## Compute shaders in Bevy (the plumbing)
+
+Bevy has two worlds. The game runs in the *main world*; rendering happens in
+the *render world*, which gets a copy of what it needs every frame.
+
+1. **Main world:** `crowd.rs` keeps a `CrowdCompute` resource:
+   - the two buffers (as `ShaderBuffer` assets);
+   - the heightmap (an `Image` asset);
+   - the parameters (`dt`, speed, slot count, the terrain's placement).
+2. **Extract:** `ExtractResourcePlugin::<CrowdCompute>` copies it into the
+   render world each frame.
+3. **Pipeline, once (`RenderStartup`):** a bind group layout and a compute
+   pipeline:
+   - storage read-write (people);
+   - storage read (targets);
+   - texture (heightmap);
+   - uniform (params).
+4. **Bind group, every frame (`PrepareBindGroups`):** look up the GPU buffers
+   and texture behind the asset handles (`RenderAssets<GpuShaderBuffer>`,
+   `RenderAssets<GpuImage>`). Write the parameters into a uniform buffer, and
+   bind it all.
+5. **Dispatch (`RenderGraph`, before `camera_driver`):** begin a compute pass,
+   set pipeline and bind group, `dispatch_workgroups(ceil(count / 64), 1, 1)`.
+   - It runs before the camera draws, so the people shader sees this frame's
+     positions.
+   - wgpu inserts the barrier between the compute write and the vertex read.
+
+## The math (and the GPU details)
+
+- **Workgroups:** `@workgroup_size(64)` means invocations run in groups of
+  64. `global_invocation_id.x` numbers them 0, 1, 2, … across all groups:
+  that's our slot.
+  - We dispatch `ceil(count / 64)` groups, so the last group may run past the
+    end of the array. Hence `if i >= params.count { return; }`.
+- **No races:** each invocation reads and writes only its own slot, so no two
+  invocations touch the same memory. That's what makes this trivially parallel.
+  - Shared memory and barriers come into play when invocations cooperate; the
+    exercises go there.
+- **Walking:** `step = min(max(walk, 0.3·d)·dt, d)`. Normally 3 units per
+  second; far-off goals are reached faster; never overshoot.
+  `heading = atan2(Δx, Δz)`.
+- **Ground height:** the heightmap of step 03, filtered bilinearly by hand,
+  exactly as in the terrain shader. People's feet stay on the hills.
+- **`size` carries three things:** its magnitude is the scale (children 0.65),
+  its sign says walking (negative) or standing, and 0 means an empty slot.
+  The people shader animates only walking figures.
+- **Reserved words:** `active` can't be a field name in WGSL. It's reserved,
+  hence `occupied`.
+
+## The shaders
+
+`walk.wesl`:
+
+```wgsl
+// Shader step 07: the crowd walks on the GPU. Explained in
+// docs/shaders/07-crowds-compute.md.
+//
+// A compute shader: no triangles, no pixels, just a function run once per
+// person, in parallel, in groups of 64 ("workgroups"). Every frame it moves
+// each person toward their target and writes the result straight into the
+// buffer that people.wesl draws from. The CPU only uploads new targets when the
+// simulation finishes a tick.
+
+// One person as people.wesl reads it (8 floats).
+struct Person {
+    pos: vec3<f32>,
+    heading: f32,
+    color: vec3<f32>,
+    size: f32, // 1 adult, 0.65 child; negative = walking; 0 = empty slot
+};
+
+// One target, written by the CPU per tick (8 floats).
+struct Target {
+    goal: vec2<f32>,   // where to walk to (3D x, z)
+    occupied: f32,     // 1 = someone lives in this slot, 0 = empty (`active` is a
+                       // reserved word in WGSL)
+    size: f32,
+    color: vec3<f32>,
+    pad: f32,
+};
+
+struct Params {
+    dt: f32,           // seconds since the last frame
+    walk: f32,         // walking speed (units per second)
+    count: u32,        // slots in the buffers
+    pad: u32,
+    grid: vec4<f32>,   // terrain: x, z of texel (0,0); texel spacing; height scale
+    dims: vec4<f32>,   // terrain: texels across (i), deep (j)
+};
+
+@group(0) @binding(0) var<storage, read_write> people: array<Person>;
+@group(0) @binding(1) var<storage, read> targets: array<Target>;
+@group(0) @binding(2) var heights: texture_2d<f32>;
+@group(0) @binding(3) var<uniform> params: Params;
+
+// Terrain height at a ground point: the heightmap of step 03, filtered
+// bilinearly by hand (the same mapping as terrain_common.wesl).
+fn texel(t: vec2<i32>) -> f32 {
+    let last = vec2<i32>(params.dims.xy) - 1;
+    return textureLoad(heights, clamp(t, vec2<i32>(0), last), 0).r * params.grid.w;
+}
+fn ground(xz: vec2<f32>) -> f32 {
+    let tc = vec2<f32>(xz.x - params.grid.x, params.grid.y - xz.y) / params.grid.z;
+    let t0 = vec2<i32>(floor(tc));
+    let f = fract(tc);
+    let top = mix(texel(t0), texel(t0 + vec2(1, 0)), f.x);
+    let bottom = mix(texel(t0 + vec2(0, 1)), texel(t0 + vec2(1, 1)), f.x);
+    return mix(top, bottom, f.y);
+}
+
+// 64 people per workgroup; the CPU dispatches ceil(count / 64) workgroups.
+@compute @workgroup_size(64)
+fn walk(@builtin(global_invocation_id) id: vec3<u32>) {
+    let i = id.x;
+    if i >= params.count {
+        return;                       // the last workgroup may run past the end
+    }
+    let t = targets[i];
+    var p = people[i];
+    if t.occupied < 0.5 {
+        p.size = 0.0;                 // empty slot: nothing to draw
+        people[i] = p;
+        return;
+    }
+    // Someone new in this slot (it was empty last frame): appear at the goal.
+    var here = p.pos.xz;
+    if p.size == 0.0 {
+        here = t.goal;
+    }
+    let to = t.goal - here;
+    let dist = length(to);
+    // Walk; far-off goals (a new home, a raid) are reached quicker.
+    let step = min(max(params.walk, dist * 0.3) * params.dt, dist);
+    let walking = dist > 0.05;
+    if walking {
+        here += to / dist * step;
+        p.heading = atan2(to.x, to.y);
+    }
+    p.pos = vec3<f32>(here.x, ground(here), here.y);
+    p.color = t.color;
+    p.size = select(t.size, -t.size, walking);
+    people[i] = p;                    // each invocation writes only its own slot
+}
+```
+
+`people.wesl` (drawing and the walk animation):
+
+```wgsl
+// M4: people as one crowd, with procedural walking. See docs/shaders/07-crowds-compute.md.
+//
+// Like the grass (step 06): one mesh holds many copies of a small figure, and
+// the vertex shader reads each figure's data from a storage buffer by
+// `(vertex_index - first_vertex) / VERTS_PER_PERSON`. The CPU writes the buffer
+// every frame (position, heading, colour, size, walking or not); the shader
+// animates the walk: a bob and a forward lean, out of step from person to
+// person.
+
+import bevy_pbr::render::{
+    mesh_functions,
+    mesh_bindings::mesh,
+    forward_io::{Vertex, VertexOutput, FragmentOutput, decompress_vertex},
+    mesh_view_bindings::globals,
+    view_transformations::position_world_to_clip,
+    pbr_fragment::pbr_input_from_standard_material,
+    pbr_functions::main_pass_post_lighting_processing,
+};
+import super::toon_lighting::{Toon, toon_params, toon_terms};
+import super::fog::apply_fog;
+
+// One person; matches the 8 floats per person written in src/crowd.rs.
+struct Person {
+    pos: vec3<f32>, // feet, world space
+    heading: f32,   // direction of travel (radians around y)
+    color: vec3<f32>,
+    size: f32,      // 1 adult, 0.65 child; negative = walking; 0 = nobody
+};
+
+struct Crowd {
+    toon: Toon,
+};
+@group(constants::MATERIAL_BIND_GROUP) @binding(100) var<uniform> crowd: Crowd;
+@group(constants::MATERIAL_BIND_GROUP) @binding(101) var<storage, read> people: array<Person>;
+
+const VERTS_PER_PERSON: u32 = 60u;
+
+@vertex
+fn vertex(vertex_in: Vertex, @builtin(vertex_index) vertex_index: u32) -> VertexOutput {
+    let v = decompress_vertex(vertex_in, vertex_in.instance_index);
+    let first = mesh[vertex_in.instance_index].first_vertex_index;
+    let index = (vertex_index - first) / VERTS_PER_PERSON;
+    let p = people[index];
+    let walking = p.size < 0.0;
+    let size = abs(p.size);
+
+    // Procedural walk: each step lifts the body (|sin| makes two bumps per
+    // stride) and the body leans into the direction of travel. The phase comes
+    // from the person's index, so a crowd doesn't march in lockstep.
+    let phase = f32(index) * 1.618;
+    let stride = globals.time * 9.0 + phase;
+    let bob = select(0.0, abs(sin(stride)) * 0.06, walking);
+    let lean = select(0.0, 0.18, walking);
+
+    // The figure in its own space: x across, y up, z forward. Lean forward
+    // (rotate around x by `lean`, more at the top), then turn to the heading.
+    var local = v.position * size;
+    local.z += local.y * lean;
+    local.y += bob;
+    let c = cos(p.heading);
+    let s = sin(p.heading);
+    let turned = vec3<f32>(local.x * c + local.z * s, local.y, -local.x * s + local.z * c);
+    let n = v.normal;
+    let normal = vec3<f32>(n.x * c + n.z * s, n.y, -n.x * s + n.z * c);
+
+    let world = p.pos + turned;
+    var out: VertexOutput;
+    out.world_position = vec4<f32>(world, 1.0);
+    out.position = position_world_to_clip(world);
+    out.world_normal = normalize(normal);
+@if(VERTEX_UVS_A)
+    out.uv = vec2<f32>(f32(index), 0.0);  // the fragment stage looks the colour up
+@if(VERTEX_OUTPUT_INSTANCE_INDEX)
+    out.instance_index = vertex_in.instance_index;
+    return out;
+}
+
+@fragment
+fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> FragmentOutput {
+    var pbr = pbr_input_from_standard_material(in, is_front);
+    pbr.N = normalize(in.world_normal);
+    let albedo = people[u32(in.uv.x + 0.5)].color;
+    let t = toon_terms(pbr, toon_params(crowd.toon));
+    let fogged = apply_fog(albedo * t.light, in.world_position.xyz, crowd.toon.fog);
+    var out: FragmentOutput;
+    out.color = main_pass_post_lighting_processing(pbr, vec4<f32>(fogged, 1.0));
+    return out;
+}
+```
 
 ## Exercises
 
-1. **Separation:** in a second compute pass, push agents apart when closer than
-   0.5 m, using a spatial hash grid built with atomics. It's purely visual, so the
-   sim stays deterministic.
-2. **Indirect draw per LOD:** count instances per LOD with `atomicAdd`, write
-   compacted lists, and draw each with `draw_indirect`, so impostors and dots
-   don't run the full mesh vertex shader.
+1. **Separation:** people bunch up at the same goal. Push them apart: each
+   invocation looks at its neighbours in the buffer (say, 16 slots on either
+   side) and steps away from anyone closer than 0.3 units.
+   - Why does this introduce a *race*? (Hint: neighbours read positions that
+     other invocations are writing in the same pass.)
+   - Fix it with two buffers, read from one and write the other, and swap
+     them each frame.
+2. **Shared memory:** do exercise 1 with `var<workgroup>`.
+   - Each workgroup loads its 64 people into workgroup memory.
+   - `workgroupBarrier()`, then each invocation compares itself only with those
+     64.
+   - Measure the difference with more people (`--days 3000`).
+3. **Roads:** make people walk along roads. Bake a "cost" texture from the
+   terrain (water expensive, fords cheap) and steer along its gradient.
+   That's the first step toward flow-field pathfinding, which is a classic
+   compute-shader job.
