@@ -18,7 +18,6 @@ use crate::sky::{SkyClock, SkyPlugin};
 use crate::terrain::TerrainPlugin;
 use crate::toon::{toon, ToonMaterial, ToonPlugin, ToonSettings};
 use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll};
-use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
 
 /// Where the orbit camera looks from, around the origin.
@@ -64,6 +63,7 @@ pub fn run(
         TerrainPlugin,
         crate::fog::FogPlugin,
         crate::outline::OutlinePlugin,
+        crate::bloom::BloomPlugin,
     ))
     .insert_resource(clock)
     .insert_resource(toon_settings)
@@ -150,7 +150,8 @@ fn setup(
     commands.spawn((
         Camera3d::default(),
         Transform::from_xyz(0.0, 3.0, 14.0).looking_at(Vec3::Y, Vec3::Y),
-        Bloom::NATURAL,
+        bevy::camera::Hdr,
+        crate::bloom::BloomSettings::default(),
     ));
     crate::hud::spawn_help(
         &mut commands,

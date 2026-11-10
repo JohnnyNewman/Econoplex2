@@ -125,3 +125,5 @@ side, so the GPU never has to run both.
   view. `G` hides the grass.
 - **Step 07:** the crowd walks in a compute shader ([07-crowds-compute](07-crowds-compute.md)).
   `P` hides the people.
+- **Step 08:** bloom by hand ([08-bloom](08-bloom.md)): render targets and a mip
+  chain. `B` bloom on or off, `N` the glow alone.
