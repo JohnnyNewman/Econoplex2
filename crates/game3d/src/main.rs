@@ -19,6 +19,7 @@ use sim_core::config::Scenario;
 use sim_core::terrain::Terrain;
 use std::path::PathBuf;
 
+mod buildings;
 mod camera;
 mod fog;
 mod hud;
@@ -60,6 +61,42 @@ struct ShotPath(Option<PathBuf>);
 struct World3d {
     scenario: Scenario,
     terrain: Terrain,
+    /// Buildings as the simulation placed them: (type id, town, map position).
+    buildings: Vec<(String, u16, (f32, f32))>,
+}
+
+/// Set the scenario up in a throwaway simulation world and read where it puts
+/// each building. (M2 will read these from the running simulation instead.)
+fn sim_buildings(
+    paths: &sim_core::AssetPaths,
+    scenario: &Scenario,
+) -> Vec<(String, u16, (f32, f32))> {
+    use sim_core::components::{Pos, Product, Structure, TownId};
+    let (db, params, _) = sim_core::load(paths).expect("cannot load assets");
+    let mut sim = bevy::ecs::world::World::new();
+    sim_core::world::setup(&mut sim, db, params, scenario);
+    let mut q = sim.query_filtered::<(&Product, &TownId, &Pos), With<Structure>>();
+    let db = sim.resource::<sim_core::Db>();
+    let mut out: Vec<_> = q
+        .iter(&sim)
+        .map(|(p, town, pos)| {
+            (
+                db.content.products[p.def as usize].id.clone(),
+                town.0,
+                (pos.x, pos.y),
+            )
+        })
+        .collect();
+    // Query order is not guaranteed; sort so the view is the same every run.
+    out.sort_by(|a, b| {
+        (a.1, &a.0, a.2 .0.to_bits(), a.2 .1.to_bits()).cmp(&(
+            b.1,
+            &b.0,
+            b.2 .0.to_bits(),
+            b.2 .1.to_bits(),
+        ))
+    });
+    out
 }
 
 /// World units per 3D unit (the sim's map is about 2000 units across).
@@ -138,6 +175,7 @@ fn main() {
     });
     let scenario = sim_core::worldgen::resolve(&scenario, &db);
     let terrain = Terrain::build(&scenario);
+    let buildings = sim_buildings(&paths, &scenario);
 
     App::new()
         .add_plugins(DefaultPlugins.set(asset_plugin()).set(WindowPlugin {
@@ -150,7 +188,11 @@ fn main() {
         }))
         .insert_resource(ClearColor(Color::srgb(0.62, 0.74, 0.86)))
         .insert_resource(DirectionalLightShadowMap { size: 4096 })
-        .insert_resource(World3d { scenario, terrain })
+        .insert_resource(World3d {
+            scenario,
+            terrain,
+            buildings,
+        })
         .insert_resource(args)
         .insert_resource(ShotPath(shot))
         .add_plugins((
@@ -303,7 +345,19 @@ fn setup(
                 .with_scale(Vec3::splat(0.8 + jitter * 0.6)),
         ));
     }
-    // --- towns: houses around the centre, a hall in the middle
+    // --- towns: the sim's buildings by type (buildings.rs), houses around them
+    let specs: Vec<buildings::BuildingSpec> = world
+        .buildings
+        .iter()
+        .enumerate()
+        .map(|(k, (kind, _town, p))| buildings::BuildingSpec {
+            kind: kind.clone(),
+            at: Vec3::new(p.0 / SCALE, height(t, *p), -p.1 / SCALE),
+            seed: k as u32 * 7 + 3,
+        })
+        .collect();
+    buildings::spawn_buildings(&mut commands, &mut meshes, &mut toons, &specs);
+    // Houses: a spiral around each town centre, leaving room for the buildings.
     let house = meshes.add(Cuboid::new(1.0, 0.8, 1.2));
     let roof = meshes.add(Cone::new(0.95, 0.7));
     let walls = toons.add(toon::toon(Color::srgb(0.88, 0.82, 0.70)));
@@ -312,12 +366,15 @@ fn setup(
         toons.add(toon::toon(Color::srgb(0.50, 0.32, 0.22))),
         toons.add(toon::toon(Color::srgb(0.36, 0.38, 0.46))),
     ];
-    let hall = meshes.add(Cuboid::new(2.4, 1.6, 2.4));
+    let taken: Vec<Vec2> = specs.iter().map(|b| Vec2::new(b.at.x, b.at.z)).collect();
     for (ti, tw) in s.towns.iter().enumerate() {
         let n = (tw.population / 6).max(12);
-        for k in 0..n {
+        let mut placed = 0;
+        let mut k = 0u32;
+        while placed < n && k < n * 4 {
             let a = k as f32 * 2.399_963 + ti as f32;
             let r = 1.8 + (k as f32).sqrt() * 1.05;
+            k += 1;
             let p = (
                 tw.position.0 + r * SCALE * a.cos(),
                 tw.position.1 + r * SCALE * a.sin(),
@@ -325,8 +382,13 @@ fn setup(
             if t.cell_at(p).is_some_and(|c| t.water[c]) {
                 continue;
             }
+            let ground = Vec2::new(p.0 / SCALE, -p.1 / SCALE);
+            if taken.iter().any(|b| b.distance(ground) < 3.2) {
+                continue;
+            }
+            placed += 1;
             let y = height(t, p);
-            let at = Vec3::new(p.0 / SCALE, y, -p.1 / SCALE);
+            let at = Vec3::new(ground.x, y, ground.y);
             let rot = Quat::from_rotation_y(a);
             commands.spawn((
                 Mesh3d(house.clone()),
@@ -339,12 +401,6 @@ fn setup(
                 Transform::from_translation(at + Vec3::Y * 1.15).with_rotation(rot),
             ));
         }
-        let y = height(t, tw.position);
-        commands.spawn((
-            Mesh3d(hall.clone()),
-            MeshMaterial3d(roofs[0].clone()),
-            Transform::from_xyz(tw.position.0 / SCALE, y + 0.8, -tw.position.1 / SCALE),
-        ));
     }
     // --- light: the sun with soft shadows; the sky plugin points it and sets its
     // colour and the ambient light from the time of day.
@@ -413,5 +469,52 @@ fn shoot(
     }
     if state.frames == 120 {
         exit.write(AppExit::Success);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The 3D view shows exactly the buildings the scenario gives each town
+    /// (workshop, mill, bakery everywhere; furnace and smithy where the land has
+    /// ore), read from the sim.
+    #[test]
+    fn every_town_gets_its_buildings() {
+        let paths = sim_core::AssetPaths::discover();
+        let (db, _, mut scenario) = sim_core::load(&paths).unwrap();
+        scenario.seed = 23;
+        scenario.generate = Some(sim_core::worldgen::GenSpec {
+            towns: 5,
+            ..Default::default()
+        });
+        let scenario = sim_core::worldgen::resolve(&scenario, &db);
+        let b = sim_buildings(&paths, &scenario);
+        for (town, spec) in scenario.towns.iter().enumerate() {
+            let mut kinds: Vec<&str> = b
+                .iter()
+                .filter(|x| x.1 as usize == town)
+                .map(|x| x.0.as_str())
+                .collect();
+            kinds.sort();
+            let mut want: Vec<&str> = spec.buildings.iter().map(String::as_str).collect();
+            want.sort();
+            assert_eq!(kinds, want, "town {}", spec.name);
+            for starter in ["workshop", "mill", "bakery"] {
+                assert!(
+                    kinds.contains(&starter),
+                    "town {} lacks a {starter}",
+                    spec.name
+                );
+            }
+        }
+        // The same every run.
+        assert_eq!(
+            b.iter().map(|x| x.2).collect::<Vec<_>>(),
+            sim_buildings(&paths, &scenario)
+                .iter()
+                .map(|x| x.2)
+                .collect::<Vec<_>>()
+        );
     }
 }
