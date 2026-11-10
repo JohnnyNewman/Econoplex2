@@ -12,14 +12,10 @@ import bevy_pbr::render::{
     pbr_fragment::pbr_input_from_standard_material,
     pbr_functions::{apply_pbr_lighting, main_pass_post_lighting_processing},
 };
-import super::toon_lighting::{ToonParams, toon_terms};
+import super::toon_lighting::{Toon, toon_params, toon_terms};
+import super::fog::apply_fog;
 
-// Matches `TerrainUniform` (and the nested `ToonUniform`) in src/terrain.rs.
-struct Toon {
-    shadow_tint: vec4<f32>,
-    ramp: vec4<f32>,
-    debug: vec4<f32>,
-};
+// Matches `TerrainUniform` (with the nested `ToonUniform`) in src/terrain.rs.
 struct Terrain {
     grid: vec4<f32>, // x, z of texel (0,0); distance between texels; height scale
     dims: vec4<f32>, // texels across (i, +x), texels deep (j, -z); -; debug view
@@ -143,7 +139,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
 
     // Lighting: the shared toon lighting of step 02 (or PBR with the M key).
     let tp = terrain.toon;
-    let t = toon_terms(pbr, ToonParams(tp.shadow_tint.rgb, tp.ramp.x, tp.ramp.y, tp.ramp.z, tp.ramp.w));
+    let t = toon_terms(pbr, toon_params(tp));
     var lit = albedo * t.light;
     if tp.debug.y < 0.5 {
         pbr.material.base_color = vec4<f32>(albedo, 1.0);
@@ -161,7 +157,8 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     } else if id == 4u {
         out.color = vec4<f32>(vec3<f32>(slope * 3.0), 1.0);       // slope (x3)
     } else {
-        out.color = main_pass_post_lighting_processing(pbr, vec4<f32>(lit, 1.0));
+        let fogged = apply_fog(lit, p, tp.fog);              // step 04
+        out.color = main_pass_post_lighting_processing(pbr, vec4<f32>(fogged, 1.0));
     }
     return out;
 }

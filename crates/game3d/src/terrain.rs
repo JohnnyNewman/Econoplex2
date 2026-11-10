@@ -17,6 +17,7 @@
 //! Keys: `L` grid step; with `Tab` on "terrain", `0`–`4` pick a debug view
 //! (0 final, 1 height, 2 normals, 3 biome weights, 4 slope).
 
+use crate::fog::FogState;
 use crate::sky::{digit_pressed, DebugTarget};
 use crate::toon::{ToonSettings, ToonUniform};
 use bevy::asset::RenderAssetUsages;
@@ -259,6 +260,7 @@ fn terrain_keys(
 fn update_terrain(
     settings: Res<TerrainSettings>,
     toon: Res<ToonSettings>,
+    fog: Res<FogState>,
     mut grids: Query<(
         &mut TerrainGrid,
         &mut Mesh3d,
@@ -267,7 +269,7 @@ fn update_terrain(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<TerrainMaterial>>,
 ) {
-    if !settings.is_changed() && !toon.is_changed() {
+    if !settings.is_changed() && !toon.is_changed() && !fog.is_changed() {
         return;
     }
     for (mut grid, mut mesh, handle) in &mut grids {
@@ -284,6 +286,7 @@ fn update_terrain(
         if let Some(mut m) = materials.get_mut(handle) {
             m.extension.terrain.dims.w = settings.debug as f32;
             m.extension.terrain.toon.debug.y = toon.on as u32 as f32;
+            m.extension.terrain.toon.fog = fog.0;
         }
     }
 }

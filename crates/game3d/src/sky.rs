@@ -126,6 +126,7 @@ pub enum DebugTarget {
     Sky,
     Toon,
     Terrain,
+    Fog,
 }
 
 /// The number key pressed this frame (0–4), if any.
@@ -152,6 +153,12 @@ pub struct Sky;
 pub fn sun_direction(hour: f32) -> Vec3 {
     let a = (hour - 6.0) / 24.0 * std::f32::consts::TAU;
     Vec3::new(a.cos(), a.sin() * 0.85, a.sin() * 0.45).normalize()
+}
+
+/// Colour (and HDR brightness) of the sun disc: warm when low, white when high.
+pub fn sun_color(dir: Vec3) -> Vec3 {
+    let warm = (1.0 - dir.y.clamp(0.0, 1.0)).powi(3);
+    Vec3::new(1.0, 0.95, 0.85).lerp(Vec3::new(1.0, 0.55, 0.25), warm) * 6.0
 }
 
 /// Sky colours for a sun height `e` (= sun_dir.y, -1..1): day, sunset and
@@ -210,7 +217,8 @@ fn sky_keys(
         *target = match *target {
             DebugTarget::Sky => DebugTarget::Toon,
             DebugTarget::Toon => DebugTarget::Terrain,
-            DebugTarget::Terrain => DebugTarget::Sky,
+            DebugTarget::Terrain => DebugTarget::Fog,
+            DebugTarget::Fog => DebugTarget::Sky,
         };
     }
     if keys.just_pressed(KeyCode::KeyT) {
@@ -245,9 +253,7 @@ fn update_sky(
 ) {
     let dir = sun_direction(clock.hour);
     let (horizon, zenith, ground) = palette(dir.y);
-    // Warm low sun, white high sun.
-    let warm = (1.0 - dir.y.clamp(0.0, 1.0)).powi(3);
-    let sun_rgb = Vec3::new(1.0, 0.95, 0.85).lerp(Vec3::new(1.0, 0.55, 0.25), warm) * 6.0;
+    let sun_rgb = sun_color(dir);
     for handle in &sky {
         if let Some(mut m) = materials.get_mut(handle) {
             m.sky = SkyUniform {
@@ -264,7 +270,7 @@ fn update_sky(
     let day = ((dir.y + 0.05) / 0.3).clamp(0.0, 1.0);
     for (mut tf, mut light) in &mut sun {
         *tf = Transform::from_translation(dir * 100.0).looking_at(Vec3::ZERO, Vec3::Y);
-        light.illuminance = 12_000.0 * day;
+        light.illuminance = 9_000.0 * day;
         light.color = Color::linear_rgb(sun_rgb.x / 6.0, sun_rgb.y / 6.0, sun_rgb.z / 6.0);
     }
     ambient.color = Color::linear_rgb(zenith.x, zenith.y, zenith.z).mix(&Color::WHITE, 0.5);

@@ -9,6 +9,7 @@
 //! lighting (to compare); with `Tab` on "toon", `0`–`4` pick a debug view
 //! (0 final, 1 normals, 2 n·l, 3 ramp, 4 shadow map).
 
+use crate::fog::{FogState, FogUniform};
 use crate::sky::{digit_pressed, DebugTarget};
 use bevy::pbr::{ExtendedMaterial, MaterialExtension};
 use bevy::prelude::*;
@@ -41,6 +42,8 @@ pub struct ToonUniform {
     pub ramp: Vec4,
     /// x: debug view; y: 1 = toon on, 0 = standard PBR lighting; zw unused.
     pub debug: Vec4,
+    /// Step 04: the fog, the same for every material (see fog.rs).
+    pub fog: FogUniform,
 }
 
 impl Default for ToonUniform {
@@ -49,6 +52,7 @@ impl Default for ToonUniform {
             shadow_tint: Vec4::new(0.42, 0.48, 0.85, 1.0),
             ramp: Vec4::new(0.4, 0.28, 0.62, 0.05),
             debug: Vec4::new(0.0, 1.0, 0.0, 0.0),
+            fog: FogUniform::default(),
         }
     }
 }
@@ -109,13 +113,18 @@ fn toon_keys(
     }
 }
 
-/// Copy the settings into every toon material when they change.
-fn update_toon(settings: Res<ToonSettings>, mut materials: ResMut<Assets<ToonMaterial>>) {
-    if !settings.is_changed() {
+/// Copy the settings and this frame's fog into every toon material.
+fn update_toon(
+    settings: Res<ToonSettings>,
+    fog: Res<FogState>,
+    mut materials: ResMut<Assets<ToonMaterial>>,
+) {
+    if !settings.is_changed() && !fog.is_changed() {
         return;
     }
     let debug = Vec4::new(settings.debug as f32, settings.on as u32 as f32, 0.0, 0.0);
     for (_, m) in materials.iter_mut() {
         m.extension.toon.debug = debug;
+        m.extension.toon.fog = fog.0;
     }
 }
