@@ -24,6 +24,7 @@ mod camera;
 mod fog;
 mod hud;
 mod live;
+mod outline;
 mod playground;
 mod sky;
 mod terrain;
@@ -54,6 +55,16 @@ fn asset_plugin() -> AssetPlugin {
     }
 }
 
+/// Whether outlines start off (`--no-outlines`).
+#[derive(Resource)]
+struct OutlineStart(bool);
+
+fn apply_outline_start(mut commands: Commands, start: Res<OutlineStart>) {
+    if start.0 {
+        commands.insert_resource(outline::OutlinesOff);
+    }
+}
+
 /// Where to save a screenshot (then quit), if anywhere.
 #[derive(Resource)]
 struct ShotPath(Option<PathBuf>);
@@ -81,6 +92,7 @@ fn main() {
     let mut fog_settings = fog::FogSettings::default();
     // The live simulation: fast-forward days, start speed (0-4), paused.
     let (mut days, mut speed, mut paused) = (0u64, 0usize, false);
+    let mut no_outlines = false;
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -92,9 +104,11 @@ fn main() {
             "--playground" => playground = true,
             "--face-sun" => face_sun = true,
             "--toon-view" => {
-                toon_settings.debug = it.next().and_then(|v| v.parse().ok()).unwrap_or(0).min(4)
+                toon_settings.debug = it.next().and_then(|v| v.parse().ok()).unwrap_or(0).min(6)
             }
             "--pbr" => toon_settings.on = false,
+            "--no-rim" => toon_settings.rim = false,
+            "--no-outlines" => no_outlines = true,
             "--terrain-view" => {
                 terrain_settings.debug = it.next().and_then(|v| v.parse().ok()).unwrap_or(0).min(4)
             }
@@ -129,7 +143,15 @@ fn main() {
         }
     }
     if playground {
-        playground::run(hour, view, face_sun, toon_settings, fog_settings, shot);
+        playground::run(
+            hour,
+            view,
+            face_sun,
+            toon_settings,
+            fog_settings,
+            no_outlines,
+            shot,
+        );
         return;
     }
     let mut clock = sky::SkyClock::default();
@@ -164,6 +186,7 @@ fn main() {
         .insert_resource(ClearColor(Color::srgb(0.62, 0.74, 0.86)))
         .insert_resource(DirectionalLightShadowMap { size: 4096 })
         .insert_resource(World3d { scenario, terrain })
+        .insert_resource(OutlineStart(no_outlines))
         .insert_resource(live)
         .insert_resource(args)
         .insert_resource(ShotPath(shot))
@@ -174,11 +197,13 @@ fn main() {
             fog::FogPlugin,
             camera::WorldCameraPlugin,
             live::LivePlugin,
+            outline::OutlinePlugin,
         ))
         .insert_resource(clock)
         .insert_resource(toon_settings)
         .insert_resource(terrain_settings)
         .insert_resource(fog_settings)
+        .add_systems(PreStartup, apply_outline_start)
         .add_systems(Startup, setup)
         .add_systems(Update, (shoot, hud::update_help))
         .run();

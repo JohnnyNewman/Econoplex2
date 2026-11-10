@@ -133,7 +133,8 @@ pub enum DebugTarget {
     Fog,
 }
 
-/// The number key pressed this frame (0–4), if any.
+/// The number key pressed this frame (0–6), if any. Each shader clamps it to
+/// the views it has.
 pub fn digit_pressed(keys: &ButtonInput<KeyCode>) -> Option<u32> {
     [
         KeyCode::Digit0,
@@ -141,6 +142,8 @@ pub fn digit_pressed(keys: &ButtonInput<KeyCode>) -> Option<u32> {
         KeyCode::Digit2,
         KeyCode::Digit3,
         KeyCode::Digit4,
+        KeyCode::Digit5,
+        KeyCode::Digit6,
     ]
     .iter()
     .position(|k| keys.just_pressed(*k))
@@ -256,7 +259,7 @@ fn sky_keys(
     clock.hour = clock.hour.rem_euclid(24.0);
     if *target == DebugTarget::Sky {
         if let Some(v) = digit_pressed(&keys) {
-            clock.debug = v;
+            clock.debug = v.min(4);
         }
     }
 }

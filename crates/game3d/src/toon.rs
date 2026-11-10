@@ -42,6 +42,8 @@ pub struct ToonUniform {
     pub ramp: Vec4,
     /// x: debug view; y: 1 = toon on, 0 = standard PBR lighting; zw unused.
     pub debug: Vec4,
+    /// Step 05, rim light: x strength (0 = off), y fresnel power; zw unused.
+    pub rim: Vec4,
     /// Step 04: the fog, the same for every material (see fog.rs).
     pub fog: FogUniform,
 }
@@ -52,6 +54,7 @@ impl Default for ToonUniform {
             shadow_tint: Vec4::new(0.42, 0.48, 0.85, 1.0),
             ramp: Vec4::new(0.4, 0.28, 0.62, 0.05),
             debug: Vec4::new(0.0, 1.0, 0.0, 0.0),
+            rim: Vec4::new(1.0, 3.0, 0.0, 0.0),
             fog: FogUniform::default(),
         }
     }
@@ -86,16 +89,30 @@ pub fn toon(color: Color) -> ToonMaterial {
 pub struct ToonSettings {
     pub debug: u32,
     pub on: bool,
+    /// Step 05: rim light on the toon materials (`R`).
+    pub rim: bool,
 }
 
 impl Default for ToonSettings {
     fn default() -> Self {
-        Self { debug: 0, on: true }
+        Self {
+            debug: 0,
+            on: true,
+            rim: true,
+        }
     }
 }
 
 impl ToonSettings {
-    pub const VIEWS: [&'static str; 5] = ["final", "normals", "n.l", "ramp", "shadow map"];
+    pub const VIEWS: [&'static str; 7] = [
+        "final",
+        "normals",
+        "n.l",
+        "ramp",
+        "shadow map",
+        "fresnel (05)",
+        "n.v (05)",
+    ];
 }
 
 fn toon_keys(
@@ -106,9 +123,12 @@ fn toon_keys(
     if keys.just_pressed(KeyCode::KeyM) {
         settings.on = !settings.on;
     }
+    if keys.just_pressed(KeyCode::KeyR) {
+        settings.rim = !settings.rim;
+    }
     if *target == DebugTarget::Toon {
         if let Some(v) = digit_pressed(&keys) {
-            settings.debug = v;
+            settings.debug = v.min(6);
         }
     }
 }
@@ -126,5 +146,6 @@ fn update_toon(
     for (_, m) in materials.iter_mut() {
         m.extension.toon.debug = debug;
         m.extension.toon.fog = fog.0;
+        m.extension.toon.rim.x = if settings.rim { 1.0 } else { 0.0 };
     }
 }

@@ -58,7 +58,7 @@ pub fn update_help(
          {} toon view {}: {}   M toon/PBR ({})\n\
          {} terrain view {}: {}   L grid step {}\n\
          {} fog view {}: {}   F fog ({})\n\
-         Tab: which shader keys 0-4 control\n\
+         Tab: which shader keys 0-6 control   R rim   O outlines\n\
          {}\n\
          edit assets/shaders/*.wesl and save to reload",
             help.title,

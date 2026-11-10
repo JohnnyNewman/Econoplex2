@@ -97,7 +97,7 @@ fn fog_keys(
     }
     if *target == DebugTarget::Fog {
         if let Some(v) = digit_pressed(&keys) {
-            settings.debug = v;
+            settings.debug = v.min(4);
         }
     }
 }

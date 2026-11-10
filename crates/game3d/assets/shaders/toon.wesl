@@ -35,7 +35,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let t = toon_terms(pbr, toon_params(toon));
     let albedo = pbr.material.base_color.rgb;
 
-    // Debug views (Tab to "toon", then keys 0-4).
+    // Debug views (Tab to "toon", then keys 0-6).
     let id = u32(toon.debug.x);
     if id == 1u {
         out.color = vec4<f32>(pbr.N * 0.5 + 0.5, 1.0);            // normals as colour
@@ -45,6 +45,10 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         out.color = vec4<f32>(vec3<f32>(t.ramp), 1.0);           // three tones
     } else if id == 4u {
         out.color = vec4<f32>(vec3<f32>(t.shadow), 1.0);         // shadow map term
+    } else if id == 5u {
+        out.color = vec4<f32>(vec3<f32>(t.fresnel), 1.0);        // step 05: fresnel
+    } else if id == 6u {
+        out.color = vec4<f32>(vec3<f32>(t.ndv), 1.0);            // step 05: n . v
     } else {
         // Step 04: our fog. Then Bevy's post-lighting step (tonemapping if
         // needed; its own fog is off, the camera has no DistanceFog).

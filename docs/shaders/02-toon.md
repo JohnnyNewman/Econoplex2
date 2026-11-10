@@ -106,12 +106,13 @@ struct Toon {
     shadow_tint: vec4<f32>, // rgb: colour of the shadow side
     ramp: vec4<f32>,        // x: wrap, y: band edge a, z: band edge b, w: softness
     debug: vec4<f32>,       // x: debug view, y: 1 = toon, 0 = Bevy PBR lighting
+    rim: vec4<f32>,         // step 05: x strength, y power (fresnel exponent)
     fog: Fog,               // step 04
 };
 
 // The ramp parameters out of the uniform block.
 fn toon_params(t: Toon) -> ToonParams {
-    return ToonParams(t.shadow_tint.rgb, t.ramp.x, t.ramp.y, t.ramp.z, t.ramp.w);
+    return ToonParams(t.shadow_tint.rgb, t.ramp.x, t.ramp.y, t.ramp.z, t.ramp.w, t.rim.x, t.rim.y);
 }
 
 struct ToonParams {
@@ -120,6 +121,8 @@ struct ToonParams {
     band_a: f32,            // first band edge (shadow -> mid)
     band_b: f32,            // second band edge (mid -> lit)
     softness: f32,          // half-width of a band edge
+    rim_strength: f32,      // step 05: how bright the rim light is (0 = off)
+    rim_power: f32,         // step 05: higher = thinner rim
 };
 
 // The intermediate values, so callers can show them as debug views.
@@ -128,6 +131,8 @@ struct ToonTerms {
     ramp: f32,        // after wrap and banding: 0, 0.5 or 1 (soft edges)
     shadow: f32,      // shadow map: 1 lit, 0 in shadow
     light: vec3<f32>, // the light reaching the surface (multiply by albedo)
+    ndv: f32,         // step 05: n . v, how much the surface faces the camera
+    fresnel: f32,     // step 05: (1 - n . v)^power, bright at grazing angles
 };
 
 fn toon_terms(pbr: PbrInput, p: ToonParams) -> ToonTerms {
@@ -162,7 +167,18 @@ fn toon_terms(pbr: PbrInput, p: ToonParams) -> ToonTerms {
     // Shadow side: ambient light tinted cool. Lit side: plus the sun. Same
     // units as Bevy's PBR (sun / pi, times the camera exposure).
     let ambient = lights.ambient_color.rgb * p.shadow_tint;
-    t.light = (ambient + sun.color.rgb / PI * lit) * view.exposure;
+    let sunlight = sun.color.rgb / PI;
+
+    // Step 05, rim light: v points from the surface to the camera. n . v is 1
+    // where the surface faces us and 0 at the silhouette; the fresnel term
+    // turns that into a thin bright edge. Only on the sunlit side (a rim that
+    // ignores the light looks like a glow).
+    let v = normalize(view.world_position - pbr.world_position.xyz);
+    t.ndv = max(dot(n, v), 0.0);
+    t.fresnel = pow(1.0 - t.ndv, p.rim_power);
+    let rim = t.fresnel * smoothstep(-0.2, 0.4, t.ndl) * p.rim_strength;
+
+    t.light = (ambient + sunlight * (lit + rim)) * view.exposure;
     return t;
 }
 ```
@@ -207,7 +223,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let t = toon_terms(pbr, toon_params(toon));
     let albedo = pbr.material.base_color.rgb;
 
-    // Debug views (Tab to "toon", then keys 0-4).
+    // Debug views (Tab to "toon", then keys 0-6).
     let id = u32(toon.debug.x);
     if id == 1u {
         out.color = vec4<f32>(pbr.N * 0.5 + 0.5, 1.0);            // normals as colour
@@ -217,6 +233,10 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         out.color = vec4<f32>(vec3<f32>(t.ramp), 1.0);           // three tones
     } else if id == 4u {
         out.color = vec4<f32>(vec3<f32>(t.shadow), 1.0);         // shadow map term
+    } else if id == 5u {
+        out.color = vec4<f32>(vec3<f32>(t.fresnel), 1.0);        // step 05: fresnel
+    } else if id == 6u {
+        out.color = vec4<f32>(vec3<f32>(t.ndv), 1.0);            // step 05: n . v
     } else {
         // Step 04: our fog. Then Bevy's post-lighting step (tonemapping if
         // needed; its own fog is off, the camera has no DistanceFog).
