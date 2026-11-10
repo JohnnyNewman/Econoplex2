@@ -1,0 +1,260 @@
+# Graphics and UI subproject: design proposal (2026-11-10)
+
+Status: **proposal for Nils's review.** Nothing here changes the simulation. The
+only code in this PR is a throwaway preview (`crates/game3d`, "M0") that renders
+a generated world in 3D, so we can talk about something visible.
+
+![M0 preview, seed 23](../images/m0_prototype_seed23.png)
+
+*M0 preview (seed 23): a generated world with five towns, a river, hills, fields
+and forest, under a low sun with distance fog. Stock Bevy PBR, no custom shaders
+yet. Everything in the "visual direction" section below is still to come.*
+
+## 1. Architecture: the renderer can't touch the simulation
+
+The simulation (`sim_core`) stays exactly as it is: deterministic, headless,
+tested. The 3D client is a separate crate (`game3d`) that sees the simulation in
+only three ways:
+
+1. **A snapshot per tick (read-only view model).** After each tick, the sim
+   thread copies what the screen needs into a plain struct:
+   - per town: position, population, buildings, stock and prices, treasury, culture;
+   - per agent: position, activity, job, town (as flat arrays, for instancing);
+   - caravans and raids in progress;
+   - terrain (once).
+
+   The renderer reads only snapshots. It never holds a `&mut` into the sim world.
+2. **An event stream.** The event log (`sim_core::history`) is already data. The
+   client reads new events since the last frame: a building finished, a raid, a
+   famine, an order.
+3. **Commands.** The player acts only through the existing order API
+   (`policy::Order`, the same one the AI governors use). Orders are queued and
+   applied at the start of the next tick, exactly as in the 2D game and the CLI.
+
+Because nothing else crosses the boundary, rendering can't affect determinism: the
+same seed and orders give the same state hash with or without a renderer.
+
+```mermaid
+flowchart LR
+  subgraph Sim thread
+    S[sim_core World\ndeterministic ticks] --> SN[Snapshot builder\nplain data per tick]
+    H[history::History\nevent log] --> EV[Event stream]
+    OQ[OrderQueue] --> S
+  end
+  subgraph Render thread game3d
+    SN -->|double buffer| VM[View model\nlatest + previous snapshot]
+    EV --> UIE[Event feed / toasts]
+    VM --> R[3D scene\nterrain, towns, crowds, caravans]
+    VM --> UI[UI panels\neconomy, policy, inspector, charts]
+    UI -->|Order| OQ
+  end
+```
+
+**Data flow per frame:**
+- The sim runs at its own rate (1–60 ticks per second, by game speed) on its own
+  thread.
+- The renderer runs at the display's rate and **interpolates** agent and caravan
+  positions between the last two snapshots, so motion is smooth at any game
+  speed.
+- Snapshots are double-buffered: the sim writes one while the renderer reads the
+  other.
+
+```mermaid
+sequenceDiagram
+  participant Sim as Sim thread
+  participant Buf as Snapshot buffers
+  participant Ren as Render thread
+  loop every tick
+    Sim->>Sim: step (orders applied first)
+    Sim->>Buf: write snapshot N
+  end
+  loop every frame
+    Ren->>Buf: read snapshots N-1, N
+    Ren->>Ren: interpolate, draw, UI
+    Ren-->>Sim: queue orders (next tick)
+  end
+```
+
+## 2. Technology options
+
+| | Bevy 3D (new `game3d` crate) | Godot 4 + gdext (Rust bindings) | Web front end (wgpu/WebGL) + headless sim |
+| --- | --- | --- | --- |
+| Language | Rust only, shares types with sim_core | Rust for glue, GDScript/scene editor for content | Rust sim (native or wasm), TS/Rust renderer |
+| Shaders | WGSL, hand-written materials, compute | Godot shading language (GLSL-like), visual shader editor | WGSL (wgpu) or GLSL (WebGL) |
+| Learning shaders in detail | **excellent**: you write every pipeline stage | good, but the engine hides more | excellent, but you also build the engine |
+| Editor / tooling | none (code-driven) | strong editor, animation tools | browser dev tools |
+| Effort to first picture | low (M0 took an hour) | medium (bindings, scene setup) | high (renderer from scratch) |
+| Risk | Bevy changes every release (API churn) | two languages, FFI boundary | most work, weakest tooling for 3D |
+
+**Recommendation: Bevy 3D in `game3d`.**
+- Same language and data types as the sim; the snapshot boundary is just a Rust
+  struct.
+- WGSL with Bevy's `Material` / `ExtendedMaterial` / compute pipelines lets us
+  write every shader by hand, which fits the shader learning track (section 7).
+- The 2D game already runs on Bevy, so its UI code and panels can be ported.
+
+**One practical note.** Bevy 0.19.1's 3D renderer can't be built today (one of its
+crates, `bevy_anti_alias` 0.19.1, isn't on crates.io), so M0 uses **Bevy 0.20** on
+its own. M1 should move the whole workspace (sim_core's `bevy_ecs`, the 2D game)
+to 0.20, so everything shares one version.
+
+## 3. Visual direction: painterly, soft toon, procedural
+
+Our own style, no borrowed assets: a soft cel-shaded, painterly open-world look,
+built almost entirely from procedural geometry and shaders.
+
+- **Lighting:** soft toon ramp shading.
+  - Diffuse is quantised through a smooth ramp, with *wrap lighting* so shadows
+    stay soft and coloured.
+  - A rim light (fresnel) separates silhouettes.
+  - Implemented as an `ExtendedMaterial<StandardMaterial, ToonExt>`, so we keep
+    Bevy's shadows and fog.
+- **Albedo:** flat or vertex colours driven by biome and world-space noise
+  (meadow, field, scree, snow, river bank) instead of detailed textures. Large
+  soft colour patches read like paint.
+- **Atmosphere:**
+  - strong distance and height fog;
+  - a gradient sky with a sun disc;
+  - **day/night and seasons tied to the sim calendar** (the sim already counts
+    days and years);
+  - gentle bloom.
+- **Terrain:** from the generated world (`worldgen` plus `terrain`).
+  - Heightmap from hills and noise; river beds sunk, fords as shallow bars.
+  - Triplanar/biome colouring.
+  - **Fields drawn by crop** (grain gold, flax blue-green, pasture), changing with
+    the seasons.
+- **Vegetation:** instanced grass and trees with vertex-shader wind. Forests sit
+  where the sim's forest sites are; felled trees regrow as the sites regrow.
+- **Buildings:** procedural, assembled from modules (walls, roofs, chimneys,
+  waterwheels, furnaces, kilns) by building type. Era and town wealth choose the
+  materials: timber, then stone, then brick and slate.
+- **Agents:**
+  - GPU-instanced crowds with procedural animation: a simple gait and bob, plus
+    job-specific tool motions (scythe, hammer, axe).
+  - Level of detail: mesh close up, impostor cards in the middle distance, dots
+    far away.
+  - Colour by trade or culture on demand.
+- **Movement:** caravans as little carts on the roads; armies marching on raids.
+- **Overlays**, each a toggle with a legend:
+  - money flows between towns (animated ribbons, width = value);
+  - prices (town billboards);
+  - culture (tinting by the town culture vector);
+  - the product space (as in the 2D game, now a floating graph);
+  - shortages and gluts (pulsing icons).
+
+## 4. UI
+
+Panels to port and add:
+- **Economy:** money flows, prices and indices, jobs, shortages.
+- **Policy:** all levers, as today.
+- **Inspector:** an agent's skills, mind, needs, culture fit.
+- **Event log:** filterable, click to jump the camera.
+- **History charts:** time series from `history::Sample` and yearly metrics, per
+  town or empire.
+- **A "why" view:** select a symptom ("bread is short in Greenvale", "Ironhold's
+  treasury is empty") and see the chain behind it. It is built from data the sim
+  already has:
+  - recipe inputs and blocked jobs;
+  - wage rationing;
+  - price pressure;
+  - ledger flows;
+  - migration.
+
+  It starts as a rule-based explainer that walks the dependency graph of goods,
+  jobs and money, highlighting each link on the map.
+
+**Framework:**
+
+| | bevy_egui | bevy_ui | other (iced, Dioxus, web overlay) |
+| --- | --- | --- | --- |
+| Dense data panels, tables, charts | **excellent** (egui_plot for charts) | verbose, no charts built in | good, but a second toolkit |
+| Look and theming | immediate-mode, can be styled | full control, retained | full control |
+| Effort | lowest | medium–high | high |
+
+**Recommendation:** `bevy_egui` for the data-heavy panels (economy, charts, event
+log, why view), and `bevy_ui` / world-space labels for the few diegetic elements
+(town nameplates, price billboards) that should match the painterly style.
+
+## 5. Performance budget
+
+**Target:**
+- a mid-range laptop (integrated Iris Xe / Radeon 780M class, or a GTX 1650);
+- 1080p at 60 fps with 12,500 agents;
+- 30+ fps at 50,000 agents, with a game speed at which the sim keeps up.
+
+| item | budget (ms per frame at 60 fps) | how |
+| --- | --- | --- |
+| terrain | 1.5 | one chunked mesh, LOD by distance, vertex shader displacement |
+| vegetation | 2.0 | GPU instancing, wind in the vertex shader, distance fade, culling |
+| buildings | 1.0 | instanced modules, a few hundred per town |
+| agents | 2.5 | one instanced draw per LOD; positions from a storage buffer filled by compute from the snapshot |
+| shadows | 2.0 | one cascade-limited directional light |
+| fog, sky, toon | 1.0 | in the material plus a sky pass |
+| post (bloom, tonemap) | 1.0 | half-resolution bloom chain |
+| UI (egui) | 1.5 | redraw panels only on change |
+| headroom | ~4 | |
+
+**The simulation runs on its own thread.**
+- **Today:** about 5 ms per tick at 4,000 agents.
+- **Scaling:** at 12,500 agents, roughly 15 ms per tick, which is still about 60
+  ticks per second on one core. At 50,000, about 60 ms per tick, so roughly 15
+  ticks per second.
+- **Effect:** the fastest game speed may slow down at 50k, but rendering stays
+  smooth thanks to interpolation.
+- **Snapshot cost:** about 50k × 24 bytes ≈ 1.2 MB per tick, copied once.
+
+## 6. Roadmap
+
+Each milestone ends in something visible, and each introduces one GPU concept of
+the shader learning track (section 7):
+
+| milestone | what you see | shader step |
+| --- | --- | --- |
+| **M0** (this PR) | generated world in 3D, stock materials | none |
+| **M1** | terrain + gradient sky + toon lighting + fog + town blocks from a seed, free camera; workspace on Bevy 0.20 | 01 sky, 02 toon, 03 terrain, 04 fog |
+| **M2** | the sim runs behind it: snapshot boundary, towns grow, buildings appear by type, day/night from the calendar | 05 rim and outlines |
+| **M3** | grass and trees with wind, fields by crop and season | 06 instanced grass |
+| **M4** | agents as instanced crowds with LOD, caravans on roads, raids | 07 compute crowds |
+| **M5** | UI panels ported (bevy_egui): economy, policy, inspector, event log | none |
+| **M6** | overlays (money flows, prices, culture, product space), history charts | 08 bloom (glow for overlays) |
+| **M7** | the "why" view | none |
+| **M8** | procedural buildings by era and wealth, procedural animation polish | |
+
+## 7. Shader learning track
+
+Nils wants to understand shaders in detail, so the key shaders are **written by
+hand in WGSL** (custom `Material`, `ExtendedMaterial`, compute pipelines), not
+hidden behind built-ins. They are ordered so each introduces one GPU concept. Each
+has its own doc in `docs/shaders/` covering:
+- what the shader does;
+- the math, mapped to WGSL line by line;
+- a pipeline-stage diagram;
+- debug views;
+- 1–2 exercises to try yourself.
+
+| # | shader | concept introduced | doc |
+| --- | --- | --- | --- |
+| 1 | gradient sky | full-screen fragment shader: fragment stage, UVs, uniforms | [01-sky](../shaders/01-sky.md) |
+| 2 | soft toon lighting | normals, dot products, light uniforms, ramp lookup | [02-toon](../shaders/02-toon.md) |
+| 3 | terrain | vertex stage: attributes, displacement, varyings, noise | [03-terrain](../shaders/03-terrain.md) |
+| 4 | distance and height fog | depth, view space, position reconstruction | [04-fog](../shaders/04-fog.md) |
+| 5 | rim light and outlines | fresnel, view vector, inverted-hull outlines | [05-rim-outline](../shaders/05-rim-outline.md) |
+| 6 | instanced grass with wind | instancing, per-instance data, storage buffers | [06-grass](../shaders/06-grass.md) |
+| 7 | crowds from snapshots | compute: workgroups, storage buffers, synchronisation | [07-crowds-compute](../shaders/07-crowds-compute.md) |
+| 8 | bloom | render targets, multiple passes, mip chains | [08-bloom](../shaders/08-bloom.md) |
+
+The shader sources in the docs are drafts to read and discuss. Each becomes a
+`.wgsl` file in `crates/game3d/assets/shaders/` in its milestone, with a debug
+view switch in the client.
+
+## 8. Decisions for Nils
+
+1. **Technology:** Bevy 3D in a new `game3d` crate (recommended), Godot + gdext,
+   or a web front end?
+2. **Bevy version:** move the whole workspace to Bevy 0.20 in M1 (needed for 3D;
+   recommended)?
+3. **UI framework:** bevy_egui for data panels plus bevy_ui for in-world labels
+   (recommended), or one of them only?
+4. **Scope of M1:** terrain, sky, toon, fog and town blocks, with the shader track
+   steps 1–4 written by hand. Or start with the sim running behind the 3D view
+   (M2 first)?

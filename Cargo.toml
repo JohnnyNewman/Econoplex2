@@ -1,6 +1,9 @@
 [workspace]
 resolver = "2"
 members = ["crates/sim_data", "crates/sim_core", "crates/sim_cli", "crates/game"]
+# The 3D prototype (graphics/UI subproject) builds on its own, with Bevy 0.20:
+# cargo run --release --manifest-path crates/game3d/Cargo.toml -- --seed 23
+exclude = ["crates/game3d"]
 
 [workspace.package]
 version = "0.1.0"
