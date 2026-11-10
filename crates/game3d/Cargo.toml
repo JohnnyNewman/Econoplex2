@@ -1,0 +1,30 @@
+[package]
+name = "game3d"
+description = "Econoplex: 3D view prototype (graphics/UI subproject, milestone M1 preview)"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[[bin]]
+name = "econoplex3d"
+path = "src/main.rs"
+
+[dependencies]
+sim_core = { path = "../sim_core" }
+sim_data = { path = "../sim_data" }
+# Bevy 0.19.1's 3D renderer needs bevy_anti_alias 0.19.1, which is not on
+# crates.io; the prototype uses Bevy 0.20 on its own. It only reads plain data
+# from sim_core (the scenario and terrain), never ECS types across versions.
+bevy = { version = "0.20", default-features = false, features = ["3d", "std", "multi_threaded", "bevy_winit", "png"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+bevy = { version = "0.20", default-features = false, features = ["x11"] }
+
+# Its own workspace, so the main workspace (and CI) stay on Bevy 0.19 and fast.
+[workspace]
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
