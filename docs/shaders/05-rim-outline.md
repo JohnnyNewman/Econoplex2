@@ -40,11 +40,11 @@ let rim = fres * smoothstep(-0.2, 0.4, ndl) * toon.rim_strength;
 color += sun.color.rgb * rim;
 
 // --- outline pass: its own material, drawn with front-face culling ---
-#import bevy_pbr::mesh_functions::get_world_from_local
-#import bevy_pbr::mesh_view_bindings::view
+import bevy_pbr::render::mesh_functions::get_world_from_local;
+import bevy_pbr::render::mesh_view_bindings::view;
 
 struct Outline { color: vec4<f32>, width: f32, ref_dist: f32 };
-@group(#{MATERIAL_BIND_GROUP}) @binding(0) var<uniform> outline: Outline;
+@group(constants::MATERIAL_BIND_GROUP) @binding(0) var<uniform> outline: Outline;
 
 struct Vertex {
     @builtin(instance_index) instance: u32,

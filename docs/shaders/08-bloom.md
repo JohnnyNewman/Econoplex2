@@ -37,7 +37,7 @@ works, and lets overlays have their own glow.
 ## WGSL, line by line
 
 ```wgsl
-#import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput
+import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput;
 
 @group(0) @binding(0) var src: texture_2d<f32>;   // the previous pass's output
 @group(0) @binding(1) var smp: sampler;            // linear filtering

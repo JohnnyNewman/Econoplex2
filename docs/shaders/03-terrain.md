@@ -35,18 +35,18 @@ UV `u = (x, z) / size`:
 ## WGSL, line by line
 
 ```wgsl
-#import bevy_pbr::mesh_functions::{get_world_from_local, mesh_position_local_to_clip}
-#import bevy_pbr::mesh_view_bindings::view
+import bevy_pbr::render::mesh_functions::{get_world_from_local, mesh_position_local_to_clip};
+import bevy_pbr::render::mesh_view_bindings::view;
 
 struct Terrain {
     size: vec2<f32>,        // world size the heightmap covers
     height_scale: f32,      // metres per heightmap unit
     texel: f32,             // 1 / heightmap resolution
 };
-@group(#{MATERIAL_BIND_GROUP}) @binding(0) var<uniform> terrain: Terrain;
-@group(#{MATERIAL_BIND_GROUP}) @binding(1) var height_tex: texture_2d<f32>;
-@group(#{MATERIAL_BIND_GROUP}) @binding(2) var height_smp: sampler;
-@group(#{MATERIAL_BIND_GROUP}) @binding(3) var biome_tex: texture_2d<f32>; // rgba = 4 biome weights
+@group(constants::MATERIAL_BIND_GROUP) @binding(0) var<uniform> terrain: Terrain;
+@group(constants::MATERIAL_BIND_GROUP) @binding(1) var height_tex: texture_2d<f32>;
+@group(constants::MATERIAL_BIND_GROUP) @binding(2) var height_smp: sampler;
+@group(constants::MATERIAL_BIND_GROUP) @binding(3) var biome_tex: texture_2d<f32>; // rgba = 4 biome weights
 
 // What the vertex stage gets per vertex (from the grid mesh).
 struct Vertex {

@@ -203,6 +203,46 @@ log, why view), and `bevy_ui` / world-space labels for the few diegetic elements
   smooth thanks to interpolation.
 - **Snapshot cost:** about 50k × 24 bytes ≈ 1.2 MB per tick, copied once.
 
+### Level of detail (LOD) pipeline
+
+Distant things are drawn with fewer triangles. Every LOD comes from one of three
+sources, all prepared before the frame, never per frame:
+
+1. **The generators themselves.** Every procedural generator takes a detail
+   parameter, so a far LOD is the same thing generated simpler:
+   - terrain: grid resolution per chunk;
+   - buildings: the same modules at lower detail (no window frames, a plain
+     roof);
+   - trees: the number of leaf clumps.
+
+   This keeps LODs consistent (same colours and silhouette), costs no extra
+   assets, and fits the procedural style.
+2. **Mesh simplification** for any meshes that aren't procedural (hand-made
+   props, imported models): [meshoptimizer](https://github.com/zeux/meshoptimizer)
+   through the `meshopt` crate. It runs at build or load time.
+   - It cuts each mesh to fixed shares of its triangles (e.g. 50 %, 20 %, 5 %),
+     with an error limit that keeps the silhouette, and saves them as LOD1–LOD3.
+   - It also reorders vertices and indices for the GPU's vertex cache, which is
+     worth doing for every mesh.
+   - It's the same simplifier that Bevy's virtual-geometry preprocessing uses,
+     but it produces ordinary meshes for the normal pipeline.
+3. **Impostors** for trees and buildings far away. Each kind is rendered once, from a
+   few angles, into a texture (render to texture). Far away it's drawn as a
+   camera-facing card with that picture. They're baked offline or when the game
+   loads.
+
+On top of that:
+- the GPU instancing of section 3 (one draw per kind and LOD);
+- distance fade with dithering between LODs, so they don't pop;
+- fog hides the far edge.
+
+**Virtual geometry (meshlets, Nanite-style) is shelved.**
+- **Why:** our meshes are low-poly; most geometry moves (grass, people) or is
+  generated; Bevy's version is experimental and needs GPU features (64-bit
+  atomics) that many laptops lack.
+- **Where it goes:** an optional late milestone (M9), only if dense static
+  meshes ever become a bottleneck. No live virtual geometry before that.
+
 ## 6. Roadmap
 
 Each milestone ends in something visible, and each introduces one GPU concept of
@@ -210,7 +250,7 @@ the shader learning track (section 7):
 
 | milestone | what you see | shader step |
 | --- | --- | --- |
-| **M0** (this PR) | generated world in 3D, stock materials | none |
+| **M0** | generated world in 3D, stock materials | none |
 | **M1** | terrain + gradient sky + toon lighting + fog + town blocks from a seed, free camera; workspace on Bevy 0.20 | 01 sky, 02 toon, 03 terrain, 04 fog |
 | **M2** | the sim runs behind it: snapshot boundary, towns grow, buildings appear by type, day/night from the calendar | 05 rim and outlines |
 | **M3** | grass and trees with wind, fields by crop and season | 06 instanced grass |
@@ -219,6 +259,7 @@ the shader learning track (section 7):
 | **M6** | overlays (money flows, prices, culture, product space), history charts | 08 bloom (glow for overlays) |
 | **M7** | the "why" view | none |
 | **M8** | procedural buildings by era and wealth, procedural animation polish | |
+| M9 (optional) | virtual geometry (meshlets), only if dense static meshes become a bottleneck | |
 
 ## 7. Shader learning track
 
@@ -234,6 +275,7 @@ has its own doc in `docs/shaders/` covering:
 
 | # | shader | concept introduced | doc |
 | --- | --- | --- | --- |
+| 0 | playground | how a shader gets from a file to the screen: materials, bind groups, hot reload | [00-playground](../shaders/00-playground.md) |
 | 1 | gradient sky | full-screen fragment shader: fragment stage, UVs, uniforms | [01-sky](../shaders/01-sky.md) |
 | 2 | soft toon lighting | normals, dot products, light uniforms, ramp lookup | [02-toon](../shaders/02-toon.md) |
 | 3 | terrain | vertex stage: attributes, displacement, varyings, noise | [03-terrain](../shaders/03-terrain.md) |
@@ -244,10 +286,19 @@ has its own doc in `docs/shaders/` covering:
 | 8 | bloom | render targets, multiple passes, mip chains | [08-bloom](../shaders/08-bloom.md) |
 
 The shader sources in the docs are drafts to read and discuss. Each becomes a
-`.wgsl` file in `crates/game3d/assets/shaders/` in its milestone, with a debug
+`.wesl` file in `crates/game3d/assets/shaders/` in its milestone, with a debug
 view switch in the client.
+- **WESL** is WGSL plus `import` statements. Bevy 0.20 writes its own shaders in
+  it, so ours import Bevy's types the same way; below the imports it's plain
+  WGSL.
+- **The shader playground** (`cargo run -p game3d -- --playground`) is where
+  each step is tried first: one scene, hot-reloading shaders, debug views. See
+  [00-playground](../shaders/00-playground.md).
 
 ## 8. Decisions for Nils
+
+**Decided on 2026-11-10: all four as recommended.** That means Bevy 3D in `game3d`, the
+workspace on Bevy 0.20, bevy_egui for data panels, and M1 first.
 
 1. **Technology:** Bevy 3D in a new `game3d` crate (recommended), Godot + gdext,
    or a web front end?

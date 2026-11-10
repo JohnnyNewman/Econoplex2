@@ -34,12 +34,12 @@ For the unit normal `n` and the unit direction to the light `l`:
 ```wgsl
 // We extend Bevy's StandardMaterial: its PBR inputs (albedo, normal, shadows)
 // come in through `pbr_input`, and we replace only the lighting.
-#import bevy_pbr::{
+import bevy_pbr::render::{
     pbr_fragment::pbr_input_from_standard_material,
     forward_io::{VertexOutput, FragmentOutput},
     mesh_view_bindings::lights,
     shadows::fetch_directional_shadow,
-}
+};
 
 // Our extension's uniforms (ToonExt in game3d), next to StandardMaterial's.
 struct Toon {
@@ -49,7 +49,7 @@ struct Toon {
     band_b: f32,             // second band edge (mid -> lit)
     softness: f32,           // width of a band edge
 };
-@group(#{MATERIAL_BIND_GROUP}) @binding(100) var<uniform> toon: Toon;
+@group(constants::MATERIAL_BIND_GROUP) @binding(100) var<uniform> toon: Toon;
 
 @fragment
 fn fragment(in: VertexOutput, @builtin(front_facing) front: bool) -> FragmentOutput {
