@@ -5,7 +5,8 @@ direction meet in a dot product (Lambert's cosine law). We then *re-map* that
 cosine through a ramp to get the painterly, banded look.
 
 **Where the code is:**
-- `crates/game3d/assets/shaders/toon.wesl`: the shader (hot-reloads);
+- `crates/game3d/assets/shaders/toon.wesl` and `toon_lighting.wesl`: the shader
+  and its lighting module (hot-reload);
 - `crates/game3d/src/toon.rs`: `ToonMaterial`, the uniform block, the keys.
 
 **Try it:**
@@ -74,22 +75,99 @@ For the unit normal `n` and the unit direction to the light `l`:
 
 ## The shader, line by line
 
+The lighting lives in a small module, `toon_lighting.wesl`, because the terrain
+(step 03) uses it too. WESL imports it with a path relative to the importing
+file: `import super::toon_lighting::{ToonParams, toon_terms};`.
+
+`toon_lighting.wesl`:
+
 ```wgsl
-// Shader step 02: soft toon lighting. Explained line by line in docs/shaders/02-toon.md.
+// Shared toon lighting (step 02), used by toon.wesl and terrain.wesl.
 //
-// We extend Bevy's StandardMaterial: its inputs (albedo, vertex colours, the
-// world normal) come in through `pbr_input_from_standard_material`, and we
-// replace only the lighting. Bevy still applies fog and tonemapping afterwards.
+// A WESL module: other shaders import its functions with
+// `import super::toon_lighting::{ToonParams, toon_terms};` (a path relative to
+// the importing file). See docs/shaders/02-toon.md for the maths.
 
 import bevy_pbr::render::{
-    pbr_fragment::pbr_input_from_standard_material,
-    pbr_functions::{apply_pbr_lighting, main_pass_post_lighting_processing},
-    forward_io::{VertexOutput, FragmentOutput},
+    pbr_types::PbrInput,
     mesh_view_bindings::{lights, view},
     mesh_view_types::DIRECTIONAL_LIGHT_FLAGS_SHADOWS_ENABLED_BIT,
     mesh_types::MESH_FLAGS_SHADOW_RECEIVER_BIT,
     shadows::fetch_directional_shadow,
 };
+
+const PI: f32 = 3.14159265;
+
+struct ToonParams {
+    shadow_tint: vec3<f32>, // colour of the shadow side
+    wrap: f32,              // how far light reaches past 90 degrees (0..1)
+    band_a: f32,            // first band edge (shadow -> mid)
+    band_b: f32,            // second band edge (mid -> lit)
+    softness: f32,          // half-width of a band edge
+};
+
+// The intermediate values, so callers can show them as debug views.
+struct ToonTerms {
+    ndl: f32,         // Lambert's cosine n . l
+    ramp: f32,        // after wrap and banding: 0, 0.5 or 1 (soft edges)
+    shadow: f32,      // shadow map: 1 lit, 0 in shadow
+    light: vec3<f32>, // the light reaching the surface (multiply by albedo)
+};
+
+fn toon_terms(pbr: PbrInput, p: ToonParams) -> ToonTerms {
+    var t: ToonTerms;
+    let n = pbr.N;
+
+    // The sun: `direction_to_light` points from the surface toward the light.
+    let sun = lights.directional_lights[0];
+    t.ndl = dot(n, sun.direction_to_light);
+
+    // Wrap lighting, then two soft steps make three bands.
+    let w = clamp((t.ndl + p.wrap) / (1.0 + p.wrap), 0.0, 1.0);
+    let e = p.softness;
+    t.ramp = 0.5 * smoothstep(p.band_a - e, p.band_a + e, w)
+           + 0.5 * smoothstep(p.band_b - e, p.band_b + e, w);
+
+    // Shadow map, if this mesh receives shadows and the sun casts them. The
+    // cascade is picked by view-space depth (row z of the view matrix).
+    t.shadow = 1.0;
+    if (pbr.flags & MESH_FLAGS_SHADOW_RECEIVER_BIT) != 0u
+        && (sun.flags & DIRECTIONAL_LIGHT_FLAGS_SHADOWS_ENABLED_BIT) != 0u {
+        let view_z = dot(vec4<f32>(
+            view.view_from_world[0].z,
+            view.view_from_world[1].z,
+            view.view_from_world[2].z,
+            view.view_from_world[3].z,
+        ), pbr.world_position);
+        t.shadow = fetch_directional_shadow(0u, pbr.world_position, pbr.world_normal, view_z, pbr.frag_coord.xy);
+    }
+    let lit = t.ramp * smoothstep(0.35, 0.65, t.shadow);
+
+    // Shadow side: ambient light tinted cool. Lit side: plus the sun. Same
+    // units as Bevy's PBR (sun / pi, times the camera exposure).
+    let ambient = lights.ambient_color.rgb * p.shadow_tint;
+    t.light = (ambient + sun.color.rgb / PI * lit) * view.exposure;
+    return t;
+}
+```
+
+`toon.wesl`, the material's fragment shader:
+
+```wgsl
+// Shader step 02: soft toon lighting. Explained in docs/shaders/02-toon.md.
+//
+// We extend Bevy's StandardMaterial: its inputs (albedo, vertex colours, the
+// world normal) come in through `pbr_input_from_standard_material`, and we
+// replace only the lighting, which lives in the shared module toon_lighting.wesl
+// (the terrain uses it too). Bevy still applies fog and tonemapping afterwards.
+
+import bevy_pbr::render::{
+    pbr_fragment::pbr_input_from_standard_material,
+    pbr_functions::{apply_pbr_lighting, main_pass_post_lighting_processing},
+    forward_io::{VertexOutput, FragmentOutput},
+};
+// A path relative to this file: shaders/toon_lighting.wesl.
+import super::toon_lighting::{ToonParams, toon_terms};
 
 // Our uniform block; matches `ToonUniform` in src/toon.rs. Binding 100, because
 // the StandardMaterial part of the material uses the low binding numbers.
@@ -99,8 +177,6 @@ struct Toon {
     debug: vec4<f32>,       // x: debug view, y: 1 = toon, 0 = Bevy's PBR lighting
 };
 @group(constants::MATERIAL_BIND_GROUP) @binding(100) var<uniform> toon: Toon;
-
-const PI: f32 = 3.14159265;
 
 @fragment
 fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> FragmentOutput {
@@ -115,62 +191,23 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         return out;
     }
 
-    let n = pbr.N;                           // unit surface normal, world space
+    let params = ToonParams(toon.shadow_tint.rgb, toon.ramp.x, toon.ramp.y, toon.ramp.z, toon.ramp.w);
+    let t = toon_terms(pbr, params);
     let albedo = pbr.material.base_color.rgb;
-
-    // The first directional light: the sun. `direction_to_light` points from
-    // the surface toward the light, so n . l > 0 means "facing the sun".
-    let sun = lights.directional_lights[0];
-    let l = sun.direction_to_light;
-    let ndl = dot(n, l);                     // Lambert's cosine
-
-    // Wrap lighting: shift and rescale, so the light reaches past 90 degrees
-    // (ndl = -wrap already gives 0) and the terminator moves round the back.
-    let wrap = toon.ramp.x;
-    let w = clamp((ndl + wrap) / (1.0 + wrap), 0.0, 1.0);
-
-    // The ramp: two soft steps give three bands (0, 0.5, 1).
-    let a = toon.ramp.y;
-    let b = toon.ramp.z;
-    let e = toon.ramp.w;
-    let ramp = 0.5 * smoothstep(a - e, a + e, w) + 0.5 * smoothstep(b - e, b + e, w);
-
-    // Shadow maps: 1 = lit, 0 = in shadow. The cascade is picked by view-space
-    // depth, which we get from the world position and the view matrix row z.
-    var shadow = 1.0;
-    if (pbr.flags & MESH_FLAGS_SHADOW_RECEIVER_BIT) != 0u
-        && (sun.flags & DIRECTIONAL_LIGHT_FLAGS_SHADOWS_ENABLED_BIT) != 0u {
-        let view_z = dot(vec4<f32>(
-            view.view_from_world[0].z,
-            view.view_from_world[1].z,
-            view.view_from_world[2].z,
-            view.view_from_world[3].z,
-        ), pbr.world_position);
-        shadow = fetch_directional_shadow(0u, pbr.world_position, pbr.world_normal, view_z, pbr.frag_coord.xy);
-    }
-    // The shadow edge gets the same soft step as the bands.
-    let lit = ramp * smoothstep(0.35, 0.65, shadow);
-
-    // Light: the shadow side gets the ambient light tinted cool; the lit side
-    // adds the sun. Bevy's light colours are physical (lux), so we use the same
-    // scale as its PBR lighting: sun / pi, everything times the camera exposure.
-    let ambient = lights.ambient_color.rgb * toon.shadow_tint.rgb;
-    let sunlight = sun.color.rgb / PI;
-    let light = (ambient + sunlight * lit) * view.exposure;
 
     // Debug views (Tab to "toon", then keys 0-4).
     let id = u32(toon.debug.x);
     if id == 1u {
-        out.color = vec4<f32>(n * 0.5 + 0.5, 1.0);           // normals as colour
+        out.color = vec4<f32>(pbr.N * 0.5 + 0.5, 1.0);            // normals as colour
     } else if id == 2u {
-        out.color = vec4<f32>(vec3<f32>(ndl * 0.5 + 0.5), 1.0); // 0.5 = terminator
+        out.color = vec4<f32>(vec3<f32>(t.ndl * 0.5 + 0.5), 1.0); // 0.5 = terminator
     } else if id == 3u {
-        out.color = vec4<f32>(vec3<f32>(ramp), 1.0);         // three tones
+        out.color = vec4<f32>(vec3<f32>(t.ramp), 1.0);           // three tones
     } else if id == 4u {
-        out.color = vec4<f32>(vec3<f32>(shadow), 1.0);       // shadow map term
+        out.color = vec4<f32>(vec3<f32>(t.shadow), 1.0);         // shadow map term
     } else {
         // Fog and (if needed) tonemapping, as for any Bevy material.
-        out.color = main_pass_post_lighting_processing(pbr, vec4<f32>(albedo * light, 1.0));
+        out.color = main_pass_post_lighting_processing(pbr, vec4<f32>(albedo * t.light, 1.0));
     }
     return out;
 }

@@ -5,12 +5,12 @@
 //! of low-poly houses, under a procedural sky (shader step 01) with distance fog
 //! and bloom. It only reads the scenario; the simulation itself does not run yet.
 //!
-//! econoplex3d [--seed S] [--towns N] [--hour H] [--pbr] [--shot FILE]
+//! econoplex3d [--seed S] [--towns N] [--hour H] [--pbr] [--terrain-view N] [--grid-step K]
+//!     [--shot FILE]
 //! econoplex3d --playground [--hour H] [--view N] [--toon-view N] [--pbr] [--face-sun] [--shot FILE]
 //!     (shader playground)
 
 use bevy::light::{CascadeShadowConfigBuilder, DirectionalLightShadowMap};
-use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{save_to_disk, Screenshot};
@@ -18,8 +18,10 @@ use sim_core::config::Scenario;
 use sim_core::terrain::Terrain;
 use std::path::PathBuf;
 
+mod hud;
 mod playground;
 mod sky;
+mod terrain;
 mod toon;
 
 #[derive(Resource, Clone)]
@@ -62,6 +64,7 @@ fn main() {
     let (mut shot, mut hour, mut view, mut playground, mut face_sun) =
         (None, None, None, false, false);
     let mut toon_settings = toon::ToonSettings::default();
+    let mut terrain_settings = terrain::TerrainSettings::default();
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -76,6 +79,16 @@ fn main() {
                 toon_settings.debug = it.next().and_then(|v| v.parse().ok()).unwrap_or(0).min(4)
             }
             "--pbr" => toon_settings.on = false,
+            "--terrain-view" => {
+                terrain_settings.debug = it.next().and_then(|v| v.parse().ok()).unwrap_or(0).min(4)
+            }
+            "--grid-step" => {
+                terrain_settings.step = it
+                    .next()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(1)
+                    .clamp(1, 4)
+            }
             other => eprintln!("ignoring unknown argument `{other}`"),
         }
     }
@@ -111,11 +124,12 @@ fn main() {
         .insert_resource(World3d { scenario, terrain })
         .insert_resource(args)
         .insert_resource(ShotPath(shot))
-        .add_plugins((sky::SkyPlugin, toon::ToonPlugin))
+        .add_plugins((sky::SkyPlugin, toon::ToonPlugin, terrain::TerrainPlugin))
         .insert_resource(clock)
         .insert_resource(toon_settings)
+        .insert_resource(terrain_settings)
         .add_systems(Startup, setup)
-        .add_systems(Update, shoot)
+        .add_systems(Update, (shoot, hud::update_help))
         .run();
 }
 
@@ -155,27 +169,22 @@ fn height(t: &Terrain, p: (f32, f32)) -> f32 {
     hill * 9.0 + roll
 }
 
-fn lerp(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
-    [
-        a[0] + (b[0] - a[0]) * t,
-        a[1] + (b[1] - a[1]) * t,
-        a[2] + (b[2] - a[2]) * t,
-    ]
-}
-
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut toons: ResMut<Assets<toon::ToonMaterial>>,
+    mut terrains: ResMut<Assets<terrain::TerrainMaterial>>,
+    mut images: ResMut<Assets<Image>>,
     world: Res<World3d>,
 ) {
     let t = &world.terrain;
     let s = &world.scenario;
-    // --- terrain: one vertex per cell corner, coloured by biome
+    // --- terrain (shader step 03): heights and biome weights per cell corner
+    // go into two textures; the GPU shapes and paints a flat grid from them.
     let (w, h) = (t.width + 1, t.height + 1);
-    let mut pos = Vec::with_capacity(w * h);
-    let mut col = Vec::with_capacity(w * h);
+    let mut heights = Vec::with_capacity(w * h);
+    let mut biomes = Vec::with_capacity(w * h);
     for j in 0..h {
         for i in 0..w {
             let p = (
@@ -183,49 +192,36 @@ fn setup(
                 t.origin.1 + j as f32 * t.cell,
             );
             let y = height(t, p);
-            pos.push([p.0 / SCALE, y, -p.1 / SCALE]);
-            let n = noise(3, p.0 / 120.0, p.1 / 120.0);
-            let meadow = lerp([0.45, 0.62, 0.30], [0.62, 0.70, 0.36], n);
-            let rgb = if y < -0.5 {
-                [0.25, 0.48, 0.66]
-            } else if y > 6.0 {
-                lerp(meadow, [0.62, 0.58, 0.48], ((y - 6.0) / 6.0).min(1.0))
+            heights.push(y);
+            // Fields in a ring around each town, water in river beds, meadow
+            // elsewhere. The shader adds rock on steep and high ground.
+            let near = s.towns.iter().any(|tw| {
+                let d = ((tw.position.0 - p.0).powi(2) + (tw.position.1 - p.1).powi(2)).sqrt();
+                d > 90.0 && d < 260.0
+            });
+            biomes.push(if y < -0.5 {
+                [0.0, 0.0, 1.0, 0.0]
+            } else if near {
+                [0.0, 1.0, 0.0, 0.0]
             } else {
-                // Fields near towns: a patchwork of crops.
-                let near = s.towns.iter().any(|tw| {
-                    let d = ((tw.position.0 - p.0).powi(2) + (tw.position.1 - p.1).powi(2)).sqrt();
-                    d > 90.0 && d < 260.0
-                });
-                if near {
-                    let k = ((p.0 / 60.0).floor() as i64 * 7 + (p.1 / 60.0).floor() as i64 * 13)
-                        .rem_euclid(3);
-                    [[0.86, 0.76, 0.36], [0.55, 0.68, 0.28], [0.74, 0.62, 0.34]][k as usize]
-                } else {
-                    meadow
-                }
-            };
-            col.push([rgb[0], rgb[1], rgb[2], 1.0]);
+                [1.0, 0.0, 0.0, 0.0]
+            });
         }
     }
-    let mut idx = Vec::new();
-    for j in 0..h - 1 {
-        for i in 0..w - 1 {
-            let a = (j * w + i) as u32;
-            let (b, c, d) = (a + 1, a + w as u32, a + w as u32 + 1);
-            // Counter-clockwise seen from above (z is flipped: world y grows north, 3D -z).
-            idx.extend_from_slice(&[a, b, c, b, d, c]);
-        }
-    }
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, Default::default());
-    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, pos);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, col);
-    mesh.insert_indices(Indices::U32(idx));
-    mesh.compute_smooth_normals();
-    commands.spawn((
-        Mesh3d(meshes.add(mesh)),
-        // White base colour: the vertex colours (biomes, fields) show through.
-        MeshMaterial3d(toons.add(toon::toon(Color::WHITE))),
-    ));
+    terrain::spawn_terrain(
+        &mut commands,
+        &mut meshes,
+        &mut images,
+        &mut terrains,
+        &terrain::TerrainData {
+            width: w,
+            depth: h,
+            origin: Vec2::new(t.origin.0 / SCALE, -t.origin.1 / SCALE),
+            cell: t.cell / SCALE,
+            heights,
+            biomes,
+        },
+    );
     // --- water plane
     commands.spawn((
         Mesh3d(meshes.add(Plane3d::default().mesh().size(400.0, 400.0))),
@@ -352,6 +348,11 @@ fn setup(
         },
         Bloom::NATURAL,
     ));
+    hud::spawn_help(
+        &mut commands,
+        "Econoplex 3D (prototype)",
+        "camera: fixed for now",
+    );
 }
 
 #[derive(Default)]

@@ -125,6 +125,7 @@ pub enum DebugTarget {
     #[default]
     Sky,
     Toon,
+    Terrain,
 }
 
 /// The number key pressed this frame (0–4), if any.
@@ -208,7 +209,8 @@ fn sky_keys(
     if keys.just_pressed(KeyCode::Tab) {
         *target = match *target {
             DebugTarget::Sky => DebugTarget::Toon,
-            DebugTarget::Toon => DebugTarget::Sky,
+            DebugTarget::Toon => DebugTarget::Terrain,
+            DebugTarget::Terrain => DebugTarget::Sky,
         };
     }
     if keys.just_pressed(KeyCode::KeyT) {
