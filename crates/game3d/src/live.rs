@@ -52,6 +52,10 @@ struct Shared {
     speed: usize,
     paused: bool,
     orders: Vec<Order>,
+    /// Orders as text (`tax Morstead wealth 0.75`), parsed on the sim thread.
+    text_orders: Vec<String>,
+    /// Orders the simulation could not parse, with the reason.
+    errors: Vec<String>,
     quit: bool,
 }
 
@@ -63,8 +67,13 @@ pub struct LiveSim {
     pub snapshot: Arc<ViewSnapshot>,
     /// The tick the scene was last brought up to date for.
     shown_tick: Option<u64>,
-    /// The latest events, newest first (for the status line).
+    /// The latest events, newest first (the status line shows four, the event
+    /// log more).
     pub recent: VecDeque<Event>,
+    /// Product names by def, and the building types a town can commission
+    /// (product id, name).
+    pub product_names: Vec<String>,
+    pub building_kinds: Vec<(String, String)>,
 }
 
 impl Drop for LiveSim {
@@ -78,6 +87,18 @@ impl Drop for LiveSim {
 impl LiveSim {
     /// Start the simulation thread. `sim` has already run any fast-forward days.
     pub fn start(mut sim: Simulation, speed: usize, paused: bool) -> Self {
+        let db = sim.world.resource::<sim_core::Db>();
+        let product_names = db.content.products.iter().map(|p| p.name.clone()).collect();
+        let building_kinds = (0..db.content.products.len())
+            .filter(|&p| db.category(p as u32) == sim_data::Category::Building)
+            .filter(|&p| db.content.products[p].opens.is_none())
+            .map(|p| {
+                (
+                    db.content.products[p].id.clone(),
+                    db.content.products[p].name.clone(),
+                )
+            })
+            .collect();
         let mut seen = 0;
         let first = Arc::new(ViewSnapshot::capture(&sim.world, &mut seen));
         let shared = Arc::new(Mutex::new(Shared {
@@ -86,6 +107,8 @@ impl LiveSim {
             speed: speed.min(SPEEDS.len() - 1),
             paused,
             orders: Vec::new(),
+            text_orders: Vec::new(),
+            errors: Vec::new(),
             quit: false,
         }));
         let thread_shared = shared.clone();
@@ -98,6 +121,8 @@ impl LiveSim {
             snapshot: first,
             shown_tick: None,
             recent: VecDeque::new(),
+            product_names,
+            building_kinds,
         }
     }
 
@@ -107,7 +132,17 @@ impl LiveSim {
         self.shared.lock().unwrap().orders.push(order);
     }
 
-    fn speed_and_pause(&self) -> (usize, bool) {
+    /// Queue a text order (the CLI's syntax) for the next tick.
+    pub fn order_text(&self, text: String) {
+        self.shared.lock().unwrap().text_orders.push(text);
+    }
+
+    /// Orders the simulation rejected since the last call.
+    pub fn take_errors(&self) -> Vec<String> {
+        std::mem::take(&mut self.shared.lock().unwrap().errors)
+    }
+
+    pub fn speed_and_pause(&self) -> (usize, bool) {
         let s = self.shared.lock().unwrap();
         (s.speed, s.paused)
     }
@@ -117,9 +152,15 @@ impl LiveSim {
 fn run(sim: &mut Simulation, shared: &Mutex<Shared>, mut seen: usize) {
     let mut next = Instant::now();
     loop {
-        let (speed, paused, orders, quit) = {
+        let (speed, paused, orders, texts, quit) = {
             let mut s = shared.lock().unwrap();
-            (s.speed, s.paused, std::mem::take(&mut s.orders), s.quit)
+            (
+                s.speed,
+                s.paused,
+                std::mem::take(&mut s.orders),
+                std::mem::take(&mut s.text_orders),
+                s.quit,
+            )
         };
         if quit {
             return;
@@ -130,6 +171,11 @@ fn run(sim: &mut Simulation, shared: &Mutex<Shared>, mut seen: usize) {
             .resource_mut::<OrderQueue>()
             .pending
             .extend(orders);
+        for text in texts {
+            if let Err(e) = sim.order(&text) {
+                shared.lock().unwrap().errors.push(format!("{text}: {e}"));
+            }
+        }
         let now = Instant::now();
         if paused || now < next {
             std::thread::sleep(if paused {
@@ -233,7 +279,7 @@ fn sync_scene(
         for e in events {
             live.recent.push_front(e);
         }
-        live.recent.truncate(4);
+        live.recent.truncate(60);
     }
     let snap = live.snapshot.clone();
     if live.shown_tick == Some(snap.tick) {
@@ -383,10 +429,44 @@ fn update_status(live: Res<LiveSim>, mut text: Query<&mut Text, With<Status>>) {
         SPEEDS[speed],
         towns.join(", "),
     );
-    for e in &live.recent {
+    for e in live.recent.iter().take(4) {
         line.push_str(&format!("\n  day {}: {}", e.tick, e.text));
     }
     for mut t in &mut text {
         t.0 = line.clone();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A panel's text order reaches the simulation thread, is applied at its
+    /// next tick, and shows in a later snapshot; a bad order comes back as an
+    /// error instead.
+    #[test]
+    fn text_orders_reach_the_simulation() {
+        let paths = sim_core::AssetPaths::discover();
+        let (db, params, scenario) = sim_core::load(&paths).unwrap();
+        let sim = Simulation::new(db, params, &scenario);
+        let live = LiveSim::start(sim, SPEEDS.len() - 1, false);
+        let town = live.snapshot.towns[0].name.clone();
+        live.order_text(format!("tax {town} wealth 1.75"));
+        live.order_text("tax Nowhere wealth 1".into());
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let applied = loop {
+            let snap = live.shared.lock().unwrap().latest.clone();
+            if (snap.towns[0].policy.wealth_tax - 1.75).abs() < 1e-4 {
+                break true;
+            }
+            if Instant::now() > deadline {
+                break false;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        };
+        assert!(applied, "the order never showed in a snapshot");
+        let errors = live.take_errors();
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert!(errors[0].starts_with("tax Nowhere"));
     }
 }

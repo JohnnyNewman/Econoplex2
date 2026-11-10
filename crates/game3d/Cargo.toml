@@ -26,5 +26,8 @@ bevy = { workspace = true, features = [
 ] }
 
 # Linux needs a windowing backend feature; Windows and macOS use their native one.
+# Data panels (economy, policy, events): immediate-mode UI (graphics-ui.md, M5).
+bevy_egui = { version = "0.43.1", default-features = false, features = ["render", "default_fonts"] }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 bevy = { workspace = true, features = ["x11"] }
