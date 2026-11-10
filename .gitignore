@@ -2,3 +2,4 @@
 *.csv
 /saves
 /shots
+/crates/game3d/target

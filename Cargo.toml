@@ -10,8 +10,8 @@ license = "MIT OR Apache-2.0"
 [workspace.dependencies]
 sim_data = { path = "crates/sim_data" }
 sim_core = { path = "crates/sim_core" }
-bevy = { version = "0.19.1", default-features = false }
-bevy_ecs = "0.19.1"
+bevy = { version = "0.20", default-features = false }
+bevy_ecs = "0.20"
 serde = { version = "1", features = ["derive"] }
 ron = "0.12"
 rand = "0.9"

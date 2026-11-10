@@ -22,6 +22,8 @@ bevy = { workspace = true, features = [
     "2d_bevy_render",
     "ui_api",
     "ui_bevy_render",
+    "ui_picking",
+    "bevy_ui_widgets",
     "png",
 ] }
 

@@ -5,6 +5,7 @@
 //! Placing a building is a two-step order: pick the type, press Place, then click
 //! the map where it should go (Esc cancels).
 
+use crate::ui_compat::{Button, Interaction};
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use sim_core::policy::{Immigration, Minting, Order, OrderQueue, PlayerTown, School, Tax, War};
@@ -98,7 +99,7 @@ pub fn spawn_policy_panel(mut commands: Commands) {
     let text = |s: &str| (Text::new(s), font.clone());
     let button = |p: &mut ChildSpawnerCommands, label: &str, action: Action| {
         p.spawn((
-            Button,
+            crate::ui_compat::button(),
             Node {
                 padding: UiRect::axes(Val::Px(6.0), Val::Px(1.0)),
                 margin: UiRect::horizontal(Val::Px(2.0)),
