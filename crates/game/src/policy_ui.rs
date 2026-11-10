@@ -26,7 +26,7 @@ pub struct PolicyCursor {
 #[derive(Resource, Default)]
 pub struct Placing(pub Option<u32>);
 
-#[derive(Component, Clone, Copy)]
+#[derive(Component, Clone, Copy, Debug)]
 pub enum Action {
     SubsidyProduct(i32),
     SubsidyAmount(i32),
@@ -596,4 +596,187 @@ pub fn place_building(
         pos: Some((world.x, world.y)),
     });
     placing.0 = None;
+}
+
+/// Clicks every policy-panel button the way Bevy's picking does (a pointer
+/// press, then a release), in a headless app, and checks what each one does.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bevy::camera::NormalizedRenderTarget;
+    use bevy::picking::backend::HitData;
+    use bevy::picking::events::{Pointer, PointerPress, PointerRelease};
+    use bevy::picking::pointer::{Location, PointerButton, PointerId};
+    use bevy::ui_widgets::ButtonPlugin;
+
+    fn app() -> App {
+        let paths = sim_core::AssetPaths::discover();
+        let (db, params, mut scenario) = sim_core::load(&paths).expect("assets load");
+        scenario.player = Some(scenario.towns[0].name.clone());
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, ButtonPlugin));
+        sim_core::world::setup(app.world_mut(), db, params, &scenario);
+        app.insert_resource(PolicyCursor::default())
+            .insert_resource(Placing::default())
+            .add_systems(Startup, spawn_policy_panel)
+            .add_systems(PreUpdate, crate::ui_compat::update_interaction)
+            .add_systems(Update, policy_buttons);
+        app.update();
+        app
+    }
+
+    fn pointer() -> Pointer {
+        Pointer::new(
+            PointerId::Mouse,
+            Location {
+                target: NormalizedRenderTarget::None {
+                    width: 800,
+                    height: 600,
+                },
+                position: Vec2::ZERO,
+            },
+        )
+    }
+
+    fn hit(app: &mut App) -> HitData {
+        let camera = app.world_mut().spawn_empty().id();
+        HitData::new(camera, 0.0, None, None)
+    }
+
+    /// Press and release one button; return the orders it queued.
+    fn click(app: &mut App, entity: Entity) -> Vec<Order> {
+        let hit = hit(app);
+        app.world_mut().trigger(PointerPress {
+            entity,
+            pointer: pointer(),
+            button: PointerButton::Primary,
+            hit: hit.clone(),
+            count: 1,
+        });
+        app.update();
+        assert_eq!(
+            *app.world().get::<Interaction>(entity).unwrap(),
+            Interaction::Pressed,
+            "a pointer press marks the button pressed"
+        );
+        app.world_mut().trigger(PointerRelease {
+            entity,
+            pointer: pointer(),
+            button: PointerButton::Primary,
+            hit,
+        });
+        app.update();
+        assert_eq!(
+            *app.world().get::<Interaction>(entity).unwrap(),
+            Interaction::None,
+            "a release clears the press"
+        );
+        std::mem::take(&mut app.world_mut().resource_mut::<OrderQueue>().pending)
+    }
+
+    fn buttons(app: &mut App) -> Vec<(Entity, Action)> {
+        let mut q = app
+            .world_mut()
+            .query_filtered::<(Entity, &Action), With<Button>>();
+        q.iter(app.world()).map(|(e, a)| (e, *a)).collect()
+    }
+
+    #[test]
+    fn every_policy_button_works() {
+        let mut app = app();
+        let town = app.world().resource::<PlayerTown>().0.unwrap();
+        let list = buttons(&mut app);
+        assert!(list.len() >= 30, "panel has its buttons ({})", list.len());
+        for (entity, action) in list {
+            let before = (
+                app.world().resource::<PolicyCursor>().product,
+                app.world().resource::<PolicyCursor>().school_domain,
+                app.world().resource::<PolicyCursor>().charter_domain,
+                app.world().resource::<PolicyCursor>().raid_target,
+                app.world().resource::<PolicyCursor>().building,
+            );
+            let orders = click(&mut app, entity);
+            let cursor = app.world().resource::<PolicyCursor>();
+            let after = (
+                cursor.product,
+                cursor.school_domain,
+                cursor.charter_domain,
+                cursor.raid_target,
+                cursor.building,
+            );
+            let one = |orders: &[Order]| -> Order {
+                assert_eq!(orders.len(), 1, "{action:?}: one order, got {orders:?}");
+                orders[0].clone()
+            };
+            match action {
+                // Pickers move their cursor and queue nothing (the school picker
+                // only re-orders a running school, and there is none yet).
+                Action::SubsidyProduct(_)
+                | Action::SchoolDomain(_)
+                | Action::CharterDomain(_)
+                | Action::RaidTarget(_)
+                | Action::BuildType(_) => {
+                    assert!(orders.is_empty(), "{action:?} queued {orders:?}");
+                    assert_ne!(before, after, "{action:?} moves its picker");
+                }
+                Action::Place => {
+                    assert!(orders.is_empty());
+                    assert!(app.world().resource::<Placing>().0.is_some());
+                    app.world_mut().resource_mut::<Placing>().0 = None;
+                }
+                Action::SubsidyAmount(_) => {
+                    assert!(matches!(one(&orders), Order::Subsidy { town: t, .. } if t == town))
+                }
+                Action::SchoolSeats(d) => match one(&orders) {
+                    Order::School { town: t, school } => {
+                        assert_eq!(t, town);
+                        assert_eq!(school.is_some(), d > 0, "{action:?}");
+                    }
+                    o => panic!("{action:?} gave {o:?}"),
+                },
+                Action::CharterToggle => {
+                    assert!(matches!(one(&orders), Order::Charter { on: true, .. }))
+                }
+                Action::ArmyShare(_) => assert!(matches!(one(&orders), Order::Army { .. })),
+                Action::WarToggle => assert!(matches!(
+                    one(&orders),
+                    Order::War {
+                        war: War::Defend,
+                        ..
+                    }
+                )),
+                Action::Raid => {
+                    assert!(matches!(one(&orders), Order::Raid { target, .. } if target != town))
+                }
+                Action::WealthTax(_) => assert!(matches!(
+                    one(&orders),
+                    Order::Tax {
+                        tax: Tax::Wealth,
+                        ..
+                    }
+                )),
+                Action::IncomeTax(_) => assert!(matches!(
+                    one(&orders),
+                    Order::Tax {
+                        tax: Tax::Income,
+                        ..
+                    }
+                )),
+                Action::ProfitTax(_) => assert!(matches!(
+                    one(&orders),
+                    Order::Tax {
+                        tax: Tax::Profit,
+                        ..
+                    }
+                )),
+                Action::Wages(_) => assert!(matches!(one(&orders), Order::Wages { .. })),
+                Action::Spending(_) => assert!(matches!(one(&orders), Order::Spending { .. })),
+                Action::Procure(_) => assert!(matches!(one(&orders), Order::Procure { .. })),
+                Action::Minting => assert!(matches!(one(&orders), Order::Mint { .. })),
+                Action::Immigration => {
+                    assert!(matches!(one(&orders), Order::Immigration { .. }))
+                }
+            }
+        }
+    }
 }
