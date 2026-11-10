@@ -9,6 +9,7 @@
 //! fold it away. Arrows between towns show the value of goods each caravan route
 //! carries.
 
+use crate::ui_compat::Interaction;
 use bevy::prelude::*;
 use sim_core::goal::{MatchState, WinReason};
 use sim_core::ledger::{Flow, Group, Ledger};
@@ -101,7 +102,7 @@ pub fn spawn_economy_panel(
                     font(13.0),
                     TextColor(TEXT),
                     EconLine(k),
-                    Button,
+                    crate::ui_compat::button(),
                 ));
             }
         })
