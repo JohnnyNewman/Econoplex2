@@ -58,6 +58,9 @@ pub struct TownView {
     pub policy: PolicyView,
     /// Goods in the market: (product def, stock, price), for goods in stock.
     pub market: Vec<(u32, f32, f32)>,
+    /// Value shipped to each town by caravan (at the buyer's price), as a daily
+    /// average over about a month; indexed by town.
+    pub exports: Vec<f32>,
 }
 
 /// What a person is doing, as a view sees it.
@@ -192,6 +195,7 @@ impl ViewSnapshot {
                             commissions: pol.commissions.len() as u32,
                         }
                     },
+                    exports: t.ledger.exports.clone(),
                     market: (0..t.stock.len())
                         .filter(|&p| t.stock[p] > 0.5)
                         .filter(|&p| db.category(p as u32) != sim_data::Category::Building)
