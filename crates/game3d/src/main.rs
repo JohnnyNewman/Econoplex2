@@ -21,6 +21,7 @@ use std::path::PathBuf;
 
 mod buildings;
 mod camera;
+mod crowd;
 mod fog;
 mod hud;
 mod live;
@@ -214,6 +215,7 @@ fn main() {
             live::LivePlugin,
             outline::OutlinePlugin,
             nature::NaturePlugin,
+            crowd::CrowdPlugin,
         ))
         .insert_resource(clock)
         .insert_resource(toon_settings)

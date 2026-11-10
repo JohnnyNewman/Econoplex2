@@ -40,6 +40,32 @@ pub struct TownView {
     pub ruler: Option<u16>,
 }
 
+/// What a person is doing, as a view sees it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Doing {
+    Child,
+    Idle,
+    Resting,
+    /// Worked today, at a recipe of this skill domain (0..`ViewSnapshot::domains`).
+    Working(u32),
+    Soldier,
+    Captive,
+}
+
+/// All living people, as parallel arrays (one entry per person; cheap to copy
+/// and easy to upload to the GPU).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct PeopleView {
+    /// Index in the simulation's agent store: stable while the person lives,
+    /// so a view can follow someone from one snapshot to the next.
+    pub id: Vec<u32>,
+    pub town: Vec<u16>,
+    /// Where the person is heading (map position): their workplace, home, or
+    /// the squad's goal.
+    pub target: Vec<(f32, f32)>,
+    pub doing: Vec<Doing>,
+}
+
 /// Everything a view needs for one tick.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ViewSnapshot {
@@ -47,6 +73,9 @@ pub struct ViewSnapshot {
     pub day_of_year: u32,
     pub days_per_year: u32,
     pub towns: Vec<TownView>,
+    pub people: PeopleView,
+    /// Number of skill domains (for colouring `Doing::Working`).
+    pub domains: u32,
     /// Events logged since the previous capture (oldest first).
     pub events: Vec<Event>,
 }
@@ -58,6 +87,29 @@ impl ViewSnapshot {
         let clock = world.resource::<SimClock>();
         let towns = world.resource::<Towns>();
         let db = world.resource::<Db>();
+        let store = world.resource::<crate::AgentStore>();
+        let mut people = PeopleView::default();
+        for i in 0..store.len() {
+            if !store.alive[i] {
+                continue;
+            }
+            use crate::store::Activity;
+            people.id.push(i as u32);
+            people.town.push(store.town[i]);
+            people.target.push(store.target[i]);
+            // Workers are Idle again by the end of the tick; what they did is
+            // in `worked_today`.
+            people
+                .doing
+                .push(match (store.worked_today[i], store.activity[i]) {
+                    (Some(r), _) => Doing::Working(db.recipes[r as usize].domain),
+                    (None, Activity::Child) => Doing::Child,
+                    (None, Activity::Resting) => Doing::Resting,
+                    (None, Activity::Soldier) => Doing::Soldier,
+                    (None, Activity::Captive) => Doing::Captive,
+                    (None, Activity::Idle | Activity::Working(_)) => Doing::Idle,
+                });
+        }
         let events = world
             .get_resource::<History>()
             .map(|h| {
@@ -90,6 +142,8 @@ impl ViewSnapshot {
                     ruler: t.ruler,
                 })
                 .collect(),
+            people,
+            domains: db.domain_dirs.len() as u32,
             events,
         }
     }
@@ -140,6 +194,22 @@ mod tests {
         }
         // Every event was delivered exactly once.
         assert_eq!(all_events, s.world.resource::<History>().events.len());
+        // Every living person is there once, with a target.
+        let alive = s
+            .world
+            .resource::<crate::AgentStore>()
+            .alive
+            .iter()
+            .filter(|a| **a)
+            .count();
+        let snap0 = ViewSnapshot::capture(&s.world, &mut seen);
+        assert_eq!(snap0.people.id.len(), alive);
+        assert_eq!(snap0.people.target.len(), alive);
+        assert!(snap0
+            .people
+            .doing
+            .iter()
+            .any(|d| matches!(d, Doing::Working(_))));
         // Building ids are unique.
         let snap = ViewSnapshot::capture(&s.world, &mut seen);
         let mut ids: Vec<u64> = snap
