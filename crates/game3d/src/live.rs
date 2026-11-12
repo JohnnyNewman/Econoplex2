@@ -203,6 +203,7 @@ fn run(sim: &mut Simulation, shared: &Mutex<Shared>, mut seen: sim_core::view::S
             snap.events.clear();
             snap.samples.clear();
             snap.why = why_town.map(|t| (t, sim_core::explain::explain(&sim.world, t)));
+            snap.skills = why_town.map(|t| (t, sim_core::view::town_skills(&sim.world, t)));
             s.latest = Arc::new(snap);
         }
         let now = Instant::now();
@@ -225,6 +226,7 @@ fn run(sim: &mut Simulation, shared: &Mutex<Shared>, mut seen: sim_core::view::S
         explained = why_town;
         if let Some(t) = why_town {
             snap.why = Some((t, sim_core::explain::explain(&sim.world, t)));
+            snap.skills = Some((t, sim_core::view::town_skills(&sim.world, t)));
         }
         let mut s = shared.lock().unwrap();
         s.events.extend(snap.events.iter().cloned());

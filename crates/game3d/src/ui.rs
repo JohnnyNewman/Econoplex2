@@ -9,6 +9,10 @@
 //! - **Why** (M7): the selected town's problems and their causes, as a tree
 //!   (from `sim_core::explain`); building types it names are ringed on the map.
 //! - **Events:** the event log, newest first.
+//! - **Product space** (overlay `V`, fourth stop): the selected town's skills
+//!   on a circle grouped by domain, linked by similarity, lit where the town
+//!   produced or its people know the skill, sized by its residents' level.
+//! - **Culture** (overlay `V`, third stop): a legend with the town's culture.
 //! - **History:** monthly line charts per town (population, treasury, food per
 //!   resident, mean wealth, bread price, soldiers, buildings), the selected town
 //!   drawn bold.
@@ -73,8 +77,11 @@ struct Panels {
     errors: Vec<String>,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn panels(
     mut contexts: EguiContexts,
+    overlay: Res<crate::overlay::Overlay>,
+    space: Res<Space>,
     live: Res<LiveSim>,
     mut state: ResMut<Panels>,
     mut capture: ResMut<UiCapture>,
@@ -354,6 +361,26 @@ fn panels(
             }
         });
 
+    // ---------------------------------------------------------------- Overlays
+    match *overlay {
+        crate::overlay::Overlay::ProductSpace => {
+            let skills = snap
+                .skills
+                .as_ref()
+                .filter(|(t, _)| *t as usize == ti)
+                .map(|(_, s)| s);
+            egui::Window::new(format!("Product space: {}", town.name))
+                .default_pos([430.0, 300.0])
+                .show(ctx, |ui| product_space(ui, &space.0, skills));
+        }
+        crate::overlay::Overlay::Culture => {
+            egui::Window::new(format!("Culture: {}", town.name))
+                .default_pos([430.0, 300.0])
+                .show(ctx, |ui| culture_legend(ui, &town.culture));
+        }
+        _ => {}
+    }
+
     // ---------------------------------------------------------------- History
     egui::Window::new("History")
         .default_pos([1220.0, 560.0])
@@ -506,4 +533,139 @@ fn finding(ui: &mut egui::Ui, f: &sim_core::explain::Finding, id: usize, kinds: 
                 }
             });
     }
+}
+
+/// The product space's fixed part (from the simulation's content, at start).
+#[derive(Resource, Default)]
+pub struct Space(pub sim_core::view::ProductSpace);
+
+/// A domain's colour: evenly spaced hues, as the crowd's workers.
+fn domain_colour(d: u16, n: usize, strong: bool) -> egui::Color32 {
+    let hue = d as f32 / n.max(1) as f32;
+    let (s, v) = if strong { (0.6, 0.95) } else { (0.15, 0.55) };
+    egui::ecolor::Hsva::new(hue, s, v, 1.0).into()
+}
+
+/// The skill graph (as in the 2D game): skills on a circle grouped by domain,
+/// links between similar skills, nodes lit where the town has reached them and
+/// sized by its residents' mean level.
+fn product_space(
+    ui: &mut egui::Ui,
+    space: &sim_core::view::ProductSpace,
+    town: Option<&sim_core::view::TownSkills>,
+) {
+    let n = space.skills.len();
+    let nd = space.domains.len();
+    let (resp, painter) = ui.allocate_painter(egui::vec2(470.0, 440.0), egui::Sense::hover());
+    let c = resp.rect.center();
+    let r = 150.0;
+    let mut order: Vec<usize> = (0..n).collect();
+    order.sort_by_key(|&s| (space.domain[s], s));
+    let mut pos = vec![c; n];
+    for (k, &s) in order.iter().enumerate() {
+        let a = k as f32 / n.max(1) as f32 * std::f32::consts::TAU;
+        pos[s] = c + r * egui::vec2(a.cos(), a.sin());
+    }
+    let lit = |s: usize| town.is_some_and(|t| t.lit.get(s).copied().unwrap_or(false));
+    let level = |s: usize| {
+        town.and_then(|t| t.level.get(s).copied())
+            .unwrap_or(0.0)
+            .clamp(0.0, 1.5)
+            / 1.5
+    };
+    for &(a, b, sim) in &space.edges {
+        let (a, b) = (a as usize, b as usize);
+        let fade = if lit(a) && lit(b) { 1.0 } else { 0.2 };
+        let alpha = ((sim - 0.1) * 1.6 * fade).clamp(0.0, 1.0);
+        painter.line_segment(
+            [pos[a], pos[b]],
+            egui::Stroke::new(1.0, egui::Color32::from_white_alpha((alpha * 200.0) as u8)),
+        );
+    }
+    for (s, &at) in pos.iter().enumerate() {
+        let on = lit(s);
+        let radius = if on { 3.5 + 9.0 * level(s) } else { 3.0 };
+        painter.circle_filled(at, radius, domain_colour(space.domain[s], nd, on));
+        if on {
+            // The name outside the circle, on the node's side.
+            let dir = (at - c).normalized();
+            let align = if dir.x >= 0.0 {
+                egui::Align2::LEFT_CENTER
+            } else {
+                egui::Align2::RIGHT_CENTER
+            };
+            painter.text(
+                at + dir * (radius + 4.0),
+                align,
+                &space.skills[s],
+                egui::FontId::proportional(10.0),
+                egui::Color32::from_gray(225),
+            );
+        }
+    }
+    // Hover: the nearest skill's name and the town's level in it.
+    if let Some(h) = resp.hover_pos() {
+        if let Some(s) = (0..n).min_by(|&a, &b| pos[a].distance(h).total_cmp(&pos[b].distance(h))) {
+            if pos[s].distance(h) < 12.0 {
+                let text = format!(
+                    "{} ({}): level {:.2}",
+                    space.skills[s],
+                    space
+                        .domains
+                        .get(space.domain[s] as usize)
+                        .map_or("", |d| d.as_str()),
+                    town.and_then(|t| t.level.get(s).copied()).unwrap_or(0.0)
+                );
+                painter.text(
+                    h + egui::vec2(12.0, -12.0),
+                    egui::Align2::LEFT_BOTTOM,
+                    text,
+                    egui::FontId::proportional(12.0),
+                    egui::Color32::WHITE,
+                );
+            }
+        }
+    }
+    if town.is_none() {
+        ui.label("Waiting for the simulation's answer (the next simulated day)...");
+    }
+    ui.horizontal_wrapped(|ui| {
+        for (d, name) in space.domains.iter().enumerate() {
+            ui.colored_label(domain_colour(d as u16, nd, true), name);
+        }
+    });
+    ui.small("Lit: the town made something with the skill last year, or its people know it. Size: its residents' mean level.");
+}
+
+/// The culture overlay's legend: the town's three axes and its colour.
+fn culture_legend(ui: &mut egui::Ui, culture: &[f32]) {
+    let axes = [
+        ("tradition", "red"),
+        ("faith", "green"),
+        ("liberty", "blue"),
+    ];
+    for (k, (axis, channel)) in axes.iter().enumerate() {
+        let v = culture.get(k).copied().unwrap_or(0.5);
+        ui.horizontal(|ui| {
+            ui.label(format!("{axis} ({channel})"));
+            ui.add(
+                egui::ProgressBar::new(v)
+                    .desired_width(160.0)
+                    .text(format!("{v:.2}")),
+            );
+        });
+    }
+    let c = crate::overlay::culture_colour(culture);
+    let srgb = Color::linear_rgb(c[0], c[1], c[2]).to_srgba();
+    let swatch = egui::Color32::from_rgb(
+        (srgb.red * 255.0) as u8,
+        (srgb.green * 255.0) as u8,
+        (srgb.blue * 255.0) as u8,
+    );
+    ui.horizontal(|ui| {
+        ui.label("the town's colour:");
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(40.0, 16.0), egui::Sense::hover());
+        ui.painter().rect_filled(rect, 3.0, swatch);
+    });
+    ui.small("0.5 is neutral (grey). People are coloured by their own beliefs, so newcomers and minorities stand out.");
 }

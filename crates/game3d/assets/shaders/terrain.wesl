@@ -102,6 +102,23 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let high = smoothstep(6.0, 12.0, p.y);
     albedo = mix(albedo, rock, max(smoothstep(0.25, 0.45, slope), high * 0.8));
 
+    // Culture overlay (M6): the land around each town takes the colour of its
+    // culture, fading out toward the edge of its radius. Where two towns'
+    // lands overlap, their colours mix by weight. A loop over a uniform array:
+    // the count comes from the CPU (dims.z), the array has a fixed size.
+    let tinted = u32(terrain.dims.z);
+    var tint = vec3<f32>(0.0);
+    var weight = 0.0;
+    for (var k = 0u; k < min(tinted, 16u); k++) {
+        let tw = terrain.towns[k];
+        let w = 1.0 - smoothstep(tw.z * 0.45, tw.z, distance(p.xz, tw.xy));
+        tint += terrain.cultures[k].rgb * w;
+        weight += w;
+    }
+    if weight > 0.0 {
+        albedo = mix(albedo, tint / weight, min(weight, 1.0) * 0.6);
+    }
+
     // Lighting: the shared toon lighting of step 02 (or PBR with the M key).
     let tp = terrain.toon;
     let t = toon_terms(pbr, toon_params(tp));

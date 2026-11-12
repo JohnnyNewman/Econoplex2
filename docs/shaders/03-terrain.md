@@ -362,6 +362,31 @@ The dark round patches on the hills in the high views aren't shadows. They're
 the slopes facing away from the low sun, in the dark band of the toon ramp
 (view 2 of the toon shader, `n·l`, shows it).
 
+## Later addition: the culture tint (a loop over a uniform array)
+
+The culture overlay (`V`) tints the land around each town in its culture's
+colour, in the same fragment shader:
+
+```wgsl
+let tinted = u32(terrain.dims.z);           // how many towns, 0 = overlay off
+for (var k = 0u; k < min(tinted, 16u); k++) {
+    let tw = terrain.towns[k];              // x, z, radius
+    let w = 1.0 - smoothstep(tw.z * 0.45, tw.z, distance(p.xz, tw.xy));
+    tint += terrain.cultures[k].rgb * w;
+    weight += w;
+}
+if weight > 0.0 { albedo = mix(albedo, tint / weight, min(weight, 1.0) * 0.6); }
+```
+
+- **Uniform arrays have a fixed size** (16 here, `MAX_TINTED` in
+  `terrain.rs`); the CPU says how many entries are used. A storage buffer
+  could grow, but for a handful of towns a uniform is simpler and fast.
+- **A loop with a uniform count** is cheap: every pixel runs the same number
+  of iterations, so the GPU's lanes stay in step (compare the branches in
+  `00-playground.md`).
+- Where two towns' lands overlap, their colours mix by weight: a soft border
+  without computing one.
+
 ## Debug views
 
 | 1 height contours | 2 normals | 3 biome weights |

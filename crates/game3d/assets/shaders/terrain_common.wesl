@@ -8,8 +8,10 @@ import super::toon_lighting::Toon;
 // Matches `TerrainUniform` (with the nested `ToonUniform`) in src/terrain.rs.
 struct Terrain {
     grid: vec4<f32>, // x, z of texel (0,0); distance between texels; height scale
-    dims: vec4<f32>, // texels across (i, +x), texels deep (j, -z); -; debug view
+    dims: vec4<f32>, // texels across (i, +x), texels deep (j, -z); towns tinted; debug view
     toon: Toon,
+    towns: array<vec4<f32>, 16>,    // culture overlay: x, z, radius per town
+    cultures: array<vec4<f32>, 16>, // culture overlay: colour per town
 };
 @group(constants::MATERIAL_BIND_GROUP) @binding(100) var<uniform> terrain: Terrain;
 // Heights, read texel by texel with textureLoad (32-bit floats aren't
