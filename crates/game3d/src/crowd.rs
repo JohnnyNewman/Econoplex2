@@ -8,7 +8,11 @@
 //!   heading, colour and size into the *people* buffer. The sim only says where
 //!   people are heading once per tick; the GPU moves them smoothly in between.
 //! - **Drawing:** `people.wesl` draws everyone from one mesh (vertex pulling,
-//!   as for the grass) straight from the people buffer, and animates the walk.
+//!   as for the grass) straight from the people buffer, and animates them
+//!   (step 09): legs and arms are rigid parts turned about their hip or
+//!   shoulder. Walkers swing them in step with the distance walked (the compute
+//!   pass keeps each person's stride phase, so feet don't slide); workers
+//!   standing at their workplace make their trade's motion (`Motion`).
 //!
 //! Colours: workers by the skill domain of what they worked at today, soldiers
 //! dark red, children small and pale, idle people light, resting ones blue-grey.
@@ -34,7 +38,45 @@ use std::collections::HashMap;
 pub type CrowdMaterial = ExtendedMaterial<StandardMaterial, CrowdExt>;
 
 /// Vertices of one figure (must match `VERTS_PER_PERSON` in people.wesl).
-pub const VERTS_PER_PERSON: usize = 60;
+pub const VERTS_PER_PERSON: usize = 180;
+/// Floats per person in the people buffer (must match `Person` in people.wesl
+/// and walk.wesl).
+pub const PERSON_FLOATS: usize = 12;
+
+/// What a person does with their arms when standing still (`Target.motion`,
+/// read by people.wesl). Chosen per skill domain by name, so new content gets a
+/// motion by naming its domain; unknown domains get `Craft`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Motion {
+    None = 0,
+    Scythe = 1,
+    Hammer = 2,
+    Axe = 3,
+    Craft = 4,
+    Guard = 5,
+}
+
+impl Motion {
+    pub fn of_domain(name: &str) -> Motion {
+        match name {
+            "agriculture" => Motion::Scythe,
+            "smithing" | "metallurgy" | "masonry" | "mining" => Motion::Hammer,
+            "forestry" | "woodworking" | "construction" => Motion::Axe,
+            "military" => Motion::Guard,
+            _ => Motion::Craft,
+        }
+    }
+
+    pub fn of(doing: Doing, domain_names: &[String]) -> Motion {
+        match doing {
+            Doing::Working(d) => domain_names
+                .get(d as usize)
+                .map_or(Motion::Craft, |n| Motion::of_domain(n)),
+            Doing::Soldier => Motion::Guard,
+            _ => Motion::None,
+        }
+    }
+}
 /// Walking speed in 3D units per second (a house is 1 unit).
 const WALK: f32 = 3.0;
 
@@ -58,8 +100,9 @@ pub struct CrowdUniform {
 pub struct CrowdExt {
     #[uniform(100)]
     pub crowd: CrowdUniform,
-    /// 8 floats per person: feet xyz, heading, colour rgb, size (negative =
-    /// walking, 0 = empty slot).
+    /// 12 floats per person: feet xyz, heading, colour rgb, size (negative =
+    /// walking, 0 = empty slot), then the motion: kind, stride phase, walking
+    /// blend (0 standing .. 1 walking), unused.
     #[storage(101, read_only)]
     pub people: Handle<ShaderBuffer>,
 }
@@ -73,9 +116,16 @@ impl MaterialExtension for CrowdExt {
     }
 }
 
-/// The figure: a tapered six-sided body (36 vertices) and an octahedron head
-/// (24), flat-shaded, about 0.75 units tall, facing +z.
-fn figure() -> (Vec<[f32; 3]>, Vec<[f32; 3]>) {
+/// The figure, about 0.75 units tall, facing +z, flat-shaded, in parts the
+/// shader tells apart by vertex number (`part` in people.wesl):
+///
+/// | vertices | part |
+/// |---|---|
+/// | 0..36 | body: a tapered six-sided tube |
+/// | 36..60 | head: an octahedron |
+/// | 60..90, 90..120 | left and right leg (hip at y 0.32) |
+/// | 120..150, 150..180 | left and right arm (shoulder at y 0.53) |
+pub fn figure() -> (Vec<[f32; 3]>, Vec<[f32; 3]>) {
     let mut pos = Vec::with_capacity(VERTS_PER_PERSON);
     let mut nrm = Vec::with_capacity(VERTS_PER_PERSON);
     let mut tri = |a: Vec3, b: Vec3, c: Vec3| {
@@ -92,18 +142,41 @@ fn figure() -> (Vec<[f32; 3]>, Vec<[f32; 3]>) {
         Vec3::new(r * a.sin(), y, r * a.cos())
     };
     for k in 0..6 {
-        let (b0, b1) = (ring(0.10, 0.0, k), ring(0.10, 0.0, k + 1));
-        let (t0, t1) = (ring(0.14, 0.5, k), ring(0.14, 0.5, k + 1));
-        tri(b0, b1, t1);
-        tri(b0, t1, t0);
+        let (b0, b1) = (ring(0.10, 0.28, k), ring(0.10, 0.28, k + 1));
+        let (t0, t1) = (ring(0.14, 0.55, k), ring(0.14, 0.55, k + 1));
+        tri(b1, b0, t0);
+        tri(b1, t0, t1);
     }
-    let head = Vec3::new(0.0, 0.64, 0.0);
+    let head = Vec3::new(0.0, 0.66, 0.0);
     let r = 0.11;
     let ax = [Vec3::X, Vec3::Z, -Vec3::X, -Vec3::Z];
     for k in 0..4 {
         let (a, b) = (head + ax[k] * r, head + ax[(k + 1) % 4] * r);
         tri(a, b, head + Vec3::Y * r);
         tri(b, a, head - Vec3::Y * r);
+    }
+    // A limb: a four-sided tube from `top` down to `bottom`, `w` thick, with a
+    // cap at the bottom (4 sides x 6 + 6 = 30 vertices).
+    let mut limb = |top: Vec3, bottom: Vec3, w: f32| {
+        let c = [
+            Vec3::new(-w, 0.0, -w),
+            Vec3::new(-w, 0.0, w),
+            Vec3::new(w, 0.0, w),
+            Vec3::new(w, 0.0, -w),
+        ];
+        for k in 0..4 {
+            let (a, b) = (c[k], c[(k + 1) % 4]);
+            tri(bottom + b, bottom + a, top + a);
+            tri(bottom + b, top + a, top + b);
+        }
+        tri(bottom + c[0], bottom + c[1], bottom + c[2]);
+        tri(bottom + c[0], bottom + c[2], bottom + c[3]);
+    };
+    for x in [0.055, -0.055] {
+        limb(Vec3::new(x, 0.32, 0.0), Vec3::new(x, 0.0, 0.0), 0.04);
+    }
+    for x in [0.17, -0.17] {
+        limb(Vec3::new(x, 0.53, 0.0), Vec3::new(x, 0.27, 0.0), 0.03);
     }
     assert_eq!(pos.len(), VERTS_PER_PERSON);
     (pos, nrm)
@@ -193,8 +266,13 @@ impl Slots {
     }
 }
 
-/// Empty buffers for `n` slots (8 floats each).
+/// An empty people buffer for `n` slots.
 fn zeros(n: usize) -> ShaderBuffer {
+    ShaderBuffer::from(vec![[0.0f32; PERSON_FLOATS]; n])
+}
+
+/// An empty targets buffer for `n` slots (8 floats each).
+fn zero_targets(n: usize) -> ShaderBuffer {
     ShaderBuffer::from(vec![[0.0f32; 8]; n])
 }
 
@@ -206,7 +284,7 @@ fn spawn_crowd(
 ) {
     let capacity = 4096;
     let people = buffers.add(zeros(capacity));
-    let targets = buffers.add(zeros(capacity));
+    let targets = buffers.add(zero_targets(capacity));
     let material = materials.add(ExtendedMaterial {
         base: StandardMaterial {
             base_color: Color::WHITE,
@@ -302,7 +380,7 @@ fn update_targets(
         if slots.next > handles.capacity {
             handles.capacity = (slots.next * 3 / 2).next_power_of_two();
             handles.people = buffers.add(zeros(handles.capacity));
-            handles.targets = buffers.add(zeros(handles.capacity));
+            handles.targets = buffers.add(zero_targets(handles.capacity));
             if let Some(mut m) = materials.get_mut(&handles.material) {
                 m.extension.people = handles.people.clone();
             }
@@ -316,7 +394,8 @@ fn update_targets(
             let id = people.id[k];
             let goal = Vec2::new(people.target[k].0, -people.target[k].1) / SCALE + jitter(id);
             let (rgb, size) = look(people.doing[k], snap.domains);
-            data[slots.of[&id]] = [goal.x, goal.y, 1.0, size, rgb[0], rgb[1], rgb[2], 0.0];
+            let motion = Motion::of(people.doing[k], &snap.domain_names) as u32 as f32;
+            data[slots.of[&id]] = [goal.x, goal.y, 1.0, size, rgb[0], rgb[1], rgb[2], motion];
         }
         if let Some(mut buffer) = buffers.get_mut(&handles.targets) {
             buffer.clear();
@@ -362,6 +441,58 @@ mod tests {
     fn the_figure_has_the_vertex_count_the_shader_expects() {
         assert_eq!(figure().0.len(), VERTS_PER_PERSON);
         assert_eq!(crowd_mesh(3).count_vertices(), 3 * VERTS_PER_PERSON);
+    }
+
+    #[test]
+    fn the_figure_has_its_parts_where_the_shader_looks() {
+        let (pos, _) = figure();
+        // Legs end at the feet, arms hang from the shoulders, left on +x.
+        let lowest =
+            |r: std::ops::Range<usize>| pos[r].iter().map(|p| p[1]).fold(f32::MAX, f32::min);
+        assert_eq!(lowest(60..90), 0.0);
+        assert_eq!(lowest(90..120), 0.0);
+        assert!(pos[60..90].iter().all(|p| p[0] > 0.0));
+        assert!(pos[120..150].iter().all(|p| p[0] > 0.0 && p[1] >= 0.27));
+        assert!(pos[150..180].iter().all(|p| p[0] < 0.0 && p[1] <= 0.53));
+    }
+
+    #[test]
+    fn every_face_of_the_figure_points_outward() {
+        let (pos, nrm) = figure();
+        for (start, end) in [
+            (0, 36),
+            (36, 60),
+            (60, 90),
+            (90, 120),
+            (120, 150),
+            (150, 180),
+        ] {
+            let n = (end - start) as f32;
+            let centre = pos[start..end].iter().map(|&p| Vec3::from(p)).sum::<Vec3>() / n;
+            for t in (start..end).step_by(3) {
+                let mid =
+                    (Vec3::from(pos[t]) + Vec3::from(pos[t + 1]) + Vec3::from(pos[t + 2])) / 3.0;
+                assert!(
+                    (mid - centre).dot(Vec3::from(nrm[t])) > 0.0,
+                    "triangle at vertex {t}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn trades_get_their_motion_and_unknown_ones_a_default() {
+        let names: Vec<String> = ["agriculture", "smithing", "forestry", "brewing"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(Motion::of(Doing::Working(0), &names), Motion::Scythe);
+        assert_eq!(Motion::of(Doing::Working(1), &names), Motion::Hammer);
+        assert_eq!(Motion::of(Doing::Working(2), &names), Motion::Axe);
+        assert_eq!(Motion::of(Doing::Working(3), &names), Motion::Craft);
+        assert_eq!(Motion::of(Doing::Working(9), &names), Motion::Craft);
+        assert_eq!(Motion::of(Doing::Soldier, &names), Motion::Guard);
+        assert_eq!(Motion::of(Doing::Idle, &names), Motion::None);
     }
 
     #[test]

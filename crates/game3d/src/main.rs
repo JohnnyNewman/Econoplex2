@@ -7,7 +7,7 @@
 //!
 //! econoplex3d [--seed S] [--towns N] [--hour H] [--pbr] [--terrain-view N] [--grid-step K]
 //!     [--fog-view N] [--no-fog] [--days N] [--speed 0-4] [--paused] [--trade] [--bloom-view] [--focus-town I] [--focus X,Z] [--view-from YAW,PITCH,DIST]
-//!     [--shot FILE]
+//!     [--no-ui] [--shot FILE]
 //! econoplex3d --playground [--hour H] [--view N] [--toon-view N] [--pbr] [--face-sun] [--shot FILE]
 //!     (shader playground)
 
@@ -105,6 +105,7 @@ fn main() {
     let (mut days, mut speed, mut paused) = (0u64, 0usize, false);
     let mut no_outlines = false;
     let mut trade = false;
+    let mut no_ui = false;
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -121,6 +122,7 @@ fn main() {
             "--pbr" => toon_settings.on = false,
             "--no-rim" => toon_settings.rim = false,
             "--no-outlines" => no_outlines = true,
+            "--no-ui" => no_ui = true,
             "--trade" => trade = true,
             "--bloom-view" => args.bloom_view = true,
             "--terrain-view" => {
@@ -212,6 +214,7 @@ fn main() {
         .insert_resource(DirectionalLightShadowMap { size: 4096 })
         .insert_resource(World3d { scenario, terrain })
         .insert_resource(OutlineStart(no_outlines))
+        .insert_resource(ui::UiHidden(no_ui))
         .insert_resource(live)
         .insert_resource(args)
         .insert_resource(ShotPath(shot))

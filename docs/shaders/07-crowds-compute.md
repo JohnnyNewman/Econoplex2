@@ -6,6 +6,11 @@ with no triangles and no pixels. It reads and writes buffers; that's all.
   results straight into the buffer the people are drawn from.
 - The CPU only says where people are heading, once per sim tick.
 
+
+> **Since step 09** ([09-procedural-animation](09-procedural-animation.md)), a person
+> is 12 floats (a `motion` vec4 was added) and the figure has legs and arms
+> (180 vertices). The code below is the step-07 version; the ideas are the same.
+
 **Where the code is:**
 - `crates/game3d/assets/shaders/walk.wesl`: the compute shader (hot-reloads);
 - `crates/game3d/src/crowd_compute.rs`: the pipeline, the bind group and the

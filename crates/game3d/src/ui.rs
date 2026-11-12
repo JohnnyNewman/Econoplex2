@@ -30,7 +30,33 @@ impl Plugin for PanelsPlugin {
             .init_resource::<Panels>()
             .init_resource::<UiCapture>()
             .init_resource::<WhyHighlight>()
+            .init_resource::<UiHidden>()
+            .add_systems(Update, hide_ui)
             .add_systems(EguiPrimaryContextPass, panels);
+    }
+}
+
+/// `H` (or `--no-ui`) hides all panels and text, to look at the world alone.
+#[derive(Resource, Default)]
+pub struct UiHidden(pub bool);
+
+/// Toggle with `H`; hide or show the text overlays (the egui panels check the
+/// flag themselves).
+fn hide_ui(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut hidden: ResMut<UiHidden>,
+    mut roots: Query<&mut Visibility, (With<Node>, Without<ChildOf>)>,
+) {
+    if keys.just_pressed(KeyCode::KeyH) {
+        hidden.0 = !hidden.0;
+    }
+    let want = if hidden.0 {
+        Visibility::Hidden
+    } else {
+        Visibility::Inherited
+    };
+    for mut v in &mut roots {
+        v.set_if_neq(want);
     }
 }
 
@@ -54,7 +80,11 @@ fn panels(
     mut capture: ResMut<UiCapture>,
     mut highlight: ResMut<WhyHighlight>,
     mut cams: Query<&mut WorldCamera>,
+    hidden: Res<UiHidden>,
 ) -> Result {
+    if hidden.0 {
+        return Ok(());
+    }
     let ctx = contexts.ctx_mut()?;
     let snap = live.snapshot.clone();
     if snap.towns.is_empty() {

@@ -127,3 +127,6 @@ side, so the GPU never has to run both.
   `P` hides the people.
 - **Step 08:** bloom by hand ([08-bloom](08-bloom.md)): render targets and a mip
   chain. `B` bloom on or off, `N` the glow alone.
+- **Step 09:** procedural animation ([09-procedural-animation](09-procedural-animation.md)):
+  limbs turned about joints, the stride phase kept on the GPU, work motions by
+  trade. `H` hides the UI.
