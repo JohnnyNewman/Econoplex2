@@ -338,3 +338,38 @@ workspace on Bevy 0.20, bevy_egui for data panels, and M1 first.
 4. **Scope of M1:** terrain, sky, toon, fog and town blocks, with the shader track
    steps 1–4 written by hand. Or start with the sim running behind the 3D view
    (M2 first)?
+
+## Performance (2026-11-12)
+
+Target: at least 60 fps. Measured with `--fps`: frame times, GPU time per
+render pass (timestamp queries) and, once, the number of mesh entities. Bevy's
+`trace_chrome` feature gives a per-system CPU profile. Always measure the
+release build: the dev profile is about 3× slower on the CPU side.
+
+**What a frame cost** (release, about 3,500 people, 10-year world, RTX 3060
+laptop): about 9.6 ms, limited by the CPU's render thread (about 9.5 ms):
+Bevy's per-entity work for 6,645 mesh entities (2,730 trees, about 1,900
+building parts and as many outline hulls), once per view and per shadow
+cascade. Our own systems were all small.
+
+**Changes:**
+- The sky clock and fog state were written every frame, which made Bevy
+  prepare every material again every frame; they are now written only when
+  they change.
+- Trees and buildings are baked (`bake.rs`): one mesh per forest chunk, one per
+  building plus its outline, vertex colours instead of a material per colour.
+  6,645 mesh entities became 1,519.
+- Grass chunks have real bounds (frustum culling) and are hidden beyond the
+  fade distance: vertex shader invocations went from 2.7M to 0.85M.
+- Shadows: 3 cascades to 200 units, a 2,048 map (was 4 to 260 and 4,096).
+  GPU shadow work fell by about 70 %.
+
+**Result:** 6.0 ms per frame (about 170 fps) with the GPU at full clock,
+against 9.7 ms. With the GPU thermally throttled (the laptop drops to about
+820 MHz at 74 °C; full-screen passes then take about 3.7× longer), about 17 ms
+(58 fps) close over a running town, against 25.5 ms (39 fps) before.
+
+**What is left:** fragment work (about 10M fragments for a 2400×1350 screen,
+3× overdraw), and the crowd's 186 vertices per slot (`10-lod.md`, exercise 3).
+A render-scale option would help a hot laptop most.
+

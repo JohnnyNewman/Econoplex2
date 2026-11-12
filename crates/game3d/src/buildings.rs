@@ -15,6 +15,7 @@
 //! stone and slate. Its houses follow its residents' wealth: small thatched
 //! cottages, ordinary houses, or two-storey houses with chimneys.
 
+use crate::bake::Baked;
 use crate::outline::Outlines;
 use crate::toon::{toon, ToonMaterial};
 use bevy::prelude::*;
@@ -39,7 +40,14 @@ pub struct Kit {
     cone: Handle<Mesh>,
     cylinder: Handle<Mesh>,
     dome: Handle<Mesh>,
-    colours: HashMap<&'static str, Handle<ToonMaterial>>,
+    /// The shapes themselves, to bake buildings from.
+    shapes: HashMap<AssetId<Mesh>, Mesh>,
+    /// The palette as linear colours (vertex colours of baked buildings).
+    linear: HashMap<&'static str, [f32; 4]>,
+    /// One white toon material for all baked buildings.
+    white: Handle<ToonMaterial>,
+    /// Baked variants, shared by every building that looks the same.
+    baked: HashMap<String, Handle<Mesh>>,
 }
 
 impl Kit {
@@ -67,27 +75,77 @@ impl Kit {
             ("soot", Color::srgb(0.22, 0.20, 0.20)),
             ("gold", Color::srgb(0.92, 0.72, 0.25)),
         ];
+        let shapes: [Mesh; 5] = [
+            Cuboid::new(1.0, 1.0, 1.0).into(),
+            gable.into(),
+            Cone::new(0.5, 1.0).into(),
+            Cylinder::new(0.5, 1.0).into(),
+            Sphere::new(0.5).mesh().uv(24, 12),
+        ];
+        let handles: Vec<Handle<Mesh>> = shapes.iter().map(|m| meshes.add(m.clone())).collect();
         Self {
-            cube: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
-            gable: meshes.add(gable),
-            cone: meshes.add(Cone::new(0.5, 1.0)),
-            cylinder: meshes.add(Cylinder::new(0.5, 1.0)),
-            dome: meshes.add(Sphere::new(0.5).mesh().uv(24, 12)),
-            colours: palette
-                .into_iter()
-                .map(|(name, c)| (name, toons.add(toon(c))))
+            cube: handles[0].clone(),
+            gable: handles[1].clone(),
+            cone: handles[2].clone(),
+            cylinder: handles[3].clone(),
+            dome: handles[4].clone(),
+            shapes: handles.iter().map(|h| h.id()).zip(shapes).collect(),
+            linear: palette
+                .iter()
+                .map(|&(name, c)| (name, c.to_linear().to_f32_array()))
                 .collect(),
+            white: toons.add(toon(Color::WHITE)),
+            baked: HashMap::new(),
         }
     }
 
-    pub fn mat(&self, name: &str) -> Handle<ToonMaterial> {
-        self.colours[name].clone()
+    /// One mesh for these parts (already in their final colours), baked once
+    /// per distinct look and shared after.
+    fn bake(&mut self, meshes: &mut Assets<Mesh>, parts: &[Part]) -> Handle<Mesh> {
+        let key = parts
+            .iter()
+            .map(|(m, c, o, s)| format!("{:?}{c}{o}{s};", m.id()))
+            .collect::<String>();
+        if let Some(h) = self.baked.get(&key) {
+            return h.clone();
+        }
+        let mut baked = Baked::default();
+        for (mesh, colour, offset, scale) in parts {
+            baked.add(
+                &self.shapes[&mesh.id()],
+                Transform::from_translation(*offset).with_scale(*scale),
+                self.linear[colour],
+                None,
+            );
+        }
+        let h = meshes.add(baked.mesh());
+        self.baked.insert(key, h.clone());
+        h
+    }
+
+    /// Spawn a baked building: the body and its outline hull (step 05).
+    fn spawn_baked(
+        &mut self,
+        commands: &mut Commands,
+        meshes: &mut Assets<Mesh>,
+        outlines: &Outlines,
+        at: Transform,
+        parts: &[Part],
+    ) -> Entity {
+        let mesh = self.bake(meshes, parts);
+        commands
+            .spawn((at, Mesh3d(mesh.clone()), MeshMaterial3d(self.white.clone())))
+            .with_child(outlines.hull(mesh))
+            .id()
     }
 }
 
+/// A building part: (shape, colour, offset, scale).
+type Part = (Handle<Mesh>, &'static str, Vec3, Vec3);
+
 /// The parts of one building: (mesh, colour, offset from the ground point,
 /// scale), in the building's own frame (x across, z along, y up).
-fn parts(kit: &Kit, kind: &str) -> Vec<(Handle<Mesh>, &'static str, Vec3, Vec3)> {
+fn parts(kit: &Kit, kind: &str) -> Vec<Part> {
     let cube = || kit.cube.clone();
     let gable = || kit.gable.clone();
     let cone = || kit.cone.clone();
@@ -387,9 +445,11 @@ impl Style {
 }
 
 /// Spawn one house at `at`, turned by `rot`, in the town's style.
+#[allow(clippy::too_many_arguments)]
 pub fn spawn_house(
     commands: &mut Commands,
-    kit: &Kit,
+    kit: &mut Kit,
+    meshes: &mut Assets<Mesh>,
     outlines: &Outlines,
     at: Vec3,
     rot: Quat,
@@ -429,31 +489,22 @@ pub fn spawn_house(
             Vec3::new(0.2, 0.7, 0.2),
         ));
     }
-    let parent = commands
-        .spawn((
-            Transform::from_translation(at).with_rotation(rot),
-            Visibility::default(),
-        ))
-        .id();
-    for (mesh, colour, offset, scale) in parts {
-        commands
-            .spawn((
-                Mesh3d(mesh.clone()),
-                MeshMaterial3d(kit.mat(colour)),
-                Transform::from_translation(offset).with_scale(scale),
-                ChildOf(parent),
-            ))
-            .with_child(outlines.hull(mesh));
-    }
-    parent
+    kit.spawn_baked(
+        commands,
+        meshes,
+        outlines,
+        Transform::from_translation(at).with_rotation(rot),
+        &parts,
+    )
 }
 
-/// Spawn one building: a parent entity at the ground point with its parts as
-/// children, so the whole building can be removed again with one despawn.
+/// Spawn one building at its ground point, its parts baked into one mesh (the
+/// outline hull is its child, so one despawn removes both).
 /// Land "buildings" (cleared fields, woodlots) are not drawn: `None`.
 pub fn spawn_building(
     commands: &mut Commands,
-    kit: &Kit,
+    kit: &mut Kit,
+    meshes: &mut Assets<Mesh>,
     outlines: &Outlines,
     b: &BuildingSpec,
     style: Style,
@@ -467,19 +518,11 @@ pub fn spawn_building(
     let root = Transform::from_translation(b.at)
         .with_rotation(rot)
         .with_scale(Vec3::splat(1.5));
-    let parent = commands.spawn((root, Visibility::default())).id();
-    for (mesh, colour, offset, scale) in parts(kit, &b.kind) {
-        // Each part carries its own outline hull (step 05) as a child.
-        commands
-            .spawn((
-                Mesh3d(mesh.clone()),
-                MeshMaterial3d(kit.mat(style.restyle(colour, b.seed))),
-                Transform::from_translation(offset).with_scale(scale),
-                ChildOf(parent),
-            ))
-            .with_child(outlines.hull(mesh));
-    }
-    Some(parent)
+    let parts: Vec<Part> = parts(kit, &b.kind)
+        .into_iter()
+        .map(|(m, c, o, s)| (m, style.restyle(c, b.seed), o, s))
+        .collect();
+    Some(kit.spawn_baked(commands, meshes, outlines, root, &parts))
 }
 
 #[cfg(test)]

@@ -18,6 +18,7 @@ use sim_core::config::Scenario;
 use sim_core::terrain::Terrain;
 use std::path::PathBuf;
 
+mod bake;
 mod bloom;
 mod buildings;
 mod camera;
@@ -233,8 +234,9 @@ fn main() {
         }),
         ..default()
     }))
+    .add_plugins(PassTimings(fps))
     .insert_resource(ClearColor(Color::srgb(0.62, 0.74, 0.86)))
-    .insert_resource(DirectionalLightShadowMap { size: 4096 })
+    .insert_resource(DirectionalLightShadowMap { size: 2048 })
     .insert_resource(World3d { scenario, terrain })
     .insert_resource(OutlineStart(no_outlines))
     .insert_resource(ui::UiHidden(no_ui))
@@ -378,15 +380,15 @@ fn setup(
         Transform::from_xyz(0.0, -0.6, 0.0),
     ));
     // --- trees: soft cones scattered on meadows and hills
-    let trunk = meshes.add(Cylinder::new(0.12, 0.8));
-    let crown = meshes.add(Cone::new(0.7, 2.0));
-    let wood = toons.add(toon::toon(Color::srgb(0.40, 0.28, 0.18)));
     // Crowns sway in the wind (shader step 06, sway.wesl); trunks stand still.
-    let leaves = [
-        trees.add(nature::tree_material(Color::srgb(0.22, 0.42, 0.22))),
-        trees.add(nature::tree_material(Color::srgb(0.30, 0.50, 0.24))),
-        trees.add(nature::tree_material(Color::srgb(0.18, 0.36, 0.24))),
+    // All trees are baked into one mesh per chunk (nature.rs).
+    let lin = |c: Color| c.to_linear().to_f32_array();
+    let crowns = [
+        lin(Color::srgb(0.22, 0.42, 0.22)),
+        lin(Color::srgb(0.30, 0.50, 0.24)),
+        lin(Color::srgb(0.18, 0.36, 0.24)),
     ];
+    let mut forest = Vec::new();
     for c in 0..t.width * t.height {
         let p = t.center(c);
         if t.water[c] || noise(5, p.0 / 160.0, p.1 / 160.0) < 0.62 {
@@ -403,19 +405,21 @@ fn setup(
         }
         let y = height(t, p);
         let at = Vec3::new(p.0 / SCALE + jitter - 0.5, y, -p.1 / SCALE);
-        let k = (c * 7) % 3;
-        commands.spawn((
-            Mesh3d(trunk.clone()),
-            MeshMaterial3d(wood.clone()),
-            Transform::from_translation(at + Vec3::Y * 0.4),
-        ));
-        commands.spawn((
-            Mesh3d(crown.clone()),
-            MeshMaterial3d(leaves[k].clone()),
-            Transform::from_translation(at + Vec3::Y * 1.6)
-                .with_scale(Vec3::splat(0.8 + jitter * 0.6)),
-        ));
+        forest.push(nature::TreeSpec {
+            root: at,
+            scale: 0.8 + jitter * 0.6,
+            crown: crowns[(c * 7) % 3],
+        });
     }
+    let chunks = nature::spawn_forest(
+        &mut commands,
+        &mut meshes,
+        &mut trees,
+        &forest,
+        lin(Color::srgb(0.40, 0.28, 0.18)),
+        25.0,
+    );
+    info!("trees: {} in {} chunks", forest.len(), chunks);
     // --- grass (shader step 06): blades over the meadows, away from towns,
     // rivers and steep slopes; a few per square unit, jittered by a hash.
     let mut blades = Vec::new();
@@ -476,8 +480,11 @@ fn setup(
             ..default()
         },
         Transform::default(),
+        // Three cascades to 200 units: beyond that the fog hides shadows anyway,
+        // and every cascade draws every shadow caster again.
         CascadeShadowConfigBuilder {
-            maximum_distance: 260.0,
+            num_cascades: 3,
+            maximum_distance: 200.0,
             ..default()
         }
         .build(),
@@ -556,6 +563,45 @@ fn shoot(
     if state.frames == 120 {
         exit.write(AppExit::Success);
     }
+}
+
+/// With `--fps`: GPU and CPU time per render pass in the log (timestamp
+/// queries). Added after the render plugin, which it needs.
+struct PassTimings(bool);
+
+impl Plugin for PassTimings {
+    fn build(&self, app: &mut App) {
+        if self.0 {
+            app.add_plugins(bevy::render::diagnostic::RenderDiagnosticsPlugin)
+                .add_systems(Update, count_draws);
+        }
+    }
+}
+
+/// With `--fps`: once, after a few seconds, how many things of each kind are
+/// drawn (each mesh entity costs CPU time every frame, in the shadow passes too).
+#[allow(clippy::type_complexity)]
+fn count_draws(
+    time: Res<Time>,
+    mut done: Local<bool>,
+    all: Query<(), With<Mesh3d>>,
+    toon: Query<(), With<MeshMaterial3d<toon::ToonMaterial>>>,
+    tree: Query<(), With<MeshMaterial3d<nature::TreeMaterial>>>,
+    outline: Query<(), With<MeshMaterial3d<outline::OutlineMaterial>>>,
+    shadowless: Query<(), (With<Mesh3d>, With<bevy::light::NotShadowCaster>)>,
+) {
+    if *done || time.elapsed_secs() < 8.0 {
+        return;
+    }
+    *done = true;
+    info!(
+        "mesh entities: {} (toon {}, tree crowns {}, outline hulls {}, not casting shadows {})",
+        all.iter().count(),
+        toon.iter().count(),
+        tree.iter().count(),
+        outline.iter().count(),
+        shadowless.iter().count()
+    );
 }
 
 #[cfg(test)]

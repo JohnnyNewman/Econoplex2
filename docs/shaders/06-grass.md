@@ -4,9 +4,11 @@
 with its own data.
 - **Grass:** about 340,000 blades. Their data sits in a **storage buffer**, and
   the vertex shader reads it by index ("vertex pulling").
-- **Trees:** each crown is an ordinary entity. Bevy draws all crowns with the
-  same mesh and material in one **instanced** draw call; each instance finds its
-  own transform by `instance_index`.
+- **Trees:** baked. Each chunk's trees (trunks and crowns) are one mesh,
+  already in world space, with vertex colours. Two extra attributes per vertex
+  tell the shader how it sways. (Until the performance pass they were one
+  entity per trunk and per crown, drawn instanced; see "Instancing, vertex
+  pulling, baking" below.)
 - **Wind:** in both cases it's computed in the vertex shader from time and
   position. No physics, nothing on the CPU per frame.
 
@@ -29,21 +31,31 @@ meadow.
 
 ## How 340,000 blades get drawn
 
-### Instancing vs vertex pulling
+### Instancing, vertex pulling, baking
 
 - **GPU instancing:** one draw call says "draw this 5-vertex mesh 340,000 times".
   The vertex shader gets `instance_index` and reads that instance's data.
-  - Bevy does this automatically for entities that share a mesh and material:
-    that's how the tree crowns are drawn.
-  - But it needs one entity per instance, and 340,000 entities is a lot of CPU
-    bookkeeping for things that never change.
+  - Bevy does this automatically for entities that share a mesh and material.
+  - But it needs one entity per instance, and every entity costs CPU time every
+    frame (visibility, instance data, draw commands), once for the main view and
+    once per shadow cascade. For 340,000 blades that is far too much; even
+    baking the 2,700 tree entities saved about a sixth of the frame time.
 - **Vertex pulling** (what the grass uses): each chunk is **one mesh** holding
   many copies of the same 5-vertex blade, all at the origin.
   - The vertex shader works out which blade it belongs to from its
     `vertex_index`: `blade = (vertex_index − first_vertex) / 5`.
   - It then reads that blade's data from a storage buffer.
-  - One entity per chunk (69 chunks), and the same idea as instancing: per-blade
+  - One entity per chunk (61 chunks), and the same idea as instancing: per-blade
     data in a buffer, indexed in the shader.
+- **Baking** (what the trees use, `bake.rs`): copy every tree's vertices, moved
+  to its place, into one mesh per chunk. Nothing to look up in the shader;
+  per-tree data the shader still needs (here the sway) travels as extra vertex
+  attributes. It costs memory (every vertex stored once per tree) and suits
+  things that never move. Buildings are baked the same way.
+- **Culling the grass:** each chunk carries its real bounds (an `Aabb`; the
+  mesh's own bounds are a blade at the origin), so chunks outside the view
+  are skipped, and chunks whose nearest point is past the fade distance are
+  hidden. Faded blades cost no pixels but still cost their vertices.
 
 ### Storage buffers
 
@@ -207,10 +219,12 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
 // Shader step 06, trees: a vertex shader that sways tree crowns in the wind.
 // The fragment shader is the toon shader of step 02 (toon.wesl), unchanged.
 //
-// Every crown is an ordinary entity with the same mesh and material, so Bevy
-// draws them all in one instanced draw call. Each instance finds its own
-// transform with `get_world_from_local(instance_index)`; its position gives it
-// its own phase, so the forest doesn't sway in lockstep.
+// The trees of a chunk are baked into one mesh (nature.rs `spawn_forest`):
+// every vertex is already in world space. Two extra attributes say how it
+// sways: UV 0 x is how far up its crown it is (0 at the base and for trunks,
+// 1 at the tip), UV 1 is its tree's root (x, z), which gives each tree its own
+// phase, so the forest doesn't sway in lockstep. The colour is a vertex colour
+// (the material is white; `pbr_input_from_standard_material` multiplies it in).
 
 import bevy_pbr::render::{
     mesh_functions,
@@ -226,12 +240,13 @@ fn vertex(vertex_in: Vertex) -> VertexOutput {
     let world_from_local = mesh_functions::get_world_from_local(vertex_in.instance_index);
     var world = mesh_functions::mesh_position_local_to_world(world_from_local, vec4<f32>(v.position, 1.0));
 
-    // How far up the crown this vertex is: the cone runs from y = -1 to 1 in
-    // its own space, so 0 at the base, 1 at the tip.
-    let up = clamp(v.position.y * 0.5 + 0.5, 0.0, 1.0);
-    // This tree's position (the translation column of its matrix) sets its phase.
-    let root = world_from_local[3].xyz;
-    let phase = root.x * 0.37 + root.z * 0.23;
+    var up = 0.0;
+    var root = vec2<f32>(0.0);
+@if(VERTEX_UVS_A)
+    up = v.uv.x;
+@if(VERTEX_UVS_B)
+    root = v.uv_b;
+    let phase = root.x * 0.37 + root.y * 0.23;
     let t = globals.time;
     // Two sines of different speed make a less regular sway.
     let sway = (sin(t * 1.3 + phase) * 0.6 + sin(t * 2.9 + phase * 1.7) * 0.25) * 0.12;
@@ -243,6 +258,10 @@ fn vertex(vertex_in: Vertex) -> VertexOutput {
     out.world_normal = mesh_functions::mesh_normal_local_to_world(v.normal, vertex_in.instance_index);
 @if(VERTEX_UVS_A)
     out.uv = v.uv;
+@if(VERTEX_UVS_B)
+    out.uv_b = v.uv_b;
+@if(VERTEX_COLORS)
+    out.color = v.color;
 @if(VERTEX_OUTPUT_INSTANCE_INDEX)
     out.instance_index = vertex_in.instance_index;
     return out;
