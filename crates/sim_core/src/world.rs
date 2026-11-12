@@ -149,6 +149,10 @@ pub struct Town {
     pub work_days: [f32; 2],
     #[serde(default)]
     pub glut_work_days: [f32; 2],
+    /// Per good: the last year (counted from 1) the town made any of it; 0 =
+    /// never. For capability: what the town can make (see metrics).
+    #[serde(default)]
+    pub last_made: Vec<u32>,
     /// Share of each building type's slots in use, averaged over about a month
     /// (indexed by product).
     pub building_load: Vec<f32>,
@@ -559,6 +563,7 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
             glut_made_last_year: vec![0.0; np],
             work_days: [0.0; 2],
             glut_work_days: [0.0; 2],
+            last_made: vec![0; np],
             building_load: vec![0.0; np],
             built: 0,
             free_land: params.market.free_land,

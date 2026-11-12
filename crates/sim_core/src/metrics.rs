@@ -41,6 +41,14 @@ pub struct TownStats {
     /// Worker-days last year, and those spent on goods already glutted.
     pub work_days: f32,
     pub glut_work_days: f32,
+    /// Use (at base prices) last year: goods households consumed (food eaten,
+    /// tools, household goods) and inputs the town's trades used up.
+    pub household_use: f32,
+    pub input_use: f32,
+    /// Residents' mean happiness, 0..1.
+    pub happiness: f32,
+    /// Kinds of goods the town made at least once in the last five years.
+    pub capability: usize,
     pub treasury: f32,
     pub buildings: usize,
     pub soldiers: usize,
@@ -258,6 +266,14 @@ pub fn record(
     for t in towns.0.iter_mut() {
         t.work_days = [0.0, t.work_days[0]];
         t.glut_work_days = [0.0, t.glut_work_days[0]];
+        // The year just finished, counted from 1.
+        let year = clock.year() as u32;
+        t.last_made.resize(t.produced_this_year.len(), 0);
+        for (p, &q) in t.produced_this_year.iter().enumerate() {
+            if q > 0.0 {
+                t.last_made[p] = year;
+            }
+        }
         let n = t.produced_last_year.len();
         t.glut_made_last_year = std::mem::replace(&mut t.glut_made_this_year, vec![0.0; n]);
         t.produced_last_year = std::mem::replace(
@@ -363,6 +379,26 @@ pub fn record(
             .map(|&p| town.produced_last_year[p] * db.base_price[p])
             .sum();
         s.work_days = town.work_days[1];
+        for &p in &products {
+            let base = db.base_price[p] as f64;
+            s.household_use +=
+                (town.consumed_year.get(p).copied().unwrap_or(0.0) as f64 * base) as f32;
+            s.input_use += (town.inputs_year.get(p).copied().unwrap_or(0.0) as f64 * base) as f32;
+        }
+        let happy: f32 = town
+            .residents
+            .iter()
+            .map(|&i| store.state[i as usize][sim_data::dims::state::HAPPINESS])
+            .sum();
+        s.happiness = happy / town.residents.len().max(1) as f32;
+        let year = clock.year() as u32; // the year just finished, counted from 1
+        s.capability = products
+            .iter()
+            .filter(|&&p| {
+                let last = town.last_made.get(p).copied().unwrap_or(0);
+                last > 0 && last + 5 > year
+            })
+            .count();
         s.glut_work_days = town.glut_work_days[1];
         s.glut_value = products
             .iter()

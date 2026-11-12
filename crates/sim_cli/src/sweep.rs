@@ -51,16 +51,25 @@ struct Summary {
     glut: f64,
     /// Share of last year's worker-days spent on goods already glutted.
     glut_work: f64,
+    /// Use per resident and year (base prices): households' consumption and
+    /// trades' inputs used up.
+    household_use: f64,
+    input_use: f64,
+    /// Residents' mean happiness, 0..1.
+    happiness: f64,
+    /// Kinds of goods a town made in the last five years (town mean).
+    capability: f64,
     ms_per_tick: f64,
 }
 
-const COLUMNS: [&str; 18] = [
+const COLUMNS: [&str; 22] = [
     "pop", "starve%", "food/cap", "div", "ECI rng", "spec", "masters", "swords", "wealth", "gini",
-    "raids", "conq", "revolts", "ruled%", "moves", "glut%", "gwork%", "ms/tick",
+    "raids", "conq", "revolts", "ruled%", "moves", "glut%", "gwork%", "hh use", "in use", "happy",
+    "capab", "ms/tick",
 ];
 
 impl Summary {
-    fn values(&self) -> [f64; 18] {
+    fn values(&self) -> [f64; 22] {
         [
             self.population,
             self.starving * 100.0,
@@ -79,6 +88,10 @@ impl Summary {
             self.migrants,
             self.glut * 100.0,
             self.glut_work * 100.0,
+            self.household_use,
+            self.input_use,
+            self.happiness,
+            self.capability,
             self.ms_per_tick,
         ]
     }
@@ -142,6 +155,20 @@ impl Summary {
                 .map(|t| t.work_days as f64)
                 .sum::<f64>()
                 .max(1.0);
+        s.household_use = last
+            .towns
+            .iter()
+            .map(|t| t.household_use as f64)
+            .sum::<f64>()
+            / pop;
+        s.input_use = last.towns.iter().map(|t| t.input_use as f64).sum::<f64>() / pop;
+        s.happiness = last
+            .towns
+            .iter()
+            .map(|t| t.happiness as f64 * t.population as f64)
+            .sum::<f64>()
+            / pop;
+        s.capability = last.towns.iter().map(|t| t.capability as f64).sum::<f64>() / towns;
         s.wealth_gini = gini(
             &last
                 .towns
@@ -290,7 +317,7 @@ pub fn run(plan: &Plan, csv: Option<&std::path::Path>) -> Result<(), Box<dyn std
     }
     println!();
     for c in 0..settings.len() {
-        let rows: Vec<[f64; 18]> = (0..jobs.len())
+        let rows: Vec<[f64; 22]> = (0..jobs.len())
             .filter(|&j| jobs[j].0 == c)
             .map(|j| results[j].values())
             .collect();
@@ -336,6 +363,10 @@ pub fn run(plan: &Plan, csv: Option<&std::path::Path>) -> Result<(), Box<dyn std
             "migrants",
             "glut",
             "glut_work",
+            "household_use",
+            "input_use",
+            "happiness",
+            "capability",
             "ms_per_tick",
         ];
         writeln!(
