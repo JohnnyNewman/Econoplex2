@@ -46,16 +46,21 @@ struct Summary {
     /// Share of town-years spent paying tribute.
     ruled: f64,
     migrants: f64,
+    /// Share of last year's production value made while the town already held
+    /// more than its target stock of the good: made and paid for, but piling up.
+    glut: f64,
+    /// Share of last year's worker-days spent on goods already glutted.
+    glut_work: f64,
     ms_per_tick: f64,
 }
 
-const COLUMNS: [&str; 16] = [
+const COLUMNS: [&str; 18] = [
     "pop", "starve%", "food/cap", "div", "ECI rng", "spec", "masters", "swords", "wealth", "gini",
-    "raids", "conq", "revolts", "ruled%", "moves", "ms/tick",
+    "raids", "conq", "revolts", "ruled%", "moves", "glut%", "gwork%", "ms/tick",
 ];
 
 impl Summary {
-    fn values(&self) -> [f64; 16] {
+    fn values(&self) -> [f64; 18] {
         [
             self.population,
             self.starving * 100.0,
@@ -72,6 +77,8 @@ impl Summary {
             self.revolts,
             self.ruled * 100.0,
             self.migrants,
+            self.glut * 100.0,
+            self.glut_work * 100.0,
             self.ms_per_tick,
         ]
     }
@@ -117,6 +124,24 @@ impl Summary {
             .map(|t| t.mean_wealth as f64 * t.population as f64)
             .sum::<f64>()
             / pop;
+        s.glut = last.towns.iter().map(|t| t.glut_value as f64).sum::<f64>()
+            / last
+                .towns
+                .iter()
+                .map(|t| t.production_value as f64)
+                .sum::<f64>()
+                .max(1.0);
+        s.glut_work = last
+            .towns
+            .iter()
+            .map(|t| t.glut_work_days as f64)
+            .sum::<f64>()
+            / last
+                .towns
+                .iter()
+                .map(|t| t.work_days as f64)
+                .sum::<f64>()
+                .max(1.0);
         s.wealth_gini = gini(
             &last
                 .towns
@@ -265,7 +290,7 @@ pub fn run(plan: &Plan, csv: Option<&std::path::Path>) -> Result<(), Box<dyn std
     }
     println!();
     for c in 0..settings.len() {
-        let rows: Vec<[f64; 16]> = (0..jobs.len())
+        let rows: Vec<[f64; 18]> = (0..jobs.len())
             .filter(|&j| jobs[j].0 == c)
             .map(|j| results[j].values())
             .collect();
@@ -309,6 +334,8 @@ pub fn run(plan: &Plan, csv: Option<&std::path::Path>) -> Result<(), Box<dyn std
             "revolts",
             "ruled",
             "migrants",
+            "glut",
+            "glut_work",
             "ms_per_tick",
         ];
         writeln!(
@@ -327,6 +354,8 @@ pub fn run(plan: &Plan, csv: Option<&std::path::Path>) -> Result<(), Box<dyn std
             let mut v = results[j].values();
             v[1] /= 100.0;
             v[13] /= 100.0;
+            v[15] /= 100.0;
+            v[16] /= 100.0;
             row.extend(v.iter().map(|x| format!("{x:.4}")));
             writeln!(f, "{}", row.join(","))?;
         }

@@ -134,6 +134,21 @@ pub struct Town {
     pub residents: Vec<u32>,
     pub produced_this_year: Vec<f32>,
     pub produced_last_year: Vec<f32>,
+    /// Per good: what the town made this year, and last year (units), while
+    /// it already held more than its target stock of the good at its floor
+    /// price: made and paid for, but only piling up. A diagnostic (metrics'
+    /// `glut`).
+    #[serde(default)]
+    pub glut_made_this_year: Vec<f32>,
+    #[serde(default)]
+    pub glut_made_last_year: Vec<f32>,
+    /// Worker-days of finished work this year, and the part spent on recipes
+    /// whose every output was glutted (over target, at its floor price): labour
+    /// that only piles goods up. Diagnostics; `[this year, last year]`.
+    #[serde(default)]
+    pub work_days: [f32; 2],
+    #[serde(default)]
+    pub glut_work_days: [f32; 2],
     /// Share of each building type's slots in use, averaged over about a month
     /// (indexed by product).
     pub building_load: Vec<f32>,
@@ -540,6 +555,10 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
             residents: Vec::new(),
             produced_this_year: vec![0.0; np],
             produced_last_year: vec![0.0; np],
+            glut_made_this_year: vec![0.0; np],
+            glut_made_last_year: vec![0.0; np],
+            work_days: [0.0; 2],
+            glut_work_days: [0.0; 2],
             building_load: vec![0.0; np],
             built: 0,
             free_land: params.market.free_land,

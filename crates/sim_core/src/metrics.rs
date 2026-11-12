@@ -33,6 +33,14 @@ pub struct TownStats {
     /// Longswords in the armory or carried by soldiers, by level 1, 2, 3.
     pub swords: [u32; 3],
     pub tools_in_use: usize,
+    /// Value of last year's production (at base prices), and the part of it
+    /// made while the town already held more than its target stock of the
+    /// good: made, paid for, and piling up unsold.
+    pub production_value: f32,
+    pub glut_value: f32,
+    /// Worker-days last year, and those spent on goods already glutted.
+    pub work_days: f32,
+    pub glut_work_days: f32,
     pub treasury: f32,
     pub buildings: usize,
     pub soldiers: usize,
@@ -248,6 +256,10 @@ pub fn record(
     }
     let dpy = clock.days_per_year;
     for t in towns.0.iter_mut() {
+        t.work_days = [0.0, t.work_days[0]];
+        t.glut_work_days = [0.0, t.glut_work_days[0]];
+        let n = t.produced_last_year.len();
+        t.glut_made_last_year = std::mem::replace(&mut t.glut_made_this_year, vec![0.0; n]);
         t.produced_last_year = std::mem::replace(
             &mut t.produced_this_year,
             vec![0.0; t.produced_last_year.len()],
@@ -346,6 +358,16 @@ pub fn record(
             ..Default::default()
         };
         s.food_per_capita = town.food_stock(&db) / s.population.max(1) as f32;
+        s.production_value = products
+            .iter()
+            .map(|&p| town.produced_last_year[p] * db.base_price[p])
+            .sum();
+        s.work_days = town.work_days[1];
+        s.glut_work_days = town.glut_work_days[1];
+        s.glut_value = products
+            .iter()
+            .map(|&p| town.glut_made_last_year.get(p).copied().unwrap_or(0.0) * db.base_price[p])
+            .sum();
         s.diversity = products
             .iter()
             .filter(|&&p| town.produced_last_year[p] > 0.0)

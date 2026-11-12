@@ -18,9 +18,31 @@ use rayon::prelude::*;
 use sim_data::dims::*;
 use sim_data::Category;
 
-/// Whether a town already holds `glut_factor` times its target stock of a good,
-/// so making more of it only piles it up.
+/// Whether a town already holds `glut_factor` times its target stock of a good
+/// (or, with `stop_at_floor`, more than its target at the floor price), so
+/// making more of it only piles it up.
 pub fn glutted(db: &Db, town: &crate::world::Town, params: &Params, p: usize) -> bool {
+    let mp = &params.market;
+    over_target(db, town, params, p, mp.glut_factor)
+        || (mp.stop_at_floor
+            && at_floor(db, town, params, p)
+            && over_target(db, town, params, p, 1.0))
+}
+
+/// Whether a good's price in a town has fallen to its floor.
+pub fn at_floor(db: &Db, town: &crate::world::Town, params: &Params, p: usize) -> bool {
+    town.price[p] <= db.base_price[p] * params.market.min_price_factor * 1.05
+}
+
+/// Whether a town holds more than `factor` times its target stock of a good
+/// (its firms' unsold goods included; a subsidized good's target is larger).
+pub fn over_target(
+    db: &Db,
+    town: &crate::world::Town,
+    params: &Params,
+    p: usize,
+    factor: f32,
+) -> bool {
     let mp = &params.market;
     let per_capita = if db.is_food[p] {
         mp.food_target_per_capita
@@ -35,7 +57,7 @@ pub fn glutted(db: &Db, town: &crate::world::Town, params: &Params, p: usize) ->
         .map(|f| f.stock.get(p).copied().unwrap_or(0.0))
         .sum();
     // A subsidized good is bought up to a larger stock.
-    town.stock[p] + unsold > mp.glut_factor * target * (1.0 + town.policy.subsidy[p])
+    town.stock[p] + unsold > factor * target * (1.0 + town.policy.subsidy[p])
 }
 
 /// Whether a recipe feeds people: it makes more food than its inputs hold,
