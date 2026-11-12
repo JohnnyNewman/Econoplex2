@@ -417,20 +417,26 @@ fn update_targets(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<CrowdMaterial>>,
     mut crowd: Query<(&mut Mesh3d, &mut Visibility)>,
+    overlay: Res<crate::overlay::Overlay>,
 ) {
     let (Some(mut handles), Some(terrain)) = (handles, terrain) else {
         return;
     };
+    let by_culture = *overlay == crate::overlay::Overlay::Culture;
     if keys.just_pressed(KeyCode::KeyP) {
         if let Ok((_, mut v)) = crowd.get_mut(handles.entity) {
             v.toggle_visible_hidden();
         }
     }
     let snap = live.snapshot.clone();
-    if slots.tick != Some(snap.tick) {
-        slots.tick = Some(snap.tick);
+    let new_tick = slots.tick != Some(snap.tick);
+    // The colours change with the overlay too (culture: everyone in their own).
+    if new_tick || overlay.is_changed() {
         let people = &snap.people;
-        slots.assign(&people.id);
+        if new_tick {
+            slots.tick = Some(snap.tick);
+            slots.assign(&people.id);
+        }
         // Outgrown: bigger buffers and mesh (everyone reappears at their goal).
         if slots.next > handles.capacity {
             handles.capacity = (slots.next * 3 / 2).next_power_of_two();
@@ -448,7 +454,10 @@ fn update_targets(
         for k in 0..people.id.len() {
             let id = people.id[k];
             let goal = Vec2::new(people.target[k].0, -people.target[k].1) / SCALE + jitter(id);
-            let (rgb, size) = look(people.doing[k], snap.domains);
+            let (mut rgb, size) = look(people.doing[k], snap.domains);
+            if let (true, Some(c)) = (by_culture, people.culture.get(k)) {
+                rgb = crate::overlay::culture_colour(c);
+            }
             let motion = Motion::of(people.doing[k], &snap.domain_names) as u32 as f32;
             data[slots.of[&id]] = [goal.x, goal.y, 1.0, size, rgb[0], rgb[1], rgb[2], motion];
         }

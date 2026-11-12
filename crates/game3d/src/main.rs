@@ -6,7 +6,7 @@
 //! and bloom. It only reads the scenario; the simulation itself does not run yet.
 //!
 //! econoplex3d [--seed S] [--towns N] [--hour H] [--pbr] [--terrain-view N] [--grid-step K]
-//!     [--fog-view N] [--no-fog] [--days N] [--speed 0-4] [--paused] [--trade] [--bloom-view] [--focus-town I] [--focus X,Z] [--view-from YAW,PITCH,DIST]
+//!     [--fog-view N] [--no-fog] [--days N] [--speed 0-4] [--paused] [--trade] [--culture] [--product-space] [--bloom-view] [--focus-town I] [--focus X,Z] [--view-from YAW,PITCH,DIST]
 //!     [--no-ui] [--no-lod] [--lod-view] [--fps] [--shot FILE]
 //! econoplex3d --playground [--hour H] [--view N] [--toon-view N] [--pbr] [--face-sun] [--shot FILE]
 //!     (shader playground)
@@ -105,7 +105,7 @@ fn main() {
     // The live simulation: fast-forward days, start speed (0-4), paused.
     let (mut days, mut speed, mut paused) = (0u64, 0usize, false);
     let mut no_outlines = false;
-    let mut trade = false;
+    let mut overlay = overlay::Overlay::Off;
     let mut no_ui = false;
     let mut no_lod = false;
     let mut lod_view = false;
@@ -130,7 +130,9 @@ fn main() {
             "--no-lod" => no_lod = true,
             "--lod-view" => lod_view = true,
             "--fps" => fps = true,
-            "--trade" => trade = true,
+            "--trade" => overlay = overlay::Overlay::Trade,
+            "--culture" => overlay = overlay::Overlay::Culture,
+            "--product-space" => overlay = overlay::Overlay::ProductSpace,
             "--bloom-view" => args.bloom_view = true,
             "--terrain-view" => {
                 terrain_settings.debug = it.next().and_then(|v| v.parse().ok()).unwrap_or(0).min(4)
@@ -206,6 +208,7 @@ fn main() {
     for _ in 0..days {
         sim.step();
     }
+    let space = sim_core::view::ProductSpace::new(sim.world.resource::<sim_core::Db>());
     let live = live::LiveSim::start(sim, speed, paused);
 
     let mut app = App::new();
@@ -241,6 +244,7 @@ fn main() {
     .insert_resource(OutlineStart(no_outlines))
     .insert_resource(ui::UiHidden(no_ui))
     .insert_resource(live)
+    .insert_resource(ui::Space(space))
     .insert_resource(args)
     .insert_resource(ShotPath(shot))
     .add_plugins((
@@ -263,11 +267,7 @@ fn main() {
     .insert_resource(terrain_settings)
     .insert_resource(fog_settings)
     .add_systems(PreStartup, apply_outline_start)
-    .insert_resource(if trade {
-        overlay::Overlay::Trade
-    } else {
-        overlay::Overlay::Off
-    })
+    .insert_resource(overlay)
     .add_systems(Startup, setup)
     .add_systems(Update, (shoot, hud::update_help))
     .run();
@@ -537,7 +537,7 @@ fn setup(
     hud::spawn_help(
         &mut commands,
         "Econoplex 3D (prototype)",
-        "WASD pan, Q/E or right-drag rotate, wheel zoom, Home reset, V trade overlay, B bloom, N glow only",
+        "WASD pan, Q/E or right-drag rotate, wheel zoom, Home reset, V overlays (trade, culture, product space), B bloom, N glow only",
     );
 }
 

@@ -50,12 +50,21 @@ pub struct TerrainUniform {
     /// x, y: world x and z of texel (0, 0); z: world distance between texels;
     /// w: height scale.
     pub grid: Vec4,
-    /// x, y: texels across (i, +x) and deep (j, −z); z: unused; w: debug view.
+    /// x, y: texels across (i, +x) and deep (j, −z); z: towns tinted by
+    /// culture (the culture overlay; 0 = off); w: debug view.
     pub dims: Vec4,
     /// The toon parameters of step 02 (shadow tint; wrap and band edges);
     /// `debug.y` of the toon uniform turns toon on (1) or PBR (0).
     pub toon: ToonUniform,
+    /// The culture overlay: per town, x, z of its centre and the radius of its
+    /// tint (`dims.z` of them are used)...
+    pub towns: [Vec4; MAX_TINTED],
+    /// ...and its culture colour (linear rgb).
+    pub cultures: [Vec4; MAX_TINTED],
 }
+
+/// How many towns the culture overlay can tint (the uniform's array size).
+pub const MAX_TINTED: usize = 16;
 
 #[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
 pub struct TerrainExt {
@@ -215,6 +224,8 @@ pub fn spawn_terrain(
                     rim: Vec4::ZERO,
                     ..default()
                 },
+                towns: [Vec4::ZERO; MAX_TINTED],
+                cultures: [Vec4::ZERO; MAX_TINTED],
             },
             heights: heights.clone(),
             biomes: images.add(biomes),

@@ -154,7 +154,18 @@ built almost entirely from procedural geometry and shaders.
   - money flows between towns (animated ribbons, width = value);
   - prices (town billboards);
   - culture (tinting by the town culture vector);
+    **Implemented:** `V` → culture. The terrain around each town takes its
+    culture's colour (tradition red, faith green, liberty blue, neutral grey;
+    a uniform array of town centres and colours in the terrain shader), and
+    every person is drawn in their own beliefs' colour, so newcomers and
+    minorities stand out. A legend shows the selected town's three axes.
   - the product space (as in the 2D game, now a floating graph);
+    **Implemented** as a panel rather than a floating graph (labels read
+    better): `V` → product space. The selected town's skills on a circle
+    grouped by domain, links by embedding similarity, lit where the town made
+    something with the skill last year or its people know it, sized by its
+    residents' mean level; hover for name and level. The sim answers per tick
+    for the selected town (`sim_core::view::town_skills`, read-only).
   - shortages and gluts (pulsing icons).
 
 ## 4. UI

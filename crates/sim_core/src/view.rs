@@ -56,6 +56,10 @@ pub struct TownView {
     /// The town this one pays tribute to, if conquered.
     pub ruler: Option<u16>,
     pub policy: PolicyView,
+    /// The town's culture, one value per ideological axis (0..1, 0.5 neutral;
+    /// see `decision::culture`).
+    #[serde(default)]
+    pub culture: Vec<f32>,
     /// The newest era among the town's buildings (a display label: the 3D view
     /// builds in that era's style).
     pub era: u8,
@@ -92,6 +96,10 @@ pub struct PeopleView {
     /// the squad's goal.
     pub target: Vec<(f32, f32)>,
     pub doing: Vec<Doing>,
+    /// Each person's own culture: the first three ideological axes of their
+    /// mind (tradition, faith, liberty; 0..1, 0.5 neutral).
+    #[serde(default)]
+    pub culture: Vec<[f32; 3]>,
 }
 
 /// How much of the event log and the monthly history a view already has.
@@ -124,6 +132,96 @@ pub struct ViewSnapshot {
     /// asked for them; set by the owner of the simulation after capturing.
     #[serde(default)]
     pub why: Option<(u16, Vec<crate::explain::Finding>)>,
+    /// The product space as one town sees it (see [`town_skills`]), if the
+    /// view asked; set like `why`.
+    #[serde(default)]
+    pub skills: Option<(u16, TownSkills)>,
+}
+
+/// The product space's fixed part: the skills, their domains, and the links
+/// between related skills (the embedding's similarity, as in the 2D game).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ProductSpace {
+    pub skills: Vec<String>,
+    /// Each skill's domain (index into `domains`).
+    pub domain: Vec<u16>,
+    pub domains: Vec<String>,
+    /// (skill, skill, similarity) for every pair more similar than 0.2.
+    pub edges: Vec<(u16, u16, f32)>,
+}
+
+impl ProductSpace {
+    pub fn new(db: &Db) -> Self {
+        let n = db.content.skills.len();
+        let mut edges = Vec::new();
+        for a in 0..n {
+            for b in (a + 1)..n {
+                let s = db.embedding.similarity(a, b);
+                if s > 0.2 {
+                    edges.push((a as u16, b as u16, s));
+                }
+            }
+        }
+        ProductSpace {
+            skills: db.content.skills.iter().map(|s| s.name.clone()).collect(),
+            domain: db
+                .content
+                .skills
+                .iter()
+                .map(|s| db.content.domain(&s.domain).unwrap_or(0) as u16)
+                .collect(),
+            domains: db.content.domains.clone(),
+            edges,
+        }
+    }
+}
+
+/// One town's place in the product space.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TownSkills {
+    /// The residents' mean level in each skill.
+    pub level: Vec<f32>,
+    /// Skills the town reached: it made something with them last year, or its
+    /// people know them (mean level above 0.2).
+    pub lit: Vec<bool>,
+}
+
+/// Where a town stands in the product space (read-only).
+pub fn town_skills(world: &World, town: u16) -> TownSkills {
+    let db = world.resource::<Db>();
+    let towns = world.resource::<Towns>();
+    let store = world.resource::<crate::AgentStore>();
+    let n = db.content.skills.len();
+    let Some(t) = towns.0.get(town as usize) else {
+        return TownSkills::default();
+    };
+    let mut level = vec![0.0f32; n];
+    let mut count = 0.0f32;
+    for &i in &t.residents {
+        let i = i as usize;
+        if !store.alive[i] {
+            continue;
+        }
+        for (s, v) in db.skill_profile(&store.cap[i]).iter().enumerate() {
+            level[s] += v;
+        }
+        count += 1.0;
+    }
+    level.iter_mut().for_each(|v| *v /= count.max(1.0));
+    let mut lit: Vec<bool> = level.iter().map(|&v| v > 0.2).collect();
+    for r in &db.recipes {
+        let made = r.outputs.iter().any(|&(p, _)| {
+            t.produced_last_year
+                .get(p as usize)
+                .is_some_and(|&q| q > 0.0)
+        });
+        if made {
+            if let Some(l) = lit.get_mut(r.skill_idx as usize) {
+                *l = true;
+            }
+        }
+    }
+    TownSkills { level, lit }
 }
 
 impl ViewSnapshot {
@@ -144,6 +242,10 @@ impl ViewSnapshot {
             people.id.push(i as u32);
             people.town.push(store.town[i]);
             people.target.push(store.target[i]);
+            let ideology = &store.mind[i][sim_data::dims::mind::IDEOLOGY_START..];
+            people.culture.push(std::array::from_fn(|k| {
+                ideology.get(k).copied().unwrap_or(0.5)
+            }));
             // Workers are Idle again by the end of the tick; what they did is
             // in `worked_today`.
             people
@@ -189,6 +291,7 @@ impl ViewSnapshot {
                         })
                         .collect(),
                     ruler: t.ruler,
+                    culture: t.culture.clone(),
                     era: t
                         .buildings
                         .iter()
@@ -236,6 +339,7 @@ impl ViewSnapshot {
             events,
             samples,
             why: None,
+            skills: None,
         }
     }
 
@@ -254,6 +358,34 @@ mod tests {
         let paths = AssetPaths::discover();
         let (db, params, scenario) = crate::load(&paths).unwrap();
         Simulation::new(db, params, &scenario)
+    }
+
+    #[test]
+    fn a_town_sees_its_skills_in_the_product_space() {
+        let mut s = sim();
+        for _ in 0..60 {
+            s.step();
+        }
+        let space = ProductSpace::new(s.world.resource::<Db>());
+        let mine = town_skills(&s.world, 0);
+        let n = space.skills.len();
+        assert_eq!(
+            (mine.level.len(), mine.lit.len(), space.domain.len()),
+            (n, n, n)
+        );
+        assert!(
+            mine.lit.iter().any(|&l| l),
+            "a working town has reached some skills"
+        );
+        assert!(mine.level.iter().all(|v| v.is_finite() && *v >= 0.0));
+        assert!(space
+            .edges
+            .iter()
+            .all(|&(a, b, w)| a < b && (b as usize) < n && w > 0.2));
+        // Read-only: asking doesn't change the simulation.
+        let before = s.state_hash();
+        let _ = town_skills(&s.world, 0);
+        assert_eq!(before, s.state_hash());
     }
 
     #[test]

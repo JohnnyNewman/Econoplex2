@@ -1,4 +1,4 @@
-//! M6: overlays on the map. `V` cycles: off, trade.
+//! M6: overlays on the map. `V` cycles: off, trade, culture, product space.
 //!
 //! **Trade:** an arc from each town to each town it ships goods to, as high as
 //! the towns are far apart, brighter and wider the more it ships (the daily
@@ -6,7 +6,17 @@
 //! the arcs, more of them for more trade: the caravans. The colours are bright
 //! HDR values (above 1), so the camera's bloom makes them glow.
 
+//!
+//! **Culture:** the land around each town takes the colour of its culture, and
+//! every person their own: tradition red, faith green, liberty blue (each axis
+//! 0..1; neutral 0.5 is grey). Newcomers and minorities stand out against their
+//! town's colour. The tint is drawn by the terrain shader (`terrain.wesl`).
+//!
+//! **Product space:** a panel (ui.rs) with the selected town's skills, as in the
+//! 2D game.
+
 use crate::live::LiveSim;
+use crate::terrain::{TerrainMaterial, MAX_TINTED};
 use crate::{height, World3d, SCALE};
 use bevy::prelude::*;
 
@@ -16,7 +26,10 @@ impl Plugin for OverlayPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Overlay>()
             .add_systems(Startup, configure_lines)
-            .add_systems(Update, (overlay_keys, draw_trade, draw_why).chain());
+            .add_systems(
+                Update,
+                (overlay_keys, draw_trade, draw_why, tint_terrain).chain(),
+            );
     }
 }
 
@@ -26,6 +39,30 @@ pub enum Overlay {
     #[default]
     Off,
     Trade,
+    Culture,
+    ProductSpace,
+}
+
+impl Overlay {
+    pub fn next(self) -> Overlay {
+        match self {
+            Overlay::Off => Overlay::Trade,
+            Overlay::Trade => Overlay::Culture,
+            Overlay::Culture => Overlay::ProductSpace,
+            Overlay::ProductSpace => Overlay::Off,
+        }
+    }
+}
+
+/// A culture as a colour (linear rgb): tradition red, faith green, liberty
+/// blue. Each axis is stretched around its neutral 0.5 (1.6 times), so the
+/// small differences real towns have show.
+pub fn culture_colour(c: &[f32]) -> [f32; 3] {
+    std::array::from_fn(|k| {
+        let v = c.get(k).copied().unwrap_or(0.5);
+        let srgb = (0.5 + (v - 0.5) * 1.6).clamp(0.05, 0.95);
+        Color::srgb(srgb, srgb, srgb).to_linear().red
+    })
 }
 
 fn configure_lines(mut store: ResMut<GizmoConfigStore>) {
@@ -35,10 +72,7 @@ fn configure_lines(mut store: ResMut<GizmoConfigStore>) {
 
 fn overlay_keys(keys: Res<ButtonInput<KeyCode>>, mut overlay: ResMut<Overlay>) {
     if keys.just_pressed(KeyCode::KeyV) {
-        *overlay = match *overlay {
-            Overlay::Off => Overlay::Trade,
-            Overlay::Trade => Overlay::Off,
-        };
+        *overlay = overlay.next();
     }
 }
 
@@ -96,6 +130,40 @@ fn draw_trade(
     }
 }
 
+/// The culture overlay's terrain tint: each town's centre, radius and culture
+/// colour into the terrain's uniform, when the overlay or the day changes.
+fn tint_terrain(
+    overlay: Res<Overlay>,
+    live: Res<LiveSim>,
+    mut last: Local<Option<(Overlay, u64)>>,
+    terrains: Query<&MeshMaterial3d<TerrainMaterial>>,
+    mut materials: ResMut<Assets<TerrainMaterial>>,
+) {
+    let now = (*overlay, live.snapshot.tick);
+    if *last == Some(now) {
+        return;
+    }
+    *last = Some(now);
+    let towns = &live.snapshot.towns;
+    let on = *overlay == Overlay::Culture;
+    for handle in &terrains {
+        let Some(mut m) = materials.get_mut(handle) else {
+            continue;
+        };
+        let u = &mut m.extension.terrain;
+        u.dims.z = if on {
+            towns.len().min(MAX_TINTED) as f32
+        } else {
+            0.0
+        };
+        for (k, t) in towns.iter().take(MAX_TINTED).enumerate() {
+            u.towns[k] = Vec4::new(t.pos.0 / SCALE, -t.pos.1 / SCALE, 32.0, 0.0);
+            let c = culture_colour(&t.culture);
+            u.cultures[k] = Vec4::new(c[0], c[1], c[2], 1.0);
+        }
+    }
+}
+
 /// The "why" view (M7) rings the selected town's buildings of the types its
 /// findings name: a pulsing circle on the ground around each.
 fn draw_why(
@@ -121,6 +189,28 @@ fn draw_why(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_overlay_key_cycles_through_all_four() {
+        let mut o = Overlay::Off;
+        let mut seen = Vec::new();
+        for _ in 0..4 {
+            o = o.next();
+            seen.push(o);
+        }
+        assert_eq!(seen.last(), Some(&Overlay::Off));
+        assert!(seen.contains(&Overlay::Culture) && seen.contains(&Overlay::ProductSpace));
+    }
+
+    #[test]
+    fn neutral_culture_is_grey_and_each_axis_has_its_channel() {
+        let grey = culture_colour(&[0.5, 0.5, 0.5]);
+        assert!(grey.iter().all(|&v| (v - grey[0]).abs() < 1e-6));
+        let traditional = culture_colour(&[0.8, 0.5, 0.5]);
+        assert!(traditional[0] > traditional[1] && traditional[1] == traditional[2]);
+        let liberal = culture_colour(&[0.5, 0.5, 0.8]);
+        assert!(liberal[2] > liberal[0]);
+    }
 
     #[test]
     fn arcs_start_and_end_above_the_towns_and_rise_in_between() {
