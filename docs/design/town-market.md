@@ -279,3 +279,33 @@ What this says:
 Next: find what holds the complex chains back when labour is free (the "why"
 view's explainer, per chain), and test caravans that ship in proportion to the
 price gap.
+
+### Caravans that balance (2026-11-12)
+
+`market.caravans: Balance(max_load: N)` (off by default; `Fixed` keeps the old
+rule). A caravan carries the seller's surplus over its own target, up to what
+the buyer lacks of its target and can pay for, at most N units. Before, it
+carried a fixed 6 units, at most half the seller's stock.
+
+**6 seeds × 20 years:**
+
+| caravans | `stop_at_floor` | food/cap | kinds | swords | gini | gwork |
+| --- | --- | --- | --- | --- | --- | --- |
+| Fixed (default) | off | 13.6 | 28.5 | 1024 ± 236 | 0.66 | 39 % |
+| Balance 100 | off | 9.9 | 28.5 | 1076 ± 350 | 0.59 | 26 % |
+| Balance 400 | off | 10.7 | 28.3 | 1435 ± 450 | 0.61 | 36 % |
+| Balance 1000 | off | 10.2 | 28.5 | 1514 ± 426 | 0.61 | 35 % |
+| Balance 400 | on | 5.9 | 25.2 | 596 ± 109 | 0.59 | 17 % |
+
+- **Balancing caravans help on every measure:** more swords, less inequality
+  between towns, less wasted work. Variety is unchanged. Food per head falls
+  from 13.6 to about 10, still more than three times the target, and nobody
+  starves.
+- **With `stop_at_floor`, swords fall by more than half.** Swords are a pile
+  themselves: Ironhold makes longswords at the floor price with 253 in stock
+  against a target of 133, and only armies use them. So "swords" partly
+  measures waste, and "kinds made last year" drops when a town stops making
+  something it already has plenty of.
+
+**Open question:** what counts as success. Capability (what a town *can* make),
+use (what people and trades actually consume), or output (what is made)?

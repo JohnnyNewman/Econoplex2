@@ -286,11 +286,19 @@ pub fn settle(
                     } else {
                         towns.0[a].stock[p]
                     };
-                    let amount = mp
-                        .trade_amount
-                        .min(available * 0.5)
-                        .min(towns.0[b].treasury.max(0.0) / pb)
-                        .floor();
+                    let load = match mp.caravans {
+                        crate::config::Caravans::Fixed => mp.trade_amount.min(available * 0.5),
+                        // The seller's surplus over its own target, up to what
+                        // the buyer lacks of its target.
+                        crate::config::Caravans::Balance { max_load } => {
+                            let surplus = available
+                                - super::decide::target_stock(&db, &towns.0[a], &params, p);
+                            let lack = super::decide::target_stock(&db, &towns.0[b], &params, p)
+                                - towns.0[b].stock[p];
+                            surplus.min(lack).min(max_load).max(0.0)
+                        }
+                    };
+                    let amount = load.min(towns.0[b].treasury.max(0.0) / pb).floor();
                     if amount < 1.0 {
                         continue;
                     }

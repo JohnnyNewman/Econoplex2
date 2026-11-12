@@ -29,6 +29,18 @@ pub fn glutted(db: &Db, town: &crate::world::Town, params: &Params, p: usize) ->
             && over_target(db, town, params, p, 1.0))
 }
 
+/// The stock of a good a town's market aims to hold: per resident (more for
+/// food), plus open government orders.
+pub fn target_stock(db: &Db, town: &crate::world::Town, params: &Params, p: usize) -> f32 {
+    let mp = &params.market;
+    let per_capita = if db.is_food[p] {
+        mp.food_target_per_capita
+    } else {
+        mp.target_per_capita
+    };
+    (per_capita * town.residents.len() as f32).max(1.0) + town.policy.ordered(p)
+}
+
 /// Whether a good's price in a town has fallen to its floor.
 pub fn at_floor(db: &Db, town: &crate::world::Town, params: &Params, p: usize) -> bool {
     town.price[p] <= db.base_price[p] * params.market.min_price_factor * 1.05
@@ -43,13 +55,7 @@ pub fn over_target(
     p: usize,
     factor: f32,
 ) -> bool {
-    let mp = &params.market;
-    let per_capita = if db.is_food[p] {
-        mp.food_target_per_capita
-    } else {
-        mp.target_per_capita
-    };
-    let target = (per_capita * town.residents.len() as f32).max(1.0) + town.policy.ordered(p);
+    let target = target_stock(db, town, params, p);
     // Goods the town's firms hold unsold count too.
     let unsold: f32 = town
         .firms
