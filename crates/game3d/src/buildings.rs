@@ -9,6 +9,11 @@
 //! Positions and types come from the simulation's snapshots (`live.rs`): every
 //! building is drawn where the sim put it, appears when it is built and goes
 //! when it is gone.
+//!
+//! **Style (M8):** a town builds in the style of its newest era (eras are
+//! display labels): timber and thatch, then plaster and tiles, then brick, then
+//! stone and slate. Its houses follow its residents' wealth: small thatched
+//! cottages, ordinary houses, or two-storey houses with chimneys.
 
 use crate::outline::Outlines;
 use crate::toon::{toon, ToonMaterial};
@@ -75,7 +80,7 @@ impl Kit {
         }
     }
 
-    fn mat(&self, name: &str) -> Handle<ToonMaterial> {
+    pub fn mat(&self, name: &str) -> Handle<ToonMaterial> {
         self.colours[name].clone()
     }
 }
@@ -322,6 +327,127 @@ fn parts(kit: &Kit, kind: &str) -> Vec<(Handle<Mesh>, &'static str, Vec3, Vec3)>
     }
 }
 
+/// How a town builds: its era and its wealth tier (0 poor, 1, 2 rich).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct Style {
+    pub era: u8,
+    pub tier: u8,
+}
+
+/// Wealth tier boundaries (residents' mean coin).
+const TIERS: [f32; 2] = [6.0, 30.0];
+
+impl Style {
+    /// The style for a town, given its era and mean wealth. The tier only moves
+    /// when wealth is clearly past a boundary (15 % margin), so a town hovering
+    /// at a boundary doesn't rebuild every day.
+    pub fn of(era: u8, mean_wealth: f32, current: Option<Style>) -> Style {
+        let mut tier = TIERS.iter().filter(|&&b| mean_wealth >= b).count() as u8;
+        if let Some(c) = current {
+            if tier > c.tier && mean_wealth < TIERS[c.tier as usize] * 1.15 {
+                tier = c.tier;
+            }
+            if tier < c.tier && mean_wealth > TIERS[c.tier as usize - 1] * 0.85 {
+                tier = c.tier;
+            }
+        }
+        Style { era, tier }
+    }
+
+    /// The wall colour of the era.
+    pub fn wall(&self) -> &'static str {
+        match self.era {
+            0 => "timber",
+            1 => "plaster",
+            2 => "brick",
+            _ => "stone",
+        }
+    }
+
+    /// A roof colour of the era (`k` picks among the era's few).
+    pub fn roof(&self, k: u32) -> &'static str {
+        let pick = |opts: &[&'static str]| opts[k as usize % opts.len()];
+        match self.era {
+            0 => "thatch",
+            1 => pick(&["red_roof", "brown_roof", "thatch"]),
+            2 => pick(&["red_roof", "red_roof", "brown_roof"]),
+            _ => pick(&["slate_roof", "slate_roof", "red_roof"]),
+        }
+    }
+
+    /// A building part's colour in this style: walls and roofs follow the era;
+    /// trade colours (soot, gold, sails, brick kilns) stay.
+    pub fn restyle(&self, colour: &'static str, k: u32) -> &'static str {
+        match colour {
+            "plaster" => self.wall(),
+            "red_roof" | "brown_roof" | "thatch" | "slate_roof" => self.roof(k),
+            other => other,
+        }
+    }
+}
+
+/// Spawn one house at `at`, turned by `rot`, in the town's style.
+pub fn spawn_house(
+    commands: &mut Commands,
+    kit: &Kit,
+    outlines: &Outlines,
+    at: Vec3,
+    rot: Quat,
+    k: u32,
+    style: Style,
+) -> Entity {
+    // (body size, roof radius and height, chimney?)
+    let (body, roof_r, roof_h, chimney) = match style.tier {
+        0 => (Vec3::new(0.8, 0.6, 0.9), 0.8, 0.6, false),
+        1 => (Vec3::new(1.0, 0.8, 1.2), 0.95, 0.7, false),
+        _ => (Vec3::new(1.1, 1.5, 1.3), 1.0, 0.8, true),
+    };
+    let wall = if style.tier == 0 {
+        "timber"
+    } else {
+        style.wall()
+    };
+    let roof = if style.tier == 0 {
+        "thatch"
+    } else {
+        style.roof(k)
+    };
+    let mut parts = vec![
+        (kit.cube.clone(), wall, Vec3::Y * body.y / 2.0, body),
+        (
+            kit.cone.clone(),
+            roof,
+            Vec3::Y * (body.y + roof_h / 2.0),
+            Vec3::new(roof_r * 2.0, roof_h, roof_r * 2.0),
+        ),
+    ];
+    if chimney {
+        parts.push((
+            kit.cube.clone(),
+            "brick",
+            Vec3::new(0.3, body.y + 0.35, 0.3),
+            Vec3::new(0.2, 0.7, 0.2),
+        ));
+    }
+    let parent = commands
+        .spawn((
+            Transform::from_translation(at).with_rotation(rot),
+            Visibility::default(),
+        ))
+        .id();
+    for (mesh, colour, offset, scale) in parts {
+        commands
+            .spawn((
+                Mesh3d(mesh.clone()),
+                MeshMaterial3d(kit.mat(colour)),
+                Transform::from_translation(offset).with_scale(scale),
+                ChildOf(parent),
+            ))
+            .with_child(outlines.hull(mesh));
+    }
+    parent
+}
+
 /// Spawn one building: a parent entity at the ground point with its parts as
 /// children, so the whole building can be removed again with one despawn.
 /// Land "buildings" (cleared fields, woodlots) are not drawn: `None`.
@@ -330,6 +456,7 @@ pub fn spawn_building(
     kit: &Kit,
     outlines: &Outlines,
     b: &BuildingSpec,
+    style: Style,
 ) -> Option<Entity> {
     if b.kind == "field_plot" || b.kind == "woodlot" {
         return None;
@@ -346,11 +473,43 @@ pub fn spawn_building(
         commands
             .spawn((
                 Mesh3d(mesh.clone()),
-                MeshMaterial3d(kit.mat(colour)),
+                MeshMaterial3d(kit.mat(style.restyle(colour, b.seed))),
                 Transform::from_translation(offset).with_scale(scale),
                 ChildOf(parent),
             ))
             .with_child(outlines.hull(mesh));
     }
     Some(parent)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wealth_tiers_move_only_clearly_past_a_boundary() {
+        assert_eq!(Style::of(1, 2.0, None).tier, 0);
+        assert_eq!(Style::of(1, 10.0, None).tier, 1);
+        assert_eq!(Style::of(1, 50.0, None).tier, 2);
+        let mid = Style::of(1, 10.0, None);
+        // Just above the next boundary: stays (within the margin)...
+        assert_eq!(Style::of(1, 31.0, Some(mid)).tier, 1);
+        // ...clearly above: moves up.
+        assert_eq!(Style::of(1, 40.0, Some(mid)).tier, 2);
+        // Just below its own boundary: stays; clearly below: moves down.
+        assert_eq!(Style::of(1, 5.5, Some(mid)).tier, 1);
+        assert_eq!(Style::of(1, 4.0, Some(mid)).tier, 0);
+    }
+
+    #[test]
+    fn eras_change_walls_and_roofs_but_not_trade_colours() {
+        let old = Style { era: 0, tier: 1 };
+        let new = Style { era: 3, tier: 1 };
+        assert_eq!(old.restyle("plaster", 0), "timber");
+        assert_eq!(new.restyle("plaster", 0), "stone");
+        assert_eq!(old.restyle("red_roof", 0), "thatch");
+        assert_eq!(new.restyle("thatch", 0), "slate_roof");
+        assert_eq!(new.restyle("soot", 0), "soot");
+        assert_eq!(new.restyle("gold", 0), "gold");
+    }
 }

@@ -17,10 +17,10 @@
 //!
 //! Keys: `Space` pause, `,` / `.` slower / faster.
 
-use crate::buildings::{spawn_building, BuildingSpec, Kit};
+use crate::buildings::{spawn_building, spawn_house, BuildingSpec, Kit, Style};
 use crate::outline::Outlines;
 use crate::sky::SkyClock;
-use crate::toon::{toon, ToonMaterial};
+use crate::toon::ToonMaterial;
 use crate::{height, World3d, SCALE};
 use bevy::prelude::*;
 use sim_core::history::{Event, Sample};
@@ -241,15 +241,8 @@ struct Shown {
     /// Per town: house entities with their map positions, and how far along
     /// its spiral we are.
     houses: Vec<(Vec<(Entity, Vec2)>, u32)>,
-}
-
-/// Shared house meshes and materials.
-#[derive(Resource)]
-struct HouseKit {
-    body: Handle<Mesh>,
-    roof: Handle<Mesh>,
-    walls: Handle<ToonMaterial>,
-    roofs: [Handle<ToonMaterial>; 3],
+    /// Per town: the style it is drawn in (era and wealth tier).
+    styles: Vec<Option<Style>>,
 }
 
 fn init_kit(
@@ -258,16 +251,6 @@ fn init_kit(
     mut toons: ResMut<Assets<ToonMaterial>>,
 ) {
     commands.insert_resource(Kit::new(&mut meshes, &mut toons));
-    commands.insert_resource(HouseKit {
-        body: meshes.add(Cuboid::new(1.0, 0.8, 1.2)),
-        roof: meshes.add(Cone::new(0.95, 0.7)),
-        walls: toons.add(toon(Color::srgb(0.88, 0.82, 0.70))),
-        roofs: [
-            toons.add(toon(Color::srgb(0.66, 0.26, 0.20))),
-            toons.add(toon(Color::srgb(0.50, 0.32, 0.22))),
-            toons.add(toon(Color::srgb(0.36, 0.38, 0.46))),
-        ],
-    });
 }
 
 fn live_keys(keys: Res<ButtonInput<KeyCode>>, live: Res<LiveSim>) {
@@ -296,11 +279,10 @@ fn sync_scene(
     mut shown: ResMut<Shown>,
     kit: Option<Res<Kit>>,
     outlines: Option<Res<Outlines>>,
-    houses: Option<Res<HouseKit>>,
     world: Res<World3d>,
     mut clock: ResMut<SkyClock>,
 ) {
-    let (Some(kit), Some(hk), Some(outlines)) = (kit, houses, outlines) else {
+    let (Some(kit), Some(outlines)) = (kit, outlines) else {
         return;
     };
     // Take over the newest snapshot and the events since the last frame.
@@ -328,6 +310,30 @@ fn sync_scene(
     // The calendar sets the season (the time of day stays yours: `[` `]`, `T`).
     clock.season = snap.season();
 
+    // Styles (M8): a town whose era or wealth tier changed is rebuilt in its
+    // new style (its buildings respawn below, its houses further down).
+    if shown.styles.len() < snap.towns.len() {
+        shown.styles.resize(snap.towns.len(), None);
+        shown.houses.resize_with(snap.towns.len(), Default::default);
+    }
+    for (ti, town) in snap.towns.iter().enumerate() {
+        let now = Style::of(town.era, town.mean_wealth, shown.styles[ti]);
+        if shown.styles[ti] == Some(now) {
+            continue;
+        }
+        shown.styles[ti] = Some(now);
+        for b in &town.buildings {
+            if let Some(e) = shown.buildings.remove(&b.id) {
+                commands.entity(e).despawn();
+            }
+        }
+        let (list, next_k) = &mut shown.houses[ti];
+        for (e, _) in list.drain(..) {
+            commands.entity(e).despawn();
+        }
+        *next_k = 0;
+    }
+
     // Buildings: add the new ones, remove the ones that are gone.
     let mut alive = Vec::new();
     for (ti, town) in snap.towns.iter().enumerate() {
@@ -341,7 +347,8 @@ fn sync_scene(
                 at: ground(b.pos),
                 seed: (b.id as u32).wrapping_mul(2_654_435_761) >> 8 ^ ti as u32,
             };
-            if let Some(e) = spawn_building(&mut commands, &kit, &outlines, &spec) {
+            let style = shown.styles[ti].unwrap_or_default();
+            if let Some(e) = spawn_building(&mut commands, &kit, &outlines, &spec, style) {
                 shown.buildings.insert(b.id, e);
             }
         }
@@ -360,11 +367,9 @@ fn sync_scene(
         .iter()
         .flat_map(|t| t.buildings.iter().map(|b| Vec2::new(b.pos.0, b.pos.1)))
         .collect();
-    if shown.houses.len() < snap.towns.len() {
-        shown.houses.resize_with(snap.towns.len(), Default::default);
-    }
     for (ti, town) in snap.towns.iter().enumerate() {
         let want = houses_for(town.population) as usize;
+        let style = shown.styles[ti].unwrap_or_default();
         let (list, next_k) = &mut shown.houses[ti];
         let clear = |p: Vec2| !taken.iter().any(|b| b.distance(p) < 3.2 * SCALE);
         // A new building moves the houses standing in its way further out.
@@ -393,26 +398,7 @@ fn sync_scene(
                 continue;
             }
             let rot = Quat::from_rotation_y(a);
-            let house = commands
-                .spawn((
-                    Transform::from_translation(ground(p)).with_rotation(rot),
-                    Visibility::default(),
-                ))
-                .with_children(|h| {
-                    h.spawn((
-                        Mesh3d(hk.body.clone()),
-                        MeshMaterial3d(hk.walls.clone()),
-                        Transform::from_xyz(0.0, 0.4, 0.0),
-                    ))
-                    .with_child(outlines.hull(hk.body.clone()));
-                    h.spawn((
-                        Mesh3d(hk.roof.clone()),
-                        MeshMaterial3d(hk.roofs[k as usize % 3].clone()),
-                        Transform::from_xyz(0.0, 1.15, 0.0),
-                    ))
-                    .with_child(outlines.hull(hk.roof.clone()));
-                })
-                .id();
+            let house = spawn_house(&mut commands, &kit, &outlines, ground(p), rot, k, style);
             list.push((house, Vec2::new(p.0, p.1)));
         }
         // A shrinking town loses its outermost houses first.

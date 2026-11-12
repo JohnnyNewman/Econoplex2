@@ -56,6 +56,11 @@ pub struct TownView {
     /// The town this one pays tribute to, if conquered.
     pub ruler: Option<u16>,
     pub policy: PolicyView,
+    /// The newest era among the town's buildings (a display label: the 3D view
+    /// builds in that era's style).
+    pub era: u8,
+    /// Residents' mean wealth (coin per head).
+    pub mean_wealth: f32,
     /// Goods in the market: (product def, stock, price), for goods in stock.
     pub market: Vec<(u32, f32, f32)>,
     /// Value shipped to each town by caravan (at the buyer's price), as a daily
@@ -180,6 +185,20 @@ impl ViewSnapshot {
                         })
                         .collect(),
                     ruler: t.ruler,
+                    era: t
+                        .buildings
+                        .iter()
+                        .map(|&(def, _, _)| db.content.products[def as usize].era)
+                        .max()
+                        .unwrap_or(0),
+                    mean_wealth: {
+                        let n = t.residents.len().max(1) as f32;
+                        t.residents
+                            .iter()
+                            .map(|&i| store.wealth[i as usize])
+                            .sum::<f32>()
+                            / n
+                    },
                     policy: {
                         let pol = &t.policy;
                         let defaults = world.get_resource::<crate::world::Params>();
