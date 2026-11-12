@@ -374,6 +374,12 @@ pub struct MarketParams {
     pub price_overrides: Vec<(String, crate::pricing::ClassParams)>,
     pub trade_interval: u32,
     pub trade_amount: f32,
+    /// How much a caravan carries. `Fixed` (default): up to `trade_amount`
+    /// units, at most half the seller's stock. `Balance { max_load }`: the
+    /// seller's surplus over its own target, up to what the buyer lacks of its
+    /// target (at most `max_load` units), so piles flow to shortages.
+    #[serde(default)]
+    pub caravans: Caravans,
     /// Fraction of price lost per unit traded per 1000 units of road (transport cost).
     pub transport_cost: f32,
     /// Yearly tax on each agent's wealth above `tax_free_wealth`, paid to the town
@@ -966,4 +972,14 @@ mod tests {
         assert!(set_ron_field(text, "a.z", "1").is_err());
         assert!(set_ron_field(text, "y", "1").is_err());
     }
+}
+
+/// How caravans decide their load (`market.caravans`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+pub enum Caravans {
+    #[default]
+    Fixed,
+    Balance {
+        max_load: f32,
+    },
 }

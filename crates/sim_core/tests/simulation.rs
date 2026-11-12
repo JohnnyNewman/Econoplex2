@@ -2230,3 +2230,44 @@ fn a_compact_binary_save_loads_identically_and_is_much_smaller() {
     assert_eq!(a.state_hash(), b.state_hash());
     assert!(sim_core::save::from_bytes(text.as_bytes()).is_err());
 }
+
+#[test]
+fn balancing_caravans_move_more_goods_and_conserve_money() {
+    use sim_core::config::Caravans;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let run = |caravans: Caravans| {
+        let (db, mut params, scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+        params.market.caravans = caravans;
+        let mut s = Simulation::new(db, params, &scenario);
+        let money = |s: &Simulation| {
+            let towns = s.world.resource::<sim_core::Towns>();
+            let minted: f64 = towns
+                .0
+                .iter()
+                .map(|t| t.ledger.total[sim_core::ledger::Flow::Minted as usize])
+                .sum();
+            sim_core::world::total_money(s.world.resource::<sim_core::AgentStore>(), towns) - minted
+        };
+        let before = money(&s);
+        for _ in 0..360 {
+            s.step();
+        }
+        let after = money(&s);
+        assert!(
+            ((after - before) / before).abs() < 1e-3,
+            "{caravans:?}: money {before} -> {after}"
+        );
+        let towns = s.world.resource::<sim_core::Towns>();
+        towns
+            .0
+            .iter()
+            .map(|t| t.ledger.total[sim_core::ledger::Flow::TradeSales as usize])
+            .sum::<f64>()
+    };
+    let fixed = run(Caravans::Fixed);
+    let balance = run(Caravans::Balance { max_load: 400.0 });
+    assert!(
+        balance > fixed,
+        "trade sales: balance {balance} vs fixed {fixed}"
+    );
+}
