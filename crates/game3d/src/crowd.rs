@@ -14,6 +14,12 @@
 //!   pass keeps each person's stride phase, so feet don't slide); workers
 //!   standing at their workplace make their trade's motion (`Motion`).
 //!
+//! - **Level of detail (step 10):** close up, the full figure; farther away, a
+//!   card facing the camera with the silhouette drawn by a distance function
+//!   in the fragment shader; beyond `far`, nothing. Levels cross-fade with a
+//!   dither, so nobody pops. `K` tints people by level; `--no-lod` draws
+//!   full figures everywhere (for comparison).
+//!
 //! Colours: workers by the skill domain of what they worked at today, soldiers
 //! dark red, children small and pale, idle people light, resting ones blue-grey.
 //! Key: `P` shows or hides the people.
@@ -37,8 +43,12 @@ use std::collections::HashMap;
 
 pub type CrowdMaterial = ExtendedMaterial<StandardMaterial, CrowdExt>;
 
-/// Vertices of one figure (must match `VERTS_PER_PERSON` in people.wesl).
-pub const VERTS_PER_PERSON: usize = 180;
+/// Vertices of the full figure.
+pub const FIGURE_VERTS: usize = 180;
+/// Vertices of one person in the crowd mesh: the figure, then the card (two
+/// triangles) for the middle distance. Must match `VERTS_PER_PERSON` in
+/// people.wesl.
+pub const VERTS_PER_PERSON: usize = FIGURE_VERTS + 6;
 /// Floats per person in the people buffer (must match `Person` in people.wesl
 /// and walk.wesl).
 pub const PERSON_FLOATS: usize = 12;
@@ -86,6 +96,7 @@ impl Plugin for CrowdPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(MaterialPlugin::<CrowdMaterial>::default())
             .init_resource::<Slots>()
+            .init_resource::<LodSettings>()
             .add_systems(Startup, spawn_crowd)
             .add_systems(Update, (update_targets, update_crowd_material));
     }
@@ -94,6 +105,43 @@ impl Plugin for CrowdPlugin {
 #[derive(ShaderType, Reflect, Clone, Copy, Debug)]
 pub struct CrowdUniform {
     pub toon: ToonUniform,
+    /// Level of detail: figure-to-card distance, far cut-off, cross-fade band,
+    /// tint by level (1) or not (0).
+    pub lod: Vec4,
+}
+
+/// The level-of-detail distances (3D units) and switches.
+#[derive(Resource, Clone, Copy, Debug)]
+pub struct LodSettings {
+    pub near: f32,
+    pub far: f32,
+    pub band: f32,
+    /// Off: full figures at every distance (`--no-lod`).
+    pub on: bool,
+    /// Tint people by level (`K`).
+    pub show: bool,
+}
+
+impl Default for LodSettings {
+    fn default() -> Self {
+        LodSettings {
+            near: 28.0,
+            far: 260.0,
+            band: 6.0,
+            on: true,
+            show: false,
+        }
+    }
+}
+
+impl LodSettings {
+    pub fn uniform(&self) -> Vec4 {
+        if self.on {
+            Vec4::new(self.near, self.far, self.band, self.show as u32 as f32)
+        } else {
+            Vec4::new(1e9, 2e9, self.band, self.show as u32 as f32)
+        }
+    }
 }
 
 #[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
@@ -126,8 +174,8 @@ impl MaterialExtension for CrowdExt {
 /// | 60..90, 90..120 | left and right leg (hip at y 0.32) |
 /// | 120..150, 150..180 | left and right arm (shoulder at y 0.53) |
 pub fn figure() -> (Vec<[f32; 3]>, Vec<[f32; 3]>) {
-    let mut pos = Vec::with_capacity(VERTS_PER_PERSON);
-    let mut nrm = Vec::with_capacity(VERTS_PER_PERSON);
+    let mut pos = Vec::with_capacity(FIGURE_VERTS);
+    let mut nrm = Vec::with_capacity(FIGURE_VERTS);
     let mut tri = |a: Vec3, b: Vec3, c: Vec3| {
         // Listed clockwise as seen from outside; emitted counter-clockwise (the
         // front face) with the normal pointing out.
@@ -178,7 +226,7 @@ pub fn figure() -> (Vec<[f32; 3]>, Vec<[f32; 3]>) {
     for x in [0.17, -0.17] {
         limb(Vec3::new(x, 0.53, 0.0), Vec3::new(x, 0.27, 0.0), 0.03);
     }
-    assert_eq!(pos.len(), VERTS_PER_PERSON);
+    assert_eq!(pos.len(), FIGURE_VERTS);
     (pos, nrm)
 }
 
@@ -190,6 +238,9 @@ fn crowd_mesh(n: usize) -> Mesh {
     for _ in 0..n {
         pos.extend_from_slice(&fp);
         nrm.extend_from_slice(&fnrm);
+        // The card's corners are placed by the shader (it faces the camera).
+        pos.extend_from_slice(&[[0.0; 3]; 6]);
+        nrm.extend_from_slice(&[[0.0, 1.0, 0.0]; 6]);
     }
     let count = pos.len();
     let mut mesh = Mesh::new(
@@ -199,6 +250,9 @@ fn crowd_mesh(n: usize) -> Mesh {
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, pos);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, nrm);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.0f32, 0.0]; count]);
+    // A second UV set gives the fragment stage the card coordinates
+    // (`VERTEX_UVS_B`); the values are written by the vertex shader.
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_1, vec![[0.0f32, 0.0]; count]);
     mesh.insert_indices(Indices::U32((0..count as u32).collect()));
     mesh
 }
@@ -294,6 +348,7 @@ fn spawn_crowd(
         extension: CrowdExt {
             crowd: CrowdUniform {
                 toon: ToonUniform::default(),
+                lod: LodSettings::default().uniform(),
             },
             people: people.clone(),
         },
@@ -421,13 +476,19 @@ fn update_targets(
 fn update_crowd_material(
     toon: Res<ToonSettings>,
     fog: Res<FogState>,
+    keys: Res<ButtonInput<KeyCode>>,
+    mut lod: ResMut<LodSettings>,
     mut materials: ResMut<Assets<CrowdMaterial>>,
 ) {
-    if !toon.is_changed() && !fog.is_changed() {
+    if keys.just_pressed(KeyCode::KeyK) {
+        lod.show = !lod.show;
+    }
+    if !toon.is_changed() && !fog.is_changed() && !lod.is_changed() {
         return;
     }
     for (_, m) in materials.iter_mut() {
         m.extension.crowd.toon.fog = fog.0;
+        m.extension.crowd.lod = lod.uniform();
         m.extension.crowd.toon.debug.y = toon.on as u32 as f32;
         m.extension.crowd.toon.rim.x = if toon.rim { 1.0 } else { 0.0 };
     }
@@ -439,7 +500,7 @@ mod tests {
 
     #[test]
     fn the_figure_has_the_vertex_count_the_shader_expects() {
-        assert_eq!(figure().0.len(), VERTS_PER_PERSON);
+        assert_eq!(figure().0.len(), FIGURE_VERTS);
         assert_eq!(crowd_mesh(3).count_vertices(), 3 * VERTS_PER_PERSON);
     }
 
@@ -478,6 +539,19 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn lod_off_pushes_the_switches_out_of_reach() {
+        let on = LodSettings::default();
+        assert!(
+            on.uniform().x < on.uniform().y,
+            "cards between figures and the far cut-off"
+        );
+        let off = LodSettings { on: false, ..on };
+        assert!(off.uniform().x > 1e6 && off.uniform().y > off.uniform().x);
+        let shown = LodSettings { show: true, ..on };
+        assert_eq!(shown.uniform().w, 1.0);
     }
 
     #[test]

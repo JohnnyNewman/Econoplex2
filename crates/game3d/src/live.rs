@@ -308,7 +308,10 @@ fn sync_scene(
     let ground = |p: (f32, f32)| Vec3::new(p.0 / SCALE, height(t, p), -p.1 / SCALE);
 
     // The calendar sets the season (the time of day stays yours: `[` `]`, `T`).
-    clock.season = snap.season();
+    let season = snap.season();
+    if clock.season != season {
+        clock.season = season;
+    }
 
     // Styles (M8): a town whose era or wealth tier changed is rebuilt in its
     // new style (its buildings respawn below, its houses further down).
