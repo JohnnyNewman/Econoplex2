@@ -230,3 +230,52 @@ Optional fixes in `models.ron`, all off by default and compared in
 - workshops as firms (with loans, trade credit and profit tax);
 - emergency food imports;
 - a money-supply rule for the mint.
+
+## Measured: labour spent on piles (2026-11-12)
+
+Two new diagnostics (the state hash is unchanged):
+- `glut%` in the batch report: the share of last year's production value made
+  while the town already held more than its target stock **and** the good sat at
+  its floor price.
+- `gwork%`: the share of worker-days spent on recipes whose every output was in
+  that state.
+
+`cargo run --release -p sim_cli --example market_audit -- YEARS SEED` lists the
+glutted goods per town.
+
+**Defaults, 6 seeds × 20 years:** glut 28.7 % ± 9, gwork **39 % ± 9**. Seed 42 at
+year 10, by town (glut%):
+
+| town | glut | biggest piles (made a year, stock vs target) |
+| --- | --- | --- |
+| Ironhold | 9 % | flour, iron longswords, stone |
+| Greenvale (tributary, farming) | 66 % | ale 5,360 (5,519 vs 1,113), grain 11,112 (2,030 vs 1,113), flour, yarn, wool, bricks |
+| Timberwick | 13 % | ale, bricks, clay |
+| Brassmoor | 10 % | grain, flour, copper ore |
+
+Prices already pay little for glutted goods (0.2× base), so the money lost is
+small. The real loss is labour. Work on a good stops only at `glut_factor` (10)
+× target, and for food that is 30 per resident.
+
+**Tried (6 seeds × 20 years; all off by default):**
+
+| setting | food/cap | kinds | swords | gwork |
+| --- | --- | --- | --- | --- |
+| defaults | 13.6 | 28.5 | 1024 ± 236 | 39 % |
+| `glut_factor: 2` | 9.3 | 27.2 | 758 ± 71 | 54 % |
+| `trade_amount: 60` | 12.0 | 27.5 | 1346 ± 385 | 33 % |
+| `stop_at_floor: true` (new) | 5.9 | 23.6 | 552 ± 111 | 28 % |
+
+What this says:
+- **A lower cap moves the waste, it doesn't remove it.** Stocks then hover
+  between 1× and 2× target at the floor price, and the work goes on.
+- **Refusing work on glutted goods frees labour, but it doesn't reach the
+  complex chains.** Variety and swords fall. The freed workers rest or crowd
+  the next simple job; the sword chain is held back by other things (inputs,
+  buildings, skills), not by hands.
+- **Bigger caravans help the most** (swords +31 %, less waste) by moving piles
+  to towns that lack them.
+
+Next: find what holds the complex chains back when labour is free (the "why"
+view's explainer, per chain), and test caravans that ship in proportion to the
+price gap.

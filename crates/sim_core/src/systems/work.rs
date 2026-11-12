@@ -551,6 +551,23 @@ pub fn produce(
         };
         let m = &db.recipes[r as usize];
         let n = workers.len();
+        {
+            // Diagnostics: labour spent, and labour spent on goods already
+            // glutted (over target, at their floor price).
+            let town = &mut towns.0[task.town as usize];
+            let days = n as f32 * m.duration.max(1.0);
+            town.work_days[0] += days;
+            let glut = m.builds.is_none()
+                && !m.outputs.is_empty()
+                && m.outputs.iter().all(|&(p, _)| {
+                    let pi = p as usize;
+                    super::decide::over_target(&db, town, &params, pi, 1.0)
+                        && super::decide::at_floor(&db, town, &params, pi)
+                });
+            if glut {
+                town.glut_work_days[0] += days;
+            }
+        }
         // A building always goes up once the work is done; skill shows in its quality.
         let success = m.builds.is_some()
             || rng.random::<f32>() < models.success.probability(eff, m.difficulty);
@@ -576,6 +593,15 @@ pub fn produce(
                 let q = q * task.batches as f32;
                 let pi = p as usize;
                 town.produced_this_year[pi] += q;
+                if db.coin[pi] == 0.0
+                    && db.category(p) != Category::Building
+                    && super::decide::over_target(&db, town, &params, pi, 1.0)
+                    && super::decide::at_floor(&db, town, &params, pi)
+                {
+                    town.glut_made_this_year
+                        .resize(db.content.products.len(), 0.0);
+                    town.glut_made_this_year[pi] += q;
+                }
                 // Households keep part of the food they make; the rest goes to market.
                 let mut kept = 0.0;
                 if keep > 0.0 && db.is_food[pi] && db.coin[pi] <= 0.0 {

@@ -184,6 +184,9 @@
         target_per_capita: 0.3,
         food_target_per_capita: 3.0,
         glut_factor: 10.0,
+        // true: also stop offering work on a good once the town holds more than its
+        // target and its price is at the floor.
+        stop_at_floor: false,
         food_reserve_days: 1.0,
         min_price_factor: 0.2,
         max_price_factor: 5.0,

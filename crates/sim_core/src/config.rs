@@ -343,6 +343,11 @@ pub struct MarketParams {
     pub food_target_per_capita: f32,
     /// Nobody makes a good once the town holds this many times its target stock.
     pub glut_factor: f32,
+    /// Also stop offering work on a good as soon as the town holds more than
+    /// its target stock and its price has fallen to the floor: the market
+    /// signals it has enough. Off by default (only `glut_factor` applies).
+    #[serde(default)]
+    pub stop_at_floor: bool,
     /// Days of the town's food need whose inputs (grain, flour, wood) are kept for
     /// the mills and bakeries, out of reach of eating and of other trades.
     pub food_reserve_days: f32,
