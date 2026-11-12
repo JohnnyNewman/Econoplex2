@@ -16,7 +16,7 @@ impl Plugin for OverlayPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Overlay>()
             .add_systems(Startup, configure_lines)
-            .add_systems(Update, (overlay_keys, draw_trade).chain());
+            .add_systems(Update, (overlay_keys, draw_trade, draw_why).chain());
     }
 }
 
@@ -93,6 +93,28 @@ fn draw_trade(
                 );
             }
         }
+    }
+}
+
+/// The "why" view (M7) rings the selected town's buildings of the types its
+/// findings name: a pulsing circle on the ground around each.
+fn draw_why(
+    mut gizmos: Gizmos,
+    live: Res<LiveSim>,
+    world: Res<World3d>,
+    time: Res<Time>,
+    highlight: Option<Res<crate::ui::WhyHighlight>>,
+) {
+    let Some(h) = highlight else { return };
+    let Some(town) = live.snapshot.towns.get(h.town) else {
+        return;
+    };
+    let t = &world.terrain;
+    let pulse = 1.0 + 0.15 * (time.elapsed_secs() * 4.0).sin();
+    for b in town.buildings.iter().filter(|b| h.kinds.contains(&b.kind)) {
+        let at = Vec3::new(b.pos.0 / SCALE, height(t, b.pos) + 0.2, -b.pos.1 / SCALE);
+        let iso = Isometry3d::new(at, Quat::from_rotation_x(std::f32::consts::FRAC_PI_2));
+        gizmos.circle(iso, 2.4 * pulse, Color::linear_rgb(3.0, 0.6, 0.3));
     }
 }
 
