@@ -111,6 +111,10 @@ pub struct ViewSnapshot {
     /// Monthly history samples (one per town) recorded since the previous
     /// capture.
     pub samples: Vec<Sample>,
+    /// The "why" findings for one town (see `crate::explain`), if the view
+    /// asked for them; set by the owner of the simulation after capturing.
+    #[serde(default)]
+    pub why: Option<(u16, Vec<crate::explain::Finding>)>,
 }
 
 impl ViewSnapshot {
@@ -207,6 +211,7 @@ impl ViewSnapshot {
             domains: db.domain_dirs.len() as u32,
             events,
             samples,
+            why: None,
         }
     }
 

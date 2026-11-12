@@ -176,6 +176,20 @@ Panels to port and add:
   It starts as a rule-based explainer that walks the dependency graph of goods,
   jobs and money, highlighting each link on the map.
 
+  **Implemented (M7):**
+  - `sim_core::explain::explain(world, town)` returns findings as a tree:
+    - hunger;
+    - shortages, explained by their recipes:
+      - a missing or full building;
+      - missing or worn-out land;
+      - short inputs, followed recursively;
+      - nobody working at it, and its pay;
+    - a low treasury, with its biggest flows and tribute;
+    - people leaving.
+  - The CLI prints it with `--why TOWN`.
+  - The 3D view asks the sim thread for the selected town and shows a "Why"
+    window. Building types it names are ringed on the map.
+
 **Framework:**
 
 | | bevy_egui | bevy_ui | other (iced, Dioxus, web overlay) |

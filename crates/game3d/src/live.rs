@@ -54,6 +54,8 @@ struct Shared {
     orders: Vec<Order>,
     /// Orders as text (`tax Morstead wealth 0.75`), parsed on the sim thread.
     text_orders: Vec<String>,
+    /// The town the view wants explained (the "why" view), if any.
+    why_town: Option<u16>,
     /// History samples since the view last took them.
     samples: Vec<Sample>,
     /// Orders the simulation could not parse, with the reason.
@@ -114,6 +116,7 @@ impl LiveSim {
             orders: Vec::new(),
             text_orders: Vec::new(),
             samples: Vec::new(),
+            why_town: None,
             errors: Vec::new(),
             quit: false,
         }));
@@ -149,6 +152,11 @@ impl LiveSim {
         std::mem::take(&mut self.shared.lock().unwrap().errors)
     }
 
+    /// Ask the simulation to explain this town after each tick (or stop).
+    pub fn explain(&self, town: Option<u16>) {
+        self.shared.lock().unwrap().why_town = town;
+    }
+
     pub fn speed_and_pause(&self) -> (usize, bool) {
         let s = self.shared.lock().unwrap();
         (s.speed, s.paused)
@@ -158,6 +166,8 @@ impl LiveSim {
 /// The simulation thread: step at the game speed, publish after every tick.
 fn run(sim: &mut Simulation, shared: &Mutex<Shared>, mut seen: sim_core::view::Seen) {
     let mut next = Instant::now();
+    // The town last explained, so a new choice is explained even while paused.
+    let mut explained: Option<u16> = None;
     loop {
         let (speed, paused, orders, texts, quit) = {
             let mut s = shared.lock().unwrap();
@@ -183,6 +193,18 @@ fn run(sim: &mut Simulation, shared: &Mutex<Shared>, mut seen: sim_core::view::S
                 shared.lock().unwrap().errors.push(format!("{text}: {e}"));
             }
         }
+        let why_town = shared.lock().unwrap().why_town;
+        if paused && why_town != explained {
+            // Paused, but the view asks about another town: answer now, on
+            // the latest snapshot (copied, with the new findings).
+            explained = why_town;
+            let mut s = shared.lock().unwrap();
+            let mut snap = (*s.latest).clone();
+            snap.events.clear();
+            snap.samples.clear();
+            snap.why = why_town.map(|t| (t, sim_core::explain::explain(&sim.world, t)));
+            s.latest = Arc::new(snap);
+        }
         let now = Instant::now();
         if paused || now < next {
             std::thread::sleep(if paused {
@@ -199,7 +221,11 @@ fn run(sim: &mut Simulation, shared: &Mutex<Shared>, mut seen: sim_core::view::S
         let interval = Duration::from_secs_f32(1.0 / SPEEDS[speed]);
         // Keep the pace, but don't try to catch up after a slow stretch.
         next = (next + interval).max(now);
-        let snap = ViewSnapshot::capture(&sim.world, &mut seen);
+        let mut snap = ViewSnapshot::capture(&sim.world, &mut seen);
+        explained = why_town;
+        if let Some(t) = why_town {
+            snap.why = Some((t, sim_core::explain::explain(&sim.world, t)));
+        }
         let mut s = shared.lock().unwrap();
         s.events.extend(snap.events.iter().cloned());
         s.samples.extend(snap.samples.iter().cloned());
@@ -475,6 +501,20 @@ mod tests {
             std::thread::sleep(Duration::from_millis(20));
         };
         assert!(applied, "the order never showed in a snapshot");
+        // The "why" view: ask about a town, an answer for it arrives.
+        live.explain(Some(1));
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let answered = loop {
+            let snap = live.shared.lock().unwrap().latest.clone();
+            if snap.why.as_ref().is_some_and(|(t, _)| *t == 1) {
+                break true;
+            }
+            if Instant::now() > deadline {
+                break false;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        };
+        assert!(answered, "no why answer arrived");
         let errors = live.take_errors();
         assert_eq!(errors.len(), 1, "{errors:?}");
         assert!(errors[0].starts_with("tax Nowhere"));

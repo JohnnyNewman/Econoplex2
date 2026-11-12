@@ -6,6 +6,8 @@
 //!   minting, war), raids and building commissions. Every button sends an order
 //!   in the CLI's text syntax; the simulation applies it at its next tick, and
 //!   the panel shows the new value once the next snapshot arrives.
+//! - **Why** (M7): the selected town's problems and their causes, as a tree
+//!   (from `sim_core::explain`); building types it names are ringed on the map.
 //! - **Events:** the event log, newest first.
 //! - **History:** monthly line charts per town (population, treasury, food per
 //!   resident, mean wealth, bread price, soldiers, buildings), the selected town
@@ -27,6 +29,7 @@ impl Plugin for PanelsPlugin {
         app.add_plugins(EguiPlugin::default())
             .init_resource::<Panels>()
             .init_resource::<UiCapture>()
+            .init_resource::<WhyHighlight>()
             .add_systems(EguiPrimaryContextPass, panels);
     }
 }
@@ -49,6 +52,7 @@ fn panels(
     live: Res<LiveSim>,
     mut state: ResMut<Panels>,
     mut capture: ResMut<UiCapture>,
+    mut highlight: ResMut<WhyHighlight>,
     mut cams: Query<&mut WorldCamera>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
@@ -293,6 +297,33 @@ fn panels(
                 });
         });
 
+    // ---------------------------------------------------------------- Why
+    // Ask the simulation to explain the selected town after every tick.
+    live.explain(Some(ti as u16));
+    highlight.town = ti;
+    highlight.kinds.clear();
+    egui::Window::new(format!("Why? {}", town.name))
+        .default_pos([430.0, 60.0])
+        .default_width(420.0)
+        .show(ctx, |ui| match &snap.why {
+            Some((t, found)) if *t as usize == ti => {
+                if found.is_empty() {
+                    ui.label("Nothing stands out: food, goods, treasury and people look fine.");
+                }
+                egui::ScrollArea::vertical()
+                    .max_height(320.0)
+                    .show(ui, |ui| {
+                        for (k, f) in found.iter().enumerate() {
+                            finding(ui, f, k, &mut highlight.kinds);
+                        }
+                    });
+                ui.small("Rule-based: what is short, what stops it, where the money goes.");
+            }
+            _ => {
+                ui.label("Explaining… (the answer comes with the next simulated day)");
+            }
+        });
+
     // ---------------------------------------------------------------- History
     egui::Window::new("History")
         .default_pos([1220.0, 560.0])
@@ -411,4 +442,38 @@ fn chart(
         egui::Align2::RIGHT_BOTTOM,
         format!("day {t1}"),
     );
+}
+
+/// The building types the "why" view names, for the map (overlay.rs rings them).
+#[derive(Resource, Default)]
+pub struct WhyHighlight {
+    pub town: usize,
+    pub kinds: Vec<String>,
+}
+
+/// One finding and, folded, its causes. Worse findings are redder.
+fn finding(ui: &mut egui::Ui, f: &sim_core::explain::Finding, id: usize, kinds: &mut Vec<String>) {
+    if let Some(k) = &f.building {
+        if !kinds.contains(k) {
+            kinds.push(k.clone());
+        }
+    }
+    let warm = egui::Color32::from_rgb(
+        200 + (55.0 * f.severity) as u8,
+        (220.0 - 120.0 * f.severity) as u8,
+        (180.0 - 120.0 * f.severity) as u8,
+    );
+    let text = egui::RichText::new(&f.text).color(warm);
+    if f.because.is_empty() {
+        ui.label(text);
+    } else {
+        egui::CollapsingHeader::new(text)
+            .id_salt((id, &f.text))
+            .default_open(f.severity > 0.6)
+            .show(ui, |ui| {
+                for (k, c) in f.because.iter().enumerate() {
+                    finding(ui, c, id * 31 + k + 1, kinds);
+                }
+            });
+    }
 }

@@ -49,6 +49,8 @@ struct Args {
     map_svg: Option<PathBuf>,
     /// Write the event log / the monthly history as CSV after the run.
     events: Option<PathBuf>,
+    /// Explain a town's problems at the end (the "why" view, as text).
+    why: Option<String>,
     history: Option<PathBuf>,
 }
 
@@ -73,6 +75,7 @@ fn parse_args() -> Args {
         generate: None,
         map_svg: None,
         events: None,
+        why: None,
         history: None,
     };
     let mut it = std::env::args().skip(1);
@@ -102,6 +105,7 @@ fn parse_args() -> Args {
             "--assets" => a.assets = Some(PathBuf::from(val())),
             "--csv" => a.csv = Some(PathBuf::from(val())),
             "--events" => a.events = Some(PathBuf::from(val())),
+            "--why" => a.why = Some(val()),
             "--history" => a.history = Some(PathBuf::from(val())),
             "--set" => {
                 let v = val();
@@ -328,6 +332,24 @@ fn main() {
     if let Some(path) = &args.history {
         write_history(path, &sim).unwrap_or_else(|e| die(&format!("cannot write history: {e}")));
         println!("wrote {}", path.display());
+    }
+    if let Some(name) = &args.why {
+        let towns = sim.world.resource::<sim_core::Towns>();
+        let Some(t) = towns.0.iter().position(|t| &t.name == name) else {
+            die(&format!("no town `{name}`"));
+        };
+        let found = sim_core::explain::explain(&sim.world, t as u16);
+        println!("why, {name}:");
+        if found.is_empty() {
+            println!("  nothing stands out");
+        }
+        fn show(f: &[sim_core::explain::Finding], depth: usize) {
+            for x in f {
+                println!("{}- {}", "  ".repeat(depth + 1), x.text);
+                show(&x.because, depth + 1);
+            }
+        }
+        show(&found, 0);
     }
 }
 
