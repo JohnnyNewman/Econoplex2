@@ -277,12 +277,13 @@ fn sync_scene(
     mut commands: Commands,
     mut live: ResMut<LiveSim>,
     mut shown: ResMut<Shown>,
-    kit: Option<Res<Kit>>,
+    kit: Option<ResMut<Kit>>,
+    mut meshes: ResMut<Assets<Mesh>>,
     outlines: Option<Res<Outlines>>,
     world: Res<World3d>,
     mut clock: ResMut<SkyClock>,
 ) {
-    let (Some(kit), Some(outlines)) = (kit, outlines) else {
+    let (Some(mut kit), Some(outlines)) = (kit, outlines) else {
         return;
     };
     // Take over the newest snapshot and the events since the last frame.
@@ -351,7 +352,14 @@ fn sync_scene(
                 seed: (b.id as u32).wrapping_mul(2_654_435_761) >> 8 ^ ti as u32,
             };
             let style = shown.styles[ti].unwrap_or_default();
-            if let Some(e) = spawn_building(&mut commands, &kit, &outlines, &spec, style) {
+            if let Some(e) = spawn_building(
+                &mut commands,
+                &mut kit,
+                &mut meshes,
+                &outlines,
+                &spec,
+                style,
+            ) {
                 shown.buildings.insert(b.id, e);
             }
         }
@@ -401,7 +409,16 @@ fn sync_scene(
                 continue;
             }
             let rot = Quat::from_rotation_y(a);
-            let house = spawn_house(&mut commands, &kit, &outlines, ground(p), rot, k, style);
+            let house = spawn_house(
+                &mut commands,
+                &mut kit,
+                &mut meshes,
+                &outlines,
+                ground(p),
+                rot,
+                k,
+                style,
+            );
             list.push((house, Vec2::new(p.0, p.1)));
         }
         // A shrinking town loses its outermost houses first.

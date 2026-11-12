@@ -1,10 +1,12 @@
 // Shader step 06, trees: a vertex shader that sways tree crowns in the wind.
 // The fragment shader is the toon shader of step 02 (toon.wesl), unchanged.
 //
-// Every crown is an ordinary entity with the same mesh and material, so Bevy
-// draws them all in one instanced draw call. Each instance finds its own
-// transform with `get_world_from_local(instance_index)`; its position gives it
-// its own phase, so the forest doesn't sway in lockstep.
+// The trees of a chunk are baked into one mesh (nature.rs `spawn_forest`):
+// every vertex is already in world space. Two extra attributes say how it
+// sways: UV 0 x is how far up its crown it is (0 at the base and for trunks,
+// 1 at the tip), UV 1 is its tree's root (x, z), which gives each tree its own
+// phase, so the forest doesn't sway in lockstep. The colour is a vertex colour
+// (the material is white; `pbr_input_from_standard_material` multiplies it in).
 
 import bevy_pbr::render::{
     mesh_functions,
@@ -20,12 +22,13 @@ fn vertex(vertex_in: Vertex) -> VertexOutput {
     let world_from_local = mesh_functions::get_world_from_local(vertex_in.instance_index);
     var world = mesh_functions::mesh_position_local_to_world(world_from_local, vec4<f32>(v.position, 1.0));
 
-    // How far up the crown this vertex is: the cone runs from y = -1 to 1 in
-    // its own space, so 0 at the base, 1 at the tip.
-    let up = clamp(v.position.y * 0.5 + 0.5, 0.0, 1.0);
-    // This tree's position (the translation column of its matrix) sets its phase.
-    let root = world_from_local[3].xyz;
-    let phase = root.x * 0.37 + root.z * 0.23;
+    var up = 0.0;
+    var root = vec2<f32>(0.0);
+@if(VERTEX_UVS_A)
+    up = v.uv.x;
+@if(VERTEX_UVS_B)
+    root = v.uv_b;
+    let phase = root.x * 0.37 + root.y * 0.23;
     let t = globals.time;
     // Two sines of different speed make a less regular sway.
     let sway = (sin(t * 1.3 + phase) * 0.6 + sin(t * 2.9 + phase * 1.7) * 0.25) * 0.12;
@@ -37,6 +40,10 @@ fn vertex(vertex_in: Vertex) -> VertexOutput {
     out.world_normal = mesh_functions::mesh_normal_local_to_world(v.normal, vertex_in.instance_index);
 @if(VERTEX_UVS_A)
     out.uv = v.uv;
+@if(VERTEX_UVS_B)
+    out.uv_b = v.uv_b;
+@if(VERTEX_COLORS)
+    out.color = v.color;
 @if(VERTEX_OUTPUT_INSTANCE_INDEX)
     out.instance_index = vertex_in.instance_index;
     return out;
