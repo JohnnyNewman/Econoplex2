@@ -1,5 +1,6 @@
 // Shader step 07: the crowd walks on the GPU. Explained in
-// docs/shaders/07-crowds-compute.md.
+// docs/shaders/07-crowds-compute.md (and, for the stride phase and turning,
+// docs/shaders/09-procedural-animation.md).
 //
 // A compute shader: no triangles, no pixels, just a function run once per
 // person, in parallel, in groups of 64 ("workgroups"). Every frame it moves
@@ -7,12 +8,13 @@
 // buffer that people.wesl draws from. The CPU only uploads new targets when the
 // simulation finishes a tick.
 
-// One person as people.wesl reads it (8 floats).
+// One person as people.wesl reads it (12 floats).
 struct Person {
     pos: vec3<f32>,
     heading: f32,
     color: vec3<f32>,
-    size: f32, // 1 adult, 0.65 child; negative = walking; 0 = empty slot
+    size: f32,         // 1 adult, 0.65 child; negative = walking; 0 = empty slot
+    motion: vec4<f32>, // x: work motion, y: stride phase, z: walking blend, w: unused
 };
 
 // One target, written by the CPU per tick (8 floats).
@@ -22,7 +24,7 @@ struct Target {
                        // reserved word in WGSL)
     size: f32,
     color: vec3<f32>,
-    pad: f32,
+    motion: f32,       // what they do with their arms when standing (crowd.rs `Motion`)
 };
 
 struct Params {
@@ -38,6 +40,14 @@ struct Params {
 @group(0) @binding(1) var<storage, read> targets: array<Target>;
 @group(0) @binding(2) var heights: texture_2d<f32>;
 @group(0) @binding(3) var<uniform> params: Params;
+
+const TAU: f32 = 6.2831853;
+// Distance covered in one full stride (two steps), in 3D units.
+const STRIDE: f32 = 1.1;
+// How fast people turn to a new heading (radians per second) and how fast the
+// walking blend follows (per second).
+const TURN: f32 = 8.0;
+const BLEND: f32 = 6.0;
 
 // Terrain height at a ground point: the heightmap of step 03, filtered
 // bilinearly by hand (the same mapping as terrain_common.wesl).
@@ -68,10 +78,12 @@ fn walk(@builtin(global_invocation_id) id: vec3<u32>) {
         people[i] = p;
         return;
     }
-    // Someone new in this slot (it was empty last frame): appear at the goal.
+    // Someone new in this slot (it was empty last frame): appear at the goal,
+    // standing, with a stride phase of their own.
     var here = p.pos.xz;
     if p.size == 0.0 {
         here = t.goal;
+        p.motion = vec4<f32>(t.motion, f32(i) * 1.618, 0.0, 0.0);
     }
     let to = t.goal - here;
     let dist = length(to);
@@ -80,8 +92,20 @@ fn walk(@builtin(global_invocation_id) id: vec3<u32>) {
     let walking = dist > 0.05;
     if walking {
         here += to / dist * step;
-        p.heading = atan2(to.x, to.y);
+        // Turn toward the goal at a limited rate instead of snapping. The
+        // difference of two angles, wrapped into -pi..pi, is atan2(sin, cos).
+        let want = atan2(to.x, to.y);
+        let d = want - p.heading;
+        let diff = atan2(sin(d), cos(d));
+        p.heading += clamp(diff, -TURN * params.dt, TURN * params.dt);
+        // The stride follows the distance walked (at most walking speed, so a
+        // hurried long walk doesn't blur the legs): feet don't slide.
+        p.motion.y = (p.motion.y + min(step, params.walk * params.dt) / STRIDE * TAU) % TAU;
     }
+    // Ease the walking blend toward 1 (walking) or 0 (standing), so limbs settle.
+    let aim = select(0.0, 1.0, walking);
+    p.motion.z += (aim - p.motion.z) * min(BLEND * params.dt, 1.0);
+    p.motion.x = t.motion;
     p.pos = vec3<f32>(here.x, ground(here), here.y);
     p.color = t.color;
     p.size = select(t.size, -t.size, walking);

@@ -111,6 +111,10 @@ pub struct ViewSnapshot {
     pub people: PeopleView,
     /// Number of skill domains (for colouring `Doing::Working`).
     pub domains: u32,
+    /// The skill domains' names, in order (the 3D view picks a work motion by
+    /// domain: a scythe for agriculture, a hammer for smithing, ...).
+    #[serde(default)]
+    pub domain_names: Vec<String>,
     /// Events logged since the previous capture (oldest first).
     pub events: Vec<Event>,
     /// Monthly history samples (one per town) recorded since the previous
@@ -228,6 +232,7 @@ impl ViewSnapshot {
                 .collect(),
             people,
             domains: db.domain_dirs.len() as u32,
+            domain_names: db.content.domains.clone(),
             events,
             samples,
             why: None,

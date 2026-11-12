@@ -285,7 +285,7 @@ the shader learning track (section 7):
 | **M5** | UI panels ported (bevy_egui): economy, policy, inspector, event log | none |
 | **M6** | overlays (money flows, prices, culture, product space), history charts | 08 bloom (glow for overlays) |
 | **M7** | the "why" view | none |
-| **M8** | procedural buildings by era and wealth, procedural animation polish | **Implemented (buildings):** a town builds in its newest era's style (timber and thatch → plaster and tiles → brick → stone and slate); its houses follow residents' mean wealth (cottages <6, houses, two-storey with chimneys ≥30, 15 % hysteresis). A change rebuilds the town. Animation polish still open. |
+| **M8** | procedural buildings by era and wealth, procedural animation polish | **Implemented (buildings):** a town builds in its newest era's style (timber and thatch → plaster and tiles → brick → stone and slate); its houses follow residents' mean wealth (cottages <6, houses, two-storey with chimneys ≥30, 15 % hysteresis). A change rebuilds the town. **Implemented (animation, shader step 09):** legs and arms turn about their joints; the stride follows the distance walked; heading and walking blend are eased on the GPU; workers make their trade's motion (scythe, hammer, axe, craft), soldiers stand guard, the idle look around. |
 | M9 (optional) | virtual geometry (meshlets), only if dense static meshes become a bottleneck | |
 
 ## 7. Shader learning track
