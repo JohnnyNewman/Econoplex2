@@ -309,3 +309,40 @@ carried a fixed 6 units, at most half the seller's stock.
 
 **Open question:** what counts as success. Capability (what a town *can* make),
 use (what people and trades actually consume), or output (what is made)?
+
+## Judging the market by use (2026-11-12)
+
+Nils's choice: an economy is judged by **use**, not by piles. The batch report
+(and its CSV) now carries:
+- **`hh use`:** goods households consumed last year, per resident, at base
+  prices: food eaten, tools bought and household goods.
+- **`in use`:** inputs the town's trades used up, per resident.
+- **`happy`:** residents' mean happiness.
+- **`capab`:** capability, the kinds of goods a town made at least once in the
+  last five years (town mean).
+
+Swords and "kinds made last year" stay in the report, but they partly measure
+piles.
+
+**6 seeds × 20 years:**
+
+| basket | caravans | stop_at_floor | pop | hh use | in use | happy | capab | gwork |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| off | Fixed | off (defaults) | 1964 | 64.5 | 166 | 0.76 | 33.4 | 39 % |
+| off | Fixed | on | 1931 | 63.0 | 139 | 0.73 | 29.4 | 28 % |
+| off | Balance 400 | off | 1942 | 62.9 | 171 | 0.76 | 32.3 | 36 % |
+| on | Fixed | off | 1903 | 73.7 | 171 | 0.69 | 33.5 | 32 % |
+| on | Balance 400 | off | 1886 | **80.5** | **180** | 0.68 | 33.3 | **14 %** |
+| on | Balance 400 | on | 1910 | 76.6 | 182 | 0.67 | 32.6 | 12 % |
+
+The basket here is models.ron's example (clothes, pots, ale).
+
+- **Without a basket, household use can't move:** people buy only food and
+  tools.
+- **With the basket and balancing caravans,** household use is +25 % and
+  trade use +9 %, capability is unchanged, and wasted work falls from 39 % to
+  14 %. Population is 4 % lower.
+- **Happiness isn't comparable** between basket on and off: the basket adds a
+  want, and an unmet want lowers happiness.
+- **Next:** a fuller basket, declared per good in the content files, so new
+  goods become household goods by saying so.
