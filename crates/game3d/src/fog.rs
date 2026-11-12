@@ -30,7 +30,7 @@ impl Plugin for FogPlugin {
 }
 
 /// The fog part of the toon and terrain uniform blocks.
-#[derive(ShaderType, Reflect, Clone, Copy, Debug, Default)]
+#[derive(ShaderType, Reflect, Clone, Copy, Debug, Default, PartialEq)]
 pub struct FogUniform {
     /// rgb: fog colour (the sky's horizon colour); a: 1 = fog on, 0 = off.
     pub color: Vec4,
@@ -102,13 +102,15 @@ fn fog_keys(
     }
 }
 
-/// Once per frame on the CPU: the fog colour follows the sky.
+/// Once per frame on the CPU: the fog colour follows the sky. Written only
+/// when it differs: every material copies it when it changes, and a changed
+/// material is prepared for the GPU again.
 fn update_fog_state(clock: Res<SkyClock>, settings: Res<FogSettings>, mut state: ResMut<FogState>) {
     let dir = clock.sun();
     let (horizon, _, _) = palette(dir.y);
     // Below the horizon there is no sun to glow through the fog.
     let glow = (dir.y * 8.0 + 0.5).clamp(0.0, 1.0) * 0.6;
-    state.0 = FogUniform {
+    let fog = FogUniform {
         color: horizon.extend(if settings.on { 1.0 } else { 0.0 }),
         sun_dir: dir.extend(8.0),
         sun_color: (sun_color(dir) / 6.0).extend(glow),
@@ -120,4 +122,7 @@ fn update_fog_state(clock: Res<SkyClock>, settings: Res<FogSettings>, mut state:
         ),
         debug: Vec4::new(settings.debug as f32, 0.0, 0.0, 0.0),
     };
+    if state.0 != fog {
+        state.0 = fog;
+    }
 }

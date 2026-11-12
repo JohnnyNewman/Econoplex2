@@ -256,7 +256,12 @@ fn sky_keys(
     if keys.pressed(KeyCode::BracketLeft) {
         clock.hour -= 3.0 * dt;
     }
-    clock.hour = clock.hour.rem_euclid(24.0);
+    // Only write when it changes: a write marks the clock changed, and the
+    // sky, fog and every material follow a changed clock.
+    let wrapped = clock.hour.rem_euclid(24.0);
+    if wrapped != clock.hour {
+        clock.hour = wrapped;
+    }
     if *target == DebugTarget::Sky {
         if let Some(v) = digit_pressed(&keys) {
             clock.debug = v.min(4);
@@ -273,6 +278,9 @@ fn update_sky(
     mut sun: Query<(&mut Transform, &mut DirectionalLight)>,
     mut ambient: ResMut<GlobalAmbientLight>,
 ) {
+    if !clock.is_changed() {
+        return;
+    }
     let dir = clock.sun();
     let (horizon, zenith, ground) = palette(dir.y);
     let sun_rgb = sun_color(dir);

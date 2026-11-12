@@ -7,7 +7,7 @@
 //!
 //! econoplex3d [--seed S] [--towns N] [--hour H] [--pbr] [--terrain-view N] [--grid-step K]
 //!     [--fog-view N] [--no-fog] [--days N] [--speed 0-4] [--paused] [--trade] [--bloom-view] [--focus-town I] [--focus X,Z] [--view-from YAW,PITCH,DIST]
-//!     [--no-ui] [--shot FILE]
+//!     [--no-ui] [--no-lod] [--lod-view] [--fps] [--shot FILE]
 //! econoplex3d --playground [--hour H] [--view N] [--toon-view N] [--pbr] [--face-sun] [--shot FILE]
 //!     (shader playground)
 
@@ -106,6 +106,9 @@ fn main() {
     let mut no_outlines = false;
     let mut trade = false;
     let mut no_ui = false;
+    let mut no_lod = false;
+    let mut lod_view = false;
+    let mut fps = false;
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -123,6 +126,9 @@ fn main() {
             "--no-rim" => toon_settings.rim = false,
             "--no-outlines" => no_outlines = true,
             "--no-ui" => no_ui = true,
+            "--no-lod" => no_lod = true,
+            "--lod-view" => lod_view = true,
+            "--fps" => fps = true,
             "--trade" => trade = true,
             "--bloom-view" => args.bloom_view = true,
             "--terrain-view" => {
@@ -201,51 +207,68 @@ fn main() {
     }
     let live = live::LiveSim::start(sim, speed, paused);
 
-    App::new()
-        .add_plugins(DefaultPlugins.set(asset_plugin()).set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "Econoplex 3D (prototype)".into(),
-                resolution: (1600, 900).into(),
-                ..default()
-            }),
+    let mut app = App::new();
+    if fps {
+        // Frame times in the log, without waiting for the screen's refresh.
+        app.add_plugins((
+            bevy::diagnostic::FrameTimeDiagnosticsPlugin::default(),
+            bevy::diagnostic::LogDiagnosticsPlugin::default(),
+        ));
+    }
+    app.insert_resource(crowd::LodSettings {
+        on: !no_lod,
+        show: lod_view,
+        ..default()
+    })
+    .add_plugins(DefaultPlugins.set(asset_plugin()).set(WindowPlugin {
+        primary_window: Some(Window {
+            title: "Econoplex 3D (prototype)".into(),
+            resolution: (1600, 900).into(),
+            present_mode: if fps {
+                bevy::window::PresentMode::AutoNoVsync
+            } else {
+                bevy::window::PresentMode::AutoVsync
+            },
             ..default()
-        }))
-        .insert_resource(ClearColor(Color::srgb(0.62, 0.74, 0.86)))
-        .insert_resource(DirectionalLightShadowMap { size: 4096 })
-        .insert_resource(World3d { scenario, terrain })
-        .insert_resource(OutlineStart(no_outlines))
-        .insert_resource(ui::UiHidden(no_ui))
-        .insert_resource(live)
-        .insert_resource(args)
-        .insert_resource(ShotPath(shot))
-        .add_plugins((
-            sky::SkyPlugin,
-            toon::ToonPlugin,
-            terrain::TerrainPlugin,
-            fog::FogPlugin,
-            camera::WorldCameraPlugin,
-            live::LivePlugin,
-            outline::OutlinePlugin,
-            nature::NaturePlugin,
-            crowd::CrowdPlugin,
-            crowd_compute::CrowdComputePlugin,
-            ui::PanelsPlugin,
-            overlay::OverlayPlugin,
-            bloom::BloomPlugin,
-        ))
-        .insert_resource(clock)
-        .insert_resource(toon_settings)
-        .insert_resource(terrain_settings)
-        .insert_resource(fog_settings)
-        .add_systems(PreStartup, apply_outline_start)
-        .insert_resource(if trade {
-            overlay::Overlay::Trade
-        } else {
-            overlay::Overlay::Off
-        })
-        .add_systems(Startup, setup)
-        .add_systems(Update, (shoot, hud::update_help))
-        .run();
+        }),
+        ..default()
+    }))
+    .insert_resource(ClearColor(Color::srgb(0.62, 0.74, 0.86)))
+    .insert_resource(DirectionalLightShadowMap { size: 4096 })
+    .insert_resource(World3d { scenario, terrain })
+    .insert_resource(OutlineStart(no_outlines))
+    .insert_resource(ui::UiHidden(no_ui))
+    .insert_resource(live)
+    .insert_resource(args)
+    .insert_resource(ShotPath(shot))
+    .add_plugins((
+        sky::SkyPlugin,
+        toon::ToonPlugin,
+        terrain::TerrainPlugin,
+        fog::FogPlugin,
+        camera::WorldCameraPlugin,
+        live::LivePlugin,
+        outline::OutlinePlugin,
+        nature::NaturePlugin,
+        crowd::CrowdPlugin,
+        crowd_compute::CrowdComputePlugin,
+        ui::PanelsPlugin,
+        overlay::OverlayPlugin,
+        bloom::BloomPlugin,
+    ))
+    .insert_resource(clock)
+    .insert_resource(toon_settings)
+    .insert_resource(terrain_settings)
+    .insert_resource(fog_settings)
+    .add_systems(PreStartup, apply_outline_start)
+    .insert_resource(if trade {
+        overlay::Overlay::Trade
+    } else {
+        overlay::Overlay::Off
+    })
+    .add_systems(Startup, setup)
+    .add_systems(Update, (shoot, hud::update_help))
+    .run();
 }
 
 /// Cheap deterministic value noise in [0, 1].

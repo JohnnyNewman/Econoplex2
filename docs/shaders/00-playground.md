@@ -130,3 +130,5 @@ side, so the GPU never has to run both.
 - **Step 09:** procedural animation ([09-procedural-animation](09-procedural-animation.md)):
   limbs turned about joints, the stride phase kept on the GPU, work motions by
   trade. `H` hides the UI.
+- **Step 10:** level of detail ([10-lod](10-lod.md)): impostor cards drawn with
+  distance functions, dithered cross-fades. `K` tints people by level.
