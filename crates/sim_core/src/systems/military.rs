@@ -80,8 +80,7 @@ pub fn military(
 
     // --- muster: recruit, release and arm
     if mp.muster_interval > 0 && clock.tick.is_multiple_of(mp.muster_interval as u64) {
-        for t in 0..n_towns {
-            let town = &mut towns.0[t];
+        for town in towns.0.iter_mut() {
             let adults = town
                 .residents
                 .iter()
