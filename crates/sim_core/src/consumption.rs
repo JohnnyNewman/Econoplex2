@@ -9,6 +9,8 @@
 //!   dimension named in `taste`, if any) × its relative income (wealth against
 //!   the town's median, to the power `elasticity`, so richer households want
 //!   more, and more of the dearer goods);
+//! - the goods are those listed in `goods`, or, if none are, every good whose
+//!   content declares `household` use (so new goods join by saying so);
 //! - every `interval` days it spends up to `spend_share` of its wealth on the
 //!   goods it is furthest short of, one unit at a time, from the firms that
 //!   hold them (with `market.firms: Workshops`) or else the market, at the town
@@ -35,7 +37,7 @@ pub enum ConsumptionParams {
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BasketGood {
     pub good: String,
     /// Units a household of median income and middling taste wants to hold.
@@ -45,6 +47,30 @@ pub struct BasketGood {
     /// Mind dimension (by name) that makes an agent want more of it.
     #[serde(default)]
     pub taste: Option<String>,
+    /// Overrides the basket's `elasticity` for this good (luxuries above 1).
+    #[serde(default)]
+    pub elasticity: Option<f32>,
+}
+
+/// The basket's goods: those listed in models.ron or, if none are, every good
+/// whose content declares `household` use.
+pub fn basket(listed: &[BasketGood], db: &crate::db::Db) -> Vec<BasketGood> {
+    if !listed.is_empty() {
+        return listed.to_vec();
+    }
+    db.content
+        .products
+        .iter()
+        .filter_map(|p| {
+            p.household.as_ref().map(|h| BasketGood {
+                good: p.id.clone(),
+                want: h.want,
+                life_days: h.life_days,
+                taste: h.taste.clone(),
+                elasticity: h.elasticity,
+            })
+        })
+        .collect()
 }
 
 impl ConsumptionParams {
@@ -87,12 +113,13 @@ pub fn spend(
         spend_share,
         interval,
         elasticity,
-        goods,
+        goods: listed,
         ..
     } = &params.market.consumption
     else {
         return;
     };
+    let goods = &basket(listed, db);
     let ids: Vec<Option<usize>> = goods
         .iter()
         .map(|g| db.content.product(&g.good).map(|p| p as usize))
@@ -150,7 +177,8 @@ pub fn spend(
             .zip(&tastes)
             .map(|(g, taste)| {
                 let taste = taste.map_or(0.5, |d| store.mind[i][d]);
-                desired(g.want, taste, store.wealth[i], medians[t], *elasticity)
+                let e = g.elasticity.unwrap_or(*elasticity);
+                desired(g.want, taste, store.wealth[i], medians[t], e)
             })
             .collect();
         let mut budget = spend_share.clamp(0.0, 1.0) * store.wealth[i].max(0.0);
@@ -230,6 +258,23 @@ mod tests {
         assert!(desired(1.0, 0.5, 80.0, 20.0, 0.5) > base);
         assert!(desired(1.0, 0.9, 20.0, 20.0, 0.5) > base);
         assert!(desired(1.0, 0.5, 0.0, 20.0, 0.5) < base);
+    }
+
+    #[test]
+    fn an_empty_basket_takes_the_goods_the_content_declares() {
+        let paths = crate::AssetPaths::discover();
+        let (db, _, _) = crate::load(&paths).unwrap();
+        let from_content = basket(&[], &db);
+        let ids: Vec<&str> = from_content.iter().map(|g| g.good.as_str()).collect();
+        for id in ["clothes", "pot", "ale", "charcoal", "cloth", "silver"] {
+            assert!(ids.contains(&id), "{id} missing from {ids:?}");
+        }
+        // Silver is a luxury: richer households want disproportionately more.
+        let silver = from_content.iter().find(|g| g.good == "silver").unwrap();
+        assert!(silver.elasticity.unwrap() > 1.0);
+        // A listed basket is used as it is.
+        let listed = vec![from_content[0].clone()];
+        assert_eq!(basket(&listed, &db).len(), 1);
     }
 
     #[test]

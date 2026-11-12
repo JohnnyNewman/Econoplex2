@@ -346,3 +346,38 @@ The basket here is models.ron's example (clothes, pots, ale).
   want, and an unmet want lowers happiness.
 - **Next:** a fuller basket, declared per good in the content files, so new
   goods become household goods by saying so.
+
+### Household goods declared in the content (2026-11-12)
+
+A product can now say how households use it:
+`household: Some((want, life_days, taste, elasticity))`.
+`market.consumption: Basket(..., goods: [])` (no goods listed) takes every good
+that declares it, so new goods join the basket by saying so.
+
+Declared so far:
+
+| good | want | lasts | taste | note |
+| --- | --- | --- | --- | --- |
+| clothes | 2 | 240 days | ambition | |
+| pot | 3 | 360 days | tradition | |
+| ale | 2 | 7 days | sociability | |
+| cloth | 1 | 360 days | tradition | bedding and linen |
+| charcoal | 3 | 15 days | none | hearth fuel |
+| silver | 0.2 | 3,000 days | ambition | elasticity 1.5: a luxury |
+
+**6 seeds × 20 years** (the use measures above):
+
+| basket | caravans | pop | hh use | in use | happy | capab | wealth | gini | gwork |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| none (defaults) | Fixed | 1964 | 64.5 | 166 | 0.76 | 33.4 | 52.8 | 0.66 | 39 % |
+| none | Balance 400 | 1942 | 62.9 | 171 | 0.76 | 32.3 | 52.7 | 0.61 | 36 % |
+| clothes, pots, ale | Balance 400 | 1886 | 80.5 | 180 | 0.68 | 33.3 | 47.7 | 0.66 | 14 % |
+| content (6 goods) | Fixed | 1915 | 81.9 | 124 | 0.69 | 33.8 | 26.7 | 0.79 | 38 % |
+| content (6 goods) | Balance 400 | 1929 | **95.6** | 130 | 0.70 | **35.8** | 26.9 | 0.61 | 24 % |
+
+- **The content basket with balancing caravans** gives the most household use
+  (+48 %) and the highest capability (+2.4 kinds), with population −2 %.
+- **Trade use falls** (charcoal goes to hearths, and smelters need it too), and
+  residents' savings halve (spending, silver).
+- **Balancing caravans matter with the bigger basket:** without them,
+  inequality between towns rises (0.79).
