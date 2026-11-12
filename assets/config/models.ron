@@ -224,6 +224,10 @@
         // spends up to spend_share of its wealth on what it lacks most, from firms
         // or the market. Owning what it wants raises happiness by comfort_weight.
         // Example:
+        // With goods: [] the basket is every good whose content declares
+        // household use (clothes, pots, ale, cloth, charcoal, silver):
+        // consumption: Basket(spend_share: 0.3, interval: 7, elasticity: 0.5, comfort_weight: 0.2, goods: []),
+        // Or list the goods here:
         // consumption: Basket(spend_share: 0.3, interval: 7, elasticity: 0.5, comfort_weight: 0.2, goods: [
         //     (good: "clothes", want: 2.0, life_days: 240.0, taste: Some("ambition")),
         //     (good: "pot", want: 3.0, life_days: 360.0, taste: Some("tradition")),
