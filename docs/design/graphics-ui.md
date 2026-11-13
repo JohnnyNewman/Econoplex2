@@ -384,3 +384,11 @@ against 9.7 ms. With the GPU thermally throttled (the laptop drops to about
 3× overdraw), and the crowd's 186 vertices per slot (`10-lod.md`, exercise 3).
 A render-scale option would help a hot laptop most.
 
+**Render scale (`--render-scale F`, 2026-11-13).** The 3D camera draws into an
+image F times the window's size, and a 2D camera stretches it over the window
+and carries the egui panels, which stay sharp. The help text is drawn with the
+3D view, under the panels. Main-pass GPU time at full clock: 1.4 ms at 1.0,
+0.9 ms at 0.75, 0.44 ms at 0.5. With the GPU at full clock the frame is
+CPU-bound (about 5.3 ms) and doesn't change. With a throttled GPU the pixel work
+dominates, which is what this option is for. At 1 (default) nothing changes.
+
