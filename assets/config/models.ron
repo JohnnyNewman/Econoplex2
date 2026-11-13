@@ -95,7 +95,10 @@
         // is worth it. Example:
         // matching: DeferredAcceptance(apprentice_wage: 0.4, share: (min: 0.0,
         //     max: 0.3, step: 0.05, trainee_output: 0.5, retention: 0.8, payoff_days: 0.5)),
-        matching: FirstCome,
+        // Default since 2026-11-13 (6-seed, 40-year comparison in
+        // docs/design/town-market.md); FirstCome is the old rule.
+        matching: DeferredAcceptance(apprentice_wage: 0.4, share: (min: 0.0,
+            max: 0.3, step: 0.05, trainee_output: 0.5, retention: 0.8, payoff_days: 0.5)),
         // Component: what living in another town is worth. Weighted: the
         // `migration` section's weighted sum. Utility: four weighted terms,
         //   economy_weight x economic strength (utility of needs with the pay of the
