@@ -54,14 +54,26 @@ pub fn target_stock(db: &Db, town: &crate::world::Town, params: &Params, p: usiz
             })
             .count()
             .max(1);
-        return (soldiers / rivals as f32).max(1.0) + town.policy.ordered(p);
+        return ((soldiers / rivals as f32).max(1.0) + town.policy.ordered(p))
+            .max(town.policy.stockpiled(p));
     }
     let per_capita = if db.is_food[p] {
         mp.food_target_per_capita
     } else {
         mp.target_per_capita
     };
-    (per_capita * town.residents.len() as f32).max(1.0) + town.policy.ordered(p)
+    let base = (per_capita * town.residents.len() as f32).max(1.0) + town.policy.ordered(p);
+    let stockpile = town.policy.stockpiled(p);
+    if stockpile <= 0.0 {
+        return base;
+    }
+    if def.category.is_item() {
+        // Gear the town keeps: its armory is the market's stock of it.
+        base.max(stockpile)
+    } else {
+        // What the town's store still lacks is wanted on top of the market's own.
+        base + (stockpile - town.granary.get(p).copied().unwrap_or(0.0)).max(0.0)
+    }
 }
 
 /// Whether a good's price in a town has fallen to its floor.

@@ -11,6 +11,14 @@
 //!   granary below, the seed reserve as an order (`reserve TOWN on`), and the
 //!   levers they already had (food subsidies, imports, new fields).
 //!
+//! **Stockpiles** (order `stockpile TOWN GOOD AMOUNT`) are the general form:
+//! any good the town keeps in its stores against a siege or bad times. A
+//! stockpile raises the market's target stock by what the store still lacks
+//! (so prices and pay draw production toward it); the store fills from the
+//! market's surplus and gives back when the market falls below half its
+//! target. For tools and weapons the store is the armory: the target is how
+//! many it keeps unissued.
+//!
 //! **The granary** is food the town keeps out of the market. Order
 //! `granary TOWN DAYS` sets how many days of its people's food it aims to
 //! hold. While the market holds more than its food target, the granary takes
@@ -52,9 +60,48 @@ pub fn held(town: &crate::world::Town, db: &Db) -> f32 {
         .sum()
 }
 
+/// Daily, for each good the town stockpiles (`stockpile TOWN GOOD AMOUNT`): its
+/// store takes the market's surplus over the market's own target, up to the
+/// stockpile, and gives back to a market that has fallen below half its
+/// target. Tools and weapons stay in the armory (it is their store).
+fn tend_stockpiles(towns: &mut Towns, db: &Db, params: &Params) {
+    let np = db.content.products.len();
+    for town in towns.0.iter_mut() {
+        if town.policy.stockpile.is_empty() {
+            continue;
+        }
+        town.granary.resize(np, 0.0);
+        for k in 0..town.policy.stockpile.len() {
+            let (p, target) = town.policy.stockpile[k];
+            let p = p as usize;
+            if db.category(p as u32).is_item() {
+                continue;
+            }
+            // The market's own target, without what the stockpile adds to it.
+            let own = {
+                let saved = std::mem::take(&mut town.policy.stockpile);
+                let t = crate::systems::decide::target_stock(db, town, params, p);
+                town.policy.stockpile = saved;
+                t
+            };
+            let held = town.granary[p];
+            if held < target && town.stock[p] > own {
+                let q = (target - held).min(town.stock[p] - own);
+                town.stock[p] -= q;
+                town.granary[p] += q;
+            } else if town.stock[p] < 0.5 * own && held > 0.0 {
+                let q = held.min(0.5 * own - town.stock[p]);
+                town.granary[p] -= q;
+                town.stock[p] += q;
+            }
+        }
+    }
+}
+
 /// Daily: the granary takes the market's food surplus up to its target, or
 /// releases food into a hungry market; and its store slowly spoils.
 pub fn tend(towns: &mut Towns, db: &Db, params: &Params, days_per_year: f32) {
+    tend_stockpiles(towns, db, params);
     let mp = &params.market;
     let np = db.content.products.len();
     // Grain first (lowest food value per unit keeps longest), then the rest.

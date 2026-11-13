@@ -131,9 +131,21 @@ pub struct Policy {
     /// other trades (with `market.food_rules: Ruler`; always on under `Town`).
     #[serde(default)]
     pub food_reserve: bool,
+    /// Stock targets: (product, units) the town keeps in its stores, out of the
+    /// market (`granary.rs`); for tools and weapons, unissued in its armory.
+    #[serde(default)]
+    pub stockpile: Vec<(u32, f32)>,
 }
 
 impl Policy {
+    /// Units of good `p` the town means to keep in its stores (0: none).
+    pub fn stockpiled(&self, p: usize) -> f32 {
+        self.stockpile
+            .iter()
+            .find(|s| s.0 as usize == p)
+            .map_or(0.0, |s| s.1)
+    }
+
     /// Amount of `product` the government still waits for.
     pub fn ordered(&self, product: usize) -> f32 {
         self.procurement
@@ -232,6 +244,12 @@ pub enum Order {
         town: u16,
         on: bool,
     },
+    /// Keep `amount` units of a good in the town's stores (0 drops the target).
+    Stockpile {
+        town: u16,
+        product: u32,
+        amount: f32,
+    },
     /// Lend `amount` of treasury coin to one of the town's firms (index into
     /// `Db::firm_keys`), at a yearly `rate`, repaid over `days` (needs
     /// `market.firms: Workshops`).
@@ -272,7 +290,8 @@ impl Order {
             | Order::Loan { town, .. }
             | Order::Imports { town, .. }
             | Order::Granary { town, .. }
-            | Order::Reserve { town, .. } => town,
+            | Order::Reserve { town, .. }
+            | Order::Stockpile { town, .. } => town,
         }
     }
 
@@ -390,6 +409,17 @@ impl Order {
                     "auto" => None,
                     r => Some(number(r)?),
                 },
+            }),
+            ["stockpile", t, p, amount] => Ok(Order::Stockpile {
+                town: town(t)?,
+                product: db
+                    .content
+                    .product(p)
+                    .filter(|&i| {
+                        db.category(i) != sim_data::Category::Building && db.coin[i as usize] == 0.0
+                    })
+                    .ok_or_else(|| format!("no good `{p}` to stockpile"))?,
+                amount: number(amount)?.max(0.0),
             }),
             ["reserve", t, m @ ("on" | "off")] => Ok(Order::Reserve {
                 town: town(t)?,
@@ -559,6 +589,14 @@ pub fn apply_orders(
             Order::Imports { imports, .. } => p.food_imports = imports,
             Order::Granary { days, .. } => p.granary_days = days,
             Order::Reserve { on, .. } => p.food_reserve = on,
+            Order::Stockpile {
+                product, amount, ..
+            } => {
+                p.stockpile.retain(|s| s.0 != product);
+                if amount > 0.0 {
+                    p.stockpile.push((product, amount));
+                }
+            }
             Order::Raid { town: t, target } => {
                 p.raid_order = (target != t).then_some(target);
             }
