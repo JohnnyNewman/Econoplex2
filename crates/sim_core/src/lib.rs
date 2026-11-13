@@ -47,17 +47,53 @@ pub use world::{SimClock, Towns};
 #[derive(ScheduleLabel, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SimTick;
 
+/// One day of economy; [`SimTick`] runs it `time.economy_days_per_day` times
+/// on the first tick of each game day.
+#[derive(ScheduleLabel, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct EconomyDay;
+
+/// Adds both schedules to `world`: run [`SimTick`] once per tick.
+pub fn add_schedules(world: &mut World) {
+    world.add_schedule(build_schedule());
+    world.add_schedule(build_economy_schedule());
+}
+
+/// Runs the rest of the current game day (every tick up to its last).
+pub fn run_day(world: &mut World) {
+    loop {
+        world.run_schedule(SimTick);
+        if world.resource::<SimClock>().day_done() {
+            break;
+        }
+    }
+}
+
 /// Build the tick schedule. Systems run single-threaded in a fixed order so the
 /// simulation is reproducible from its seed; the heavy loops are written over
 /// flat arrays and can be parallelized internally later.
 pub fn build_schedule() -> Schedule {
-    use systems::*;
     let mut schedule = Schedule::new(SimTick);
     schedule.set_executor(SingleThreadedExecutor::new());
     schedule.add_systems(
         (
             crate::env::advance,
             crate::env::update,
+            crate::env::run_economy,
+        )
+            .chain(),
+    );
+    schedule
+}
+
+/// Build the economy schedule (one day of economy). Systems run single-threaded
+/// in a fixed order so the simulation is reproducible from its seed.
+pub fn build_economy_schedule() -> Schedule {
+    use systems::*;
+    let mut schedule = Schedule::new(EconomyDay);
+    schedule.set_executor(SingleThreadedExecutor::new());
+    schedule.add_systems(
+        (
+            crate::env::new_economy_day,
             (
                 (
                     profile::start,
@@ -98,8 +134,7 @@ pub fn build_schedule() -> Schedule {
                 )
                     .chain(),
             )
-                .chain()
-                .run_if(crate::env::day_starts),
+                .chain(),
         )
             .chain(),
     );
@@ -177,6 +212,7 @@ impl Simulation {
     pub fn new(db: Db, params: ModelParams, scenario: &Scenario) -> Self {
         let mut world = World::new();
         world::setup(&mut world, db, params, scenario);
+        world.add_schedule(build_economy_schedule());
         Simulation {
             world,
             schedule: build_schedule(),
@@ -202,6 +238,7 @@ impl Simulation {
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let mut world = World::new();
         save::restore(&mut world, file, content)?;
+        world.add_schedule(build_economy_schedule());
         Ok(Simulation {
             world,
             schedule: build_schedule(),

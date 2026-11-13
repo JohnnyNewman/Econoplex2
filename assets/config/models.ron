@@ -424,14 +424,19 @@
     ),
 
     // Time, seasons and weather (env.rs). Each day is cut into ticks; the
-    // economy still runs once a day, on its first tick. The calendar must match
-    // life.days_per_year (days_per_month * months_per_year).
+    // economy runs on its first tick. The calendar must match
+    // life.days_per_year (days_per_month * months_per_year * economy_days_per_day).
     time: (
         ticks_per_day: 12,
         days_per_month: 10,
         months_per_year: 12,
         year_starts_at: 0.25, // spring equinox (0 = midwinter)
         day_length: (equinox_hours: 12.0, swing_hours: 4.0, twilight_hours: 2.0),
+        // Days of economy per game day. For play: days_per_month: 1 and 10
+        // here give 12 game days a year with the economy's 120.
+        economy_days_per_day: 1,
+        // Outdoor work: AllDay, or Daylight (8 hours in midwinter, 16 in midsummer).
+        work_hours: AllDay,
     ),
     // A temperate climate: frosty winters, warm summers, wettest in autumn.
     // `Constant(temperature: 15.0)` for no seasons.

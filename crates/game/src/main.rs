@@ -93,6 +93,7 @@ fn main() {
             .push(order);
     }
     app.add_schedule(sim_core::build_schedule());
+    app.add_schedule(sim_core::build_economy_schedule());
 
     let speed = args.speed.unwrap_or(1);
     let econ_town = args
@@ -184,7 +185,7 @@ fn run_sim_tick(world: &mut World) {
     if world.resource::<SimControl>().paused {
         return;
     }
-    world.run_schedule(sim_core::SimTick);
+    sim_core::run_day(world);
 }
 
 fn controls(

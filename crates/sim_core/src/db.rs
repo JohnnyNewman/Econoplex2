@@ -54,6 +54,9 @@ pub struct Db {
     pub opens: Vec<Option<u32>>,
     /// Face value of coin products (0 for everything else).
     pub coin: Vec<f32>,
+    /// Per recipe: work done outdoors (harvesting nature, putting up a
+    /// building, opening land), which needs daylight.
+    pub outdoor: Vec<bool>,
 }
 
 impl Db {
@@ -166,6 +169,16 @@ impl Db {
             .iter()
             .map(|m| firm_keys.binary_search(&crate::firms::key_of(m)).unwrap())
             .collect();
+        let outdoor = recipes
+            .iter()
+            .map(|m| {
+                m.nature.is_some()
+                    || m.outputs.iter().any(|&(p, _)| {
+                        let def = &content.products[p as usize];
+                        def.category == Category::Building || def.opens.is_some()
+                    })
+            })
+            .collect();
         let mut is_input: Vec<bool> = vec![false; content.products.len()];
         for m in &recipes {
             for &(p, _) in &m.inputs {
@@ -188,6 +201,7 @@ impl Db {
             firm_keys,
             recipe_firm,
             opens,
+            outdoor,
         }
     }
 

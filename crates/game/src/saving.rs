@@ -136,7 +136,7 @@ mod tests {
         }
         let mut world = World::new();
         sim_core::world::setup(&mut world, db, params, &scenario);
-        world.add_schedule(sim_core::build_schedule());
+        sim_core::add_schedules(&mut world);
         world
     }
 
@@ -144,7 +144,7 @@ mod tests {
     fn quickload_replaces_the_running_simulation() {
         let mut w = world();
         for _ in 0..150 {
-            w.run_schedule(sim_core::SimTick);
+            sim_core::run_day(&mut w);
         }
         let text = sim_core::save::to_string(&w).unwrap();
         let hash = sim_core::state_hash(&w);
@@ -155,7 +155,7 @@ mod tests {
 
         // Play on, then load the save made earlier.
         for _ in 0..40 {
-            w.run_schedule(sim_core::SimTick);
+            sim_core::run_day(&mut w);
         }
         let file = sim_core::save::from_str(&text).unwrap();
         let content = w.resource::<Db>().content.clone();
@@ -174,7 +174,7 @@ mod tests {
         }
         // And the loaded game keeps running.
         for _ in 0..40 {
-            w.run_schedule(sim_core::SimTick);
+            sim_core::run_day(&mut w);
         }
     }
 }
