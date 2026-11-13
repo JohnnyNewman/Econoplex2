@@ -2869,3 +2869,40 @@ fn the_new_economy_preset_loads_and_runs() {
     }
     check_goods(&s);
 }
+
+#[test]
+fn kit_reserve_follows_soldiers_until_the_government_sets_a_stockpile() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, mut params, scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    params.military.kit_demand = sim_core::config::KitDemand::Soldiers;
+    params.military.levy_reserve = 0.05;
+    let mut s = Simulation::new(db, params, &scenario);
+    let target = |s: &Simulation, id: &str| {
+        let db = s.world.resource::<sim_core::Db>();
+        let p = db.content.product(id).unwrap() as usize;
+        let params = s.world.resource::<sim_core::world::Params>();
+        let town = &s.world.resource::<sim_core::Towns>().0[0];
+        sim_core::systems::decide::target_stock(db, town, params, p)
+    };
+    let (horse, mail, sword) = (
+        target(&s, "horse"),
+        target(&s, "mail"),
+        target(&s, "longsword_1"),
+    );
+    let people = s.world.resource::<sim_core::Towns>().0[0].residents.len() as f32;
+    // One mount good: soldiers plus the levy reserve, a few per hundred people.
+    assert!(
+        horse > 0.05 * people && horse < 0.2 * people,
+        "horses {horse} for {people}"
+    );
+    // Armour is split between mail and padded coats; weapons among many goods.
+    assert!(
+        mail < horse && sword < mail,
+        "mail {mail}, sword {sword}, horse {horse}"
+    );
+    // A stockpile order replaces the default.
+    let town = s.world.resource::<sim_core::Towns>().0[0].name.clone();
+    s.order(&format!("stockpile {town} horse 40")).unwrap();
+    s.step();
+    assert_eq!(target(&s, "horse"), 40.0);
+}

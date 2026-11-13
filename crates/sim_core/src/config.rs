@@ -539,13 +539,19 @@ pub struct MilitaryParams {
     /// How many weapons, armour, shields and mounts a town keeps in store.
     #[serde(default)]
     pub kit_demand: KitDemand,
+    /// Share of its residents a town keeps kit for beyond its soldiers, to arm
+    /// a levy (`kit_demand: Soldiers`, when the government sets no stockpile).
+    #[serde(default)]
+    pub levy_reserve: f32,
 }
 
 /// How many pieces of kit a town wants in store.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum KitDemand {
-    /// One for each soldier the town means to keep, shared out among the goods
-    /// that fill the same slot (a sword or a spear, mail or a padded coat).
+    /// What the government keeps in reserve: its `stockpile` target for the
+    /// good, or by default one piece per soldier it means to keep plus a levy
+    /// reserve, shared among the goods that fill the same slot (a sword or a
+    /// spear, mail or a padded coat). See `military::kit_reserve`.
     Soldiers,
     /// Like any other good: `market.target_per_capita` per resident, for every
     /// kind of weapon. The old rule.

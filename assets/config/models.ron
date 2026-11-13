@@ -353,6 +353,9 @@
         // Kit in store: one per soldier the town means to keep, shared among the
         // goods for the same slot (Soldiers), or per resident like any good (PerCapita).
         kit_demand: PerCapita,
+        // With Soldiers: kit for this share of residents beyond the soldiers, to
+        // arm a levy, unless the government sets its own stockpile for the good.
+        levy_reserve: 0.05,
     ),
     // Squad battles on a field (battle.rs, war redesign): every number has a unit.
     // Not wired into the economy yet; `econoplex-sim --battle "cavalry*20 vs spearmen*30"`
