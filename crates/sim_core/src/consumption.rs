@@ -276,11 +276,14 @@ mod tests {
         let (db, _, _) = crate::load(&paths).unwrap();
         let from_content = basket(&[], &db);
         let ids: Vec<&str> = from_content.iter().map(|g| g.good.as_str()).collect();
-        assert!(ids.contains(&"clothes") && ids.contains(&"pot"), "{ids:?}");
-        // Goods other trades need stay out (see town-market.md).
-        for id in ["wood", "charcoal", "silver", "ale"] {
-            assert!(!ids.contains(&id), "{id} in {ids:?}");
+        for id in ["clothes", "pot", "ale", "cloth", "charcoal", "silver"] {
+            assert!(ids.contains(&id), "{id} missing from {ids:?}");
         }
+        // Firewood stays out: it starved the wood chains (town-market.md).
+        assert!(!ids.contains(&"wood"));
+        // Silver is a luxury from spare money.
+        let silver = from_content.iter().find(|g| g.good == "silver").unwrap();
+        assert!(silver.min_wealth.unwrap() > 1.0 && silver.elasticity.unwrap() > 1.0);
         // A listed basket is used as it is, luxuries and all.
         let silver = BasketGood {
             good: "silver".into(),
