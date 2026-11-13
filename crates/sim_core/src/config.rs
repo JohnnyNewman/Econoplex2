@@ -567,8 +567,47 @@ pub struct MilitaryParams {
     pub kit_demand: KitDemand,
     /// Share of its residents a town keeps kit for beyond its soldiers, to arm
     /// a levy (`kit_demand: Soldiers`, when the government sets no stockpile).
+    /// Also how many civilians take up arms when the town is attacked.
     #[serde(default)]
     pub levy_reserve: f32,
+    /// How a raid's fight is decided: squads on a field, or one dice roll.
+    #[serde(default)]
+    pub battles: BattleModel,
+    /// How a raid marches: by daylight, slowed by mud and snow and carrying its
+    /// rations, or a fixed number of days.
+    #[serde(default)]
+    pub march: MarchModel,
+    /// Rations a squad takes along, as a multiple of what the trip there and
+    /// back should take.
+    #[serde(default = "default_ration_margin")]
+    pub ration_margin: f32,
+}
+
+fn default_ration_margin() -> f32 {
+    1.25
+}
+
+/// How a raid's fight is decided.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BattleModel {
+    /// Squads grouped by their kit fight on a field (`battle.rs`), against the
+    /// defenders' soldiers at home and a militia of townsfolk.
+    #[default]
+    Field,
+    /// One roll on the squads' strength (`battle_steepness`, `casualty_rate`).
+    /// The old rule.
+    Roll,
+}
+
+/// How a raid marches.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MarchModel {
+    /// In daylight only, at `march_speed` a day, slowed by wet roads and
+    /// snow, stopped by storms; the squad carries and eats its own rations.
+    #[default]
+    Weather,
+    /// `road / march_speed` ticks each way, eating at home. The old rule.
+    Fixed,
 }
 
 /// How many pieces of kit a town wants in store.

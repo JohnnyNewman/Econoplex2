@@ -367,6 +367,11 @@
         // With Soldiers: kit for this share of residents beyond the soldiers, to
         // arm a levy, unless the government sets its own stockpile for the good.
         levy_reserve: 0.05,
+        // Raids fight as squads on a field (battle.rs) or by one roll (Roll),
+        // and march by daylight carrying rations (Weather) or in fixed ticks (Fixed).
+        battles: Field,
+        march: Weather,
+        ration_margin: 1.25,       // rations for 1.25 times the expected trip
     ),
     // Squad battles on a field (battle.rs, war redesign): every number has a unit.
     // Not wired into the economy yet; `econoplex-sim --battle "cavalry*20 vs spearmen*30"`

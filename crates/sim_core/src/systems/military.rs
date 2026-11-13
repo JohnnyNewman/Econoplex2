@@ -63,6 +63,9 @@ pub fn military(
     terrain: Res<crate::terrain::Terrain>,
     weapons: Query<&Product, With<Stored>>,
     mut kit: Query<&mut crate::components::Item, Without<Stored>>,
+    gear_defs: Query<&Product, Without<Stored>>,
+    mut squads: ResMut<crate::goods::Squads>,
+    env: Res<crate::env::Environment>,
 ) {
     let mp = &params.military;
     let loyalty = params.trust.loyalty;
@@ -223,8 +226,28 @@ pub fn military(
         raid.soldiers.retain(|&s| store.alive[s as usize]);
         let home_pos = towns.0[t].pos;
         let now = clock.tick;
-        if now >= raid.arrive && !raid.fought {
+        let weather_march = mp.march == crate::config::MarchModel::Weather;
+        if weather_march {
+            march(&mut raid, t, &towns, &terrain, &env, mp);
+            if let Some(id) = raid.squad {
+                if let Some(s) = squads.list.get_mut(id as usize) {
+                    s.members.retain(|m| raid.soldiers.contains(m));
+                    s.place = crate::goods::Place::Road {
+                        from: t as u16,
+                        to: raid.target,
+                        progress: raid.progress,
+                    };
+                }
+            }
+        }
+        let arrived = if weather_march {
+            raid.progress >= 1.0
+        } else {
+            now >= raid.arrive
+        };
+        if arrived && !raid.fought {
             raid.fought = true;
+            raid.back = true;
             let fought = battle(
                 &mut commands,
                 &mut raid,
@@ -235,12 +258,22 @@ pub fn military(
                 &models,
                 &params,
                 &fight,
+                &gear_defs,
                 &mut rng,
             );
             // A battle wears everyone's kit; what breaks is gone.
             wear_kit(&mut commands, store, &mut kit, &fought, mp.battle_hours);
         }
-        if now >= raid.home || raid.soldiers.is_empty() {
+        let home = if weather_march {
+            raid.back && raid.progress <= 0.0
+        } else {
+            now >= raid.home
+        };
+        if home || raid.soldiers.is_empty() {
+            // What is left in the packs goes back to the town's market.
+            if let Some(id) = raid.squad.take() {
+                disband(id, t, &mut squads, &mut towns, store, &db);
+            }
             let town = &mut towns.0[t];
             for (p, q) in raid.loot.iter().enumerate() {
                 town.stock[p] += q;
@@ -254,7 +287,9 @@ pub fn military(
             continue;
         }
         // Positions along the road: out until arrival, back afterwards.
-        let f = if now < raid.arrive {
+        let f = if weather_march {
+            raid.progress.clamp(0.0, 1.0)
+        } else if now < raid.arrive {
             (now - raid.depart) as f32 / (raid.arrive - raid.depart).max(1) as f32
         } else {
             1.0 - (now - raid.arrive) as f32 / (raid.home - raid.arrive).max(1) as f32
@@ -337,6 +372,21 @@ pub fn military(
         let town = &mut towns.0[t];
         town.policy.raid_order = None;
         town.war.raids += 1;
+        let squad = (mp.march == crate::config::MarchModel::Weather).then(|| {
+            let trip_days = 2.0 * dist / mp.march_speed.max(1.0);
+            raise_squad(
+                t,
+                target as u16,
+                &soldiers,
+                trip_days * mp.ration_margin,
+                &mut squads,
+                &mut towns,
+                store,
+                &db,
+                &params,
+            )
+        });
+        let town = &mut towns.0[t];
         town.raid = Some(Raid {
             target: target as u16,
             soldiers,
@@ -346,7 +396,143 @@ pub fn military(
             fought: false,
             captives: Vec::new(),
             loot: vec![0.0; np],
+            squad,
+            progress: 0.0,
+            back: false,
         });
+    }
+}
+
+/// Puts a raid's soldiers in a squad (reusing a disbanded slot) and packs
+/// rations for `days` from the town's granary, then its market.
+#[allow(clippy::too_many_arguments)]
+fn raise_squad(
+    t: usize,
+    target: u16,
+    soldiers: &[u32],
+    days: f32,
+    squads: &mut crate::goods::Squads,
+    towns: &mut Towns,
+    store: &mut AgentStore,
+    db: &Db,
+    params: &Params,
+) -> u32 {
+    use crate::goods::{Holder, Place, Squad};
+    let squad = Squad {
+        home: t as u16,
+        members: soldiers.to_vec(),
+        place: Place::Road {
+            from: t as u16,
+            to: target,
+            progress: 0.0,
+        },
+        items: Vec::new(),
+        stacks: Vec::new(),
+    };
+    let id = match squads
+        .list
+        .iter()
+        .position(|s| s.members.is_empty() && s.stacks.is_empty())
+    {
+        Some(k) => {
+            squads.list[k] = squad;
+            k
+        }
+        None => {
+            squads.list.push(squad);
+            squads.list.len() - 1
+        }
+    } as u32;
+    // Food value the squad will eat: its hunger per day for every soldier.
+    let mut need = params.needs.hunger_per_day * soldiers.len() as f32 * days;
+    let mut foods = db.foods.clone();
+    foods.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+    for (food, value) in foods {
+        for from in [Holder::Granary(t as u16), Holder::Market(t as u16)] {
+            if need <= 0.0 || value <= 0.0 {
+                break;
+            }
+            let moved = crate::goods::move_stack(
+                from,
+                Holder::Squad(id),
+                food as usize,
+                (need / value).ceil(),
+                towns,
+                store,
+                squads,
+                db,
+            );
+            need -= moved * value;
+        }
+    }
+    id
+}
+
+/// Empties a squad's packs into its home market and frees its slot.
+fn disband(
+    id: u32,
+    t: usize,
+    squads: &mut crate::goods::Squads,
+    towns: &mut Towns,
+    store: &mut AgentStore,
+    db: &Db,
+) {
+    use crate::goods::Holder;
+    let stacks = squads
+        .list
+        .get(id as usize)
+        .map(|s| s.stacks.clone())
+        .unwrap_or_default();
+    for (good, q) in stacks {
+        crate::goods::move_stack(
+            Holder::Squad(id),
+            Holder::Market(t as u16),
+            good as usize,
+            q,
+            towns,
+            store,
+            squads,
+            db,
+        );
+    }
+    if let Some(s) = squads.list.get_mut(id as usize) {
+        s.members.clear();
+        s.stacks.clear();
+        s.items.clear();
+        s.place = crate::goods::Place::Town(t as u16);
+    }
+}
+
+/// One day of a raid's march (`march: Weather`; the military system runs once
+/// a day): soldiers walk in daylight, `march_speed` map units on a 12-hour day,
+/// more in long summer days and less in short winter ones, slowed by wet roads
+/// and snow and stopped by storms; out to the target and, once they fought, home.
+fn march(
+    raid: &mut Raid,
+    t: usize,
+    towns: &Towns,
+    terrain: &crate::terrain::Terrain,
+    env: &crate::env::Environment,
+    mp: &crate::config::MilitaryParams,
+) {
+    // The weather where the squad is: near home, or near the target.
+    let here = if raid.progress < 0.5 {
+        t
+    } else {
+        raid.target as usize
+    };
+    let local = env.at(here.min(towns.0.len().saturating_sub(1)));
+    if local.weather.storm() {
+        return;
+    }
+    let road = terrain.road(t, raid.target as usize).max(1.0);
+    let daylight = (env.sunset - env.sunrise).clamp(0.0, 24.0) / 12.0;
+    let pace = (1.0 - 0.5 * local.ground.wet) * (1.0 - 0.7 * local.ground.snow);
+    let step = mp.march_speed * daylight * pace / road;
+    if raid.back {
+        raid.progress = (raid.progress - step).max(0.0);
+    } else {
+        raid.progress = (raid.progress + step).min(1.0);
     }
 }
 
@@ -502,6 +688,7 @@ fn battle(
     models: &Models,
     params: &Params,
     fight: &CapVec,
+    gear_defs: &Query<&Product, Without<Stored>>,
     rng: &mut ChaCha8Rng,
 ) -> Vec<u32> {
     let mp = &params.military;
@@ -509,38 +696,61 @@ fn battle(
     let d = raid.target as usize;
     let attack = squad_power(store, &raid.soldiers, fight, loyalty);
     let defense = total_defense(store, towns, d, fight, mp, loyalty);
-    let k = mp.battle_steepness;
-    let p_win = attack.powf(k) / (attack.powf(k) + defense.powf(k)).max(1e-6);
-    let won = rng.random::<f32>() < p_win;
-    let total = (attack + defense).max(1e-6);
-
-    // Casualties: each side's fighters fall in proportion to the enemy's strength,
-    // and the losing side takes heavier losses.
-    let fall = |share: f32, lost: bool| mp.casualty_rate * share * if lost { 1.5 } else { 0.6 };
-    let mut fallen_a = 0;
-    for &s in &raid.soldiers {
-        if rng.random::<f32>() < fall(defense / total, !won) {
-            store.state[s as usize][state::HEALTH] = 0.0;
-            fallen_a += 1;
-        }
-    }
     let away: Vec<u32> = towns.0[d]
         .raid
         .as_ref()
         .map_or(Vec::new(), |r| r.soldiers.clone());
-    let defenders: Vec<u32> = towns.0[d]
+    let mut defenders: Vec<u32> = towns.0[d]
         .squad
         .iter()
         .copied()
         .filter(|s| !away.contains(s))
         .collect();
-    let mut fallen_d = 0;
-    for &s in &defenders {
-        if rng.random::<f32>() < fall(attack / total, won) {
-            store.state[s as usize][state::HEALTH] = 0.0;
-            fallen_d += 1;
+    let (won, fallen_a, fallen_d) = match mp.battles {
+        crate::config::BattleModel::Roll => {
+            let k = mp.battle_steepness;
+            let p_win = attack.powf(k) / (attack.powf(k) + defense.powf(k)).max(1e-6);
+            let won = rng.random::<f32>() < p_win;
+            let total = (attack + defense).max(1e-6);
+            // Casualties: each side's fighters fall in proportion to the enemy's
+            // strength, and the losing side takes heavier losses.
+            let fall =
+                |share: f32, lost: bool| mp.casualty_rate * share * if lost { 1.5 } else { 0.6 };
+            let mut fallen_a = 0;
+            for &s in &raid.soldiers {
+                if rng.random::<f32>() < fall(defense / total, !won) {
+                    store.state[s as usize][state::HEALTH] = 0.0;
+                    fallen_a += 1;
+                }
+            }
+            let mut fallen_d = 0;
+            for &s in &defenders {
+                if rng.random::<f32>() < fall(attack / total, won) {
+                    store.state[s as usize][state::HEALTH] = 0.0;
+                    fallen_d += 1;
+                }
+            }
+            (won, fallen_a, fallen_d)
         }
-    }
+        crate::config::BattleModel::Field => {
+            // Townsfolk take up arms beside the soldiers at home.
+            let militia = muster_militia(store, &towns.0[d], &defenders, mp);
+            let seed = rng.random::<u64>();
+            let out = field_battle(
+                store,
+                db,
+                params,
+                fight,
+                gear_defs,
+                &raid.soldiers,
+                &defenders,
+                &militia,
+                seed,
+            );
+            defenders.extend(militia);
+            out
+        }
+    };
     // Civilians are hurt when the defense breaks.
     if won {
         for &i in &towns.0[d].residents {
@@ -575,14 +785,18 @@ fn battle(
         towns.0[attacker]
             .ledger
             .add(crate::ledger::Flow::LootTaken, money);
-        for p in 0..db.content.products.len() {
-            let cat = db.category(p as u32);
-            if cat == Category::Building || cat.is_item() {
-                continue;
+        if mp.battles == crate::config::BattleModel::Field {
+            plunder(raid, d, towns, store, db);
+        } else {
+            for p in 0..db.content.products.len() {
+                let cat = db.category(p as u32);
+                if cat == Category::Building || cat.is_item() {
+                    continue;
+                }
+                let q = (towns.0[d].stock[p] * mp.loot_share).floor();
+                towns.0[d].stock[p] -= q;
+                raid.loot[p] += q;
             }
-            let q = (towns.0[d].stock[p] * mp.loot_share).floor();
-            towns.0[d].stock[p] -= q;
-            raid.loot[p] += q;
         }
         towns.0[attacker].war.raids_won += 1;
 
@@ -653,4 +867,216 @@ fn battle(
         .chain(defenders.iter())
         .copied()
         .collect()
+}
+
+/// Civilians who take up arms when their town is attacked: `levy_reserve` of
+/// its residents, the fittest adults not already soldiers, children or captives.
+fn muster_militia(
+    store: &AgentStore,
+    town: &crate::world::Town,
+    soldiers: &[u32],
+    mp: &crate::config::MilitaryParams,
+) -> Vec<u32> {
+    let n = (mp.levy_reserve * town.residents.len() as f32).round() as usize;
+    let mut pool: Vec<(f32, u32)> = town
+        .residents
+        .iter()
+        .copied()
+        .filter(|&i| {
+            let k = i as usize;
+            store.alive[k]
+                && store.state[k][state::HEALTH] > 0.3
+                && !soldiers.contains(&i)
+                && !matches!(
+                    store.activity[k],
+                    Activity::Child | Activity::Soldier | Activity::Captive
+                )
+        })
+        .map(|i| (recruit_score(store, i as usize), i))
+        .collect();
+    pool.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
+    pool.into_iter().take(n).map(|(_, i)| i).collect()
+}
+
+/// A raid's fight as squads on a field (`battle.rs`): each side's people are
+/// grouped by what they carry (weapon, mount), so spearmen fight as spearmen
+/// and riders as riders; the militia is its own squad. Health afterwards goes
+/// back to the people: the dead die, the wounded are badly hurt. Returns
+/// whether the attackers won and how many died on each side.
+#[allow(clippy::too_many_arguments)]
+fn field_battle(
+    store: &mut AgentStore,
+    db: &Db,
+    params: &Params,
+    fight: &CapVec,
+    gear_defs: &Query<&Product, Without<Stored>>,
+    attackers: &[u32],
+    defenders: &[u32],
+    militia: &[u32],
+    seed: u64,
+) -> (bool, u32, u32) {
+    use crate::battle::{Battle, Field, Kit, Member, SquadSpec};
+    use crate::goods::Slot;
+    let bp = &params.battle;
+    let field = Field::default();
+    let fight_of = |i: usize, slot: Slot| -> Option<(u32, &sim_data::FightDef)> {
+        let e = crate::goods::gear(store, i, slot)?;
+        let p = gear_defs.get(e).ok()?;
+        db.content.products[p.def as usize]
+            .fight
+            .as_ref()
+            .map(|f| (p.def, f))
+    };
+    // Groups: (side, weapon good or none, mounted, militia) -> people.
+    type Group = ((u8, u32, bool, bool), Vec<u32>);
+    let mut groups: Vec<Group> = Vec::new();
+    let sides = [
+        (0u8, attackers, false),
+        (1, defenders, false),
+        (1, militia, true),
+    ];
+    for (side, people, levy) in sides {
+        for &i in people {
+            let k = i as usize;
+            let weapon = fight_of(k, Slot::Weapon).map_or(u32::MAX, |w| w.0);
+            let mounted = fight_of(k, Slot::Mount).is_some_and(|m| m.1.mounted);
+            let key = (side, weapon, mounted, levy);
+            match groups.iter_mut().find(|g| g.0 == key) {
+                Some(g) => g.1.push(i),
+                None => groups.push((key, vec![i])),
+            }
+        }
+    }
+    let per_side = |side: u8| groups.iter().filter(|g| g.0 .0 == side).count().max(1) as f32;
+    let mut index = [0.0f32; 2];
+    let specs: Vec<SquadSpec> = groups
+        .iter()
+        .map(|((side, weapon, mounted, levy), people)| {
+            let gear: Vec<Vec<&sim_data::FightDef>> = people
+                .iter()
+                .map(|&i| {
+                    [Slot::Weapon, Slot::Armour, Slot::Shield, Slot::Mount]
+                        .into_iter()
+                        .filter_map(|s| fight_of(i as usize, s).map(|f| f.1))
+                        .collect()
+                })
+                .collect();
+            let name = if *levy {
+                "militia".to_string()
+            } else if *weapon == u32::MAX {
+                "unarmed".to_string()
+            } else {
+                let w = &db.content.products[*weapon as usize].name;
+                if *mounted {
+                    format!("{w}, mounted")
+                } else {
+                    w.clone()
+                }
+            };
+            let members: Vec<Member> = people
+                .iter()
+                .map(|&i| {
+                    let k = i as usize;
+                    Member {
+                        health: store.state[k][state::HEALTH].clamp(0.05, 1.0),
+                        skill: dot(&store.cap[k], fight).clamp(0.0, 1.5),
+                        experience: 0.0,
+                    }
+                })
+                .collect();
+            // Morale from their needs: fed and content soldiers stand firm.
+            let morale = people
+                .iter()
+                .map(|&i| {
+                    let st = &store.state[i as usize];
+                    0.5 * (1.0 - st[state::HUNGER]).clamp(0.0, 1.0)
+                        + 0.5 * st[state::HAPPINESS].clamp(0.0, 1.0)
+                })
+                .sum::<f32>()
+                / people.len().max(1) as f32;
+            let s = *side as usize;
+            let y = field.height * (index[s] + 0.5) / per_side(*side);
+            index[s] += 1.0;
+            let x = if *side == 0 {
+                field.width * 0.15
+            } else {
+                field.width * 0.75
+            };
+            SquadSpec {
+                name,
+                side: *side,
+                kit: Kit::from_gear("", &gear),
+                members,
+                drill: if *levy { 0.0 } else { 0.5 },
+                morale: if *levy { morale * 0.7 } else { morale }.clamp(0.1, 1.0),
+                pos: (x, y),
+                behind_wall: false,
+            }
+        })
+        .collect();
+    if !specs.iter().any(|s| s.side == 0) {
+        return (false, 0, 0);
+    }
+    if !specs.iter().any(|s| s.side == 1) {
+        return (true, 0, 0);
+    }
+    let mut b = Battle::new(bp.clone(), field, specs, seed);
+    let report = b.run();
+    let mut fallen = [0u32; 2];
+    for (g, (key, people)) in groups.iter().enumerate() {
+        for (m, &i) in b.members(g).iter().zip(people) {
+            let k = i as usize;
+            let st = &mut store.state[k];
+            if m.health <= bp.death_below {
+                st[state::HEALTH] = 0.0;
+                fallen[key.0 as usize] += 1;
+            } else if m.health <= 0.0 {
+                // Badly wounded, out of the fight.
+                st[state::HEALTH] = st[state::HEALTH].min(0.1);
+            } else {
+                st[state::HEALTH] = st[state::HEALTH].min(m.health);
+            }
+        }
+    }
+    (report.winner == Some(0), fallen[0], fallen[1])
+}
+
+/// After a won fight the raiders carry off what they can: the goods worth most
+/// for their weight first, up to what the survivors can carry
+/// (`goods::KG_PER_MEMBER` each, less the rations in their packs).
+fn plunder(raid: &mut Raid, d: usize, towns: &mut Towns, store: &AgentStore, db: &Db) {
+    let survivors = raid
+        .soldiers
+        .iter()
+        .filter(|&&s| store.state[s as usize][state::HEALTH] > 0.0)
+        .count() as f32;
+    let carried: f32 = raid
+        .loot
+        .iter()
+        .enumerate()
+        .map(|(p, q)| q * db.content.products[p].kg)
+        .sum();
+    let mut room = (survivors * crate::goods::KG_PER_MEMBER - carried).max(0.0);
+    let town = &mut towns.0[d];
+    let mut goods: Vec<usize> = (0..db.content.products.len())
+        .filter(|&p| {
+            let cat = db.category(p as u32);
+            cat != Category::Building && !cat.is_item() && town.stock[p] >= 1.0
+        })
+        .collect();
+    let worth = |p: usize| town.price[p] / db.content.products[p].kg.max(0.01);
+    goods.sort_by(|&a, &b| worth(b).total_cmp(&worth(a)).then(a.cmp(&b)));
+    for p in goods {
+        if room <= 0.0 {
+            break;
+        }
+        let kg = db.content.products[p].kg.max(0.01);
+        let q = town.stock[p].floor().min((room / kg).floor());
+        if q <= 0.0 {
+            continue;
+        }
+        town.stock[p] -= q;
+        raid.loot[p] += q;
+        room -= q * kg;
+    }
 }

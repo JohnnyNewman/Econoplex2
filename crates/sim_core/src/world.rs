@@ -349,6 +349,15 @@ pub struct Raid {
     pub captives: Vec<u32>,
     /// Goods carried home (indexed by product).
     pub loot: Vec<f32>,
+    /// The squad the soldiers march as (`goods::Squads`), with `march: Weather`.
+    #[serde(default)]
+    pub squad: Option<u32>,
+    /// Share of the road behind it, 0 at home .. 1 at the target.
+    #[serde(default)]
+    pub progress: f32,
+    /// Fought and marching home.
+    #[serde(default)]
+    pub back: bool,
 }
 
 /// Military events since the last yearly report.
