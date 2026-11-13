@@ -18,7 +18,7 @@
 //!
 //! Keys: `Space` pause, `,` / `.` slower / faster.
 
-use crate::buildings::{spawn_building, spawn_house, BuildingSpec, Kit, Style};
+use crate::buildings::{spawn_building, spawn_houses, BuildingSpec, HouseSpec, Kit, Style};
 use crate::env::{Ground, SimEnv, Weather};
 use crate::outline::Outlines;
 use crate::toon::ToonMaterial;
@@ -408,11 +408,20 @@ pub fn blend_towns(towns: &[(Vec2, &sim_core::env::LocalEnv)], at: Vec2) -> (Wea
 struct Shown {
     /// Building id (from the snapshot) -> its entity.
     buildings: HashMap<u64, Entity>,
-    /// Per town: house entities with their map positions, and how far along
-    /// its spiral we are.
-    houses: Vec<(Vec<(Entity, Vec2)>, u32)>,
+    /// Per town: its houses.
+    houses: Vec<TownHouses>,
     /// Per town: the style it is drawn in (era and wealth tier).
     styles: Vec<Option<Style>>,
+}
+
+/// A town's houses: each with its map position, how far along the spiral we
+/// are, and the one entity that draws them all (rebuilt when they change).
+#[derive(Default)]
+struct TownHouses {
+    list: Vec<(HouseSpec, Vec2)>,
+    next_k: u32,
+    drawn: Option<Entity>,
+    changed: bool,
 }
 
 fn init_kit(
@@ -494,11 +503,10 @@ fn sync_scene(
                 commands.entity(e).despawn();
             }
         }
-        let (list, next_k) = &mut shown.houses[ti];
-        for (e, _) in list.drain(..) {
-            commands.entity(e).despawn();
-        }
-        *next_k = 0;
+        let houses = &mut shown.houses[ti];
+        houses.list.clear();
+        houses.next_k = 0;
+        houses.changed = true;
     }
 
     // Buildings: add the new ones, remove the ones that are gone.
@@ -544,21 +552,17 @@ fn sync_scene(
     for (ti, town) in snap.towns.iter().enumerate() {
         let want = houses_for(town.population) as usize;
         let style = shown.styles[ti].unwrap_or_default();
-        let (list, next_k) = &mut shown.houses[ti];
+        let houses = &mut shown.houses[ti];
         let clear = |p: Vec2| !taken.iter().any(|b| b.distance(p) < 3.2 * SCALE);
         // A new building moves the houses standing in its way further out.
-        list.retain(|&(e, p)| {
-            let keep = clear(p);
-            if !keep {
-                commands.entity(e).despawn();
-            }
-            keep
-        });
+        let before = houses.list.len();
+        houses.list.retain(|&(_, p)| clear(p));
+        houses.changed |= houses.list.len() != before;
         let mut tries = 0;
-        while list.len() < want && tries < 400 {
+        while houses.list.len() < want && tries < 400 {
             tries += 1;
-            let k = *next_k;
-            *next_k += 1;
+            let k = houses.next_k;
+            houses.next_k += 1;
             let a = k as f32 * 2.399_963 + ti as f32;
             let r = 1.8 + (k as f32).sqrt() * 1.05;
             let p = (
@@ -571,24 +575,34 @@ fn sync_scene(
             if !clear(Vec2::new(p.0, p.1)) {
                 continue;
             }
-            let rot = Quat::from_rotation_y(a);
-            let house = spawn_house(
+            let spec = HouseSpec {
+                at: ground(p),
+                rot: Quat::from_rotation_y(a),
+                k,
+            };
+            houses.list.push((spec, Vec2::new(p.0, p.1)));
+            houses.changed = true;
+        }
+        // A shrinking town loses its outermost houses first.
+        if houses.list.len() > want {
+            houses.list.truncate(want);
+            houses.changed = true;
+        }
+        // Draw the town's houses again, as one mesh, if they changed.
+        if houses.changed {
+            houses.changed = false;
+            if let Some(e) = houses.drawn.take() {
+                commands.entity(e).despawn();
+            }
+            let specs: Vec<HouseSpec> = houses.list.iter().map(|(h, _)| *h).collect();
+            houses.drawn = spawn_houses(
                 &mut commands,
                 &mut kit,
                 &mut meshes,
                 &outlines,
-                ground(p),
-                rot,
-                k,
+                &specs,
                 style,
             );
-            list.push((house, Vec2::new(p.0, p.1)));
-        }
-        // A shrinking town loses its outermost houses first.
-        while list.len() > want {
-            if let Some((e, _)) = list.pop() {
-                commands.entity(e).despawn();
-            }
         }
     }
 }
@@ -637,8 +651,12 @@ fn update_status(live: Res<LiveSim>, mut text: Query<&mut Text, With<Status>>) {
     for e in live.recent.iter().take(4) {
         line.push_str(&format!("\n  day {}: {}", e.tick, e.text));
     }
+    // Only a changed text is measured and laid out again (each costs about
+    // 0.3 ms of CPU per frame; docs/profiling.md).
     for mut t in &mut text {
-        t.0 = line.clone();
+        if t.0 != line {
+            t.0 = line.clone();
+        }
     }
 }
 
