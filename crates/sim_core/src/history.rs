@@ -145,6 +145,10 @@ pub fn describe(order: &Order, db: &Db, towns: &Towns) -> String {
                 .map_or("?".into(), |&k| crate::firms::firm_name(db, k))
         ),
         Order::Imports { imports, .. } => format!("food imports {imports:?}").to_lowercase(),
+        Order::Granary { days, .. } => format!("granary {days:.0} days of food"),
+        Order::Reserve { on, .. } => {
+            format!("seed reserve {}", if *on { "on" } else { "off" })
+        }
         Order::Immigration { policy, .. } => format!("immigration {policy:?}").to_lowercase(),
         Order::Mint { minting, .. } => format!("minting {minting:?}").to_lowercase(),
         Order::Army { share, .. } => match share {

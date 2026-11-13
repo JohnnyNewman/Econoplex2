@@ -2492,3 +2492,54 @@ fn seasonal_crops_stand_in_summer_and_not_in_winter() {
     );
     check_goods(&s);
 }
+
+#[test]
+fn a_granary_fills_from_a_full_market_and_feeds_a_hungry_one() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let sets = [("market.food_rules".to_string(), "Ruler".to_string())];
+    let (db, params, mut scenario) =
+        sim_core::load_with(&AssetPaths::from_root(&root), &sets).unwrap();
+    scenario.seed = 12;
+    for t in &mut scenario.towns {
+        t.population = 60;
+    }
+    let mut s = Simulation::new(db, params, &scenario);
+    s.order("granary Greenvale 30").unwrap();
+    s.order("reserve Greenvale on").unwrap();
+    for _ in 0..60 {
+        s.step();
+    }
+    let towns = s.world.resource::<sim_core::Towns>();
+    let db = s.world.resource::<sim_core::Db>();
+    let g = &towns.0[1];
+    assert!(g.policy.food_reserve && g.policy.granary_days == 30.0);
+    assert!(
+        sim_core::granary::held(g, db) > 0.0,
+        "the granary took some food"
+    );
+    check_goods(&s);
+    // Empty the market: the granary releases food into it.
+    let before = sim_core::granary::held(
+        &s.world.resource::<sim_core::Towns>().0[1],
+        s.world.resource::<sim_core::Db>(),
+    );
+    {
+        let foods: Vec<u32> = s
+            .world
+            .resource::<sim_core::Db>()
+            .foods
+            .iter()
+            .map(|f| f.0)
+            .collect();
+        let mut towns = s.world.resource_mut::<sim_core::Towns>();
+        for f in foods {
+            towns.0[1].stock[f as usize] = 0.0;
+        }
+    }
+    s.step();
+    let after = sim_core::granary::held(
+        &s.world.resource::<sim_core::Towns>().0[1],
+        s.world.resource::<sim_core::Db>(),
+    );
+    assert!(after < before, "{after} vs {before}");
+}

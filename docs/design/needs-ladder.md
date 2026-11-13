@@ -75,3 +75,28 @@ autumn is lost.
 No starvation anywhere: the town-wide food rules (seed held back, farming
 drawn by town food scarcity) still smooth the hungry gap. Turning those into
 the ruler's levers is step 7.
+
+## Food as the ruler's challenge (step 7, first part)
+
+`market.food_rules: Ruler` (off by default, `granary.rs`) drops the two
+town-wide food rules: seed grain is no longer held back unless the ruler orders
+it (`reserve TOWN on`), and people are no longer drawn to farm by the town's
+food scarcity, only by pay. New lever: `granary TOWN DAYS`, food the town keeps
+out of the market (taken from a full market, released into a hungry one; it
+spoils at a quarter of the market's rate). AI governors (first planner) turn the
+seed reserve on, keep a 40-day granary, and keep their old food levers
+(subsidies, imports, new fields).
+
+With needs, households and seasonal farming on, 6 seeds x 20 years:
+
+| | pop | starving (person-days) | food/head |
+| --- | --- | --- | --- |
+| Town rules | 1869 | 0 | 9.6 |
+| Ruler, every town governed, granary only | 1499 | 0.6 % | 4.7 |
+| Ruler, every town governed, granary + seed reserve | 1650 | 0.3 % | 6.4 |
+| Ruler, nobody governs | 1259 | 1.2 % | 4.6 |
+
+Where it starves (seeds 42-44, player town Greenvale ungoverned): mostly
+Ironhold, the mining town, then Brassmoor; Greenvale, the farm town, barely
+starves even unmanaged. The planner does not yet make food-poor AI towns safe,
+and the player's farm town is too easy to make the challenge felt.

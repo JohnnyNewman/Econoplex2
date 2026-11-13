@@ -207,6 +207,29 @@ pub fn govern(
             }
         }
 
+        // Without town-wide food rules, the governor holds the seed back and
+        // keeps a granary to bridge the hungry gap.
+        if !mp.food_rules.town() && !p.food_reserve {
+            orders.push((
+                Order::Reserve {
+                    town: tid,
+                    on: true,
+                },
+                "held the seed grain back: eating it starves next year".into(),
+            ));
+        }
+        if !mp.food_rules.town() && (p.granary_days - gp.granary_days).abs() > 0.5 {
+            orders.push((
+                Order::Granary {
+                    town: tid,
+                    days: gp.granary_days,
+                },
+                format!(
+                    "set the granary to {:.0} days of food: the ruler feeds the town",
+                    gp.granary_days
+                ),
+            ));
+        }
         // A hungry town short of money buys food from its neighbours on credit;
         // once fed, it stops.
         if hungry && p.food_imports == crate::policy::Imports::Off {

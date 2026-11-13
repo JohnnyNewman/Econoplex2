@@ -424,6 +424,12 @@ pub struct MarketParams {
     pub public_spending: f32,
     /// Fraction of food stock that spoils per year.
     pub food_spoilage: f32,
+    /// Who keeps the town fed: town-wide rules, or the ruler (`granary.rs`).
+    #[serde(default)]
+    pub food_rules: crate::granary::FoodRules,
+    /// Spoilage in a granary, as a share of the market's.
+    #[serde(default = "granary_spoilage")]
+    pub granary_spoilage: f32,
     /// Guild members may buy a tool on credit until their wealth reaches minus this.
     pub tool_credit: f32,
     /// Coins each town starts with in its treasury.
@@ -788,6 +794,17 @@ pub struct GovernorParams {
     pub max_loan_share: f32,
     /// Highest profit tax a governor sets (steps of `income_tax_step`).
     pub max_profit_tax: f32,
+    /// With `market.food_rules: Ruler`: days of food the granary aims to hold.
+    #[serde(default = "granary_days")]
+    pub granary_days: f32,
+}
+
+fn granary_spoilage() -> f32 {
+    0.25
+}
+
+fn granary_days() -> f32 {
+    40.0
 }
 
 impl Default for GovernorParams {
@@ -820,6 +837,7 @@ impl Default for GovernorParams {
             loan_days: 240,
             max_loan_share: 0.3,
             max_profit_tax: 0.5,
+            granary_days: granary_days(),
             personalities: vec![
                 ("balanced".into(), crate::governor::Personality::default()),
                 (
