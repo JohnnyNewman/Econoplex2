@@ -462,6 +462,11 @@ pub fn restore(
         clock.sub = tpd - 1;
     }
     clock.months_per_year = time.months_per_year.max(1);
+    // Saves from before time compression: one game day per day of economy.
+    if clock.game_day == 0 && clock.tick > 0 {
+        clock.game_day = clock.tick / time.economy_days_per_day.max(1) as u64;
+    }
+    clock.economy_days_per_day = time.economy_days_per_day.max(1);
     world.insert_resource(clock);
     world.insert_resource(env);
     world.insert_resource(seed);

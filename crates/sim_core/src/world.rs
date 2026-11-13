@@ -62,6 +62,12 @@ pub struct SimClock {
     pub sub: u32,
     #[serde(default = "twelve")]
     pub months_per_year: u32,
+    /// Game days started so far (each runs `economy_days_per_day` days of
+    /// economy, counted by `tick`).
+    #[serde(default)]
+    pub game_day: u64,
+    #[serde(default = "one")]
+    pub economy_days_per_day: u32,
 }
 
 fn one() -> u32 {
@@ -73,17 +79,19 @@ fn twelve() -> u32 {
 }
 
 impl SimClock {
-    pub fn new(days_per_year: u32, ticks_per_day: u32, months_per_year: u32) -> Self {
-        let tpd = ticks_per_day.max(1);
+    pub fn new(days_per_year: u32, time: &crate::env::TimeParams) -> Self {
+        let tpd = time.ticks_per_day.max(1);
         SimClock {
             tick: 0,
             days_per_year,
             ticks_per_day: tpd,
             sub: tpd - 1,
-            months_per_year: months_per_year.max(1),
+            months_per_year: time.months_per_year.max(1),
+            game_day: 0,
+            economy_days_per_day: time.economy_days_per_day.max(1),
         }
     }
-    /// Days started so far (the same as `tick`).
+    /// Days of economy started so far (the same as `tick`).
     pub fn day(&self) -> u64 {
         self.tick
     }
@@ -775,11 +783,7 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
     world.insert_resource(ScenarioSpec(scenario.clone()));
     world.insert_resource(crate::governor::Governors::new(scenario.towns.len()));
     world.insert_resource(crate::history::History::default());
-    world.insert_resource(SimClock::new(
-        dpy,
-        params_time.ticks_per_day,
-        params_time.months_per_year,
-    ));
+    world.insert_resource(SimClock::new(dpy, &params_time));
     world.insert_resource(crate::env::Environment::default());
     world.insert_resource(seed);
     world.insert_resource(Decisions::default());

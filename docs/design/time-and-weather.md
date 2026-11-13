@@ -7,11 +7,23 @@ Claude Doc: "Econoplex economy redesign: items, time, needs".
 
 - `time.ticks_per_day` (12 by default) cuts each day into ticks; `SimClock.tick`
   still counts days and `SimClock.sub` is the tick within the day.
-- The economy runs once a day, on the day's first tick (`env::day_starts`).
-  The other ticks only move the hours and the weather on, so the state hash is
-  the same at any number of ticks per day.
+- The economy runs on the day's first tick. The other ticks only move the
+  hours and the weather on, so the state hash is the same at any number of
+  ticks per day.
 - `Simulation::step()` runs a whole day; `Simulation::step_tick()` runs one tick.
-- `days_per_month * months_per_year` must equal `life.days_per_year`.
+- `days_per_month * months_per_year * economy_days_per_day` must equal
+  `life.days_per_year`.
+- Time compression: `economy_days_per_day` runs that many days of economy on
+  each game day's first tick (`EconomyDay` schedule, run by `env::run_economy`).
+  For play, 12 game days a year: `days_per_month: 1`, `economy_days_per_day: 10`;
+  each game day then stands for 10 days of making, eating and growing, and the
+  economy's rates stay per day. The default stays 1 (120 game days a year).
+- `work_hours: Daylight` (off by default) scales outdoor work (nature, buildings,
+  new land) by today's daylight against the equinox: 8/12 in midwinter, 16/12 in
+  midsummer. Over 6 seeds and 20 years: population 1918 to 1876, food per head
+  8.9 to 6.1 days, swords 1373 to 1046, no starvation either way.
+- Hosts that run the schedules themselves call `sim_core::add_schedules` and
+  `sim_core::run_day` (the 2D game does).
 - The calendar year starts at the spring equinox (`year_starts_at: 0.25`).
 - Daylight is 12 hours at the equinoxes, 8 in midwinter and 16 in midsummer,
   with 2 hours each of dawn and dusk (`day_length`).

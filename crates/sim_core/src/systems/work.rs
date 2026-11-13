@@ -475,8 +475,11 @@ pub fn produce(
     mut tasks: Query<(Entity, &mut Task, &Participants)>,
     mut items: Query<&mut Item>,
     mut log: ResMut<WorkLog>,
+    env: Res<crate::env::Environment>,
 ) {
     let mut rng = seed.rng(clock.tick, streams::PRODUCE);
+    // Outdoor jobs (nature, buildings, new land) only work while it is light.
+    let outdoor_share = crate::env::outdoor_work_share(&env, &params.time);
     let mut order: Vec<(u64, Entity)> = tasks.iter().map(|(e, t, _)| (t.serial, e)).collect();
     order.sort_unstable();
     let store = &mut *store;
@@ -506,7 +509,12 @@ pub fn produce(
                 .min(1.0);
             store.worked_today[w as usize] = Some(r);
         }
-        task.progress += (workers.len() as f32).powf(params.work.work_exponent);
+        let day = (workers.len() as f32).powf(params.work.work_exponent);
+        task.progress += if outdoor_share != 1.0 && db.outdoor[task.recipe as usize] {
+            day * outdoor_share
+        } else {
+            day
+        };
         if task.progress >= task.required {
             done.push((e, r, workers));
         }

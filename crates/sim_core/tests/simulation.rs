@@ -2387,3 +2387,38 @@ fn check_goods(s: &Simulation) {
     );
     assert!(bad.is_empty(), "goods out of balance: {bad:?}");
 }
+
+#[test]
+fn a_compressed_calendar_runs_ten_days_of_economy_per_game_day() {
+    // 12 game days a year, each standing for 10 days of economy.
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let sets = [
+        ("time.days_per_month".to_string(), "1".to_string()),
+        ("time.economy_days_per_day".to_string(), "10".to_string()),
+    ];
+    let (db, params, mut scenario) =
+        sim_core::load_with(&AssetPaths::from_root(&root), &sets).unwrap();
+    scenario.seed = 9;
+    let mut plain = sim(9);
+    let mut s = {
+        for t in &mut scenario.towns {
+            t.population = 60;
+        }
+        Simulation::new(db, params, &scenario)
+    };
+    // One game day of the compressed run is ten days of the plain one.
+    s.step();
+    for _ in 0..10 {
+        plain.step();
+    }
+    assert_eq!(s.tick(), 10);
+    assert_eq!(s.state_hash(), plain.state_hash());
+    // A year is 12 game days: the season comes round.
+    let season0 = s.world.resource::<sim_core::env::Environment>().season;
+    for _ in 0..12 {
+        s.step();
+    }
+    let season1 = s.world.resource::<sim_core::env::Environment>().season;
+    assert!((season0 - season1).abs() < 1e-4, "{season0} vs {season1}");
+    assert_eq!(s.tick(), 130);
+}
