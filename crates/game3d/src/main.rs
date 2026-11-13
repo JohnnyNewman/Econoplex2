@@ -32,6 +32,7 @@ mod outline;
 mod overlay;
 mod playground;
 mod render_scale;
+mod roads;
 mod sky;
 mod terrain;
 mod toon;
@@ -268,6 +269,7 @@ fn main() {
         overlay::OverlayPlugin,
         bloom::BloomPlugin,
         render_scale::RenderScalePlugin,
+        roads::RoadsPlugin,
     ))
     .insert_resource(clock)
     .insert_resource(toon_settings)
@@ -302,6 +304,20 @@ fn noise(seed: u64, x: f32, y: f32) -> f32 {
 
 /// Height of the ground at a world position: hills from the sim's travel cost,
 /// gentle rolling noise, river beds sunk.
+/// The terrain surface's height at `p`, as the terrain mesh draws it: the
+/// heights at the four cell corners around `p`, interpolated. (`height` itself
+/// is one value per cell; the mesh is built from it at the corners.)
+fn ground(t: &Terrain, p: (f32, f32)) -> f32 {
+    let fx = (p.0 - t.origin.0) / t.cell;
+    let fy = (p.1 - t.origin.1) / t.cell;
+    let (i, j) = (fx.floor(), fy.floor());
+    let (u, v) = (fx - i, fy - j);
+    let corner = |a: f32, b: f32| height(t, (t.origin.0 + a * t.cell, t.origin.1 + b * t.cell));
+    let bottom = corner(i, j) * (1.0 - u) + corner(i + 1.0, j) * u;
+    let top = corner(i, j + 1.0) * (1.0 - u) + corner(i + 1.0, j + 1.0) * u;
+    bottom * (1.0 - v) + top * v
+}
+
 fn height(t: &Terrain, p: (f32, f32)) -> f32 {
     let Some(c) = t.cell_at(p) else { return 0.0 };
     if t.water[c] {
@@ -386,6 +402,9 @@ fn setup(
         MeshMaterial3d(toons.add(toon::toon(Color::srgb(0.30, 0.52, 0.70)))),
         Transform::from_xyz(0.0, -0.6, 0.0),
     ));
+    // --- roads between the towns (roads.rs); grass and trees keep off them
+    let town_pos: Vec<(f32, f32)> = s.towns.iter().map(|tw| tw.position).collect();
+    let road_cells = roads::spawn_roads(&mut commands, &mut meshes, &mut toons, t, &town_pos);
     // --- trees: soft cones scattered on meadows and hills
     // Crowns sway in the wind (shader step 06, sway.wesl); trunks stand still.
     // All trees are baked into one mesh per chunk (nature.rs).
@@ -397,6 +416,9 @@ fn setup(
     ];
     let mut forest = Vec::new();
     for c in 0..t.width * t.height {
+        if road_cells.contains(&c) {
+            continue;
+        }
         let p = t.center(c);
         if t.water[c] || noise(5, p.0 / 160.0, p.1 / 160.0) < 0.62 {
             continue;
@@ -441,6 +463,9 @@ fn setup(
     let cell3 = t.cell / SCALE;
     let per_cell = (cell3 * cell3 * 14.0) as usize;
     for c in 0..t.width * t.height {
+        if road_cells.contains(&c) {
+            continue;
+        }
         let p = t.center(c);
         if t.water[c] {
             continue;

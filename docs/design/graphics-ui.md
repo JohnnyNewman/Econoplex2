@@ -150,6 +150,14 @@ built almost entirely from procedural geometry and shaders.
     91 fps against 38 without (release, 3,500 people).
   - Colour by trade or culture on demand.
 - **Movement:** caravans as little carts on the roads; armies marching on raids.
+  **Implemented (roads.rs, 2026-11-13):**
+  - The simulation's roads (each town's road field, `Terrain::path`) are drawn
+    as dirt ribbons, smoothed, on the terrain surface (`ground`, the corner
+    heights interpolated as the terrain mesh draws them). Grass and trees keep
+    off road cells.
+  - Carts drive from each town to the towns it sells to: 1–4 per route by the
+    daily export value, on the right-hand side of the road.
+  - Soldiers already march to raids in the crowd.
 - **Overlays**, each a toggle with a legend:
   - money flows between towns (animated ribbons, width = value);
   - prices (town billboards);
