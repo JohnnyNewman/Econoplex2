@@ -12,8 +12,6 @@ import bevy_pbr::render::{
     shadows::fetch_directional_shadow,
 };
 
-import super::fog::Fog;
-
 const PI: f32 = 3.14159265;
 
 // The toon uniform block of the materials; matches `ToonUniform` in
@@ -24,7 +22,6 @@ struct Toon {
     debug: vec4<f32>,       // x: debug view, y: 1 = toon, 0 = Bevy PBR lighting
     rim: vec4<f32>,         // step 05: x strength, y power (fresnel exponent);
                             // step 11: z 1 = foliage (turns with the seasons)
-    fog: Fog,               // step 04
 };
 
 // The ramp parameters out of the uniform block.

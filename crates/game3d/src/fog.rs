@@ -9,28 +9,42 @@
 //! - its colour is the sky's horizon colour (so far hills melt into the sky),
 //!   warmed toward the sun (in-scattering).
 //!
-//! The CPU fills one `FogUniform` per frame from the time of day; the toon and
-//! terrain materials copy it into their uniform blocks.
+//! The CPU fills one `FogUniform` from the time of day and writes it into one
+//! shared storage buffer, `FOG_BUFFER`, which every material that carries the
+//! fog binds (as `fog_state` in the shaders). The materials themselves don't
+//! change when the sun moves: a changed material makes Bevy upload it again,
+//! re-specialise its meshes and recompute their bounds, which cost several ms
+//! per frame while the fog lived in each material's uniform block
+//! (docs/profiling.md).
 //!
 //! Keys: `F` fog on/off; with `Tab` on "fog", `0`–`4` pick a debug view
 //! (0 final, 1 fog amount, 2 distance part, 3 height part, 4 fog colour).
 
 use crate::env::Environment;
 use crate::sky::{digit_pressed, sun_color, weathered_palette, DebugTarget, SkyClock};
+use bevy::asset::uuid_handle;
 use bevy::prelude::*;
 use bevy::render::render_resource::ShaderType;
+use bevy::render::storage::ShaderBuffer;
+
+/// The fog of this frame, one buffer shared by all materials.
+pub const FOG_BUFFER: Handle<ShaderBuffer> = uuid_handle!("6f0c2f9e-3a54-4d1b-9b7e-5c2a8e41d0f3");
 
 pub struct FogPlugin;
 
 impl Plugin for FogPlugin {
     fn build(&self, app: &mut App) {
+        app.world_mut()
+            .resource_mut::<Assets<ShaderBuffer>>()
+            .insert(&FOG_BUFFER, FogUniform::default().buffer())
+            .expect("fog buffer");
         app.init_resource::<FogSettings>()
             .init_resource::<FogState>()
             .add_systems(Update, (fog_keys, update_fog_state).chain());
     }
 }
 
-/// The fog part of the toon and terrain uniform blocks.
+/// The fog as the shaders read it (`struct Fog` in fog.wesl).
 #[derive(ShaderType, Reflect, Clone, Copy, Debug, Default, PartialEq)]
 pub struct FogUniform {
     /// rgb: fog colour (the sky's horizon colour); a: 1 = fog on, 0 = off.
@@ -51,6 +65,26 @@ pub struct FogUniform {
     /// Step 11: xy wind direction (unit, 3D x and z), z strength (0 calm .. 1
     /// gale), w spring green 0..1.
     pub wind: Vec4,
+}
+
+impl FogUniform {
+    /// Seven vec4s, in the order of the fields (the layout of `struct Fog`).
+    fn floats(&self) -> [[f32; 4]; 7] {
+        [
+            self.color,
+            self.sun_dir,
+            self.sun_color,
+            self.params,
+            self.debug,
+            self.ground,
+            self.wind,
+        ]
+        .map(|v| v.to_array())
+    }
+
+    fn buffer(&self) -> ShaderBuffer {
+        ShaderBuffer::from(self.floats().to_vec())
+    }
 }
 
 /// Fog parameters, adjustable at runtime.
@@ -118,6 +152,7 @@ fn update_fog_state(
     env: Res<Environment>,
     settings: Res<FogSettings>,
     mut state: ResMut<FogState>,
+    mut buffers: ResMut<Assets<ShaderBuffer>>,
 ) {
     let dir = clock.sun();
     let w = &env.weather;
@@ -148,5 +183,12 @@ fn update_fog_state(
     };
     if state.0 != fog {
         state.0 = fog;
+        // Only the buffer's contents change: Bevy writes them in place and
+        // keeps every material's bind group.
+        if let Some(mut buffer) = buffers.get_mut(&FOG_BUFFER) {
+            if let Some(data) = buffer.cast_slice_mut::<[f32; 4]>() {
+                data.copy_from_slice(&fog.floats());
+            }
+        }
     }
 }

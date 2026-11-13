@@ -9,11 +9,12 @@
 //! lighting (to compare); with `Tab` on "toon", `0`–`4` pick a debug view
 //! (0 final, 1 normals, 2 n·l, 3 ramp, 4 shadow map).
 
-use crate::fog::{FogState, FogUniform};
+use crate::fog::FOG_BUFFER;
 use crate::sky::{digit_pressed, DebugTarget};
 use bevy::pbr::{ExtendedMaterial, MaterialExtension};
 use bevy::prelude::*;
 use bevy::render::render_resource::{AsBindGroup, ShaderType};
+use bevy::render::storage::ShaderBuffer;
 use bevy::shader::ShaderRef;
 
 const SHADER: &str = "shaders/toon.wesl";
@@ -44,8 +45,6 @@ pub struct ToonUniform {
     pub debug: Vec4,
     /// Step 05, rim light: x strength (0 = off), y fresnel power; zw unused.
     pub rim: Vec4,
-    /// Step 04: the fog, the same for every material (see fog.rs).
-    pub fog: FogUniform,
 }
 
 impl Default for ToonUniform {
@@ -55,15 +54,26 @@ impl Default for ToonUniform {
             ramp: Vec4::new(0.4, 0.28, 0.62, 0.05),
             debug: Vec4::new(0.0, 1.0, 0.0, 0.0),
             rim: Vec4::new(1.0, 3.0, 0.0, 0.0),
-            fog: FogUniform::default(),
         }
     }
 }
 
-#[derive(Asset, AsBindGroup, Reflect, Debug, Clone, Default)]
+#[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
 pub struct ToonExt {
     #[uniform(100)]
     pub toon: ToonUniform,
+    /// The fog, shared by all materials (`fog::FOG_BUFFER`).
+    #[storage(101, read_only)]
+    pub fog: Handle<ShaderBuffer>,
+}
+
+impl Default for ToonExt {
+    fn default() -> Self {
+        Self {
+            toon: default(),
+            fog: FOG_BUFFER,
+        }
+    }
 }
 
 impl MaterialExtension for ToonExt {
@@ -133,19 +143,14 @@ fn toon_keys(
     }
 }
 
-/// Copy the settings and this frame's fog into every toon material.
-fn update_toon(
-    settings: Res<ToonSettings>,
-    fog: Res<FogState>,
-    mut materials: ResMut<Assets<ToonMaterial>>,
-) {
-    if !settings.is_changed() && !fog.is_changed() {
+/// Copy the settings into every toon material (the fog has its own buffer).
+fn update_toon(settings: Res<ToonSettings>, mut materials: ResMut<Assets<ToonMaterial>>) {
+    if !settings.is_changed() {
         return;
     }
     let debug = Vec4::new(settings.debug as f32, settings.on as u32 as f32, 0.0, 0.0);
     for (_, m) in materials.iter_mut() {
         m.extension.toon.debug = debug;
-        m.extension.toon.fog = fog.0;
         m.extension.toon.rim.x = if settings.rim { 1.0 } else { 0.0 };
     }
 }

@@ -21,9 +21,10 @@ struct Outline {
     color: vec4<f32>,  // the line colour
     params: vec4<f32>, // x: width (world units at the reference distance),
                        // y: reference distance
-    fog: Fog,          // so far-away outlines fade into the haze like the rest
 };
 @group(constants::MATERIAL_BIND_GROUP) @binding(0) var<uniform> outline: Outline;
+// The same fog as everything else, so far-away outlines fade into the haze.
+@group(constants::MATERIAL_BIND_GROUP) @binding(1) var<storage, read> fog_state: Fog; // the shared fog (src/fog.rs, FOG_BUFFER)
 
 struct OutlineOut {
     @builtin(position) position: vec4<f32>,
@@ -53,5 +54,5 @@ fn vertex(vertex_in: Vertex) -> OutlineOut {
 @fragment
 fn fragment(in: OutlineOut) -> @location(0) vec4<f32> {
     // A flat colour: only the silhouette of the hull shows anyway.
-    return vec4<f32>(apply_fog(outline.color.rgb, in.world_position, outline.fog), 1.0);
+    return vec4<f32>(apply_fog(outline.color.rgb, in.world_position, fog_state), 1.0);
 }

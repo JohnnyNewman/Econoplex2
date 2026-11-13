@@ -7,7 +7,7 @@
 //! Key: `O` turns outlines on and off (off = width 0, so the hull hides inside
 //! the mesh).
 
-use crate::fog::{FogState, FogUniform};
+use crate::fog::FOG_BUFFER;
 use bevy::light::{NotShadowCaster, NotShadowReceiver};
 use bevy::mesh::MeshVertexBufferLayoutRef;
 use bevy::pbr::{MaterialPipeline, MaterialPipelineKey};
@@ -15,6 +15,7 @@ use bevy::prelude::*;
 use bevy::render::render_resource::{
     AsBindGroup, Face, RenderPipelineDescriptor, ShaderType, SpecializedMeshPipelineError,
 };
+use bevy::render::storage::ShaderBuffer;
 use bevy::shader::ShaderRef;
 
 const SHADER: &str = "shaders/outline.wesl";
@@ -39,14 +40,15 @@ pub struct OutlineUniform {
     pub color: Vec4,
     /// x: width, y: reference distance; zw unused.
     pub params: Vec4,
-    /// The same fog as everything else (step 04).
-    pub fog: FogUniform,
 }
 
-#[derive(Asset, TypePath, AsBindGroup, Clone, Debug, Default)]
+#[derive(Asset, TypePath, AsBindGroup, Clone, Debug)]
 pub struct OutlineMaterial {
     #[uniform(0)]
     pub outline: OutlineUniform,
+    /// The same fog as everything else (step 04), shared (`fog::FOG_BUFFER`).
+    #[storage(1, read_only)]
+    pub fog: Handle<ShaderBuffer>,
 }
 
 impl Material for OutlineMaterial {
@@ -108,8 +110,8 @@ pub fn init_outline(
         outline: OutlineUniform {
             color: Vec4::new(0.08, 0.07, 0.09, 1.0),
             params: Vec4::new(WIDTH, REFERENCE_DISTANCE, 0.0, 0.0),
-            fog: FogUniform::default(),
         },
+        fog: FOG_BUFFER,
     });
     commands.insert_resource(Outlines {
         material,
@@ -119,7 +121,6 @@ pub fn init_outline(
 
 fn update_outline(
     keys: Res<ButtonInput<KeyCode>>,
-    fog: Res<FogState>,
     outlines: Option<ResMut<Outlines>>,
     mut materials: ResMut<Assets<OutlineMaterial>>,
 ) {
@@ -127,11 +128,10 @@ fn update_outline(
     if keys.just_pressed(KeyCode::KeyO) {
         outlines.on = !outlines.on;
     }
-    if !fog.is_changed() && !outlines.is_changed() && !outlines.is_added() {
+    if !outlines.is_changed() && !outlines.is_added() {
         return;
     }
     if let Some(mut m) = materials.get_mut(&outlines.material) {
-        m.outline.fog = fog.0;
         m.outline.params.x = if outlines.on { WIDTH } else { 0.0 };
     }
 }

@@ -169,17 +169,23 @@ let fogged = apply_fog(albedo * t.light, pbr.world_position.xyz, toon.fog);
 out.color = main_pass_post_lighting_processing(pbr, vec4<f32>(fogged, 1.0));
 ```
 
-**The uniform:**
-- `Fog` sits inside the toon block (`Toon.fog`), and the terrain's block nests
-  the same `Toon` struct.
-- `struct Toon` is now defined once, in `toon_lighting.wesl`, and imported by
-  both shaders: one definition, one layout.
-- Each frame the CPU writes the same `FogUniform` into every toon and terrain
-  material (`update_toon`, `update_terrain`).
+**The buffer:**
+- `Fog` lives in one storage buffer shared by every material
+  (`fog::FOG_BUFFER`, read as `fog_state` in the shaders). Each material binds
+  the same buffer: toon and trees at 101, grass and crowds at 102, terrain at
+  103, outlines at 1.
+- When the fog changes (the sun moves every frame), `update_fog_state` writes
+  the new values into that buffer. Bevy copies them to the GPU in place, so no
+  material changes.
+- It used to be copied into each material's uniform block. A changed material
+  is uploaded again and its meshes re-specialised and re-bounded, which cost
+  about 1.7 ms per frame (7.4 ms to 5.7 ms on the laptop; docs/profiling.md).
+- `struct Toon` is defined once, in `toon_lighting.wesl`, and imported by the
+  shaders that use it: one definition, one layout.
 
 ```mermaid
 flowchart LR
-  CPU["CPU, per frame<br/>horizon colour, sun dir,<br/>densities"] --> U[("Fog uniform<br/>in every material")]
+  CPU["CPU, per frame<br/>horizon colour, sun dir,<br/>densities"] --> U[("Fog buffer<br/>shared by all materials")]
   VS["Vertex stage"] --> RS["Rasteriser<br/>world_position"]
   RS --> FS["Fragment stage<br/>lighting (02)"]
   FS --> FOG["apply_fog<br/>ray, Beer-Lambert,<br/>height integral"]

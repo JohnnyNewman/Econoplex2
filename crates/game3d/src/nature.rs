@@ -16,7 +16,7 @@
 //! their height (debug).
 
 use crate::bake::Baked;
-use crate::fog::FogState;
+use crate::fog::FOG_BUFFER;
 use crate::toon::{ToonSettings, ToonUniform};
 use bevy::asset::RenderAssetUsages;
 use bevy::camera::primitives::Aabb;
@@ -67,13 +67,16 @@ impl Default for GrassUniform {
     }
 }
 
-#[derive(Asset, AsBindGroup, Reflect, Debug, Clone, Default)]
+#[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
 pub struct GrassExt {
     #[uniform(100)]
     pub grass: GrassUniform,
     /// 8 floats per blade: position xyz, height, lean, tint, 2 padding.
     #[storage(101, read_only)]
     pub blades: Handle<ShaderBuffer>,
+    /// The fog, shared by all materials (`fog::FOG_BUFFER`).
+    #[storage(102, read_only)]
+    pub fog: Handle<ShaderBuffer>,
 }
 
 impl MaterialExtension for GrassExt {
@@ -87,10 +90,13 @@ impl MaterialExtension for GrassExt {
 
 /// Tree crowns: the toon material of step 02 with a swaying vertex shader.
 /// The uniform block is the same as `ToonExt`'s, so `toon.wesl` reads it.
-#[derive(Asset, AsBindGroup, Reflect, Debug, Clone, Default)]
+#[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
 pub struct TreeExt {
     #[uniform(100)]
     pub toon: ToonUniform,
+    /// The fog, shared by all materials (`fog::FOG_BUFFER`).
+    #[storage(101, read_only)]
+    pub fog: Handle<ShaderBuffer>,
 }
 
 impl MaterialExtension for TreeExt {
@@ -115,6 +121,7 @@ pub fn tree_material(color: Color) -> TreeMaterial {
                 rim: Vec4::new(1.0, 3.0, 1.0, 0.0),
                 ..default()
             },
+            fog: FOG_BUFFER,
         },
     }
 }
@@ -216,6 +223,7 @@ pub fn spawn_grass(
             extension: GrassExt {
                 grass: GrassUniform::default(),
                 blades: buffers.add(ShaderBuffer::from(data)),
+                fog: FOG_BUFFER,
             },
         });
         commands.spawn((
@@ -290,13 +298,12 @@ pub fn spawn_forest(
     n
 }
 
-/// Settings and fog into the grass and tree materials; `G` hides the grass;
+/// Settings into the grass and tree materials; `G` hides the grass;
 /// chunks beyond the fade distance are hidden.
 #[allow(clippy::too_many_arguments)]
 fn update_nature(
     keys: Res<ButtonInput<KeyCode>>,
     toon: Res<ToonSettings>,
-    fog: Res<FogState>,
     mut grass_on: Local<Option<bool>>,
     camera: Query<&GlobalTransform, With<Camera3d>>,
     mut grass_mats: ResMut<Assets<GrassMaterial>>,
@@ -321,18 +328,16 @@ fn update_nature(
             });
         }
     }
-    if !toon.is_changed() && !fog.is_changed() {
+    if !toon.is_changed() {
         return;
     }
     let debug = Vec4::new(toon.debug as f32, toon.on as u32 as f32, 0.0, 0.0);
     for (_, m) in grass_mats.iter_mut() {
         m.extension.grass.toon.debug = debug;
-        m.extension.grass.toon.fog = fog.0;
         m.extension.grass.params.z = if toon.debug == 1 { 1.0 } else { 0.0 };
     }
     for (_, m) in tree_mats.iter_mut() {
         m.extension.toon.debug = debug;
-        m.extension.toon.fog = fog.0;
         m.extension.toon.rim.x = if toon.rim { 1.0 } else { 0.0 };
     }
 }

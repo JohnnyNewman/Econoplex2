@@ -25,7 +25,7 @@
 //! Key: `P` shows or hides the people.
 
 use crate::crowd_compute::{CrowdCompute, WalkParams};
-use crate::fog::FogState;
+use crate::fog::FOG_BUFFER;
 use crate::live::LiveSim;
 use crate::toon::{ToonSettings, ToonUniform};
 use crate::SCALE;
@@ -153,6 +153,9 @@ pub struct CrowdExt {
     /// blend (0 standing .. 1 walking), unused.
     #[storage(101, read_only)]
     pub people: Handle<ShaderBuffer>,
+    /// The fog, shared by all materials (`fog::FOG_BUFFER`).
+    #[storage(102, read_only)]
+    pub fog: Handle<ShaderBuffer>,
 }
 
 impl MaterialExtension for CrowdExt {
@@ -351,6 +354,7 @@ fn spawn_crowd(
                 lod: LodSettings::default().uniform(),
             },
             people: people.clone(),
+            fog: FOG_BUFFER,
         },
     });
     let entity = commands
@@ -484,7 +488,6 @@ fn update_targets(
 
 fn update_crowd_material(
     toon: Res<ToonSettings>,
-    fog: Res<FogState>,
     keys: Res<ButtonInput<KeyCode>>,
     mut lod: ResMut<LodSettings>,
     mut materials: ResMut<Assets<CrowdMaterial>>,
@@ -492,11 +495,10 @@ fn update_crowd_material(
     if keys.just_pressed(KeyCode::KeyK) {
         lod.show = !lod.show;
     }
-    if !toon.is_changed() && !fog.is_changed() && !lod.is_changed() {
+    if !toon.is_changed() && !lod.is_changed() {
         return;
     }
     for (_, m) in materials.iter_mut() {
-        m.extension.crowd.toon.fog = fog.0;
         m.extension.crowd.lod = lod.uniform();
         m.extension.crowd.toon.debug.y = toon.on as u32 as f32;
         m.extension.crowd.toon.rim.x = if toon.rim { 1.0 } else { 0.0 };
