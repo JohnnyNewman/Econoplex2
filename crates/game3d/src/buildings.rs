@@ -16,6 +16,7 @@
 //! cottages, ordinary houses, or two-storey houses with chimneys.
 
 use crate::bake::Baked;
+use crate::lights::{LampKind, Lamps};
 use crate::outline::Outlines;
 use crate::toon::{toon, ToonMaterial};
 use bevy::prelude::*;
@@ -61,7 +62,7 @@ impl Kit {
             ),
             1.0,
         );
-        let palette: [(&'static str, Color); 12] = [
+        let palette: [(&'static str, Color); 15] = [
             ("plaster", Color::srgb(0.88, 0.82, 0.70)),
             ("timber", Color::srgb(0.52, 0.38, 0.26)),
             ("stone", Color::srgb(0.66, 0.64, 0.60)),
@@ -74,6 +75,11 @@ impl Kit {
             ("sail", Color::srgb(0.93, 0.90, 0.82)),
             ("soot", Color::srgb(0.22, 0.20, 0.20)),
             ("gold", Color::srgb(0.92, 0.72, 0.25)),
+            // Step 12: parts that light up at night (lights.wesl). The colour
+            // is what they show by day; the alpha below marks the kind.
+            ("window", Color::srgb(0.16, 0.15, 0.16)),
+            ("lantern", Color::srgb(0.30, 0.26, 0.18)),
+            ("fire", Color::srgb(0.30, 0.12, 0.06)),
         ];
         let shapes: [Mesh; 5] = [
             Cuboid::new(1.0, 1.0, 1.0).into(),
@@ -92,7 +98,11 @@ impl Kit {
             shapes: handles.iter().map(|h| h.id()).zip(shapes).collect(),
             linear: palette
                 .iter()
-                .map(|&(name, c)| (name, c.to_linear().to_f32_array()))
+                .map(|&(name, c)| {
+                    let mut rgba = c.to_linear().to_f32_array();
+                    rgba[3] = glow_marker(name);
+                    (name, rgba)
+                })
                 .collect(),
             white: toons.add(toon(Color::WHITE)),
             baked: HashMap::new(),
@@ -133,15 +143,78 @@ impl Kit {
         parts: &[Part],
     ) -> Entity {
         let mesh = self.bake(meshes, parts);
-        commands
-            .spawn((at, Mesh3d(mesh.clone()), MeshMaterial3d(self.white.clone())))
-            .with_child(outlines.hull(mesh))
-            .id()
+        // Step 12: lanterns and fires light their surroundings at night.
+        let lamps: Vec<(Vec3, LampKind)> = parts
+            .iter()
+            .filter_map(|(_, c, o, _)| match *c {
+                "lantern" => Some((*o, LampKind::Lantern)),
+                // In front of the fire's mouth, not inside the wall.
+                "fire" => Some((*o + Vec3::Z * 0.3, LampKind::Fire)),
+                _ => None,
+            })
+            .collect();
+        let mut e = commands.spawn((at, Mesh3d(mesh.clone()), MeshMaterial3d(self.white.clone())));
+        e.with_child(outlines.hull(mesh));
+        if !lamps.is_empty() {
+            e.insert(Lamps(lamps));
+        }
+        e.id()
     }
 }
 
 /// A building part: (shape, colour, offset, scale).
 type Part = (Handle<Mesh>, &'static str, Vec3, Vec3);
+
+/// The vertex alpha that tells the toon shader what lights up at night
+/// (lights.wesl): 1 for ordinary surfaces.
+fn glow_marker(colour: &str) -> f32 {
+    match colour {
+        "window" => 0.25,
+        "lantern" => 0.5,
+        "fire" => 0.75,
+        _ => 1.0,
+    }
+}
+
+/// Windows on the two long sides of a box of size `body` standing on the
+/// ground: `rows` storeys, two per side.
+fn windows(kit: &Kit, body: Vec3, rows: u32) -> Vec<Part> {
+    let mut out = Vec::new();
+    let pane = Vec3::new(0.04, 0.2, 0.17);
+    for row in 0..rows {
+        let y = body.y * (row as f32 + 0.55) / rows as f32;
+        for side in [-1.0, 1.0] {
+            for along in [-0.22, 0.22] {
+                out.push((
+                    kit.cube.clone(),
+                    "window",
+                    Vec3::new(side * (body.x / 2.0 + 0.01), y, along * body.z),
+                    pane,
+                ));
+            }
+        }
+    }
+    out
+}
+
+/// A lantern on a post beside a house of size `body`.
+fn lantern(kit: &Kit, body: Vec3) -> Vec<Part> {
+    let at = Vec3::new(body.x / 2.0 + 0.22, 0.0, body.z / 2.0 + 0.1);
+    vec![
+        (
+            kit.cube.clone(),
+            "timber",
+            at + Vec3::Y * 0.36,
+            Vec3::new(0.05, 0.72, 0.05),
+        ),
+        (
+            kit.cube.clone(),
+            "lantern",
+            at + Vec3::Y * 0.78,
+            Vec3::new(0.12, 0.14, 0.12),
+        ),
+    ]
+}
 
 /// The parts of one building: (mesh, colour, offset from the ground point,
 /// scale), in the building's own frame (x across, z along, y up).
@@ -216,6 +289,13 @@ fn parts(kit: &Kit, kind: &str) -> Vec<Part> {
                 Vec3::new(0.45, 1.7, -0.5),
                 Vec3::new(0.3, 0.9, 0.3),
             ),
+            // The oven's mouth on the front.
+            (
+                cube(),
+                "fire",
+                Vec3::new(0.3, 0.25, 0.91),
+                Vec3::new(0.35, 0.22, 0.04),
+            ),
         ],
         // Furnace: squat stone, tall dark chimney.
         "furnace" | "blast_furnace" => vec![
@@ -230,6 +310,13 @@ fn parts(kit: &Kit, kind: &str) -> Vec<Part> {
                 "soot",
                 Vec3::new(0.4, 1.6, 0.4),
                 Vec3::new(0.5, 3.2, 0.5),
+            ),
+            // The furnace mouth.
+            (
+                cube(),
+                "fire",
+                Vec3::new(-0.3, 0.3, 0.91),
+                Vec3::new(0.45, 0.35, 0.04),
             ),
         ],
         // Smithy: open front (low body), slate roof, chimney.
@@ -251,6 +338,13 @@ fn parts(kit: &Kit, kind: &str) -> Vec<Part> {
                 "dark_stone",
                 Vec3::new(-0.6, 1.6, 0.5),
                 Vec3::new(0.35, 1.2, 0.35),
+            ),
+            // The forge, seen through the open front.
+            (
+                cube(),
+                "fire",
+                Vec3::new(-0.4, 0.3, 0.91),
+                Vec3::new(0.5, 0.3, 0.04),
             ),
         ],
         // Weaving shed: long and low.
@@ -481,6 +575,12 @@ pub fn spawn_house(
             Vec3::new(roof_r * 2.0, roof_h, roof_r * 2.0),
         ),
     ];
+    // Step 12: windows (two storeys for the big houses), and a lantern by
+    // every third door.
+    parts.extend(windows(kit, body, if style.tier >= 2 { 2 } else { 1 }));
+    if k.is_multiple_of(3) {
+        parts.extend(lantern(kit, body));
+    }
     if chimney {
         parts.push((
             kit.cube.clone(),
@@ -518,10 +618,17 @@ pub fn spawn_building(
     let root = Transform::from_translation(b.at)
         .with_rotation(rot)
         .with_scale(Vec3::splat(1.5));
-    let parts: Vec<Part> = parts(kit, &b.kind)
+    let mut parts: Vec<Part> = parts(kit, &b.kind)
         .into_iter()
         .map(|(m, c, o, s)| (m, style.restyle(c, b.seed), o, s))
         .collect();
+    // Step 12: windows on a box-shaped main body standing on the ground.
+    if let Some((m, _, o, s)) = parts.first() {
+        if m.id() == kit.cube.id() && o.x == 0.0 && o.z == 0.0 {
+            let body = *s;
+            parts.extend(windows(kit, body, 1));
+        }
+    }
     Some(kit.spawn_baked(commands, meshes, outlines, root, &parts))
 }
 

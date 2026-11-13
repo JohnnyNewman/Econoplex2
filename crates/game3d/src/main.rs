@@ -28,6 +28,7 @@ mod crowd_compute;
 mod env;
 mod fog;
 mod hud;
+mod lights;
 mod live;
 mod nature;
 mod outline;
@@ -299,7 +300,7 @@ fn main() {
         render_scale::RenderScalePlugin,
         roads::RoadsPlugin,
     ))
-    .add_plugins(precip::PrecipPlugin)
+    .add_plugins((precip::PrecipPlugin, lights::LightsPlugin))
     .insert_resource(env_override)
     .insert_resource(clock)
     .insert_resource(toon_settings)

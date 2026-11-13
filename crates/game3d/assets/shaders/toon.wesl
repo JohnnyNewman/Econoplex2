@@ -13,12 +13,13 @@ import bevy_pbr::render::{
 // Paths relative to this file: shaders/toon_lighting.wesl and shaders/fog.wesl.
 import super::toon_lighting::{Toon, toon_params, toon_terms};
 import super::fog::{Fog, apply_fog, seasonal};
+import super::lights::{Env, lamp_term, town_glow};
 
 // Our uniform block (struct `Toon` in toon_lighting.wesl, `ToonUniform` in
 // src/toon.rs). Binding 100, because the StandardMaterial part of the material
 // uses the low binding numbers.
 @group(constants::MATERIAL_BIND_GROUP) @binding(100) var<uniform> toon: Toon;
-@group(constants::MATERIAL_BIND_GROUP) @binding(101) var<storage, read> fog_state: Fog; // the shared fog (src/fog.rs, FOG_BUFFER)
+@group(constants::MATERIAL_BIND_GROUP) @binding(101) var<storage, read> env: Env; // the shared fog and lamps (src/fog.rs, FOG_BUFFER)
 
 @fragment
 fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> FragmentOutput {
@@ -35,7 +36,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
 
     let t = toon_terms(pbr, toon_params(toon));
     // Step 11: snow on what faces up, autumn and winter colours on foliage.
-    let albedo = seasonal(pbr.material.base_color.rgb, pbr.N, pbr.world_position.xyz, toon.rim.z, fog_state);
+    let albedo = seasonal(pbr.material.base_color.rgb, pbr.N, pbr.world_position.xyz, toon.rim.z, env.fog);
 
     // Debug views (Tab to "toon", then keys 0-6).
     let id = u32(toon.debug.x);
@@ -54,7 +55,18 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     } else {
         // Step 04: our fog. Then Bevy's post-lighting step (tonemapping if
         // needed; its own fog is off, the camera has no DistanceFog).
-        let fogged = apply_fog(albedo * t.light, pbr.world_position.xyz, fog_state);
+        // Step 12: windows, lanterns and fires glow at night (marked by the
+        // vertex colour's alpha on baked buildings; see lights.wesl).
+        var glow = vec3<f32>(0.0);
+        @if(VERTEX_COLORS) {
+            glow = town_glow(in.color.a, pbr.world_position.xyz, env.fog);
+        }
+        // The lamps and fires nearest the camera light what is around them.
+        var lamps = vec3<f32>(0.0);
+        for (var i = 0u; i < u32(env.lamps_info.x); i++) {
+            lamps += lamp_term(env.lamps[i], pbr.world_position.xyz, pbr.N);
+        }
+        let fogged = apply_fog(albedo * (t.light + lamps) + glow, pbr.world_position.xyz, env.fog);
         out.color = main_pass_post_lighting_processing(pbr, vec4<f32>(fogged, 1.0));
     }
     return out;
