@@ -50,6 +50,10 @@ pub struct BasketGood {
     /// Overrides the basket's `elasticity` for this good (luxuries above 1).
     #[serde(default)]
     pub elasticity: Option<f32>,
+    /// Bought only while the household's wealth is at least this many times
+    /// its town's median (luxuries come out of spare money).
+    #[serde(default)]
+    pub min_wealth: Option<f32>,
 }
 
 /// The basket's goods: those listed in models.ron or, if none are, every good
@@ -68,6 +72,7 @@ pub fn basket(listed: &[BasketGood], db: &crate::db::Db) -> Vec<BasketGood> {
                 life_days: h.life_days,
                 taste: h.taste.clone(),
                 elasticity: h.elasticity,
+                min_wealth: h.min_wealth,
             })
         })
         .collect()
@@ -186,7 +191,12 @@ pub fn spend(
         for _ in 0..16 {
             // The good the household is furthest short of, that it can still buy.
             let Some(k) = (0..goods.len())
-                .filter(|&k| !out[k] && ids[k].is_some() && wanted[k] - have[k] >= 0.5)
+                .filter(|&k| {
+                    !out[k]
+                        && ids[k].is_some()
+                        && wanted[k] - have[k] >= 0.5
+                        && store.wealth[i] >= goods[k].min_wealth.unwrap_or(0.0) * medians[t]
+                })
                 .max_by(|&a, &b| {
                     ((wanted[a] - have[a]) / wanted[a].max(1e-6))
                         .total_cmp(&((wanted[b] - have[b]) / wanted[b].max(1e-6)))
@@ -266,15 +276,21 @@ mod tests {
         let (db, _, _) = crate::load(&paths).unwrap();
         let from_content = basket(&[], &db);
         let ids: Vec<&str> = from_content.iter().map(|g| g.good.as_str()).collect();
-        for id in ["clothes", "pot", "ale", "charcoal", "cloth", "silver"] {
-            assert!(ids.contains(&id), "{id} missing from {ids:?}");
+        assert!(ids.contains(&"clothes") && ids.contains(&"pot"), "{ids:?}");
+        // Goods other trades need stay out (see town-market.md).
+        for id in ["wood", "charcoal", "silver", "ale"] {
+            assert!(!ids.contains(&id), "{id} in {ids:?}");
         }
-        // Silver is a luxury: richer households want disproportionately more.
-        let silver = from_content.iter().find(|g| g.good == "silver").unwrap();
-        assert!(silver.elasticity.unwrap() > 1.0);
-        // A listed basket is used as it is.
-        let listed = vec![from_content[0].clone()];
-        assert_eq!(basket(&listed, &db).len(), 1);
+        // A listed basket is used as it is, luxuries and all.
+        let silver = BasketGood {
+            good: "silver".into(),
+            want: 0.2,
+            life_days: 3000.0,
+            taste: None,
+            elasticity: Some(1.5),
+            min_wealth: Some(2.0),
+        };
+        assert_eq!(basket(std::slice::from_ref(&silver), &db), vec![silver]);
     }
 
     #[test]

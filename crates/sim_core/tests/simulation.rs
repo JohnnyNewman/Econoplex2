@@ -1968,6 +1968,7 @@ fn households_buy_goods_for_comfort_and_the_books_balance() {
         life_days: life,
         taste: Some(taste.into()),
         elasticity: None,
+        min_wealth: None,
     };
     params.market.consumption = ConsumptionParams::Basket {
         spend_share: 0.3,

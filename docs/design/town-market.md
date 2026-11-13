@@ -452,3 +452,30 @@ Four calibrated tests now pin `FirstCome` (the hungry-town subsidy and import
 scenarios, the one-year caravan test, the learning value): skilled matching
 keeps their towns fed or already steers the young to learning. The state hash
 changes.
+
+### The basket, second try (2026-11-13)
+
+Against today's defaults (balancing caravans, skilled matching), 6 seeds × 40
+years:
+
+| basket | pop | hh use | in use | happy | capab | gini | swords | gwork |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| off (defaults) | 3978 | 62.1 | 86.8 | 0.71 | 31.2 | 0.51 | 5680 | 49 % |
+| 6 goods with firewood instead of charcoal, spend 0.3 | 3676 | 66.5 | 65.8 | 0.61 | 22.5 | 0.72 | 1245 | 53 % |
+| same, spend 0.15 | 3721 | 68.9 | 66.4 | 0.61 | 22.5 | 0.70 | 1629 | 54 % |
+| clothes, pots, ale, cloth, silver (luxury from spare money), spend 0.15 | 3927 | 79.3 | 84.4 | 0.63 | 27.5 | 0.52 | 4456 | 39 % |
+| **clothes, pots, spend 0.15** | 3886 ± 263 | **71.5** | **87.6** | 0.64 | **33.5** | **0.49** | 5386 | 44 % |
+
+- **Hearth fuel competes with everything.** Wood is the base of planks,
+  charcoal and building, and 4 units per household every 15 days starved those
+  chains. Charcoal starved the smelters before.
+- **Ale, cloth and silver each compete with a chain:** bread for grain, clothes
+  for cloth, the mint for silver. Together they cost 3.7 kinds of capability.
+- **Clothes and pots hold up:** household use +15 %, trade use +1 %, capability
+  +2.3 kinds, inequality down. Population is −2 %, within the seed spread.
+- **Happiness falls** (0.71 → 0.64): the basket adds wants, and unmet wants
+  lower happiness. That is the model's choice, not a measured loss elsewhere.
+
+The content now declares only clothes and pots as household goods. A listed
+basket can still hold anything, and `min_wealth` (new) makes a good a luxury
+bought only from spare money. Consumption stays off pending Nils's decision.

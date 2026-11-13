@@ -228,7 +228,7 @@
         // or the market. Owning what it wants raises happiness by comfort_weight.
         // Example:
         // With goods: [] the basket is every good whose content declares
-        // household use (clothes, pots, ale, cloth, charcoal, silver):
+        // household use (clothes and pots; town-market.md says why not more):
         // consumption: Basket(spend_share: 0.3, interval: 7, elasticity: 0.5, comfort_weight: 0.2, goods: []),
         // Or list the goods here:
         // consumption: Basket(spend_share: 0.3, interval: 7, elasticity: 0.5, comfort_weight: 0.2, goods: [
