@@ -9,6 +9,7 @@
 //!     [--fog-view N] [--no-fog] [--days N] [--speed 0-8] [--paused] [--trade] [--culture] [--product-space] [--bloom-view] [--focus-town I] [--focus X,Z] [--view-from YAW,PITCH,DIST]
 //!     [--no-ui] [--no-lod] [--lod-view] [--fps] [--render-scale F] [--shot FILE] [--quit-after S]
 //!     [--weather clear|cloudy|rain|storm|snow|fog] [--season spring|summer|autumn|winter]
+//!     [--preset FILE]
 //! econoplex3d --playground [--hour H] [--view N] [--toon-view N] [--pbr] [--face-sun] [--shot FILE]
 //!     (shader playground)
 
@@ -53,6 +54,8 @@ struct Args {
     bloom_view: bool,
     seed: u64,
     towns: u32,
+    /// Overrides of models.ron (`--preset FILE`).
+    sets: Vec<(String, String)>,
 }
 
 /// Bevy's asset plugin, pointed at `crates/game3d/assets` (shaders), so the
@@ -102,6 +105,7 @@ fn main() {
         view_from: None,
         focus: None,
         bloom_view: false,
+        sets: Vec::new(),
     };
     let (mut shot, mut hour, mut view, mut playground, mut face_sun) =
         (None, None, None, false, false);
@@ -123,6 +127,13 @@ fn main() {
     while let Some(a) = it.next() {
         match a.as_str() {
             "--seed" => args.seed = it.next().and_then(|v| v.parse().ok()).unwrap_or(7),
+            "--preset" => {
+                if let Some(path) = it.next() {
+                    let sets = sim_core::read_preset(std::path::Path::new(&path))
+                        .expect("cannot read the preset");
+                    args.sets.extend(sets);
+                }
+            }
             "--towns" => args.towns = it.next().and_then(|v| v.parse().ok()).unwrap_or(5),
             "--shot" => shot = it.next().map(PathBuf::from),
             "--hour" => hour = it.next().and_then(|v| v.parse().ok()),
@@ -229,7 +240,8 @@ fn main() {
         clock.free = true;
     }
     let paths = sim_core::AssetPaths::discover();
-    let (db, params, mut scenario) = sim_core::load(&paths).expect("cannot load assets");
+    let (db, params, mut scenario) =
+        sim_core::load_with(&paths, &args.sets).expect("cannot load assets");
     scenario.seed = args.seed;
     scenario.generate = Some(sim_core::worldgen::GenSpec {
         towns: args.towns,

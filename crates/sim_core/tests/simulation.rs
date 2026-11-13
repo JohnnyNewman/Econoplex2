@@ -2772,3 +2772,25 @@ fn households_and_workshops_keep_their_own_stocks() {
     assert!(firm_inputs > 0.0, "workshops keep inputs in store");
     check_goods(&s);
 }
+
+#[test]
+fn the_new_economy_preset_loads_and_runs() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let sets = sim_core::read_preset(&root.join("config/presets/new_economy.ron")).unwrap();
+    assert!(sets.len() >= 5);
+    let (db, params, mut scenario) =
+        sim_core::load_with(&AssetPaths::from_root(&root), &sets).unwrap();
+    assert!(matches!(
+        params.market.consumption,
+        sim_core::consumption::ConsumptionParams::Needs(_)
+    ));
+    scenario.seed = 16;
+    for t in &mut scenario.towns {
+        t.population = 60;
+    }
+    let mut s = Simulation::new(db, params, &scenario);
+    for _ in 0..30 {
+        s.step();
+    }
+    check_goods(&s);
+}

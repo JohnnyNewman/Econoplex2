@@ -115,6 +115,11 @@ fn parse_args() -> Args {
             "--history" => a.history = Some(PathBuf::from(val())),
             "--weather" => a.weather = Some(PathBuf::from(val())),
             "--battle" => a.battle = Some(val()),
+            "--preset" => {
+                let path = PathBuf::from(val());
+                let sets = sim_core::read_preset(&path).unwrap_or_else(|e| die(&e.to_string()));
+                a.sets.extend(sets);
+            }
             "--set" => {
                 let v = val();
                 let (k, x) = v
