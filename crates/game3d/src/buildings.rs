@@ -133,6 +133,29 @@ impl Kit {
         h
     }
 
+    /// One mesh for many houses (each its parts and its transform), in world
+    /// coordinates. Not cached: a town's houses are baked together whenever
+    /// they change.
+    fn bake_houses(
+        &self,
+        meshes: &mut Assets<Mesh>,
+        houses: &[(Transform, Vec<Part>)],
+    ) -> Handle<Mesh> {
+        let mut baked = Baked::default();
+        for (at, parts) in houses {
+            for (mesh, colour, offset, scale) in parts {
+                let part = Transform::from_translation(*offset).with_scale(*scale);
+                baked.add(
+                    &self.shapes[&mesh.id()],
+                    at.mul_transform(part),
+                    self.linear[colour],
+                    None,
+                );
+            }
+        }
+        meshes.add(baked.mesh())
+    }
+
     /// Spawn a baked building: the body and its outline hull (step 05).
     fn spawn_baked(
         &mut self,
@@ -144,15 +167,7 @@ impl Kit {
     ) -> Entity {
         let mesh = self.bake(meshes, parts);
         // Step 12: lanterns and fires light their surroundings at night.
-        let lamps: Vec<(Vec3, LampKind)> = parts
-            .iter()
-            .filter_map(|(_, c, o, _)| match *c {
-                "lantern" => Some((*o, LampKind::Lantern)),
-                // In front of the fire's mouth, not inside the wall.
-                "fire" => Some((*o + Vec3::Z * 0.3, LampKind::Fire)),
-                _ => None,
-            })
-            .collect();
+        let lamps = lamps_of(parts, &Transform::IDENTITY);
         let mut e = commands.spawn((at, Mesh3d(mesh.clone()), MeshMaterial3d(self.white.clone())));
         e.with_child(outlines.hull(mesh));
         if !lamps.is_empty() {
@@ -538,18 +553,72 @@ impl Style {
     }
 }
 
-/// Spawn one house at `at`, turned by `rot`, in the town's style.
-#[allow(clippy::too_many_arguments)]
-pub fn spawn_house(
+/// The lanterns and fires among `parts`, moved by `at`.
+fn lamps_of(parts: &[Part], at: &Transform) -> Vec<(Vec3, LampKind)> {
+    parts
+        .iter()
+        .filter_map(|(_, c, o, _)| match *c {
+            "lantern" => Some((*o, LampKind::Lantern)),
+            // In front of the fire's mouth, not inside the wall.
+            "fire" => Some((*o + Vec3::Z * 0.3, LampKind::Fire)),
+            _ => None,
+        })
+        .map(|(o, kind)| (at.transform_point(o), kind))
+        .collect()
+}
+
+/// One house of a town: where it stands, how it is turned, its number on the
+/// town's spiral (for small variations).
+#[derive(Clone, Copy, Debug)]
+pub struct HouseSpec {
+    pub at: Vec3,
+    pub rot: Quat,
+    pub k: u32,
+}
+
+/// Spawn all houses of a town as one mesh (and one outline hull), in the
+/// town's style. One entity instead of one per house: Bevy's work per frame
+/// grows with the number of drawn entities (docs/profiling.md). `None` for
+/// no houses.
+pub fn spawn_houses(
     commands: &mut Commands,
     kit: &mut Kit,
     meshes: &mut Assets<Mesh>,
     outlines: &Outlines,
-    at: Vec3,
-    rot: Quat,
-    k: u32,
+    houses: &[HouseSpec],
     style: Style,
-) -> Entity {
+) -> Option<Entity> {
+    if houses.is_empty() {
+        return None;
+    }
+    let all: Vec<(Transform, Vec<Part>)> = houses
+        .iter()
+        .map(|h| {
+            (
+                Transform::from_translation(h.at).with_rotation(h.rot),
+                house_parts(kit, h.k, style),
+            )
+        })
+        .collect();
+    let mesh = kit.bake_houses(meshes, &all);
+    let lamps: Vec<(Vec3, LampKind)> = all
+        .iter()
+        .flat_map(|(at, parts)| lamps_of(parts, at))
+        .collect();
+    let mut e = commands.spawn((
+        Transform::IDENTITY,
+        Mesh3d(mesh.clone()),
+        MeshMaterial3d(kit.white.clone()),
+    ));
+    e.with_child(outlines.hull(mesh));
+    if !lamps.is_empty() {
+        e.insert(Lamps(lamps));
+    }
+    Some(e.id())
+}
+
+/// The parts of house number `k` in the town's style.
+fn house_parts(kit: &Kit, k: u32, style: Style) -> Vec<Part> {
     // (body size, roof radius and height, chimney?)
     let (body, roof_r, roof_h, chimney) = match style.tier {
         0 => (Vec3::new(0.8, 0.6, 0.9), 0.8, 0.6, false),
@@ -589,13 +658,7 @@ pub fn spawn_house(
             Vec3::new(0.2, 0.7, 0.2),
         ));
     }
-    kit.spawn_baked(
-        commands,
-        meshes,
-        outlines,
-        Transform::from_translation(at).with_rotation(rot),
-        &parts,
-    )
+    parts
 }
 
 /// Spawn one building at its ground point, its parts baked into one mesh (the

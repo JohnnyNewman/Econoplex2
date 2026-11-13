@@ -56,7 +56,7 @@ pub fn update_help(
     let h = clock.hour;
     let mark = |t: DebugTarget| if *target == t { ">" } else { " " };
     for (mut t, help) in &mut text {
-        t.0 = format!(
+        let s = format!(
             "{}\n\
          time {:02}:{:02}  [ ] change  T run ({})  {}   sunrise {:.1}, sunset {:.1}\n\
          {}   Y weather ({})  U season ({})\n\
@@ -98,6 +98,11 @@ pub fn update_help(
             if fog.on { "on" } else { "off" },
             help.camera,
         );
+        // The clock runs, but the text shows minutes: assign only a changed
+        // text, or Bevy measures and lays it out again every frame.
+        if t.0 != s {
+            t.0 = s;
+        }
     }
 }
 
