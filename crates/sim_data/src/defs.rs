@@ -114,6 +114,10 @@ pub struct HouseholdDef {
     /// `elasticity`): above 1 for luxuries.
     #[serde(default)]
     pub elasticity: Option<f32>,
+    /// A luxury bought only from spare money: a household buys it only while
+    /// its wealth is at least this many times its town's median.
+    #[serde(default)]
+    pub min_wealth: Option<f32>,
 }
 
 impl ProductDef {
