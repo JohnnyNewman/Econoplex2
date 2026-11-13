@@ -255,7 +255,8 @@
         // Fixed: up to trade_amount, at most half the seller's stock.
         // Balance(max_load: 200.0): the seller's surplus over its target, up to
         // what the buyer lacks of its target.
-        caravans: Fixed,
+        // Default since 2026-11-13: the 40-year comparison in town-market.md.
+        caravans: Balance(max_load: 400.0),
         // Per 1000 units of road: the straight road between neighbors is about 900.
         transport_cost: 0.28,
         // Money circulates: wages come out of the town treasury, which is refilled by

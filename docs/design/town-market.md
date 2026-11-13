@@ -381,3 +381,36 @@ Declared so far:
   residents' savings halve (spending, silver).
 - **Balancing caravans matter with the bigger basket:** without them,
   inequality between towns rises (0.79).
+
+## Final comparison and the new default (2026-11-13)
+
+**6 seeds × 40 years.** Features is the default decision model.
+
+| setting | pop | starve | hh use | in use | capab | kinds/yr | swords | gini | gwork |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| old defaults (Fixed caravans) | 4016 ± 117 | 0 | 61.3 | 74.4 | 28.3 | 23.1 | 4137 | 0.59 | 52 % |
+| **Balance 400 (new default)** | 3967 ± 226 | 0 | 61.3 | **76.4** | **29.0** | 18.7 | **5841** | 0.61 | **45 %** |
+| Balance 100 | 3970 ± 149 | 0 | 61.6 | 77.2 | 27.8 | 21.0 | 5141 | 0.59 | 45 % |
+| basket (clothes, pots, ale), Fixed | 3916 ± 300 | 0 | 68.8 | 81.0 | 28.5 | 21.9 | 4221 | 0.70 | 43 % |
+| basket (clothes, pots, ale), Balance 400 | 3874 ± 178 | 0 | 73.4 | 81.9 | 27.2 | 16.5 | 3865 | 0.56 | 36 % |
+| content basket, Balance 400 | 3885 ± 230 | 0 | 73.5 | 78.6 | 25.2 | 17.1 | 2153 | 0.53 | 43 % |
+
+The utility model starves in every variant (1.4–2 %) and loses most of its
+population, so it stays off.
+
+**Decision: `market.caravans: Balance(max_load: 400.0)` is the new default.**
+- By use, nothing gets worse: trade use rises 3 % and capability by 0.7
+  kinds. Population is −1 %, within the seed spread, and nobody starves.
+- Wasted work falls from 52 % to 45 %, and swords rise 41 %.
+- "Kinds made last year" falls (23 → 19) because towns specialise and import
+  what neighbours make; capability (kinds made in five years) holds.
+
+**Households' basket stays off.** Over 40 years it raises household use 12–20 %,
+but it costs capability, most with charcoal and silver: hearths take the
+smelters' charcoal, and spending drains savings.
+
+**Next for the basket:** a hearth fuel of its own (firewood) instead of
+charcoal, and luxuries that wait for spare money.
+
+The state hash changes with the default. Two calibrated behaviour tests
+(governor stability, the learning value) now pin `Fixed` caravans.
