@@ -235,6 +235,8 @@ pub fn assign(
             for &(p, q) in &m.inputs {
                 if !firms_on {
                     town.stock[p as usize] -= q * batches as f32;
+                    town.flows
+                        .add(crate::goods::Flow::Input, p as usize, q * batches as f32);
                 }
                 town.input_today[p as usize] += q * batches as f32;
                 town.inputs_year.resize(town.stock.len(), 0.0);
@@ -342,6 +344,7 @@ fn take_input(town: &mut crate::world::Town, p: usize, need: f32, buyer: Option<
     let price = town.price[p];
     let from_market = need.min(town.stock[p].max(0.0));
     town.stock[p] -= from_market;
+    town.flows.add(crate::goods::Flow::Input, p, from_market);
     if let Some(f) = buyer {
         let pay = from_market * price;
         town.firms[f].book(FirmFlow::Inputs, pay);
@@ -364,6 +367,7 @@ fn take_input(town: &mut crate::world::Town, p: usize, need: f32, buyer: Option<
             continue;
         }
         town.firms[k].stock[p] -= q;
+        town.flows.add(crate::goods::Flow::Input, p, q);
         left -= q;
         if buyer == Some(k) {
             continue;
@@ -593,6 +597,7 @@ pub fn produce(
                 let q = q * task.batches as f32;
                 let pi = p as usize;
                 town.produced_this_year[pi] += q;
+                town.flows.add(crate::goods::Flow::Made, pi, q);
                 if db.coin[pi] == 0.0
                     && db.category(p) != Category::Building
                     && super::decide::over_target(&db, town, &params, pi, 1.0)
@@ -641,6 +646,7 @@ pub fn produce(
                 }
                 if db.coin[pi] > 0.0 {
                     // Struck coin is new money in the treasury, not a good in stock.
+                    town.flows.add(crate::goods::Flow::Minted, pi, q);
                     let minted = q * db.coin[pi];
                     town.treasury += minted;
                     town.ledger.add(crate::ledger::Flow::Minted, minted);
@@ -660,12 +666,14 @@ pub fn produce(
                     o.1 -= delivered;
                     town.stock[pi] -= delivered;
                     town.procured[pi] += delivered;
+                    town.flows.add(crate::goods::Flow::Procured, pi, delivered);
                     town.policy.procurement.retain(|o| o.1 > 1e-3);
                 }
                 if let Some(kind) = db.opens[pi] {
                     // New land: a fresh site that starts bare and grows in. Two crews
                     // can finish on the last free plot; only the first one gets it.
                     town.stock[pi] -= q;
+                    town.flows.add(crate::goods::Flow::Opened, pi, q);
                     if town.free_land == 0 {
                         continue;
                     }
@@ -695,6 +703,7 @@ pub fn produce(
                 } else if db.category(p) == Category::Building {
                     // The finished building becomes a workplace (stock tracks nothing here).
                     town.stock[pi] -= q;
+                    town.flows.add(crate::goods::Flow::Built, pi, q);
                     // An ordered building goes where the order put it.
                     let commission = town.policy.commissions.iter().position(|c| c.building == p);
                     let pos = match commission.map(|k| town.policy.commissions.remove(k)) {

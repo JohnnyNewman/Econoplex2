@@ -57,9 +57,11 @@ pub fn sense(
         st[HUNGER] += p.hunger_per_day;
         if st[HUNGER] > p.eat_threshold {
             // The household's own food first.
-            if let Some((_, value)) =
+            if let Some((food, value)) =
                 crate::decision::subsistence::take_meal(&mut store.larder[i], &db.foods)
             {
+                town.flows
+                    .add(crate::goods::Flow::Eaten, food as usize, 1.0);
                 st[HUNGER] = (st[HUNGER] - value).max(0.0);
             }
         }
@@ -71,6 +73,7 @@ pub fn sense(
                 for firm in town.firms.iter_mut() {
                     if firm.stock.get(f).is_some_and(|&s| s >= 1.0) {
                         firm.stock[f] -= 1.0;
+                        town.flows.add(crate::goods::Flow::Eaten, f, 1.0);
                         st[HUNGER] = (st[HUNGER] - value).max(0.0);
                         let pay = town.price[f].min(store.wealth[i].max(0.0));
                         store.wealth[i] -= pay;
@@ -88,6 +91,7 @@ pub fn sense(
                 let f = food as usize;
                 if town.stock[f] >= 1.0 + reserve[store.town[i] as usize][f] {
                     town.stock[f] -= 1.0;
+                    town.flows.add(crate::goods::Flow::Eaten, f, 1.0);
                     town.consumed_year.resize(town.stock.len(), 0.0);
                     town.consumed_year[f] += 1.0;
                     st[HUNGER] = (st[HUNGER] - value).max(0.0);

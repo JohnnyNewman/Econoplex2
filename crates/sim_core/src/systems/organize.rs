@@ -128,7 +128,13 @@ pub fn organize(
                 .unwrap()
                 .bonus
                 * (0.5 + prod.quality);
-            town.stock[prod.def as usize] = (town.stock[prod.def as usize] - 1.0).max(0.0);
+            let before = town.stock[prod.def as usize];
+            town.stock[prod.def as usize] = (before - 1.0).max(0.0);
+            town.flows.add(
+                crate::goods::Flow::Equipped,
+                prod.def as usize,
+                before - town.stock[prod.def as usize],
+            );
             store.equipped[i] = Some(e);
             let dir = &db.domain_dirs[g.domain as usize];
             store.equip_vec[i] = dir.iter().map(|d| d * bonus).collect();

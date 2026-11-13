@@ -208,7 +208,10 @@ pub fn settle(
     let dpy = clock.days_per_year as f32;
     for town in towns.0.iter_mut() {
         for &(food, _) in &db.foods {
-            town.stock[food as usize] *= 1.0 - mp.food_spoilage / dpy;
+            let f = food as usize;
+            let rotted = town.stock[f] * (mp.food_spoilage / dpy);
+            town.stock[f] *= 1.0 - mp.food_spoilage / dpy;
+            town.flows.add(crate::goods::Flow::Spoiled, f, rotted);
         }
     }
 
@@ -372,6 +375,7 @@ fn buy_from_firms(town: &mut crate::world::Town, p: usize, target: f32) {
         o.1 -= delivered;
         town.stock[p] -= delivered;
         town.procured[p] += delivered;
+        town.flows.add(crate::goods::Flow::Procured, p, delivered);
         town.policy.procurement.retain(|o| o.1 > 1e-3);
     }
 }

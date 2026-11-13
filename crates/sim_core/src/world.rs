@@ -301,6 +301,9 @@ pub struct Town {
     /// Goods delivered for government orders since the start, by product.
     #[serde(default)]
     pub procured: Vec<f32>,
+    /// Goods made, used and lost in this town since the start (`goods.rs`).
+    #[serde(default)]
+    pub flows: crate::goods::GoodsFlows,
     /// Payments into and out of the treasury, by kind (see `ledger.rs`).
     #[serde(default)]
     pub ledger: crate::ledger::Ledger,
@@ -517,6 +520,7 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
                 .unwrap_or_else(|| panic!("scenario: unknown product `{p}`"));
             stock[i as usize] = *q;
         }
+        let flows = crate::goods::GoodsFlows::seeded(&stock);
         // Buildings on a ring around the town center.
         let mut buildings = Vec::new();
         for (bi, b) in spec.buildings.iter().enumerate() {
@@ -637,6 +641,7 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
             policy: crate::policy::Policy::new(db.content.products.len(), db.content.domains.len()),
             ledger: crate::ledger::Ledger::new(scenario.towns.len()),
             procured: vec![0.0; db.content.products.len()],
+            flows,
             pay_rate: vec![0.0; db.recipes.len()],
             success_pay: vec![0.0; db.recipes.len()],
             price_cap: Vec::new(),
