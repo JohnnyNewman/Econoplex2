@@ -169,6 +169,9 @@ pub struct SaveFile {
     pub governors: crate::governor::Governors,
     #[serde(default)]
     pub history: crate::history::History,
+    /// Hours, season and weather (older saves start with clear ground).
+    #[serde(default)]
+    pub env: crate::env::Environment,
 }
 
 impl SaveFile {
@@ -231,6 +234,7 @@ struct SaveRef<'a> {
     match_state: &'a crate::goal::MatchState,
     governors: &'a crate::governor::Governors,
     history: &'a crate::history::History,
+    env: &'a crate::env::Environment,
 }
 
 /// Fingerprint of the content a world was built from (FNV-1a, stable across builds).
@@ -268,6 +272,7 @@ fn save_ref(world: &World) -> SaveRef<'_> {
         match_state: world.resource::<crate::goal::MatchState>(),
         governors: world.resource::<crate::governor::Governors>(),
         history: world.resource::<crate::history::History>(),
+        env: world.resource::<crate::env::Environment>(),
     }
 }
 
@@ -389,6 +394,7 @@ pub fn restore(
         match_state,
         governors,
         history,
+        env,
         ..
     } = save;
     let mut db = Db::build(
@@ -436,6 +442,7 @@ pub fn restore(
         map.all(&mut t.guilds);
     }
 
+    let time = params.time.clone();
     world.insert_resource(store);
     world.insert_resource(Towns(towns));
     world.insert_resource(Models::from_params(&params));
@@ -447,7 +454,16 @@ pub fn restore(
     world.insert_resource(db);
     world.insert_resource(crate::profile::Profile::default());
     world.insert_resource(orders);
+    // Saves from before sub-day ticks ran whole days: they end on a day's last tick.
+    let mut clock = clock;
+    let tpd = time.ticks_per_day.max(1);
+    if clock.ticks_per_day != tpd {
+        clock.ticks_per_day = tpd;
+        clock.sub = tpd - 1;
+    }
+    clock.months_per_year = time.months_per_year.max(1);
     world.insert_resource(clock);
+    world.insert_resource(env);
     world.insert_resource(seed);
     world.insert_resource(decisions);
     world.insert_resource(work_log);

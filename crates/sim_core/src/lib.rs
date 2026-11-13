@@ -9,6 +9,7 @@ pub mod components;
 pub mod config;
 pub mod db;
 pub mod decision;
+pub mod env;
 pub mod explain;
 pub mod goal;
 pub mod governor;
@@ -41,7 +42,7 @@ pub use db::Db;
 pub use store::AgentStore;
 pub use world::{SimClock, Towns};
 
-/// The schedule that advances the simulation by one day.
+/// The schedule that advances the simulation by one tick (a part of a day).
 #[derive(ScheduleLabel, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SimTick;
 
@@ -54,44 +55,50 @@ pub fn build_schedule() -> Schedule {
     schedule.set_executor(SingleThreadedExecutor::new());
     schedule.add_systems(
         (
+            crate::env::advance,
+            crate::env::update,
             (
-                profile::start,
-                policy::apply_orders,
-                needs::sense,
-                profile::mark::<0>,
-                decide::decide,
-                profile::mark::<1>,
-                work::assign,
-                profile::mark::<2>,
-                work::produce,
-                profile::mark::<3>,
-                work::learn,
-                profile::mark::<4>,
-                social::socialize,
-                profile::mark::<5>,
-                body::body,
-                profile::mark::<6>,
+                (
+                    profile::start,
+                    policy::apply_orders,
+                    needs::sense,
+                    profile::mark::<0>,
+                    decide::decide,
+                    profile::mark::<1>,
+                    work::assign,
+                    profile::mark::<2>,
+                    work::produce,
+                    profile::mark::<3>,
+                    work::learn,
+                    profile::mark::<4>,
+                    social::socialize,
+                    profile::mark::<5>,
+                    body::body,
+                    profile::mark::<6>,
+                )
+                    .chain(),
+                (
+                    market::settle,
+                    profile::mark::<7>,
+                    organize::organize,
+                    profile::mark::<8>,
+                    military::military,
+                    profile::mark::<9>,
+                    migrate::migrate,
+                    profile::mark::<10>,
+                    life::lifecycle,
+                    profile::mark::<11>,
+                    ledger::close_day,
+                    metrics::record,
+                    history::record,
+                    goal::evaluate,
+                    governor::govern,
+                    profile::mark::<12>,
+                )
+                    .chain(),
             )
-                .chain(),
-            (
-                market::settle,
-                profile::mark::<7>,
-                organize::organize,
-                profile::mark::<8>,
-                military::military,
-                profile::mark::<9>,
-                migrate::migrate,
-                profile::mark::<10>,
-                life::lifecycle,
-                profile::mark::<11>,
-                ledger::close_day,
-                metrics::record,
-                history::record,
-                goal::evaluate,
-                governor::govern,
-                profile::mark::<12>,
-            )
-                .chain(),
+                .chain()
+                .run_if(crate::env::day_starts),
         )
             .chain(),
     );
@@ -205,10 +212,24 @@ impl Simulation {
         save::save_to_file(&self.world, path)
     }
 
+    /// Runs the rest of the current day: every tick up to and including the
+    /// day's last (one whole day from a day boundary).
     pub fn step(&mut self) {
+        loop {
+            self.step_tick();
+            if self.world.resource::<SimClock>().day_done() {
+                break;
+            }
+        }
+    }
+
+    /// Runs one tick (a part of a day: hours and weather move on; the economy
+    /// runs on the first tick of each day).
+    pub fn step_tick(&mut self) {
         self.schedule.run(&mut self.world);
     }
 
+    /// Days started so far.
     pub fn tick(&self) -> u64 {
         self.world.resource::<SimClock>().tick
     }
