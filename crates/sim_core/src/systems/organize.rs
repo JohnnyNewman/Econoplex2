@@ -32,7 +32,12 @@ pub fn organize(
             let mut by_domain = vec![Vec::new(); nd];
             for &e in &town.armory {
                 let Ok(prod) = items.get(e) else { continue };
-                let Some(eq) = &db.content.products[prod.def as usize].equip else {
+                let def = &db.content.products[prod.def as usize];
+                // Only tools: weapons, armour, shields and mounts are for soldiers.
+                if crate::goods::Slot::of(def) != Some(crate::goods::Slot::Tool) {
+                    continue;
+                }
+                let Some(eq) = &def.equip else {
                     continue;
                 };
                 if let Some(d) = db.content.domain(&eq.domain) {
