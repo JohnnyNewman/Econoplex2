@@ -5,7 +5,7 @@
 //!               [--set path=value]... [--sweep path=v1,v2,...]... [--seeds N]
 //!               [--order DAY:ORDER]... [--save FILE] [--load FILE]
 //!               [--generate N] [--map-svg FILE] [--events FILE] [--history FILE]
-//!               [--weather FILE]
+//!               [--weather FILE] [--battle LINEUP]
 //!               [--embedding] [--hash] [--profile] [--quiet]
 //! ```
 //!
@@ -54,6 +54,8 @@ struct Args {
     why: Option<String>,
     history: Option<PathBuf>,
     weather: Option<PathBuf>,
+    /// Fight one squad battle with this line-up and exit.
+    battle: Option<String>,
 }
 
 fn parse_args() -> Args {
@@ -80,6 +82,7 @@ fn parse_args() -> Args {
         why: None,
         history: None,
         weather: None,
+        battle: None,
     };
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
@@ -111,6 +114,7 @@ fn parse_args() -> Args {
             "--why" => a.why = Some(val()),
             "--history" => a.history = Some(PathBuf::from(val())),
             "--weather" => a.weather = Some(PathBuf::from(val())),
+            "--battle" => a.battle = Some(val()),
             "--set" => {
                 let v = val();
                 let (k, x) = v
@@ -168,6 +172,10 @@ fn parse_args() -> Args {
                      --events FILE  write the event log (raids, conquests, buildings, famines, orders) as CSV\n\
                      --history FILE write monthly samples per town as CSV\n\
                      --weather FILE write hour, season and weather per tick and town as CSV\n\
+                     --battle L     fight one squad battle and exit (with --seeds N: win rates), e.g.\n\
+                                    \"cavalry*20 vs spearmen*30\" or \"swordsmen*45,archers*20 vs walls spearmen*30+5!0.6\"\n\
+                                    squad: KIT*COUNT[+BATTLES][@SKILL][!MORALE]; KIT: spearmen swordsmen\n\
+                                    archers cavalry levy heavy horse_archers\n\
                      --assets DIR   assets folder (default: discovered)\n\
                      --csv FILE     write per-town yearly metrics as CSV (batch mode: one row per run)\n\
                      --set P=V      override a parameter in models.ron, e.g. military.tribute_share=0.3\n\
@@ -194,6 +202,27 @@ fn parse_args() -> Args {
         }
     }
     a
+}
+
+/// Fight a squad battle from a line-up; with several seeds, print win rates instead.
+fn run_battle(lineup: &str, params: &sim_core::battle::BattleParams, seed: u64, seeds: u64) {
+    use sim_core::battle::{parse_lineup, Battle};
+    let (mut att, mut def) = (0, 0);
+    for s in seed..seed + seeds.max(1) {
+        let (field, specs) = parse_lineup(lineup).unwrap_or_else(|e| die(&e));
+        let report = Battle::new(params.clone(), field, specs, s).run();
+        match report.winner {
+            Some(0) => att += 1,
+            Some(_) => def += 1,
+            None => {}
+        }
+        if seeds <= 1 {
+            print!("{report}");
+        }
+    }
+    if seeds > 1 {
+        println!("{lineup}: attackers won {att}, defenders {def} of {seeds}");
+    }
 }
 
 fn die(msg: &str) -> ! {
@@ -240,6 +269,10 @@ fn main() {
 
     if args.embedding {
         print_embedding(&db);
+        return;
+    }
+    if let Some(lineup) = &args.battle {
+        run_battle(lineup, &params.battle, args.seed.unwrap_or(1), args.seeds);
         return;
     }
     if args.tech_tree {

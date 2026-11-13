@@ -31,6 +31,9 @@ pub struct ModelParams {
     pub organize: OrganizeParams,
     pub work: WorkParams,
     pub military: MilitaryParams,
+    /// Squad battles on a field (`battle.rs`); not wired into the economy yet.
+    #[serde(default)]
+    pub battle: crate::battle::BattleParams,
     pub migration: MigrationParams,
     pub trust: TrustParams,
     pub policy: PolicyParams,
