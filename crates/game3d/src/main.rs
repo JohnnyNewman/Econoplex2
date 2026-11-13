@@ -7,7 +7,7 @@
 //!
 //! econoplex3d [--seed S] [--towns N] [--hour H] [--pbr] [--terrain-view N] [--grid-step K]
 //!     [--fog-view N] [--no-fog] [--days N] [--speed 0-4] [--paused] [--trade] [--culture] [--product-space] [--bloom-view] [--focus-town I] [--focus X,Z] [--view-from YAW,PITCH,DIST]
-//!     [--no-ui] [--no-lod] [--lod-view] [--fps] [--shot FILE]
+//!     [--no-ui] [--no-lod] [--lod-view] [--fps] [--render-scale F] [--shot FILE]
 //! econoplex3d --playground [--hour H] [--view N] [--toon-view N] [--pbr] [--face-sun] [--shot FILE]
 //!     (shader playground)
 
@@ -31,6 +31,7 @@ mod nature;
 mod outline;
 mod overlay;
 mod playground;
+mod render_scale;
 mod sky;
 mod terrain;
 mod toon;
@@ -110,6 +111,7 @@ fn main() {
     let mut no_lod = false;
     let mut lod_view = false;
     let mut fps = false;
+    let mut render_scale = 1.0f32;
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -130,6 +132,9 @@ fn main() {
             "--no-lod" => no_lod = true,
             "--lod-view" => lod_view = true,
             "--fps" => fps = true,
+            "--render-scale" => {
+                render_scale = it.next().and_then(|v| v.parse().ok()).unwrap_or(1.0)
+            }
             "--trade" => overlay = overlay::Overlay::Trade,
             "--culture" => overlay = overlay::Overlay::Culture,
             "--product-space" => overlay = overlay::Overlay::ProductSpace,
@@ -245,6 +250,7 @@ fn main() {
     .insert_resource(ui::UiHidden(no_ui))
     .insert_resource(live)
     .insert_resource(ui::Space(space))
+    .insert_resource(render_scale::RenderScale(render_scale))
     .insert_resource(args)
     .insert_resource(ShotPath(shot))
     .add_plugins((
@@ -261,6 +267,7 @@ fn main() {
         ui::PanelsPlugin,
         overlay::OverlayPlugin,
         bloom::BloomPlugin,
+        render_scale::RenderScalePlugin,
     ))
     .insert_resource(clock)
     .insert_resource(toon_settings)
