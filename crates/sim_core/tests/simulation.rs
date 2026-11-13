@@ -2422,3 +2422,32 @@ fn a_compressed_calendar_runs_ten_days_of_economy_per_game_day() {
     assert!((season0 - season1).abs() < 1e-4, "{season0} vs {season1}");
     assert_eq!(s.tick(), 130);
 }
+
+#[test]
+fn with_the_needs_ladder_winter_asks_for_fuel() {
+    // Households buy firewood and charcoal for the cold; anyone short of heat
+    // gets cold, and every good stays accounted for.
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let sets = [(
+        "market.consumption".to_string(),
+        "Needs((interval: 7, gate_at: 0.7, gate_width: 0.15, comfort_c: 16.0, house_c: 6.0, max_clothes: 2.0, people_per_hearth: 4.0, savings_days: 60.0, cold_damage: 0.02, plan_days: 30.0))".to_string(),
+    )];
+    let (db, params, mut scenario) =
+        sim_core::load_with(&AssetPaths::from_root(&root), &sets).unwrap();
+    scenario.seed = 4;
+    let mut s = Simulation::new(db, params, &scenario);
+    run_years(&mut s, 1);
+    let towns = s.world.resource::<sim_core::Towns>();
+    let db = s.world.resource::<sim_core::Db>();
+    let bought = |id: &str| -> f64 {
+        let p = db.content.product(id).unwrap() as usize;
+        towns
+            .0
+            .iter()
+            .map(|t| t.flows.get(sim_core::goods::Flow::Bought, p))
+            .sum()
+    };
+    assert!(bought("wood") + bought("charcoal") > 100.0);
+    assert!(towns.0.iter().map(|t| t.cold_days).sum::<u32>() > 0);
+    check_goods(&s);
+}

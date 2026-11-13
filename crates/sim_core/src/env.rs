@@ -231,6 +231,9 @@ pub struct Ground {
 pub struct LocalEnv {
     pub weather: Weather,
     pub ground: Ground,
+    /// Today's mean air temperature (pre-dawn low and afternoon high), °C.
+    #[serde(default)]
+    pub day_mean_c: f32,
 }
 
 /// Time of day, season and the weather at every town, for this tick.
@@ -483,7 +486,24 @@ pub fn update(
             town.pos,
         );
         let ground = ground_step(env.towns[i].ground, &w, dt);
-        env.towns[i] = LocalEnv { weather: w, ground };
+        let at = |hour: f32| {
+            weather_at(
+                &params.climate,
+                &params.weather,
+                seed.0,
+                s,
+                day.floor() + hour as f64 / 24.0,
+                hour,
+                town.pos,
+            )
+            .temperature
+        };
+        let day_mean_c = 0.5 * (at(4.0) + at(15.0));
+        env.towns[i] = LocalEnv {
+            weather: w,
+            ground,
+            day_mean_c,
+        };
     }
 }
 

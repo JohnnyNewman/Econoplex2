@@ -118,6 +118,75 @@ pub struct HouseholdDef {
     /// its wealth is at least this many times its town's median.
     #[serde(default)]
     pub min_wealth: Option<f32>,
+    /// The needs it serves (with `market.consumption: Needs`), and how much.
+    #[serde(default)]
+    pub serves: Vec<Serves>,
+}
+
+/// A need a good serves, how much, and how (see `sim_core::ladder`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct Serves {
+    pub need: Need,
+    /// In the need's unit: degree-days of heat per unit burned, degrees °C
+    /// of insulation per piece worn, or points of satisfaction per unit held.
+    pub amount: f32,
+    pub by: Use,
+}
+
+/// The needs ladder, from the bottom rung up.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, serde::Serialize)]
+pub enum Need {
+    // Physiological
+    Food,
+    Warmth,
+    Rest,
+    // Safety
+    Shelter,
+    Health,
+    Savings,
+    // Belonging
+    Belonging,
+    // Esteem
+    Esteem,
+    // Self-actualisation
+    Growth,
+}
+
+impl Need {
+    pub const ALL: [Need; 9] = [
+        Need::Food,
+        Need::Warmth,
+        Need::Rest,
+        Need::Shelter,
+        Need::Health,
+        Need::Savings,
+        Need::Belonging,
+        Need::Esteem,
+        Need::Growth,
+    ];
+    /// Rung of the ladder, 0 (physiological) .. 4 (self-actualisation).
+    pub fn level(self) -> usize {
+        match self {
+            Need::Food | Need::Warmth | Need::Rest => 0,
+            Need::Shelter | Need::Health | Need::Savings => 1,
+            Need::Belonging => 2,
+            Need::Esteem => 3,
+            Need::Growth => 4,
+        }
+    }
+}
+
+/// How a household uses a good to serve a need.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+pub enum Use {
+    /// Burned for heat (fuel): used up as the cold asks.
+    Burn,
+    /// Worn (clothes): insulates while held, wears out over `life_days`.
+    Wear,
+    /// Kept (pots, linen, silver): serves while held, wears out over `life_days`.
+    Own,
+    /// Used up over `life_days` (ale).
+    Consume,
 }
 
 impl ProductDef {
