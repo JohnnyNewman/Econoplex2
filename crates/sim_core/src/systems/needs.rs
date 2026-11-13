@@ -26,7 +26,13 @@ pub fn sense(
     let reserve: Vec<Vec<f32>> = towns
         .0
         .iter()
-        .map(|town| super::decide::food_reserve(&db, town, &params))
+        .map(|town| {
+            if crate::granary::keeps_reserve(town, &params) {
+                super::decide::food_reserve(&db, town, &params)
+            } else {
+                vec![0.0; town.stock.len()]
+            }
+        })
         .collect();
 
     // Rent from crowding, the same for every adult in a town. Rents are sticky:

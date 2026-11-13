@@ -146,7 +146,11 @@ pub fn job_capacity(
                 cap = cap.min(nature_total[k as usize] / out * m.duration);
             }
             for &(p, q) in &m.inputs {
-                let held = if food { 0.0 } else { reserve[p as usize] };
+                let held = if food || !crate::granary::keeps_reserve(town, params) {
+                    0.0
+                } else {
+                    reserve[p as usize]
+                };
                 // With firms, their unsold stock is on offer too.
                 let have = town.stock[p as usize]
                     + if params.market.firms.on() {
@@ -590,6 +594,10 @@ pub fn decide(
         .0
         .iter()
         .map(|t| {
+            // Without town-wide food rules only pay draws people to farm.
+            if !params.market.food_rules.town() {
+                return 0.0;
+            }
             let pc = t.food_stock(&db) / t.residents.len().max(1) as f32;
             (1.0 - pc / params.market.food_target_per_capita).clamp(0.0, 1.0)
         })

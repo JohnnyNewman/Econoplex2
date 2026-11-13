@@ -313,6 +313,9 @@ pub struct Town {
     /// Goods delivered for government orders since the start, by product.
     #[serde(default)]
     pub procured: Vec<f32>,
+    /// Food kept out of the market by the town (`granary.rs`), by product.
+    #[serde(default)]
+    pub granary: Vec<f32>,
     /// Goods made, used and lost in this town since the start (`goods.rs`).
     #[serde(default)]
     pub flows: crate::goods::GoodsFlows,
@@ -654,6 +657,7 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
             policy: crate::policy::Policy::new(db.content.products.len(), db.content.domains.len()),
             ledger: crate::ledger::Ledger::new(scenario.towns.len()),
             procured: vec![0.0; db.content.products.len()],
+            granary: Vec::new(),
             flows,
             pay_rate: vec![0.0; db.recipes.len()],
             success_pay: vec![0.0; db.recipes.len()],

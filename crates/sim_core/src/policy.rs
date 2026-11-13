@@ -124,6 +124,13 @@ pub struct Policy {
     /// Emergency food imports from neighbouring towns.
     #[serde(default)]
     pub food_imports: Imports,
+    /// Days of its people's food the granary aims to hold (`granary.rs`).
+    #[serde(default)]
+    pub granary_days: f32,
+    /// Hold the inputs of food chains (seed grain, flour) back from eating and
+    /// other trades (with `market.food_rules: Ruler`; always on under `Town`).
+    #[serde(default)]
+    pub food_reserve: bool,
 }
 
 impl Policy {
@@ -215,6 +222,16 @@ pub enum Order {
         town: u16,
         imports: Imports,
     },
+    /// Days of its people's food the town's granary aims to hold (0: none).
+    Granary {
+        town: u16,
+        days: f32,
+    },
+    /// Hold seed grain and flour back from eating and other trades.
+    Reserve {
+        town: u16,
+        on: bool,
+    },
     /// Lend `amount` of treasury coin to one of the town's firms (index into
     /// `Db::firm_keys`), at a yearly `rate`, repaid over `days` (needs
     /// `market.firms: Workshops`).
@@ -253,7 +270,9 @@ impl Order {
             | Order::Spending { town, .. }
             | Order::Procure { town, .. }
             | Order::Loan { town, .. }
-            | Order::Imports { town, .. } => town,
+            | Order::Imports { town, .. }
+            | Order::Granary { town, .. }
+            | Order::Reserve { town, .. } => town,
         }
     }
 
@@ -371,6 +390,14 @@ impl Order {
                     "auto" => None,
                     r => Some(number(r)?),
                 },
+            }),
+            ["reserve", t, m @ ("on" | "off")] => Ok(Order::Reserve {
+                town: town(t)?,
+                on: *m == "on",
+            }),
+            ["granary", t, days] => Ok(Order::Granary {
+                town: town(t)?,
+                days: number(days)?.max(0.0),
             }),
             ["procure", t, p, amount] => Ok(Order::Procure {
                 town: town(t)?,
@@ -530,6 +557,8 @@ pub fn apply_orders(
                 }
             }
             Order::Imports { imports, .. } => p.food_imports = imports,
+            Order::Granary { days, .. } => p.granary_days = days,
+            Order::Reserve { on, .. } => p.food_reserve = on,
             Order::Raid { town: t, target } => {
                 p.raid_order = (target != t).then_some(target);
             }

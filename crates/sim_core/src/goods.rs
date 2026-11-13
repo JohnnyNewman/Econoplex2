@@ -149,6 +149,9 @@ pub fn census(store: &AgentStore, towns: &Towns, goods: usize) -> Vec<f64> {
                 held[p] += q as f64;
             }
         }
+        for (p, &q) in t.granary.iter().enumerate().take(goods) {
+            held[p] += q as f64;
+        }
         if let Some(raid) = &t.raid {
             for (p, &q) in raid.loot.iter().enumerate().take(goods) {
                 held[p] += q as f64;
