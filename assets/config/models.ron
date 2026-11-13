@@ -422,4 +422,34 @@
             ("expansionist", (thrift: 0.7, ambition: 1.5)),
         ],
     ),
+
+    // Time, seasons and weather (env.rs). Each day is cut into ticks; the
+    // economy still runs once a day, on its first tick. The calendar must match
+    // life.days_per_year (days_per_month * months_per_year).
+    time: (
+        ticks_per_day: 12,
+        days_per_month: 10,
+        months_per_year: 12,
+        year_starts_at: 0.25, // spring equinox (0 = midwinter)
+        day_length: (equinox_hours: 12.0, swing_hours: 4.0, twilight_hours: 2.0),
+    ),
+    // A temperate climate: frosty winters, warm summers, wettest in autumn.
+    // `Constant(temperature: 15.0)` for no seasons.
+    climate: Seasonal(
+        mean_c: 9.0,
+        seasonal_swing_c: 10.0,
+        daily_swing_c: 8.0,
+        wet: 0.3,
+        wet_peak: 0.75,
+        wet_swing: 0.3,
+    ),
+    // Fronts drifting across the map from the west. `Clear` for none.
+    weather: Fronts(
+        front_size: 1500.0,
+        front_days: 4.0,
+        drift_per_day: 300.0,
+        anomaly_c: 3.0,
+        anomaly_days: 5.0,
+        wind_mean: 4.0,
+    ),
 )

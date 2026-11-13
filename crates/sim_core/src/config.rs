@@ -37,11 +37,35 @@ pub struct ModelParams {
     /// AI town governments (`governor.rs`).
     #[serde(default)]
     pub governor: GovernorParams,
+    /// Ticks per day, days per month, months per year (`env.rs`).
+    #[serde(default)]
+    pub time: crate::env::TimeParams,
+    /// Average weather through the year (`env.rs`).
+    #[serde(default)]
+    pub climate: crate::env::ClimateParams,
+    /// How the weather varies around the climate (`env.rs`).
+    #[serde(default)]
+    pub weather: crate::env::WeatherParams,
 }
 
 impl ModelParams {
     /// Check matrix shapes so a typo in the RON file fails loudly at load time.
     pub fn validate(&self) -> Result<(), ConfigError> {
+        let t = &self.time;
+        if t.ticks_per_day == 0 || t.days_per_month == 0 || t.months_per_year == 0 {
+            return Err(ConfigError(
+                "time: ticks_per_day, days_per_month and months_per_year must be at least 1".into(),
+            ));
+        }
+        if t.days_per_year() != self.life.days_per_year {
+            return Err(ConfigError(format!(
+                "time: {} days per month times {} months is {} days, but life.days_per_year is {}",
+                t.days_per_month,
+                t.months_per_year,
+                t.days_per_year(),
+                self.life.days_per_year
+            )));
+        }
         let d = &self.decision;
         let shape = |name: &str, rows: &[Vec<f32>], cols: usize| -> Result<(), ConfigError> {
             if rows.len() != FEATURES || rows.iter().any(|r| r.len() != cols) {
