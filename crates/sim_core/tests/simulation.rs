@@ -1107,6 +1107,9 @@ fn governors_do_not_swing_back_and_forth() {
         t.population = 60;
     }
     params.governor.govern_player_town = true;
+    // Calibrated with fixed caravans; balancing trade moves treasuries more
+    // (one more tax reversal in 40 years).
+    params.market.caravans = sim_core::config::Caravans::Fixed;
     let mut s = Simulation::new(db, params, &scenario);
     run_years(&mut s, 40);
     let log = &s.world.resource::<sim_core::policy::OrderQueue>().log;
@@ -1327,6 +1330,8 @@ fn valuing_skills_draws_the_young_into_work_they_are_still_learning() {
         // anyway, and on its own the learning term then barely changes choices
         // (see the posted-pay PR).
         params.decision.valuation.posted_pay_days = 0.0;
+        // Isolate it from trade too (calibrated with fixed caravans).
+        params.market.caravans = sim_core::config::Caravans::Fixed;
         let mut s = Simulation::new(db, params, &scenario);
         run_years(&mut s, 1);
         let (mut learning_days, mut days) = (0u32, 0u32);
