@@ -1094,6 +1094,8 @@ fn a_hungry_town_subsidizes_food_then_winds_it_down() {
     params.decision.matching = sim_core::decision::matching::MatchingParams::FirstCome;
     // And without household buying, which changes what the town spends on.
     params.market.consumption = sim_core::consumption::ConsumptionParams::None;
+    // And with weapons stocked per resident (the treasury's other big purchase).
+    params.military.kit_demand = sim_core::config::KitDemand::PerCapita;
     scenario.seed = 4;
     let b = &mut scenario.towns[3];
     for n in &mut b.nature {
@@ -2828,8 +2830,10 @@ fn stockpile_targets_follow_the_seasons() {
     // stockpiles should be fullest before the lean months, not all year.
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     let sets = sim_core::read_preset(&root.join("config/presets/new_economy.ron")).unwrap();
-    let (db, params, mut scenario) =
+    let (db, mut params, mut scenario) =
         sim_core::load_with(&AssetPaths::from_root(&root), &sets).unwrap();
+    // Calibrated with weapons stocked per resident.
+    params.military.kit_demand = sim_core::config::KitDemand::PerCapita;
     scenario.seed = 17;
     let mut s = Simulation::new(db, params, &scenario);
     run_years(&mut s, 3);
