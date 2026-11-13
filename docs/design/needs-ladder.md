@@ -19,10 +19,15 @@ Off by default: `market.consumption: Needs(...)` (example in models.ron).
   | ale | belonging 0.3, drunk over a week |
   | pot, cloth | shelter 0.1, 0.15 |
   | silver | esteem 0.5 |
-- Warmth: each day a person needs `comfort_c - (day's mean + house_c + clothes)`
-  degree-days of heat, shared by `people_per_hearth`. Fuel burns as the cold
-  asks; less than half the heat needed counts as a cold day, and cold costs
-  health (`cold_damage` per day at 10 °C short with no fire).
+- Households: a couple and their children share one home. Its keeper (the
+  partner with the lower index) holds the fuel and home goods (pots, linen) and
+  buys them for everyone at the hearth, valuing them for each person there;
+  clothes, ale and silver stay personal.
+- Warmth: each hearth burns `fire_per_c` degree-days per degree the room falls
+  short of `comfort_c` after the house and the family's mean clothing, and
+  `fire_per_extra_person` more per further person (a family of four burns 1.75
+  times one person alone). Less than half the heat needed counts as a cold day,
+  and cold costs health (`cold_damage` per day at 10 °C short with no fire).
 - Shopping: every `interval` days a household buys, one unit at a time, the good
   that raises its weighted satisfaction most per coin. Money serves savings
   (days of food covered by money and larder against `savings_days`), so a
@@ -39,8 +44,10 @@ Off by default: `market.consumption: Needs(...)` (example in models.ron).
 | Basket (default) | 1918 | 8.9 | 1373 | 36.8 | 0.70 |
 | Needs | 1906 | 8.0 | 1035 | 35.0 | 0.42 |
 | Needs + daylight work | 1819 | 5.5 | 962 | 35.9 | 0.41 |
+| Needs with households | 1884 | 8.9 | 911 | 35.5 | 0.43 |
 
-No starvation in any. Happiness is on the ladder's scale (gated rungs), not
+No starvation in any. The first two Needs rows are from before households
+(each person kept their own fire, a quarter of a hearth each). Happiness is on the ladder's scale (gated rungs), not
 comparable with the old formula.
 
 `examples/needs_audit [years] [seed]` prints satisfaction per need by month.
