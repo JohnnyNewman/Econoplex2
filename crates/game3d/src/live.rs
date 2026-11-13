@@ -293,12 +293,14 @@ fn run(sim: &mut Simulation, shared: &Mutex<Shared>, mut seen: sim_core::view::S
         let interval = Duration::from_secs_f32(1.0 / (SPEEDS[speed] * tpd as f32));
         let mut ran = 0;
         while Instant::now() >= next && ran < 4 * tpd {
-            sim.step_tick();
+            // Named spans for the profiler (`--features profile`).
+            bevy::log::info_span!("sim tick").in_scope(|| sim.step_tick());
             ran += 1;
             next += interval;
             if !sim.world.resource::<sim_core::SimClock>().day_done() {
                 continue;
             }
+            let _snap = bevy::log::info_span!("sim snapshot").entered();
             let mut snap = ViewSnapshot::capture(&sim.world, &mut seen);
             explained = why_town;
             if let Some(t) = why_town {
