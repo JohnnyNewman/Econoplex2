@@ -414,3 +414,41 @@ charcoal, and luxuries that wait for spare money.
 
 The state hash changes with the default. Two calibrated behaviour tests
 (governor stability, the learning value) now pin `Fixed` caravans.
+
+## The other dormant options, judged by use (2026-11-13)
+
+Each option alone against the new default (balancing caravans), 6 seeds × 40
+years, Features model:
+
+| option | pop | hh use | in use | happy | capab | kinds/yr | gini | swords |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| default (Balance 400) | 3967 | 61.3 | 76.4 | 0.69 | 29.0 | 18.7 | 0.61 | 5841 |
+| demand pricing (`Demand(10, 2)`) | 3765 | 60.3 | 71.8 | 0.69 | 27.6 | 19.8 | 0.55 | 1416 |
+| wage factors (`ExcessDemand`) | 3906 | 61.3 | 79.3 | 0.70 | 29.0 | 20.3 | 0.63 | 5667 |
+| **matching with apprentices** | **3978** | **62.1** | **86.8** | **0.71** | **31.2** | **21.4** | **0.51** | 5680 |
+| rent and crowding | 3934 | 61.4 | 80.3 | 0.71 | 29.5 | 20.0 | 0.67 | 6399 |
+| loosening price caps | 3770 | 60.3 | 78.8 | 0.69 | 27.4 | 20.5 | 0.49 | 1751 |
+
+Matching combined with the others:
+
+| combination | pop | hh use | in use | capab | gini |
+| --- | --- | --- | --- | --- | --- |
+| matching | 3978 | 62.1 | 86.8 ± 15 | **31.2** | **0.51** |
+| matching + wage factors | 4012 | 62.4 | 91.5 ± 28 | 30.8 | 0.61 |
+| matching + rent | 4082 | 61.6 | 75.2 | 30.0 | 0.62 |
+| all three | 4044 | 62.3 | 88.2 | 30.3 | 0.57 |
+| matching, utility model | 1310 | 63.9 | 108.7 | 28.7 | 0.34 (starving 1.1 %) |
+
+**Decision: `decision.matching: DeferredAcceptance` is the new default.**
+- It is better on every use measure: trade use +14 %, capability +2.2 kinds,
+  happiness up, and inequality between towns down (0.61 → 0.51). Population
+  holds.
+- Skilled applicants get the regular places; apprentices learn on the job.
+  Experts make the complex goods and the young train up.
+- Wage factors and rent add little on top. Demand pricing and loosening caps
+  cost population and capability. All stay off.
+
+Four calibrated tests now pin `FirstCome` (the hungry-town subsidy and import
+scenarios, the one-year caravan test, the learning value): skilled matching
+keeps their towns fed or already steers the young to learning. The state hash
+changes.

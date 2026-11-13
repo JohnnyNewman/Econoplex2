@@ -1039,7 +1039,9 @@ fn governors_pull_the_players_levers_through_the_order_queue() {
 fn a_hungry_town_subsidizes_food_then_winds_it_down() {
     // Brassmoor with two fields and no bread to start: it goes hungry in year one.
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
-    let (db, params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    // Calibrated with first-come jobs: skilled matching keeps this town fed.
+    params.decision.matching = sim_core::decision::matching::MatchingParams::FirstCome;
     scenario.seed = 4;
     let b = &mut scenario.towns[3];
     for n in &mut b.nature {
@@ -1332,6 +1334,8 @@ fn valuing_skills_draws_the_young_into_work_they_are_still_learning() {
         params.decision.valuation.posted_pay_days = 0.0;
         // Isolate it from trade too (calibrated with fixed caravans).
         params.market.caravans = sim_core::config::Caravans::Fixed;
+        // And from apprentice places, which already steer the young to learning.
+        params.decision.matching = sim_core::decision::matching::MatchingParams::FirstCome;
         let mut s = Simulation::new(db, params, &scenario);
         run_years(&mut s, 1);
         let (mut learning_days, mut days) = (0u32, 0u32);
@@ -2092,6 +2096,8 @@ fn a_hungry_broke_town_imports_food_on_credit_and_recovers() {
         let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
         scenario.seed = 4;
         params.governor.enabled = false;
+        // Calibrated with first-come jobs: skilled matching keeps this town fed.
+        params.decision.matching = sim_core::decision::matching::MatchingParams::FirstCome;
         let b = &mut scenario.towns[3];
         for n in &mut b.nature {
             if n.0 == "field" {
@@ -2244,6 +2250,8 @@ fn balancing_caravans_move_more_goods_and_conserve_money() {
     let run = |caravans: Caravans| {
         let (db, mut params, scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
         params.market.caravans = caravans;
+        // Calibrated with first-come jobs (one year is short for trade to settle).
+        params.decision.matching = sim_core::decision::matching::MatchingParams::FirstCome;
         let mut s = Simulation::new(db, params, &scenario);
         let money = |s: &Simulation| {
             let towns = s.world.resource::<sim_core::Towns>();
