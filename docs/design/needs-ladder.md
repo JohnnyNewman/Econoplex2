@@ -137,3 +137,14 @@ marching, else their home); `carry_capacity` says what a holder can carry
 `market.item_stock: Held` (off) makes the market's count of tools and weapons
 what its armory holds; the old count kept weapons carried by soldiers in stock.
 6 seeds x 20 years: pop 1918 -> 1913, swords 1373 -> 1332, raids 27.7 -> 22.5.
+
+## Stacks (step 2b-2)
+
+Simple goods are stacks held by a holder, each in the storage it already had:
+market (`Town::stock`), granary, workshop (`Firm::stock`), a person or home
+(larder for food, `owned` for the rest), and now a squad's packs
+(`Squad::stacks`). `goods::move_stack(from, to, good, q, ..)` is the one way to
+move a quantity between holders: no more than `from` holds and no more than `to`
+can carry (`carry_capacity` against `load_kg`). Moves change no total, so the
+goods ledger records nothing; the census now counts squad packs. People
+marching with a squad eat from its packs first (`squad_meal`).

@@ -2382,6 +2382,7 @@ fn check_goods(s: &Simulation) {
     let bad = sim_core::goods::audit(
         s.world.resource::<sim_core::AgentStore>(),
         s.world.resource::<sim_core::Towns>(),
+        s.world.resource::<sim_core::goods::Squads>(),
         n,
         1e-4,
     );
@@ -2573,5 +2574,69 @@ fn every_item_has_an_owner_that_holds_it() {
         !owned.is_empty() && owned.len() == items,
         "{} owned of {items} items",
         owned.len()
+    );
+}
+
+#[test]
+fn a_squad_carries_rations_eats_them_and_keeps_the_books() {
+    use sim_core::goods::{move_stack, Holder, Place, Squad, Squads};
+    let mut s = sim(13);
+    s.step();
+    let bread = s
+        .world
+        .resource::<sim_core::Db>()
+        .content
+        .product("bread")
+        .unwrap() as usize;
+    let members: Vec<u32> = s.world.resource::<sim_core::Towns>().0[0]
+        .residents
+        .iter()
+        .copied()
+        .take(4)
+        .collect();
+    s.world.resource_mut::<Squads>().list.push(Squad {
+        home: 0,
+        members: members.clone(),
+        place: Place::Town(0),
+        items: Vec::new(),
+        stacks: Vec::new(),
+    });
+    // Load rations: no more than four people can carry.
+    let moved = s
+        .world
+        .resource_scope(|w, mut towns: bevy_ecs::prelude::Mut<sim_core::Towns>| {
+            w.resource_scope(
+                |w, mut store: bevy_ecs::prelude::Mut<sim_core::AgentStore>| {
+                    w.resource_scope(|w, mut squads: bevy_ecs::prelude::Mut<Squads>| {
+                        let db = w.resource::<sim_core::Db>();
+                        towns.0[0].stock[bread] = 500.0;
+                        move_stack(
+                            Holder::Market(0),
+                            Holder::Squad(0),
+                            bread,
+                            500.0,
+                            &mut towns,
+                            &mut store,
+                            &mut squads,
+                            db,
+                        )
+                    })
+                },
+            )
+        });
+    let cap = 4.0 * sim_core::goods::KG_PER_MEMBER
+        / s.world.resource::<sim_core::Db>().content.products[bread].kg;
+    assert!((moved - cap).abs() < 1e-3, "moved {moved}, cap {cap}");
+    for _ in 0..20 {
+        s.step();
+    }
+    let left: f32 = s.world.resource::<Squads>().list[0]
+        .stacks
+        .iter()
+        .map(|e| e.1)
+        .sum();
+    assert!(
+        left < moved,
+        "the squad ate from its packs: {left} of {moved}"
     );
 }

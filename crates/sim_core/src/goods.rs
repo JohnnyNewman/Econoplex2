@@ -138,8 +138,15 @@ impl GoodsFlows {
 }
 
 /// What is held of each good, wherever it is.
-pub fn census(store: &AgentStore, towns: &Towns, goods: usize) -> Vec<f64> {
+pub fn census(store: &AgentStore, towns: &Towns, squads: &Squads, goods: usize) -> Vec<f64> {
     let mut held = vec![0.0f64; goods];
+    for s in &squads.list {
+        for &(p, q) in &s.stacks {
+            if (p as usize) < goods {
+                held[p as usize] += q as f64;
+            }
+        }
+    }
     for t in &towns.0 {
         for (p, &q) in t.stock.iter().enumerate().take(goods) {
             held[p] += q as f64;
@@ -189,8 +196,14 @@ impl Mismatch {
 
 /// Goods whose holdings differ from their flows by more than `tolerance`
 /// (relative to what passed through them, at least one unit).
-pub fn audit(store: &AgentStore, towns: &Towns, goods: usize, tolerance: f64) -> Vec<Mismatch> {
-    let held = census(store, towns, goods);
+pub fn audit(
+    store: &AgentStore,
+    towns: &Towns,
+    squads: &Squads,
+    goods: usize,
+    tolerance: f64,
+) -> Vec<Mismatch> {
+    let held = census(store, towns, squads, goods);
     (0..goods)
         .filter_map(|p| {
             let expected: f64 = towns.0.iter().map(|t| t.flows.net(p)).sum();
@@ -434,6 +447,9 @@ pub struct Squad {
     pub place: Place,
     /// Items it carries as kit (not on anyone's person).
     pub items: Vec<Entity>,
+    /// Stacks in its packs and carts: rations, arrows, plunder (good, quantity).
+    #[serde(default)]
+    pub stacks: Vec<(u32, f32)>,
 }
 
 #[derive(Resource, Debug, Clone, Default, Serialize, Deserialize)]
@@ -477,6 +493,156 @@ pub fn carry_capacity(holder: Holder, squads: &Squads) -> Option<f32> {
     }
 }
 
+// ---------------------------------------------------------------- stacks
+//
+// Step 2b-2: simple goods (grain, bread, arrows, coal) are stacks: a quantity
+// of one good held by one holder. Each holder keeps its stacks where it always
+// has: a town's market (`Town::stock`), granary (`Town::granary`), a workshop
+// (`Firm::stock`), a person's larder (food) and household goods
+// (`AgentStore::larder`, `owned`), and now a squad's packs (`Squad::stacks`).
+// `move_stack` is the one way to move a quantity from one holder to another.
+
+/// Quantity of `good` that `holder` holds.
+pub fn held_by(
+    holder: Holder,
+    good: usize,
+    towns: &Towns,
+    store: &AgentStore,
+    squads: &Squads,
+    db: &crate::db::Db,
+) -> f32 {
+    let sparse = |v: &[(u32, f32)]| {
+        v.iter()
+            .filter(|e| e.0 as usize == good)
+            .map(|e| e.1)
+            .sum::<f32>()
+    };
+    match holder {
+        Holder::Market(t) => towns.0[t as usize].stock.get(good).copied().unwrap_or(0.0),
+        Holder::Granary(t) => towns.0[t as usize]
+            .granary
+            .get(good)
+            .copied()
+            .unwrap_or(0.0),
+        Holder::Workshop(t, f) => towns.0[t as usize]
+            .firms
+            .get(f as usize)
+            .and_then(|f| f.stock.get(good).copied())
+            .unwrap_or(0.0),
+        Holder::Home(i) | Holder::Person(i) => {
+            if db.is_food[good] {
+                sparse(&store.larder[i as usize])
+            } else {
+                sparse(&store.owned[i as usize])
+            }
+        }
+        Holder::Armory(_) => 0.0,
+        Holder::Squad(id) => squads
+            .list
+            .get(id as usize)
+            .map_or(0.0, |s| sparse(&s.stacks)),
+    }
+}
+
+/// Weight a holder carries in stacks, kg.
+pub fn load_kg(holder: Holder, squads: &Squads, db: &crate::db::Db) -> f32 {
+    match holder {
+        Holder::Squad(id) => squads.list.get(id as usize).map_or(0.0, |s| {
+            s.stacks
+                .iter()
+                .map(|&(p, q)| q * db.content.products[p as usize].kg)
+                .sum()
+        }),
+        _ => 0.0,
+    }
+}
+
+fn add_sparse(v: &mut Vec<(u32, f32)>, good: usize, q: f32) {
+    match v.iter_mut().find(|e| e.0 as usize == good) {
+        Some(e) => e.1 += q,
+        None if q > 0.0 => v.push((good as u32, q)),
+        None => {}
+    }
+    v.retain(|e| e.1 > 1e-6);
+}
+
+fn add_to(
+    holder: Holder,
+    good: usize,
+    q: f32,
+    towns: &mut Towns,
+    store: &mut AgentStore,
+    squads: &mut Squads,
+    db: &crate::db::Db,
+) {
+    let np = db.content.products.len();
+    match holder {
+        Holder::Market(t) => towns.0[t as usize].stock[good] += q,
+        Holder::Granary(t) => {
+            let g = &mut towns.0[t as usize].granary;
+            g.resize(np, 0.0);
+            g[good] += q;
+        }
+        Holder::Workshop(t, f) => {
+            if let Some(f) = towns.0[t as usize].firms.get_mut(f as usize) {
+                f.stock.resize(np, 0.0);
+                f.stock[good] += q;
+            }
+        }
+        Holder::Home(i) | Holder::Person(i) => {
+            if db.is_food[good] {
+                add_sparse(&mut store.larder[i as usize], good, q);
+            } else {
+                add_sparse(&mut store.owned[i as usize], good, q);
+            }
+        }
+        Holder::Armory(_) => {}
+        Holder::Squad(id) => {
+            if let Some(s) = squads.list.get_mut(id as usize) {
+                add_sparse(&mut s.stacks, good, q);
+            }
+        }
+    }
+}
+
+/// Moves up to `q` of `good` from one holder to another: no more than `from`
+/// holds, and no more than `to` can carry (`carry_capacity`). Returns what
+/// moved. Moving changes no total, so the goods ledger records nothing.
+#[allow(clippy::too_many_arguments)]
+pub fn move_stack(
+    from: Holder,
+    to: Holder,
+    good: usize,
+    q: f32,
+    towns: &mut Towns,
+    store: &mut AgentStore,
+    squads: &mut Squads,
+    db: &crate::db::Db,
+) -> f32 {
+    if matches!(from, Holder::Armory(_)) || matches!(to, Holder::Armory(_)) || from == to {
+        return 0.0;
+    }
+    let have = held_by(from, good, towns, store, squads, db);
+    let mut q = q.min(have).max(0.0);
+    if let Some(cap) = carry_capacity(to, squads) {
+        let kg = db.content.products[good].kg.max(1e-6);
+        q = q.min(((cap - load_kg(to, squads, db)) / kg).max(0.0));
+    }
+    if q <= 0.0 {
+        return 0.0;
+    }
+    add_to(from, good, -q, towns, store, squads, db);
+    add_to(to, good, q, towns, store, squads, db);
+    q
+}
+
+/// A meal from a squad's packs for someone marching with it: the most
+/// filling food first. Returns (good, food value) eaten.
+pub fn squad_meal(squads: &mut Squads, id: SquadId, foods: &[(u32, f32)]) -> Option<(u32, f32)> {
+    let s = squads.list.get_mut(id as usize)?;
+    crate::decision::subsistence::take_meal(&mut s.stacks, foods)
+}
+
 #[cfg(test)]
 mod item_tests {
     use super::*;
@@ -504,6 +670,7 @@ mod item_tests {
             members: vec![3, 4],
             place: Place::Town(0),
             items: Vec::new(),
+            stacks: Vec::new(),
         });
         assert_eq!(
             carry_capacity(Holder::Squad(0), &squads),
