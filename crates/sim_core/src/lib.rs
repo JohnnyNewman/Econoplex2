@@ -177,6 +177,16 @@ impl AssetPaths {
     }
 }
 
+/// Reads a preset: a RON list of `(path, value)` overrides of models.ron, as
+/// `--set path=value` takes them (see `assets/config/presets`).
+pub fn read_preset(path: &Path) -> Result<Vec<(String, String)>, Box<dyn std::error::Error>> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| format!("cannot read preset {}: {e}", path.display()))?;
+    let sets: Vec<(String, String)> =
+        ron::from_str(&text).map_err(|e| format!("cannot parse preset {}: {e}", path.display()))?;
+    Ok(sets)
+}
+
 pub fn load(paths: &AssetPaths) -> Result<(Db, ModelParams, Scenario), Box<dyn std::error::Error>> {
     load_with(paths, &[])
 }

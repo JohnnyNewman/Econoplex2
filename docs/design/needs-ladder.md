@@ -177,3 +177,17 @@ survive. Both off by default.
   bought ahead with the cash above its wage reserve, and works from it first.
   D = 10: pop 1862 (1869), capability 13.2 (12.6).
 - Fuel and clothes were already planned `plan_days` ahead by households.
+
+## The whole new economy at once
+
+`assets/config/presets/new_economy.ron` switches everything on (needs ladder
+with households and a 14-day larder, seasonal farming, the ruler's food rules,
+daylight work hours, armory-held gear). Use `--preset FILE` with `sim_cli` or
+the 3D view (`econoplex3d --preset assets/config/presets/new_economy.ron`).
+
+6 seeds x 20 years against today's defaults: population 1914 -> 1446,
+starving 0 -> 0.5 % of person-days, food per head 8.2 -> 3.2, glut 0.28 ->
+0.03, happiness 0.69 -> 0.41 (ladder scale), capability 41.3 -> 40.0.
+Leaving one option out (population): ruler's food rules 1803, needs ladder
+1792, daylight work 1699, seasonal farming 1622, armory-held gear 1490. Each
+makes the world harder, and together they compound.
