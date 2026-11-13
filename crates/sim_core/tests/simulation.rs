@@ -1332,10 +1332,10 @@ fn valuing_skills_draws_the_young_into_work_they_are_still_learning() {
     // Share of young adults' working days spent on jobs they can't do well yet
     // (skill along the recipe below its difficulty), without and with valuing what
     // the work teaches.
-    let learning_share = |learning: LearningValueParams| {
+    let learning_share = |learning: LearningValueParams, seed: u64| {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
         let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
-        scenario.seed = 6;
+        scenario.seed = seed;
         params.decision.model = sim_core::config::DecisionModel::Utility;
         params.decision.choice = sim_core::decision::choice::ChoiceParams::Logit {
             base: Some(0.05),
@@ -1374,12 +1374,19 @@ fn valuing_skills_draws_the_young_into_work_they_are_still_learning() {
         }
         learning_days as f32 / days.max(1) as f32
     };
-    let without = learning_share(LearningValueParams::None);
-    let with = learning_share(LearningValueParams::Discounted {
-        horizon_days: 360.0,
-        discount: 0.995,
-        retire_age: 60.0,
-    });
+    // Averaged over six seeds: on any one seed the effect is smaller than the noise.
+    let (mut with, mut without) = (0.0, 0.0);
+    for seed in 3..=8 {
+        without += learning_share(LearningValueParams::None, seed) / 6.0;
+        with += learning_share(
+            LearningValueParams::Discounted {
+                horizon_days: 360.0,
+                discount: 0.995,
+                retire_age: 60.0,
+            },
+            seed,
+        ) / 6.0;
+    }
     assert!(
         with > without,
         "learning work {with:.3} with vs {without:.3} without"
@@ -2108,9 +2115,9 @@ fn guild_firms_pool_a_domain_and_the_mint_answers_a_money_shortage() {
 fn a_hungry_broke_town_imports_food_on_credit_and_recovers() {
     // Brassmoor with two fields, no bread and an empty treasury.
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
-    let run = |imports: bool| {
+    let run = |imports: bool, seed: u64| {
         let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
-        scenario.seed = 4;
+        scenario.seed = seed;
         params.governor.enabled = false;
         // Calibrated with first-come jobs: skilled matching keeps this town fed.
         params.decision.matching = sim_core::decision::matching::MatchingParams::FirstCome;
@@ -2152,8 +2159,18 @@ fn a_hungry_broke_town_imports_food_on_credit_and_recovers() {
         let pop = m.latest().unwrap().towns[3].population;
         (starving, pop, owed_once)
     };
-    let (starving_without, pop_without, _) = run(false);
-    let (starving_with, pop_with, owed) = run(true);
+    // Summed over four seeds: on a single one, the town's luck can outweigh the imports.
+    let (mut starving_without, mut pop_without) = (0.0, 0);
+    let (mut starving_with, mut pop_with, mut owed) = (0.0, 0, false);
+    for seed in 1..=4 {
+        let (s, p, _) = run(false, seed);
+        starving_without += s;
+        pop_without += p;
+        let (s, p, o) = run(true, seed);
+        starving_with += s;
+        pop_with += p;
+        owed |= o;
+    }
     eprintln!("starving {starving_without} -> {starving_with}, pop {pop_without} -> {pop_with}");
     assert!(owed, "the town never bought food on credit");
     assert!(

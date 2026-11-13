@@ -346,6 +346,10 @@
         ruler_aid: 0.5,
         garrison_strength: 1.0,
         independence_rate: 0.05,
+        battle_hours: 4.0,         // hours of use a battle puts on every fighter's kit
+        // Kit in store: one per soldier the town means to keep, shared among the
+        // goods for the same slot (Soldiers), or per resident like any good (PerCapita).
+        kit_demand: PerCapita,
     ),
     // Squad battles on a field (battle.rs, war redesign): every number has a unit.
     // Not wired into the economy yet; `econoplex-sim --battle "cavalry*20 vs spearmen*30"`

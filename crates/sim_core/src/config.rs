@@ -533,6 +533,28 @@ pub struct MilitaryParams {
     pub garrison_strength: f32,
     /// Yearly chance a conquered town regains its independence peacefully.
     pub independence_rate: f32,
+    /// Hours of use a battle puts on every fighter's kit (`goods::wear`).
+    #[serde(default = "default_battle_hours")]
+    pub battle_hours: f32,
+    /// How many weapons, armour, shields and mounts a town keeps in store.
+    #[serde(default)]
+    pub kit_demand: KitDemand,
+}
+
+/// How many pieces of kit a town wants in store.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum KitDemand {
+    /// One for each soldier the town means to keep, shared out among the goods
+    /// that fill the same slot (a sword or a spear, mail or a padded coat).
+    Soldiers,
+    /// Like any other good: `market.target_per_capita` per resident, for every
+    /// kind of weapon. The old rule.
+    #[default]
+    PerCapita,
+}
+
+fn default_battle_hours() -> f32 {
+    4.0
 }
 
 /// Player levers (`policy.rs`).

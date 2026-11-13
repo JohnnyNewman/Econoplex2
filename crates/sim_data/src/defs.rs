@@ -105,6 +105,32 @@ pub struct ProductDef {
     /// Weight of one unit, kg (for carrying).
     #[serde(default = "one_kg")]
     pub kg: f32,
+    /// What the item does in a squad battle (weapons, armour, shields, mounts).
+    #[serde(default)]
+    pub fight: Option<FightDef>,
+}
+
+/// What an item does in a squad battle (`sim_core::battle`). Every field is 0
+/// unless given, so a shield lists only `shield` and a horse only `mounted`.
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(default)]
+pub struct FightDef {
+    /// Melee: reach in metres, health taken per hit (a person has 1), strikes
+    /// per second, and the share of strikes lost once an enemy is inside the reach.
+    pub reach: f32,
+    pub damage: f32,
+    pub strike_rate: f32,
+    pub close_penalty: f32,
+    /// Shooting: range in metres, shots per second, health per hit, arrows carried.
+    pub range: f32,
+    pub shot_rate: f32,
+    pub shot_damage: f32,
+    pub arrows: u32,
+    /// Share of a hit's damage stopped, and share of arrows a shield stops.
+    pub armour: f32,
+    pub shield: f32,
+    /// A mount: its rider fights mounted.
+    pub mounted: bool,
 }
 
 fn one_kg() -> f32 {

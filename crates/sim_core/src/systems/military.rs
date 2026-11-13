@@ -62,6 +62,7 @@ pub fn military(
     seed: Res<SimSeed>,
     terrain: Res<crate::terrain::Terrain>,
     weapons: Query<&Product, With<Stored>>,
+    mut kit: Query<&mut crate::components::Item, Without<Stored>>,
 ) {
     let mp = &params.military;
     let loyalty = params.trust.loyalty;
@@ -124,27 +125,33 @@ pub fn military(
                 }
             }
 
-            // Soldiers without a weapon take the best longsword in the armory.
-            for k in 0..town.squad.len() {
-                let i = town.squad[k] as usize;
-                if store.weapon[i].is_some() {
-                    continue;
+            // Soldiers fill each empty slot (weapon, armour, shield, mount) with
+            // the best piece of kit the armory has for it.
+            for slot in KIT_SLOTS {
+                for k in 0..town.squad.len() {
+                    let i = town.squad[k] as usize;
+                    if crate::goods::gear(store, i, slot).is_some() {
+                        continue;
+                    }
+                    let best = town
+                        .armory
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(at, &e)| {
+                            let p = weapons.get(e).ok()?;
+                            let def = &db.content.products[p.def as usize];
+                            (def.category == Category::Weapon
+                                && crate::goods::Slot::of(def) == Some(slot))
+                            .then(|| (at, kit_value(def) * (0.5 + p.quality)))
+                        })
+                        .max_by(|a, b| a.1.total_cmp(&b.1).then(b.0.cmp(&a.0)));
+                    let Some((at, power)) = best else { break };
+                    let e = town.armory.swap_remove(at);
+                    crate::goods::to_person(&mut commands, store, i, slot, e);
+                    if slot == crate::goods::Slot::Weapon {
+                        store.weapon_power[i] = mp.weapon_power * power;
+                    }
                 }
-                let best = town
-                    .armory
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(slot, &e)| {
-                        let p = weapons.get(e).ok()?;
-                        let def = &db.content.products[p.def as usize];
-                        (def.category == Category::Weapon)
-                            .then(|| (slot, def.tier.max(1) as f32 * (0.5 + p.quality)))
-                    })
-                    .max_by(|a, b| a.1.total_cmp(&b.1).then(b.0.cmp(&a.0)));
-                let Some((slot, power)) = best else { break };
-                let e = town.armory.swap_remove(slot);
-                crate::goods::to_person(&mut commands, store, i, crate::goods::Slot::Weapon, e);
-                store.weapon_power[i] = mp.weapon_power * power;
             }
         }
     }
@@ -218,7 +225,7 @@ pub fn military(
         let now = clock.tick;
         if now >= raid.arrive && !raid.fought {
             raid.fought = true;
-            battle(
+            let fought = battle(
                 &mut commands,
                 &mut raid,
                 t,
@@ -230,6 +237,8 @@ pub fn military(
                 &fight,
                 &mut rng,
             );
+            // A battle wears everyone's kit; what breaks is gone.
+            wear_kit(&mut commands, store, &mut kit, &fought, mp.battle_hours);
         }
         if now >= raid.home || raid.soldiers.is_empty() {
             let town = &mut towns.0[t];
@@ -347,11 +356,61 @@ fn recruit_score(store: &AgentStore, i: usize) -> f32 {
     m[mind::AMBITION] + m[mind::RISK] + (p[0] + p[1] + p[2]) / 3.0
 }
 
+/// The slots a soldier fills from the armory.
+const KIT_SLOTS: [crate::goods::Slot; 4] = [
+    crate::goods::Slot::Weapon,
+    crate::goods::Slot::Armour,
+    crate::goods::Slot::Shield,
+    crate::goods::Slot::Mount,
+];
+
+/// How much a piece of kit is worth to a soldier, before quality: weapons by
+/// their tier, armour and shields by the share they stop, a mount by itself.
+fn kit_value(def: &sim_data::ProductDef) -> f32 {
+    let Some(f) = &def.fight else {
+        return def.tier.max(1) as f32;
+    };
+    match crate::goods::Slot::of(def) {
+        Some(crate::goods::Slot::Weapon) | None => def.tier.max(1) as f32,
+        _ => f.armour + f.shield + if f.mounted { 1.0 } else { 0.0 },
+    }
+}
+
+/// Wears the kit of everyone who fought by `hours`; broken pieces are gone.
+fn wear_kit(
+    commands: &mut Commands,
+    store: &mut AgentStore,
+    kit: &mut Query<&mut crate::components::Item, Without<Stored>>,
+    fought: &[u32],
+    hours: f32,
+) {
+    for &s in fought {
+        let i = s as usize;
+        for slot in KIT_SLOTS {
+            let Some(e) = crate::goods::gear(store, i, slot) else {
+                continue;
+            };
+            let Ok(mut item) = kit.get_mut(e) else {
+                continue;
+            };
+            if crate::goods::wear(&mut item, hours) {
+                crate::goods::from_person(store, i, slot);
+                commands.entity(e).despawn();
+                if slot == crate::goods::Slot::Weapon {
+                    store.weapon_power[i] = 0.0;
+                }
+            }
+        }
+    }
+}
+
 fn release(commands: &mut Commands, store: &mut AgentStore, armory: &mut Vec<Entity>, i: usize) {
     store.activity[i] = Activity::Idle;
     store.weapon_power[i] = 0.0;
-    if let Some(e) = crate::goods::from_person(store, i, crate::goods::Slot::Weapon) {
-        crate::goods::to_armory(commands, armory, store.town[i], e);
+    for slot in KIT_SLOTS {
+        if let Some(e) = crate::goods::from_person(store, i, slot) {
+            crate::goods::to_armory(commands, armory, store.town[i], e);
+        }
     }
 }
 
@@ -418,7 +477,7 @@ fn battle(
     params: &Params,
     fight: &CapVec,
     rng: &mut ChaCha8Rng,
-) {
+) -> Vec<u32> {
     let mp = &params.military;
     let loyalty = params.trust.loyalty;
     let d = raid.target as usize;
@@ -563,4 +622,9 @@ fn battle(
     towns.0[d].war.attacked += 1;
     towns.0[attacker].war.fallen += fallen_a;
     towns.0[d].war.fallen += fallen_d;
+    raid.soldiers
+        .iter()
+        .chain(defenders.iter())
+        .copied()
+        .collect()
 }

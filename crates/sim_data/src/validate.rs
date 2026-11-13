@@ -80,6 +80,31 @@ pub fn validate(c: &Content) -> Report {
                 ));
             }
         }
+        if let Some(f) = &p.fight {
+            let shares = [f.close_penalty, f.armour, f.shield];
+            let amounts = [
+                f.reach,
+                f.damage,
+                f.strike_rate,
+                f.range,
+                f.shot_rate,
+                f.shot_damage,
+            ];
+            if shares.iter().any(|&x| !(0.0..1.0).contains(&x))
+                || amounts.iter().any(|&x| !(x >= 0.0 && x.is_finite()))
+            {
+                r.errors.push(format!(
+                    "product `{}` has fight values out of range (shares 0..1, amounts at least 0)",
+                    p.id
+                ));
+            }
+            if f.range > 0.0 && (f.shot_rate <= 0.0 || f.arrows == 0) {
+                r.errors.push(format!(
+                    "product `{}` shoots but has no shot rate or arrows",
+                    p.id
+                ));
+            }
+        }
         if let Some(e) = &p.equip {
             if c.domain(&e.domain).is_none() {
                 r.errors.push(format!(

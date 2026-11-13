@@ -27,9 +27,14 @@
             equip: Some((domain: "smithing", bonus: 0.3))),
         (id: "pickaxe", name: "Pickaxe", category: Tool, era: 3, base_price: 30.0,
             equip: Some((domain: "mining", bonus: 0.25))),
-        (id: "longsword_1", name: "Iron longsword (lvl 1)",       category: Weapon, era: 3, tier: 1, base_price: 70.0),
-        (id: "longsword_2", name: "Steel longsword (lvl 2)",      category: Weapon, era: 3, tier: 2, base_price: 190.0),
-        (id: "longsword_3", name: "Fine steel longsword (lvl 3)", category: Weapon, era: 3, tier: 3, base_price: 290.0),
+        // `fight`: what it does in a squad battle (sim_core::battle): reach m, damage
+        // health per hit, strikes per second.
+        (id: "longsword_1", name: "Iron longsword (lvl 1)",       category: Weapon, era: 3, tier: 1, base_price: 70.0, kg: 1.5,
+            fight: Some((reach: 1.2, damage: 0.50, strike_rate: 0.35))),
+        (id: "longsword_2", name: "Steel longsword (lvl 2)",      category: Weapon, era: 3, tier: 2, base_price: 190.0, kg: 1.4,
+            fight: Some((reach: 1.2, damage: 0.60, strike_rate: 0.35))),
+        (id: "longsword_3", name: "Fine steel longsword (lvl 3)", category: Weapon, era: 3, tier: 3, base_price: 290.0, kg: 1.3,
+            fight: Some((reach: 1.2, damage: 0.70, strike_rate: 0.37))),
     ],
     recipes: [
         (id: "mine_ore", name: "Mine ore", skill: "mining", difficulty: 0.15,

@@ -33,6 +33,29 @@ pub fn glutted(db: &Db, town: &crate::world::Town, params: &Params, p: usize) ->
 /// food), plus open government orders.
 pub fn target_stock(db: &Db, town: &crate::world::Town, params: &Params, p: usize) -> f32 {
     let mp = &params.market;
+    let def = &db.content.products[p];
+    if def.category == sim_data::Category::Weapon
+        && params.military.kit_demand == crate::config::KitDemand::Soldiers
+    {
+        // Kit is wanted for soldiers: one per soldier the town means to keep,
+        // shared among the goods that fill the same slot.
+        let share = town
+            .policy
+            .army_share
+            .unwrap_or(params.military.soldier_share);
+        let soldiers = (share * town.residents.len() as f32).max(town.squad.len() as f32);
+        let slot = crate::goods::Slot::of(def);
+        let rivals = db
+            .content
+            .products
+            .iter()
+            .filter(|q| {
+                q.category == sim_data::Category::Weapon && crate::goods::Slot::of(q) == slot
+            })
+            .count()
+            .max(1);
+        return (soldiers / rivals as f32).max(1.0) + town.policy.ordered(p);
+    }
     let per_capita = if db.is_food[p] {
         mp.food_target_per_capita
     } else {

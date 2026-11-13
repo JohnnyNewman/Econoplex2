@@ -187,6 +187,70 @@ impl Kit {
         })
     }
 
+    /// The kit a squad fights with, from what its members carry: for each
+    /// member, the `fight` values of their items (weapon, armour, shield, mount).
+    /// Melee values are averaged over the squad; a member without a weapon
+    /// fights with fists. The squad shoots if at least half its members carry a
+    /// bow, and fights mounted if at least half ride.
+    pub fn from_gear(name: &str, members: &[Vec<&sim_data::FightDef>]) -> Kit {
+        let fists = sim_data::FightDef {
+            reach: 0.6,
+            damage: 0.15,
+            strike_rate: 0.25,
+            ..Default::default()
+        };
+        let mut kit = Kit {
+            name: name.to_string(),
+            reach: 0.0,
+            damage: 0.0,
+            strike_rate: 0.0,
+            close_penalty: 0.0,
+            range: 0.0,
+            shot_rate: 0.0,
+            shot_damage: 0.0,
+            arrows: 0,
+            armour: 0.0,
+            shield: 0.0,
+            mounted: false,
+        };
+        let n = members.len().max(1) as f32;
+        let (mut shooters, mut riders) = (0.0f32, 0.0f32);
+        let (mut range, mut shot_rate, mut shot_damage, mut arrows) = (0.0, 0.0, 0.0, 0.0);
+        for gear in members {
+            let weapon = gear
+                .iter()
+                .copied()
+                .find(|f| f.damage > 0.0 || f.range > 0.0)
+                .unwrap_or(&fists);
+            kit.reach += weapon.reach / n;
+            kit.damage += weapon.damage / n;
+            kit.strike_rate += weapon.strike_rate / n;
+            kit.close_penalty += weapon.close_penalty / n;
+            if weapon.range > 0.0 {
+                shooters += 1.0;
+                range += weapon.range;
+                shot_rate += weapon.shot_rate;
+                shot_damage += weapon.shot_damage;
+                arrows += weapon.arrows as f32;
+            }
+            // Layers of armour each stop a share of what gets through.
+            let through: f32 = gear.iter().map(|f| 1.0 - f.armour).product();
+            kit.armour += (1.0 - through) / n;
+            kit.shield += gear.iter().map(|f| f.shield).fold(0.0, f32::max) / n;
+            if gear.iter().any(|f| f.mounted) {
+                riders += 1.0;
+            }
+        }
+        if shooters > 0.0 && shooters >= n / 2.0 {
+            kit.range = range / shooters;
+            kit.shot_rate = shot_rate / shooters;
+            kit.shot_damage = shot_damage / shooters;
+            kit.arrows = (arrows / shooters).round() as u32;
+        }
+        kit.mounted = riders >= n / 2.0 && riders > 0.0;
+        kit
+    }
+
     /// The preset names, for help texts.
     pub const PRESETS: [&'static str; 7] = [
         "spearmen",
@@ -1333,6 +1397,46 @@ mod tests {
             b.step();
         }
         assert!(b.gap(0, 1) > 50.0, "archers closed in despite their order");
+    }
+
+    #[test]
+    fn content_kit_matches_the_presets() {
+        let paths = crate::AssetPaths::discover();
+        let (db, _, _) = crate::load(&paths).unwrap();
+        let fight = |id: &str| {
+            let p = db.content.product(id).expect(id);
+            db.content.products[p as usize].fight.clone().expect(id)
+        };
+        let (spear, shield, coat) = (fight("iron_spear"), fight("shield"), fight("padded_coat"));
+        let squad: Vec<Vec<&sim_data::FightDef>> =
+            (0..20).map(|_| vec![&spear, &shield, &coat]).collect();
+        let kit = Kit::from_gear("spearmen", &squad);
+        let preset = Kit::preset("spearmen").unwrap();
+        assert!((kit.reach - preset.reach).abs() < 1e-4);
+        assert!((kit.armour - preset.armour).abs() < 1e-6);
+        assert!((kit.shield - preset.shield).abs() < 1e-6);
+        assert!(!kit.mounted && kit.range == 0.0);
+
+        let (lance, mail, horse, bow) =
+            (fight("lance"), fight("mail"), fight("horse"), fight("bow"));
+        let riders: Vec<Vec<&sim_data::FightDef>> =
+            (0..10).map(|_| vec![&lance, &mail, &horse]).collect();
+        let kit = Kit::from_gear("cavalry", &riders);
+        assert!(kit.mounted && (kit.armour - 0.5).abs() < 1e-6);
+
+        // Half the squad unarmed: fists pull the average down; bows still count.
+        let mut mixed: Vec<Vec<&sim_data::FightDef>> = (0..5).map(|_| vec![&bow]).collect();
+        mixed.extend((0..5).map(|_| Vec::new()));
+        let kit = Kit::from_gear("archers", &mixed);
+        assert_eq!(kit.range, 150.0);
+        assert!(kit.damage < bow.damage);
+
+        // Every weapon in the content can fight.
+        for p in &db.content.products {
+            if p.category == sim_data::Category::Weapon {
+                assert!(p.fight.is_some(), "{} has no fight values", p.id);
+            }
+        }
     }
 
     #[test]
