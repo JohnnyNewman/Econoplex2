@@ -27,7 +27,8 @@ use bevy::prelude::*;
 use bevy::render::render_resource::ShaderType;
 use bevy::render::storage::ShaderBuffer;
 
-/// The fog of this frame, one buffer shared by all materials.
+/// The fog of this frame, one buffer shared by all materials (`struct Env` in
+/// lights.wesl): the fog's seven vec4s, then the lamps (lights.rs).
 pub const FOG_BUFFER: Handle<ShaderBuffer> = uuid_handle!("6f0c2f9e-3a54-4d1b-9b7e-5c2a8e41d0f3");
 
 pub struct FogPlugin;
@@ -83,9 +84,14 @@ impl FogUniform {
     }
 
     fn buffer(&self) -> ShaderBuffer {
-        ShaderBuffer::from(self.floats().to_vec())
+        let mut data = self.floats().to_vec();
+        data.resize(FOG_VEC4S + crate::lights::LAMP_VEC4S, [0.0; 4]);
+        ShaderBuffer::from(data)
     }
 }
+
+/// How many vec4s of the shared buffer the fog takes; the lamps follow.
+pub const FOG_VEC4S: usize = 7;
 
 /// Fog parameters, adjustable at runtime.
 #[derive(Resource, Debug, Clone)]
@@ -187,7 +193,7 @@ fn update_fog_state(
         // keeps every material's bind group.
         if let Some(mut buffer) = buffers.get_mut(&FOG_BUFFER) {
             if let Some(data) = buffer.cast_slice_mut::<[f32; 4]>() {
-                data.copy_from_slice(&fog.floats());
+                data[..FOG_VEC4S].copy_from_slice(&fog.floats());
             }
         }
     }

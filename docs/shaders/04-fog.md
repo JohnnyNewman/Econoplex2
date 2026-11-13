@@ -171,7 +171,7 @@ out.color = main_pass_post_lighting_processing(pbr, vec4<f32>(fogged, 1.0));
 
 **The buffer:**
 - `Fog` lives in one storage buffer shared by every material
-  (`fog::FOG_BUFFER`, read as `fog_state` in the shaders). Each material binds
+  (`fog::FOG_BUFFER`, read as `env.fog` in the shaders, part of `struct Env` with the lamps of step 12). Each material binds
   the same buffer: toon and trees at 101, grass and crowds at 102, terrain at
   103, outlines at 1.
 - When the fog changes (the sun moves every frame), `update_fog_state` writes

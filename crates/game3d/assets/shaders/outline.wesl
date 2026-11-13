@@ -15,6 +15,7 @@ import bevy_pbr::render::{
     view_transformations::position_world_to_clip,
 };
 import super::fog::{Fog, apply_fog};
+import super::lights::Env;
 
 // Matches `OutlineUniform` in src/outline.rs.
 struct Outline {
@@ -24,7 +25,7 @@ struct Outline {
 };
 @group(constants::MATERIAL_BIND_GROUP) @binding(0) var<uniform> outline: Outline;
 // The same fog as everything else, so far-away outlines fade into the haze.
-@group(constants::MATERIAL_BIND_GROUP) @binding(1) var<storage, read> fog_state: Fog; // the shared fog (src/fog.rs, FOG_BUFFER)
+@group(constants::MATERIAL_BIND_GROUP) @binding(1) var<storage, read> env: Env; // the shared fog and lamps (src/fog.rs, FOG_BUFFER)
 
 struct OutlineOut {
     @builtin(position) position: vec4<f32>,
@@ -54,5 +55,5 @@ fn vertex(vertex_in: Vertex) -> OutlineOut {
 @fragment
 fn fragment(in: OutlineOut) -> @location(0) vec4<f32> {
     // A flat colour: only the silhouette of the hull shows anyway.
-    return vec4<f32>(apply_fog(outline.color.rgb, in.world_position, fog_state), 1.0);
+    return vec4<f32>(apply_fog(outline.color.rgb, in.world_position, env.fog), 1.0);
 }

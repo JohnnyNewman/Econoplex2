@@ -16,11 +16,12 @@ import bevy_pbr::render::{
 };
 import super::toon_lighting::Toon;
 import super::fog::Fog;
+import super::lights::Env;
 
 // The toon block of the tree material (the fragment shader reads it too): its
 // shared fog block carries the wind of the weather (step 11).
 @group(constants::MATERIAL_BIND_GROUP) @binding(100) var<uniform> toon: Toon;
-@group(constants::MATERIAL_BIND_GROUP) @binding(101) var<storage, read> fog_state: Fog; // the shared fog (src/fog.rs, FOG_BUFFER)
+@group(constants::MATERIAL_BIND_GROUP) @binding(101) var<storage, read> env: Env; // the shared fog and lamps (src/fog.rs, FOG_BUFFER)
 
 @vertex
 fn vertex(vertex_in: Vertex) -> VertexOutput {
@@ -39,11 +40,11 @@ fn vertex(vertex_in: Vertex) -> VertexOutput {
     let t = globals.time;
     // Two sines of different speed make a less regular sway.
     // Stronger wind: faster and wider sway, and the crowns lean downwind.
-    let strength = fog_state.wind.z;
+    let strength = env.fog.wind.z;
     let speed = 1.0 + strength * 1.5;
     let sway = (sin(t * 1.3 * speed + phase) * 0.6 + sin(t * 2.9 * speed + phase * 1.7) * 0.25) * (0.06 + 0.3 * strength)
         + strength * 0.25;
-    let wind_dir = vec3<f32>(fog_state.wind.x, 0.0, fog_state.wind.y);
+    let wind_dir = vec3<f32>(env.fog.wind.x, 0.0, env.fog.wind.y);
     world = vec4<f32>(world.xyz + wind_dir * sway * up * up, 1.0);
 
     out.world_position = world;
