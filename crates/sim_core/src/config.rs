@@ -46,6 +46,9 @@ pub struct ModelParams {
     /// How the weather varies around the climate (`env.rs`).
     #[serde(default)]
     pub weather: crate::env::WeatherParams,
+    /// Crops through the seasons (`farming.rs`).
+    #[serde(default)]
+    pub farming: crate::farming::FarmingParams,
 }
 
 impl ModelParams {

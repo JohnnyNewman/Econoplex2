@@ -452,6 +452,11 @@
         wet_peak: 0.75,
         wet_swing: 0.3,
     ),
+    // Crops through the seasons (farming.rs): growth follows the temperature,
+    // standing crop rots in wet and cold, so the harvest needs hands in time.
+    // AllYear keeps the old daily regrowth. Example:
+    // farming: Seasonal(crops: ["field", "flax_field", "pasture"], crop_capacity: 15.0, frost_loss: 0.05, rot_wet: 0.02, rot_cold: 0.01),
+    farming: AllYear,
     // Fronts drifting across the map from the west. `Clear` for none.
     weather: Fronts(
         front_size: 1500.0,

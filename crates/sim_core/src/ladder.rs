@@ -331,18 +331,6 @@ struct TownView {
     ahead: Vec<f32>,
 }
 
-/// The climate's mean temperature at a point of the year.
-fn climate_c(climate: &crate::env::ClimateParams, season: f32) -> f32 {
-    match *climate {
-        crate::env::ClimateParams::Constant { temperature } => temperature,
-        crate::env::ClimateParams::Seasonal {
-            mean_c,
-            seasonal_swing_c,
-            ..
-        } => mean_c - seasonal_swing_c * (std::f32::consts::TAU * season).cos(),
-    }
-}
-
 /// Expected daily mean temperatures over the planning days: the seasons as
 /// everyone knows them, with today's spell fading over about five days.
 fn expected_temps(params: &Params, env: &crate::env::Environment, today: f32) -> Vec<f32> {
@@ -351,11 +339,11 @@ fn expected_temps(params: &Params, env: &crate::env::Environment, today: f32) ->
         _ => 30.0,
     };
     let dpy = params.life.days_per_year.max(1) as f32;
-    let spell = today - climate_c(&params.climate, env.season);
+    let spell = today - crate::env::climate_c(&params.climate, env.season);
     (0..lp_days.max(1.0) as usize)
         .map(|d| {
             let d = d as f32;
-            climate_c(&params.climate, env.season + d / dpy) + spell * (-d / 5.0).exp()
+            crate::env::climate_c(&params.climate, env.season + d / dpy) + spell * (-d / 5.0).exp()
         })
         .collect()
 }
