@@ -17,7 +17,7 @@
 //! Keys: `L` grid step; with `Tab` on "terrain", `0`–`4` pick a debug view
 //! (0 final, 1 height, 2 normals, 3 biome weights, 4 slope).
 
-use crate::fog::FogState;
+use crate::fog::FOG_BUFFER;
 use crate::sky::{digit_pressed, DebugTarget};
 use crate::toon::{ToonSettings, ToonUniform};
 use bevy::asset::RenderAssetUsages;
@@ -28,6 +28,7 @@ use bevy::prelude::*;
 use bevy::render::render_resource::{
     AsBindGroup, Extent3d, ShaderType, TextureDimension, TextureFormat,
 };
+use bevy::render::storage::ShaderBuffer;
 use bevy::shader::ShaderRef;
 
 const SHADER: &str = "shaders/terrain.wesl";
@@ -76,6 +77,9 @@ pub struct TerrainExt {
     pub heights: Handle<Image>,
     #[texture(102)]
     pub biomes: Handle<Image>,
+    /// The fog, shared by all materials (`fog::FOG_BUFFER`).
+    #[storage(103, read_only)]
+    pub fog: Handle<ShaderBuffer>,
 }
 
 impl MaterialExtension for TerrainExt {
@@ -229,6 +233,7 @@ pub fn spawn_terrain(
             },
             heights: heights.clone(),
             biomes: images.add(biomes),
+            fog: FOG_BUFFER,
         },
     };
     let step = 1;
@@ -278,7 +283,6 @@ fn terrain_keys(
 fn update_terrain(
     settings: Res<TerrainSettings>,
     toon: Res<ToonSettings>,
-    fog: Res<FogState>,
     mut grids: Query<(
         &mut TerrainGrid,
         &mut Mesh3d,
@@ -287,7 +291,7 @@ fn update_terrain(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<TerrainMaterial>>,
 ) {
-    if !settings.is_changed() && !toon.is_changed() && !fog.is_changed() {
+    if !settings.is_changed() && !toon.is_changed() {
         return;
     }
     for (mut grid, mut mesh, handle) in &mut grids {
@@ -304,7 +308,6 @@ fn update_terrain(
         if let Some(mut m) = materials.get_mut(handle) {
             m.extension.terrain.dims.w = settings.debug as f32;
             m.extension.terrain.toon.debug.y = toon.on as u32 as f32;
-            m.extension.terrain.toon.fog = fog.0;
         }
     }
 }

@@ -32,7 +32,7 @@ import bevy_pbr::render::{
     pbr_functions::main_pass_post_lighting_processing,
 };
 import super::toon_lighting::{Toon, toon_params, toon_terms};
-import super::fog::apply_fog;
+import super::fog::{Fog, apply_fog};
 
 // One person; matches the 12 floats per person in src/crowd.rs and walk.wesl.
 struct Person {
@@ -49,6 +49,7 @@ struct Crowd {
 };
 @group(constants::MATERIAL_BIND_GROUP) @binding(100) var<uniform> crowd: Crowd;
 @group(constants::MATERIAL_BIND_GROUP) @binding(101) var<storage, read> people: array<Person>;
+@group(constants::MATERIAL_BIND_GROUP) @binding(102) var<storage, read> fog_state: Fog; // the shared fog (src/fog.rs, FOG_BUFFER)
 
 const FIGURE_VERTS: u32 = 180u;
 const VERTS_PER_PERSON: u32 = 186u;
@@ -323,7 +324,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         albedo = tint;
     }
     let t = toon_terms(pbr, toon_params(crowd.toon));
-    let fogged = apply_fog(albedo * t.light, in.world_position.xyz, crowd.toon.fog);
+    let fogged = apply_fog(albedo * t.light, in.world_position.xyz, fog_state);
     var out: FragmentOutput;
     out.color = main_pass_post_lighting_processing(pbr, vec4<f32>(fogged, 1.0));
     return out;

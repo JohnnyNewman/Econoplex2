@@ -13,10 +13,11 @@ import bevy_pbr::render::{
     pbr_functions::{apply_pbr_lighting, main_pass_post_lighting_processing},
 };
 import super::toon_lighting::{Toon, toon_params, toon_terms};
-import super::fog::{apply_fog, seasonal};
+import super::fog::{Fog, apply_fog, seasonal};
 // The uniform block, the textures and the height helpers, shared with the
 // shadow pass (terrain_prepass.wesl).
 import super::terrain_common::{terrain, biomes, texel_coord, height_at, normal_at, displaced};
+@group(constants::MATERIAL_BIND_GROUP) @binding(103) var<storage, read> fog_state: Fog; // the shared fog (src/fog.rs, FOG_BUFFER)
 
 
 // ---------------------------------------------------------------- vertex
@@ -103,7 +104,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     albedo = mix(albedo, rock, max(smoothstep(0.25, 0.45, slope), high * 0.8));
 
     // Step 11: the season and the weather (meadows and fields are foliage).
-    albedo = seasonal(albedo, n, p, 0.5 * (b.r + b.g) * (1.0 - smoothstep(0.25, 0.45, slope)), terrain.toon.fog);
+    albedo = seasonal(albedo, n, p, 0.5 * (b.r + b.g) * (1.0 - smoothstep(0.25, 0.45, slope)), fog_state);
 
     // Culture overlay (M6): the land around each town takes the colour of its
     // culture, fading out toward the edge of its radius. Where two towns'
@@ -142,7 +143,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     } else if id == 4u {
         out.color = vec4<f32>(vec3<f32>(slope * 3.0), 1.0);       // slope (x3)
     } else {
-        let fogged = apply_fog(lit, p, tp.fog);              // step 04
+        let fogged = apply_fog(lit, p, fog_state);              // step 04
         out.color = main_pass_post_lighting_processing(pbr, vec4<f32>(fogged, 1.0));
     }
     return out;
