@@ -6,7 +6,7 @@
 //! and bloom. It only reads the scenario; the simulation itself does not run yet.
 //!
 //! econoplex3d [--seed S] [--towns N] [--hour H] [--pbr] [--terrain-view N] [--grid-step K]
-//!     [--fog-view N] [--no-fog] [--days N] [--speed 0-4] [--paused] [--trade] [--culture] [--product-space] [--bloom-view] [--focus-town I] [--focus X,Z] [--view-from YAW,PITCH,DIST]
+//!     [--fog-view N] [--no-fog] [--days N] [--speed 0-6] [--paused] [--trade] [--culture] [--product-space] [--bloom-view] [--focus-town I] [--focus X,Z] [--view-from YAW,PITCH,DIST]
 //!     [--no-ui] [--no-lod] [--lod-view] [--fps] [--render-scale F] [--shot FILE]
 //!     [--weather clear|cloudy|rain|storm|snow|fog] [--season spring|summer|autumn|winter]
 //! econoplex3d --playground [--hour H] [--view N] [--toon-view N] [--pbr] [--face-sun] [--shot FILE]
@@ -108,7 +108,7 @@ fn main() {
     let mut terrain_settings = terrain::TerrainSettings::default();
     let mut fog_settings = fog::FogSettings::default();
     // The live simulation: fast-forward days, start speed (0-4), paused.
-    let (mut days, mut speed, mut paused) = (0u64, 0usize, false);
+    let (mut days, mut speed, mut paused) = (0u64, live::DEFAULT_SPEED, false);
     let mut no_outlines = false;
     let mut overlay = overlay::Overlay::Off;
     let mut no_ui = false;
@@ -190,7 +190,12 @@ fn main() {
                 }
             }
             "--days" => days = it.next().and_then(|v| v.parse().ok()).unwrap_or(0),
-            "--speed" => speed = it.next().and_then(|v| v.parse().ok()).unwrap_or(0),
+            "--speed" => {
+                speed = it
+                    .next()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(live::DEFAULT_SPEED)
+            }
             "--paused" => paused = true,
             "--grid-step" => {
                 terrain_settings.step = it
@@ -216,7 +221,9 @@ fn main() {
     }
     let mut clock = sky::SkyClock::default();
     if let Some(h) = hour {
+        // A fixed hour: set by hand, not the simulation's (`C` follows it).
         clock.hour = h.rem_euclid(24.0);
+        clock.free = true;
     }
     let paths = sim_core::AssetPaths::discover();
     let (db, params, mut scenario) = sim_core::load(&paths).expect("cannot load assets");

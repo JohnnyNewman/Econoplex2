@@ -4,8 +4,9 @@
 weather has done to the ground), drives everything that changes with the time
 and the weather. Nothing computes its own clock.
 
-- The day is longer than the night: the sun is up 16 hours on average (14 in
-  midwinter, 18 at midsummer), so the night is about a third of the day.
+- Full night is about a third of the day: the sun is up 12 hours at the
+  equinoxes (8 in midwinter, 16 at midsummer), with about two hours each of
+  dawn and dusk, as the simulation's clock has it.
 - At night the moon lights the land (with phases), the sky fills with stars.
 - Clouds drift with the wind; overcast skies are grey and flat, the light soft.
 - Rain falls as streaks slanted by the wind, snow as flakes that flutter.
@@ -62,22 +63,33 @@ The fog block already went to every material each time it changed (step 04),
 so it carries the ground state and the wind too: one copy per change, no new
 bindings.
 
-### Later: the simulation's clock and weather
+### The simulation's clock and weather
 
-Day and night and the weather will change gameplay in the simulation (work
-hours, warmth, harvests, travel). Then the view must show the sim's state, not
-its own guess. Only the source changes:
+Day and night and the weather change gameplay in the simulation (work hours,
+warmth, harvests, travel; `docs/design/time-and-weather.md`), so the live view
+shows the sim's state, not a guess of its own:
 
 ```mermaid
 flowchart LR
-    sim["sim thread<br/>clock + weather model"] -- "ViewSnapshot<br/>(hour, season, weather, ground)" --> live["live.rs"]
-    live --> env(["Environment<br/>source = Sim"])
-    env --> rest["sky · light · fog · materials · precip<br/>(unchanged)"]
+    sim["sim thread<br/>step_tick(): 12 ticks a day<br/>sim_core::env::Environment"] -- "after every tick:<br/>hour, season, sunrise/sunset,<br/>weather + ground per town" --> live["live.rs publish_env<br/>hour smoothed between ticks,<br/>towns near the camera blended"]
+    live --> simenv(["SimEnv"])
+    simenv --> env(["Environment<br/>source = Sim"])
+    keys["Y / U overrides,<br/>[ ] T hour by hand (C: back)"] --> env
+    env --> rest["sky · light · fog · materials · precip"]
 ```
 
-`EnvSource::Stub` becomes `EnvSource::Sim`, and `update_environment` copies
-the snapshot instead of calling `stub_weather`. The keyboard overrides stay for
-looking at one kind of weather.
+- The sim thread now runs tick by tick (12 a day) and publishes its
+  `Environment` after each one; the full snapshot still comes once a day.
+- The view moves the hour on smoothly between ticks and takes the weather of
+  the towns near the camera's focus, weighted by inverse squared distance (the
+  sim's map y points north, the 3D z south, so the wind's y flips).
+- At 1 day per second or faster a day would flash by: the view holds a steady
+  13:00 and only seasons and weather follow. Two slow speeds (20 s and 5 s a
+  day; `,` from the default, or `--speed 0` / `--speed 1`) show day and night
+  passing.
+- `[` `]` and `T` (or `--hour`) set the hour by hand; `C` follows the sim again.
+- The playground has no simulation: there `EnvSource::Stub`, the stand-in
+  weather of `env.rs`, still fills in.
 
 ## The sun's path, and a night a third long
 
@@ -86,11 +98,11 @@ Its height is `y = A (cos a − cos h)`, where `h` is half the day's arc,
 `h = day_length / 24 · π`. That is zero exactly at sunrise and sunset
 (`a = ±h`), and `A` is chosen so the noon height is what the season allows:
 
-| | day length | sunrise | sunset | night |
-| --- | --- | --- | --- | --- |
-| midwinter | 14 h | 5:00 | 19:00 | 10 h |
-| average | 16 h | 4:00 | 20:00 | 8 h |
-| midsummer | 18 h | 3:00 | 21:00 | 6 h |
+| | sunrise to sunset | sunrise | sunset | dawn + dusk | full night |
+| --- | --- | --- | --- | --- | --- |
+| midwinter | 8 h | 8:00 | 16:00 | 4 h | 12 h |
+| equinox | 12 h | 6:00 | 18:00 | 4 h | 8 h |
+| midsummer | 16 h | 4:00 | 20:00 | 4 h | 4 h |
 
 (`sunrise = 12 − day_length / 2`, `sunset = 12 + day_length / 2`.)
 
@@ -142,7 +154,7 @@ camera.
 
 ## The stand-in weather
 
-Until the simulation has its own, `stub_weather(day, season, hour)` makes one
+In the playground, which runs no simulation, `stub_weather(day, season, hour)` makes one
 up: a seasonal temperature (−3 °C in midwinter, 21 °C at midsummer) with a
 daily swing, and slow noise for clouds, rain, haze and wind. `step_ground`
 integrates the ground: snow piles up while it snows below freezing, melts above;
