@@ -2,7 +2,7 @@
 
 use crate::db::Db;
 use crate::store::{Activity, AgentStore};
-use crate::world::{Params, SimClock, Towns};
+use crate::world::{Params, Towns};
 use bevy_ecs::prelude::*;
 use sim_data::dims::state::*;
 
@@ -11,9 +11,7 @@ pub fn sense(
     mut towns: ResMut<Towns>,
     db: Res<Db>,
     params: Res<Params>,
-    mut clock: ResMut<SimClock>,
 ) {
-    clock.tick += 1;
     let p = &params.needs;
     let store = &mut *store;
 

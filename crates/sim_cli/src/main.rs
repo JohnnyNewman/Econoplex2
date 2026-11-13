@@ -5,6 +5,7 @@
 //!               [--set path=value]... [--sweep path=v1,v2,...]... [--seeds N]
 //!               [--order DAY:ORDER]... [--save FILE] [--load FILE]
 //!               [--generate N] [--map-svg FILE] [--events FILE] [--history FILE]
+//!               [--weather FILE]
 //!               [--embedding] [--hash] [--profile] [--quiet]
 //! ```
 //!
@@ -52,6 +53,7 @@ struct Args {
     /// Explain a town's problems at the end (the "why" view, as text).
     why: Option<String>,
     history: Option<PathBuf>,
+    weather: Option<PathBuf>,
 }
 
 fn parse_args() -> Args {
@@ -77,6 +79,7 @@ fn parse_args() -> Args {
         events: None,
         why: None,
         history: None,
+        weather: None,
     };
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
@@ -107,6 +110,7 @@ fn parse_args() -> Args {
             "--events" => a.events = Some(PathBuf::from(val())),
             "--why" => a.why = Some(val()),
             "--history" => a.history = Some(PathBuf::from(val())),
+            "--weather" => a.weather = Some(PathBuf::from(val())),
             "--set" => {
                 let v = val();
                 let (k, x) = v
@@ -163,6 +167,7 @@ fn parse_args() -> Args {
                      --map-svg FILE write the map (towns, land, rivers, hills) as an SVG picture and exit\n\
                      --events FILE  write the event log (raids, conquests, buildings, famines, orders) as CSV\n\
                      --history FILE write monthly samples per town as CSV\n\
+                     --weather FILE write hour, season and weather per tick and town as CSV\n\
                      --assets DIR   assets folder (default: discovered)\n\
                      --csv FILE     write per-town yearly metrics as CSV (batch mode: one row per run)\n\
                      --set P=V      override a parameter in models.ron, e.g. military.tribute_share=0.3\n\
@@ -194,6 +199,33 @@ fn parse_args() -> Args {
 fn die(msg: &str) -> ! {
     eprintln!("error: {msg}");
     std::process::exit(2);
+}
+
+/// One CSV row per town for the current tick (`--weather`).
+fn record_weather(out: &mut impl std::io::Write, sim: &Simulation) {
+    let env = sim.world.resource::<sim_core::env::Environment>();
+    let towns = &sim.world.resource::<sim_core::Towns>().0;
+    for (i, town) in towns.iter().enumerate() {
+        let l = env.at(i);
+        let w = l.weather;
+        writeln!(
+            out,
+            "{:.4},{:.2},{:.4},{:?},{},{:.2},{:.3},{:.3},{:.2},{:.3},{:.3},{:.3}",
+            env.day,
+            env.hour,
+            env.season,
+            env.phase,
+            town.name,
+            w.temperature,
+            w.cloud,
+            w.precip,
+            w.wind_speed(),
+            w.haze,
+            l.ground.snow,
+            l.ground.wet
+        )
+        .unwrap_or_else(|e| die(&format!("cannot write weather: {e}")));
+    }
 }
 
 fn main() {
@@ -283,13 +315,35 @@ fn main() {
         dpy
     );
 
+    let mut weather_out = args.weather.as_ref().map(|path| {
+        let mut f = std::io::BufWriter::new(
+            std::fs::File::create(path)
+                .unwrap_or_else(|e| die(&format!("cannot write {}: {e}", path.display()))),
+        );
+        use std::io::Write;
+        writeln!(
+            f,
+            "day,hour,season,phase,town,temperature,cloud,precip,wind,haze,snow,wet"
+        )
+        .unwrap_or_else(|e| die(&format!("cannot write weather: {e}")));
+        f
+    });
     let start = Instant::now();
     let mut shown = sim.world.resource::<Metrics>().years.len();
     for tick in 0..args.years * dpy {
         for (_, text) in args.orders.iter().filter(|o| o.0 == tick) {
             sim.order(text).unwrap_or_else(|e| die(&e));
         }
-        sim.step();
+        match weather_out.as_mut() {
+            Some(out) => loop {
+                sim.step_tick();
+                record_weather(out, &sim);
+                if sim.world.resource::<sim_core::SimClock>().day_done() {
+                    break;
+                }
+            },
+            None => sim.step(),
+        }
         let metrics = sim.world.resource::<Metrics>();
         if !args.quiet && metrics.years.len() > shown {
             shown = metrics.years.len();
@@ -323,6 +377,12 @@ fn main() {
     if let Some(path) = args.csv {
         write_csv(&path, sim.world.resource::<Metrics>())
             .unwrap_or_else(|e| die(&format!("cannot write CSV: {e}")));
+        println!("wrote {}", path.display());
+    }
+    if let (Some(path), Some(mut out)) = (&args.weather, weather_out) {
+        use std::io::Write;
+        out.flush()
+            .unwrap_or_else(|e| die(&format!("cannot write weather: {e}")));
         println!("wrote {}", path.display());
     }
     if let Some(path) = &args.events {

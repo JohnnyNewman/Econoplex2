@@ -423,7 +423,8 @@ fn orders_are_parsed_applied_and_logged() {
     let queue = s.world.resource::<sim_core::policy::OrderQueue>();
     assert!(queue.pending.is_empty());
     assert_eq!(queue.log.len(), 4);
-    assert!(queue.log.iter().all(|(tick, _)| *tick == 0));
+    // Orders given before the first step take effect on day 1, the day the clock has started.
+    assert!(queue.log.iter().all(|(tick, _)| *tick == 1));
 }
 
 #[test]
@@ -2299,4 +2300,62 @@ fn balancing_caravans_move_more_goods_and_conserve_money() {
         balance > fixed,
         "trade sales: balance {balance} vs fixed {fixed}"
     );
+}
+
+#[test]
+fn a_day_has_ticks_and_the_economy_runs_once_per_day() {
+    let mut s = sim(5);
+    let tpd = s.world.resource::<sim_core::SimClock>().ticks_per_day;
+    assert!(tpd > 1, "models.ron cuts the day into ticks");
+    // The first tick starts day 1 and runs the economy.
+    s.step_tick();
+    assert_eq!(s.tick(), 1);
+    let after_economy = s.state_hash();
+    let mut hours = vec![s.world.resource::<sim_core::env::Environment>().hour];
+    // The rest of the day only moves the hours and the weather on.
+    for _ in 1..tpd {
+        s.step_tick();
+        assert_eq!(s.tick(), 1);
+        hours.push(s.world.resource::<sim_core::env::Environment>().hour);
+    }
+    assert_eq!(s.state_hash(), after_economy);
+    assert!(
+        hours.windows(2).all(|w| w[1] > w[0]) && hours[0] < 2.0 && hours[tpd as usize - 1] > 22.0
+    );
+    let env = s.world.resource::<sim_core::env::Environment>();
+    assert_eq!(
+        env.towns.len(),
+        s.world.resource::<sim_core::Towns>().0.len()
+    );
+    // `step` runs whole days.
+    s.step();
+    assert_eq!(s.tick(), 2);
+    assert!(s.world.resource::<sim_core::SimClock>().day_done());
+}
+
+#[test]
+fn a_game_saved_mid_day_loads_with_its_hour_and_weather() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let paths = AssetPaths::from_root(&root);
+    let mut a = sim(6);
+    for _ in 0..30 {
+        a.step();
+    }
+    for _ in 0..5 {
+        a.step_tick();
+    }
+    let text = sim_core::save::to_string(&a.world).unwrap();
+    let content = sim_data::Content::load_dir(&paths.content).unwrap();
+    let mut b = Simulation::from_save(sim_core::save::from_str(&text).unwrap(), content).unwrap();
+    for _ in 0..40 {
+        a.step_tick();
+        b.step_tick();
+    }
+    assert_eq!(a.state_hash(), b.state_hash());
+    let (ea, eb) = (
+        a.world.resource::<sim_core::env::Environment>(),
+        b.world.resource::<sim_core::env::Environment>(),
+    );
+    assert_eq!(ea.hour, eb.hour);
+    assert_eq!(ea.towns, eb.towns);
 }
