@@ -17,7 +17,10 @@
 //! (so prices and pay draw production toward it); the store fills from the
 //! market's surplus and gives back when the market falls below half its
 //! target. For tools and weapons the store is the armory: the target is how
-//! many it keeps unissued.
+//! many it keeps unissued. Targets follow the season: each town learns, month
+//! by month, how much of each good it makes and uses, and a target is in full
+//! in the month before the deepest shortfall (grain after the harvest,
+//! firewood before the winter), down to a quarter in the leanest month.
 //!
 //! **The granary** is food the town keeps out of the market. Order
 //! `granary TOWN DAYS` sets how many days of its people's food it aims to
@@ -72,8 +75,8 @@ fn tend_stockpiles(towns: &mut Towns, db: &Db, params: &Params) {
         }
         town.granary.resize(np, 0.0);
         for k in 0..town.policy.stockpile.len() {
-            let (p, target) = town.policy.stockpile[k];
-            let p = p as usize;
+            let p = town.policy.stockpile[k].0 as usize;
+            let target = town.stockpile_target(p);
             if db.category(p as u32).is_item() {
                 continue;
             }
@@ -98,9 +101,78 @@ fn tend_stockpiles(towns: &mut Towns, db: &Db, params: &Params) {
     }
 }
 
+/// Months in the seasonal profile.
+const MONTHS: usize = 12;
+
+/// What a stockpile keeps in its leanest month, as a share of its target (a
+/// reserve against a siege or a failed harvest).
+pub const SEASON_FLOOR: f32 = 0.25;
+
+/// Learns, for each good, how much the town makes minus uses per day in each
+/// month of the year (from the goods ledger; averaged over about two years).
+fn learn_profile(town: &mut crate::world::Town, np: usize, month: usize) {
+    town.flow_profile.resize(np * MONTHS, 0.0);
+    town.flow_seen.resize(np, 0.0);
+    let first = town.flow_seen_day == 0;
+    town.flow_seen_day += 1;
+    for g in 0..np {
+        let net = town.flows.net(g) - town.flows.get(crate::goods::Flow::Seeded, g);
+        let delta = (net - town.flow_seen[g]) as f32;
+        town.flow_seen[g] = net;
+        if first {
+            continue;
+        }
+        let v = &mut town.flow_profile[g * MONTHS + month];
+        *v += PROFILE_RATE * (delta - *v);
+    }
+}
+
+/// How fast a month's profile follows what the town did (per day of that month).
+const PROFILE_RATE: f32 = 0.05;
+
+/// Share of each stockpile target that applies this month. A store is there to
+/// carry the town through the months when it uses more than it makes: grain
+/// after the harvest, firewood before the winter. For each month, the store it
+/// needs is the deepest shortfall the coming months add up to (from the
+/// learned profile); the target scales with that, from `SEASON_FLOOR` in the
+/// month that needs least to 1 in the month that needs most. Goods made and
+/// used evenly keep their whole target.
+pub fn season_scale(town: &crate::world::Town, np: usize, month: usize) -> Vec<f32> {
+    let mut v = vec![1.0; np];
+    if town.flow_profile.len() < np * MONTHS {
+        return v;
+    }
+    for (g, out) in v.iter_mut().enumerate() {
+        let prof = &town.flow_profile[g * MONTHS..(g + 1) * MONTHS];
+        let need = |m: usize| {
+            let (mut balance, mut deepest) = (0.0f32, 0.0f32);
+            for k in 0..MONTHS {
+                balance += prof[(m + k) % MONTHS];
+                deepest = deepest.max(-balance);
+            }
+            deepest
+        };
+        let needs: Vec<f32> = (0..MONTHS).map(need).collect();
+        let most = needs.iter().copied().fold(0.0f32, f32::max);
+        if most > 1e-3 {
+            *out = SEASON_FLOOR + (1.0 - SEASON_FLOOR) * needs[month] / most;
+        }
+    }
+    v
+}
+
 /// Daily: the granary takes the market's food surplus up to its target, or
 /// releases food into a hungry market; and its store slowly spoils.
-pub fn tend(towns: &mut Towns, db: &Db, params: &Params, days_per_year: f32) {
+pub fn tend(towns: &mut Towns, db: &Db, params: &Params, days_per_year: f32, season: f32) {
+    let np = db.content.products.len();
+    let month =
+        ((season - params.time.year_starts_at).rem_euclid(1.0) * MONTHS as f32) as usize % MONTHS;
+    for town in towns.0.iter_mut() {
+        learn_profile(town, np, month);
+        if !town.policy.stockpile.is_empty() {
+            town.stockpile_scale = season_scale(town, np, month);
+        }
+    }
     tend_stockpiles(towns, db, params);
     let mp = &params.market;
     let np = db.content.products.len();

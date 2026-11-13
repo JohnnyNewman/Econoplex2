@@ -217,3 +217,25 @@ over 6 seeds x 20 years. Checked:
   more raids and face more revolts. With raids off the gap is 1.8 %.
 - No bug in the stock logic. Under the ruler's rules the gap is wider (1848 ->
   1605): the treasury's sword spending also paid for the food levers.
+
+## Stockpile targets follow the seasons
+
+Nils: grain is harvested once a year, firewood is burned mostly in winter, so a
+stockpile target should depend on the season, estimated from how stocks move.
+Each town learns from its goods ledger how much of each good it makes minus
+uses per day in each month (`Town::flow_profile`, updated daily, about two
+years of memory). For a month, the store it needs is the deepest shortfall the
+coming twelve months add up to; the target applies in full in the month that
+needs most and down to a quarter (`SEASON_FLOOR`) in the month that needs
+least. Goods made and used evenly keep their whole target.
+
+Learned shares by month at seed 17 after 3 years (month 1 = spring equinox):
+
+| | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| grain | .50 | .32 | .39 | 1.0 | .86 | .71 | .48 | .85 | .79 | .47 | .25 | .25 |
+| wood | .70 | 1.0 | .67 | .72 | .87 | .50 | .41 | .29 | .25 | .36 | .36 | .25 |
+
+The curves are noisy (raids, migration, price swings) and learned, not
+designed; firewood is counted as used when households buy it (planned a month
+ahead), not when it burns.

@@ -2774,6 +2774,36 @@ fn households_and_workshops_keep_their_own_stocks() {
 }
 
 #[test]
+fn stockpile_targets_follow_the_seasons() {
+    // Grain is reaped once a year and firewood burned in winter: their
+    // stockpiles should be fullest before the lean months, not all year.
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let sets = sim_core::read_preset(&root.join("config/presets/new_economy.ron")).unwrap();
+    let (db, params, mut scenario) =
+        sim_core::load_with(&AssetPaths::from_root(&root), &sets).unwrap();
+    scenario.seed = 17;
+    let mut s = Simulation::new(db, params, &scenario);
+    run_years(&mut s, 3);
+    let db = s.world.resource::<sim_core::Db>();
+    let np = db.content.products.len();
+    let grain = db.content.product("grain").unwrap() as usize;
+    let wood = db.content.product("wood").unwrap() as usize;
+    let town = &s.world.resource::<sim_core::Towns>().0[1];
+    let by_month = |g: usize| -> Vec<f32> {
+        (0..12)
+            .map(|m| sim_core::granary::season_scale(town, np, m)[g])
+            .collect()
+    };
+    let (g, w) = (by_month(grain), by_month(wood));
+    eprintln!("grain {g:?}\nwood  {w:?}");
+    for v in [&g, &w] {
+        let lo = v.iter().copied().fold(1.0f32, f32::min);
+        let hi = v.iter().copied().fold(0.0f32, f32::max);
+        assert!(hi > 0.99 && lo < 0.6, "{v:?}");
+    }
+}
+
+#[test]
 fn the_new_economy_preset_loads_and_runs() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     let sets = sim_core::read_preset(&root.join("config/presets/new_economy.ron")).unwrap();

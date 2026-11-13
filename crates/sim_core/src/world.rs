@@ -316,6 +316,18 @@ pub struct Town {
     /// Food kept out of the market by the town (`granary.rs`), by product.
     #[serde(default)]
     pub granary: Vec<f32>,
+    /// Today's share of each stockpile target that applies (`granary.rs`):
+    /// below 1 for crops between harvests. Empty: 1 for every good.
+    #[serde(default)]
+    pub stockpile_scale: Vec<f32>,
+    /// Per good and month: made minus used per day, learned over the years
+    /// (`granary.rs`), and the ledger's running net it was last taken from.
+    #[serde(default)]
+    pub flow_profile: Vec<f32>,
+    #[serde(default)]
+    pub flow_seen: Vec<f64>,
+    #[serde(default)]
+    pub flow_seen_day: u32,
     /// Goods made, used and lost in this town since the start (`goods.rs`).
     #[serde(default)]
     pub flows: crate::goods::GoodsFlows,
@@ -389,6 +401,12 @@ impl Town {
             .filter(|o| o.1 > 0.0 && feeds(o.0 as usize))
             .map(|o| o.0)
             .collect()
+    }
+
+    /// The stockpile target for good `p` today: the ruler's amount, scaled by
+    /// the season (`granary.rs`).
+    pub fn stockpile_target(&self, p: usize) -> f32 {
+        self.policy.stockpiled(p) * self.stockpile_scale.get(p).copied().unwrap_or(1.0)
     }
 
     pub fn food_stock(&self, db: &Db) -> f32 {
@@ -658,6 +676,10 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
             ledger: crate::ledger::Ledger::new(scenario.towns.len()),
             procured: vec![0.0; db.content.products.len()],
             granary: Vec::new(),
+            stockpile_scale: Vec::new(),
+            flow_profile: Vec::new(),
+            flow_seen: Vec::new(),
+            flow_seen_day: 0,
             flows,
             pay_rate: vec![0.0; db.recipes.len()],
             success_pay: vec![0.0; db.recipes.len()],
