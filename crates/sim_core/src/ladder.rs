@@ -509,8 +509,8 @@ pub fn daily(
         }
         warm[k] = if need > 0.0 { 1.0 - left / need } else { 1.0 };
     }
-    for i in 0..store.len() {
-        store.owned[i].retain(|e| e.1 > 0.01);
+    for owned in store.owned.iter_mut() {
+        owned.retain(|e| e.1 > 0.01);
     }
     for i in 0..store.len() {
         if !store.alive[i] || matches!(store.activity[i], Activity::Captive) {
