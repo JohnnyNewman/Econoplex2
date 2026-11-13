@@ -83,10 +83,10 @@ flowchart LR
 - The view moves the hour on smoothly between ticks and takes the weather of
   the towns near the camera's focus, weighted by inverse squared distance (the
   sim's map y points north, the 3D z south, so the wind's y flips).
-- At 1 day per second or faster a day would flash by: the view holds a steady
-  13:00 and only seasons and weather follow. Two slow speeds (20 s and 5 s a
-  day; `,` from the default, or `--speed 0` / `--speed 1`) show day and night
-  passing.
+- Play runs at about 5 minutes a day, so day and night pass at a watchable
+  pace (`.` speeds up: 1 minute and 12 s a day, then 1 to 120 days a second).
+  At 1 day a second or faster a day would flash by: the view holds a steady
+  13:00 and only seasons and weather follow.
 - `[` `]` and `T` (or `--hour`) set the hour by hand; `C` follows the sim again.
 - The playground has no simulation: there `EnvSource::Stub`, the stand-in
   weather of `env.rs`, still fills in.

@@ -32,11 +32,37 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-/// Game speeds in simulated days per second: the 2D game's five, and two
-/// slower ones (20 s and 5 s a day) where day and night can be watched.
-pub const SPEEDS: [f32; 7] = [0.05, 0.2, 1.0, 4.0, 12.0, 30.0, 60.0];
-/// The speed the view starts at (1 day per second).
-pub const DEFAULT_SPEED: usize = 2;
+/// Game speeds in simulated days per second. Play is about 5 minutes a day
+/// (Nils's choice), so day and night pass at a watchable pace; the faster
+/// speeds (1 minute, 12 s, then 1 to 120 days a second) are for letting the
+/// economy run.
+pub const SPEEDS: [f32; 9] = [
+    1.0 / 300.0,
+    1.0 / 60.0,
+    1.0 / 12.0,
+    1.0,
+    4.0,
+    12.0,
+    30.0,
+    60.0,
+    120.0,
+];
+/// The speed the view starts at (5 minutes a day).
+pub const DEFAULT_SPEED: usize = 0;
+
+/// A speed as people read it: `5 min/day`, `12 s/day`, `30 days/s`.
+pub fn speed_label(days_per_sec: f32) -> String {
+    if days_per_sec >= 1.0 {
+        format!("{days_per_sec:.0} days/s")
+    } else {
+        let secs = 1.0 / days_per_sec;
+        if secs >= 60.0 {
+            format!("{:.0} min/day", secs / 60.0)
+        } else {
+            format!("{secs:.0} s/day")
+        }
+    }
+}
 
 pub struct LivePlugin;
 
@@ -599,11 +625,11 @@ fn update_status(live: Res<LiveSim>, mut text: Query<&mut Text, With<Status>>) {
         .map(|t| format!("{} {}", t.name, t.population))
         .collect();
     let mut line = format!(
-        "Year {year}, day {} ({season})   {}   {} days/s   Space pause, , . speed\n\
+        "Year {year}, day {} ({season})   {}   {}   Space pause, , . speed\n\
          {pop} people: {}",
         s.day_of_year + 1,
         if paused { "PAUSED" } else { "running" },
-        SPEEDS[speed],
+        speed_label(SPEEDS[speed]),
         towns.join(", "),
     );
     for e in live.recent.iter().take(4) {
@@ -688,7 +714,7 @@ mod tests {
         let paths = sim_core::AssetPaths::discover();
         let (db, params, scenario) = sim_core::load(&paths).unwrap();
         let sim = Simulation::new(db, params, &scenario);
-        let live = LiveSim::start(sim, 0, false);
+        let live = LiveSim::start(sim, 2, false); // 12 s a day: a tick a second
         let first = live.env().0.hour;
         let deadline = Instant::now() + Duration::from_secs(30);
         let moved = loop {
@@ -703,5 +729,13 @@ mod tests {
             std::thread::sleep(Duration::from_millis(20));
         };
         assert!(moved, "the hour never changed");
+    }
+
+    #[test]
+    fn speeds_read_as_people_say_them() {
+        assert_eq!(speed_label(SPEEDS[DEFAULT_SPEED]), "5 min/day");
+        assert_eq!(speed_label(1.0 / 12.0), "12 s/day");
+        assert_eq!(speed_label(30.0), "30 days/s");
+        assert!(SPEEDS.windows(2).all(|w| w[0] < w[1]));
     }
 }
