@@ -479,3 +479,38 @@ years:
 The content now declares only clothes and pots as household goods. A listed
 basket can still hold anything, and `min_wealth` (new) makes a good a luxury
 bought only from spare money. Consumption stays off pending Nils's decision.
+
+### The full basket, switched on (2026-11-13)
+
+Nils's decision: households buy the full basket by default, hearth fuel
+included. `market.consumption: Basket(spend_share: 0.15, interval: 7,
+elasticity: 0.5, comfort_weight: 0.2, goods: [])` takes every good the content
+declares: clothes, pots, ale, cloth, charcoal (hearth fuel) and silver (a
+luxury bought only by households with at least twice the town's median
+wealth).
+
+Charcoal, not firewood, is the hearth fuel. 6 seeds × 40 years, against the
+defaults before this change:
+
+| basket | pop | hh use | in use | happy | capab | gini | swords |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| none (old default) | 3978 | 62.1 | 86.8 | 0.71 | 31.2 | 0.51 | 5680 |
+| **full, charcoal 1/15 days (new default)** | 3921 | **77.9** | 81.6 | 0.63 | 26.7 | 0.60 | 4295 |
+| full, charcoal 3/15 days | 3894 | 77.5 | 81.2 | 0.63 | 25.7 | 0.53 | 4374 |
+| full, firewood 1/15 days | 3811 | 70.3 | 72.1 | 0.61 | 25.6 | 0.67 | 2001 |
+| full, firewood 3/15 days | 3752 | 66.6 | 64.7 | 0.61 | 22.2 | 0.73 | 1532 |
+
+**The cost, knowingly taken:**
+- Household use is up 25 %.
+- Capability is −4.5 kinds, trade use −6 % and swords −24 %. Ale, cloth and
+  silver compete with bread, clothes and the mint; charcoal competes with the
+  smelters.
+- Population is −1.4 %, within the seed spread, and nobody starves.
+- Happiness falls because the basket adds wants.
+
+**To win capability back later:** make more of what households take (more
+charcoal burners and potters), or let prices ration households before trades.
+
+Three calibrated tests now run without the basket: the food-subsidy and
+cloth-subsidy scenarios, and governor stability. The state hash changes (seed
+42, 10 years: `6655d3c6232d19a3`).
