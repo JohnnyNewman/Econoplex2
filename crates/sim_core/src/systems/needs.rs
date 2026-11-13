@@ -12,6 +12,7 @@ pub fn sense(
     db: Res<Db>,
     params: Res<Params>,
     env: Res<crate::env::Environment>,
+    mut squads: ResMut<crate::goods::Squads>,
 ) {
     let p = &params.needs;
     let ladder = match &params.market.consumption {
@@ -66,6 +67,16 @@ pub fn sense(
         let st = &mut store.state[i];
 
         st[HUNGER] += p.hunger_per_day;
+        // On the march, people eat from their squad's packs first.
+        if st[HUNGER] > p.eat_threshold && !squads.list.is_empty() {
+            if let Some(id) = squads.squad_of(i) {
+                if let Some((food, value)) = crate::goods::squad_meal(&mut squads, id, &db.foods) {
+                    town.flows
+                        .add(crate::goods::Flow::Eaten, food as usize, 1.0);
+                    st[HUNGER] = (st[HUNGER] - value).max(0.0);
+                }
+            }
+        }
         if st[HUNGER] > p.eat_threshold {
             // The household's own food first.
             if let Some((food, value)) =

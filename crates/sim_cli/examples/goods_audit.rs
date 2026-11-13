@@ -24,6 +24,7 @@ fn main() {
         let bad = audit(
             sim.world.resource::<AgentStore>(),
             sim.world.resource::<Towns>(),
+            sim.world.resource::<sim_core::goods::Squads>(),
             n,
             1e-4,
         );
