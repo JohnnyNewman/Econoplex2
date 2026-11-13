@@ -387,6 +387,94 @@ fn jitter(id: u32) -> Vec2 {
     Vec2::new(a.cos(), a.sin()) * r
 }
 
+/// 0..1 from a person's id and a salt, for the day plan's variations.
+fn unit(id: u32, salt: u32) -> f32 {
+    let mut h = id.wrapping_mul(0x9E37_79B9) ^ salt.wrapping_mul(0x85EB_CA6B);
+    h ^= h >> 13;
+    h = h.wrapping_mul(0xC2B2_AE35);
+    h ^= h >> 16;
+    (h & 0xFFFF) as f32 / 65536.0
+}
+
+/// Where someone is during the day (3D x, z) and whether they are out at all.
+/// The simulation decides once a day what everyone does and where they work;
+/// in between the view gives them a day: up in the morning, at work in
+/// working hours, home in the evening, indoors at night. Those not working
+/// stroll between home and the town centre. Soldiers and captives go where
+/// the simulation sends them.
+struct DayPlan {
+    goal: Vec2,
+    out: bool,
+    at_work: bool,
+}
+
+/// One person's plan at `hour`. `work` is the simulation's target, `home` a
+/// house of their town, `centre` the town's centre.
+fn day_plan(id: u32, doing: Doing, hour: f32, work: Vec2, home: Vec2, centre: Vec2) -> DayPlan {
+    // Everyone keeps their own hours, up to an hour either way.
+    let h = hour - (unit(id, 1) - 0.5) * 2.0;
+    let wake = 5.5;
+    let bed = 21.5;
+    if matches!(doing, Doing::Soldier | Doing::Captive) {
+        return DayPlan {
+            goal: work,
+            out: true,
+            at_work: true,
+        };
+    }
+    if !(wake..bed).contains(&h) {
+        return DayPlan {
+            goal: home,
+            out: false,
+            at_work: false,
+        };
+    }
+    if let Doing::Working(_) = doing {
+        if (6.5..17.5).contains(&h) {
+            return DayPlan {
+                goal: work,
+                out: true,
+                at_work: true,
+            };
+        }
+        return DayPlan {
+            goal: home,
+            out: true,
+            at_work: false,
+        };
+    }
+    // A stroll: every hour and a half somewhere new, near home or towards
+    // the centre (children stay closer to home).
+    let period = (h / 1.5).floor() as u32;
+    let r = if doing == Doing::Child { 2.5 } else { 5.0 };
+    let pick = unit(id, 10 + period);
+    let a = unit(id, 100 + period) * std::f32::consts::TAU;
+    let off = Vec2::new(a.cos(), a.sin()) * r * unit(id, 1000 + period);
+    let base = if pick < 0.5 {
+        home
+    } else {
+        home.lerp(centre, 0.7)
+    };
+    DayPlan {
+        goal: base + off,
+        out: true,
+        at_work: false,
+    }
+}
+
+/// A house of the town for this person: a spot on the spiral the houses
+/// stand on (live.rs), picked by their id, in 3D x, z.
+fn home_of(id: u32, town_pos: (f32, f32), town_index: usize, population: u32) -> Vec2 {
+    let n = crate::live::houses_for(population).max(1);
+    let k = (unit(id, 7) * n as f32) as u32;
+    let a = k as f32 * 2.399_963 + town_index as f32;
+    let r = 1.8 + (k as f32).sqrt() * 1.05 + 0.6;
+    Vec2::new(
+        town_pos.0 / SCALE + r * a.cos(),
+        -town_pos.1 / SCALE - r * a.sin(),
+    )
+}
+
 /// The colour of a person (linear RGB) and their size.
 fn look(doing: Doing, domains: u32) -> ([f32; 3], f32) {
     let lin = |c: Color| c.to_linear().to_f32_array_no_alpha();
@@ -422,6 +510,8 @@ fn update_targets(
     mut materials: ResMut<Assets<CrowdMaterial>>,
     mut crowd: Query<(&mut Mesh3d, &mut Visibility)>,
     overlay: Res<crate::overlay::Overlay>,
+    clock: Res<crate::sky::SkyClock>,
+    mut last: Local<Vec<[f32; 8]>>,
 ) {
     let (Some(mut handles), Some(terrain)) = (handles, terrain) else {
         return;
@@ -434,8 +524,10 @@ fn update_targets(
     }
     let snap = live.snapshot.clone();
     let new_tick = slots.tick != Some(snap.tick);
-    // The colours change with the overlay too (culture: everyone in their own).
-    if new_tick || overlay.is_changed() {
+    // Every frame: where everyone is in their day (written only when that
+    // changes, a few times a game hour). The colours change with the overlay
+    // too (culture: everyone in their own).
+    {
         let people = &snap.people;
         if new_tick {
             slots.tick = Some(snap.tick);
@@ -457,17 +549,45 @@ fn update_targets(
         let mut data = vec![[0.0f32; 8]; handles.capacity];
         for k in 0..people.id.len() {
             let id = people.id[k];
-            let goal = Vec2::new(people.target[k].0, -people.target[k].1) / SCALE + jitter(id);
-            let (mut rgb, size) = look(people.doing[k], snap.domains);
+            let doing = people.doing[k];
+            let work = Vec2::new(people.target[k].0, -people.target[k].1) / SCALE + jitter(id);
+            let ti = people.town.get(k).copied().unwrap_or(0) as usize;
+            let (home, centre) = match snap.towns.get(ti) {
+                Some(t) => (
+                    home_of(id, t.pos, ti, t.population),
+                    Vec2::new(t.pos.0, -t.pos.1) / SCALE,
+                ),
+                None => (work, work),
+            };
+            let plan = day_plan(id, doing, clock.hour, work, home, centre);
+            let (mut rgb, size) = look(doing, snap.domains);
             if let (true, Some(c)) = (by_culture, people.culture.get(k)) {
                 rgb = crate::overlay::culture_colour(c);
             }
-            let motion = Motion::of(people.doing[k], &snap.domain_names) as u32 as f32;
-            data[slots.of[&id]] = [goal.x, goal.y, 1.0, size, rgb[0], rgb[1], rgb[2], motion];
+            // The trade's motion only at work; elsewhere they just stand.
+            let motion = if plan.at_work {
+                Motion::of(doing, &snap.domain_names) as u32 as f32
+            } else {
+                0.0
+            };
+            let occupied = if plan.out { 1.0 } else { 0.0 };
+            data[slots.of[&id]] = [
+                plan.goal.x,
+                plan.goal.y,
+                occupied,
+                size,
+                rgb[0],
+                rgb[1],
+                rgb[2],
+                motion,
+            ];
         }
-        if let Some(mut buffer) = buffers.get_mut(&handles.targets) {
-            buffer.clear();
-            buffer.extend_from_slice(&data);
+        if *last != data {
+            if let Some(mut buffer) = buffers.get_mut(&handles.targets) {
+                buffer.clear();
+                buffer.extend_from_slice(&data);
+            }
+            *last = data;
         }
     }
     // Every frame: the compute pass's inputs (copied to the render world).
@@ -563,6 +683,31 @@ mod tests {
         assert!(off.uniform().x > 1e6 && off.uniform().y > off.uniform().x);
         let shown = LodSettings { show: true, ..on };
         assert_eq!(shown.uniform().w, 1.0);
+    }
+
+    #[test]
+    fn a_day_takes_workers_to_work_and_everyone_home_at_night() {
+        let (work, home, centre) = (
+            Vec2::new(10.0, 0.0),
+            Vec2::new(0.0, 0.0),
+            Vec2::new(3.0, 3.0),
+        );
+        let at = |id, doing, hour| day_plan(id, doing, hour, work, home, centre);
+        for id in 0..50 {
+            let noon = at(id, Doing::Working(0), 12.0);
+            assert!(noon.out && noon.at_work && noon.goal == work);
+            let evening = at(id, Doing::Working(0), 19.5);
+            assert!(evening.out && !evening.at_work && evening.goal == home);
+            assert!(!at(id, Doing::Working(0), 2.0).out);
+            assert!(!at(id, Doing::Resting, 23.9).out);
+            assert!(at(id, Doing::Soldier, 2.0).out);
+        }
+        // Strollers go somewhere new over the day.
+        let spots: std::collections::HashSet<(i32, i32)> = (8..18)
+            .map(|h| at(3, Doing::Resting, h as f32).goal)
+            .map(|g| ((g.x * 10.0) as i32, (g.y * 10.0) as i32))
+            .collect();
+        assert!(spots.len() > 2);
     }
 
     #[test]
