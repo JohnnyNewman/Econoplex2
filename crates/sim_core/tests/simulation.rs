@@ -2359,3 +2359,31 @@ fn a_game_saved_mid_day_loads_with_its_hour_and_weather() {
     assert_eq!(ea.hour, eb.hour);
     assert_eq!(ea.towns, eb.towns);
 }
+
+#[test]
+fn every_good_is_accounted_for() {
+    // What is held of each good equals what was seeded and made minus what was
+    // eaten, used, bought, built, struck, equipped, delivered or spoiled; with
+    // the treasury buying output and with workshops as firms.
+    for firms in ["Treasury", "Workshops(start_cash: 100.0, reserve_days: 10.0, payout_rate: 0.05, profit_tax: 0.2, close_days: 30, credit_days: 10.0, grouping: Guild)"] {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let sets = [("market.firms".to_string(), firms.to_string())];
+        let (db, params, mut scenario) =
+            sim_core::load_with(&AssetPaths::from_root(&root), &sets).unwrap();
+        scenario.seed = 3;
+        let mut s = Simulation::new(db, params, &scenario);
+        run_years(&mut s, 2);
+        check_goods(&s);
+    }
+}
+
+fn check_goods(s: &Simulation) {
+    let n = s.world.resource::<sim_core::Db>().content.products.len();
+    let bad = sim_core::goods::audit(
+        s.world.resource::<sim_core::AgentStore>(),
+        s.world.resource::<sim_core::Towns>(),
+        n,
+        1e-4,
+    );
+    assert!(bad.is_empty(), "goods out of balance: {bad:?}");
+}

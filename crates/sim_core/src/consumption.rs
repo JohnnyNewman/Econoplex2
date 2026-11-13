@@ -223,11 +223,14 @@ pub fn spend(
                 Some(f) => {
                     let firm = &mut town.firms[f];
                     firm.stock[p] -= 1.0;
+                    town.flows.add(crate::goods::Flow::Bought, p, 1.0);
+                    let firm = &mut town.firms[f];
                     firm.cash += price;
                     firm.book(crate::firms::FirmFlow::DirectSales, price);
                 }
                 None if town.stock[p] >= 1.0 => {
                     town.stock[p] -= 1.0;
+                    town.flows.add(crate::goods::Flow::Bought, p, 1.0);
                     town.treasury += price;
                     town.ledger.add(crate::ledger::Flow::HouseholdGoods, price);
                 }
