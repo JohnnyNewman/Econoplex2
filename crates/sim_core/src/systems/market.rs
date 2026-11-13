@@ -409,6 +409,50 @@ fn buy_from_firms(town: &mut crate::world::Town, p: usize, target: f32) {
 /// none yet, and each firm's daily payout above its reserve to its owners (the
 /// town's guild members of its domain; the treasury if there are none), less
 /// the profit tax.
+/// Workshops' stock targets: each firm keeps `input_days` of the inputs it has
+/// been using in its own store, bought ahead from the market with the cash
+/// above its wage reserve.
+fn firm_input_stocks(towns: &mut crate::world::Towns, db: &Db, reserve_days: f32, input_days: f32) {
+    let np = db.content.products.len();
+    for town in towns.0.iter_mut() {
+        for k in 0..town.firms.len() {
+            let f = &mut town.firms[k];
+            f.input_rate.resize(np, 0.0);
+            f.input_used.resize(np, 0.0);
+            for p in 0..np {
+                f.input_rate[p] += (f.input_used[p] - f.input_rate[p]) / 30.0;
+                f.input_used[p] = 0.0;
+            }
+            if input_days <= 0.0 || f.closed {
+                continue;
+            }
+            f.inputs.resize(np, 0.0);
+            let mut spare = f.cash - reserve_days * f.wage_bill;
+            for p in 0..np {
+                let rate = town.firms[k].input_rate[p];
+                if rate <= 1e-3 || spare <= 0.0 {
+                    continue;
+                }
+                let price = town.price[p].max(1e-3);
+                let want = rate * input_days - town.firms[k].inputs[p];
+                let q = want.min(town.stock[p].max(0.0)).min(spare / price).floor();
+                if q < 1.0 {
+                    continue;
+                }
+                let cost = q * price;
+                town.stock[p] -= q;
+                town.treasury += cost;
+                town.ledger.add(crate::ledger::Flow::InputSales, cost);
+                let f = &mut town.firms[k];
+                f.inputs[p] += q;
+                f.cash -= cost;
+                f.book(crate::firms::FirmFlow::Inputs, cost);
+                spare -= cost;
+            }
+        }
+    }
+}
+
 pub fn firm_finances(
     towns: &mut crate::world::Towns,
     store: &mut AgentStore,
@@ -421,11 +465,13 @@ pub fn firm_finances(
         payout_rate,
         profit_tax,
         close_days,
+        input_days,
         ..
     } = params.market.firms
     else {
         return;
     };
+    firm_input_stocks(towns, db, reserve_days, input_days);
     // Each firm's domain: its guild, or the domain of its first recipe.
     let domain: Vec<u32> = (0..db.firm_keys.len())
         .map(|k| match db.firm_keys[k] {

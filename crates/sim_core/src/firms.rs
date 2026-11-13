@@ -48,6 +48,11 @@ pub enum FirmsParams {
         /// How work is grouped into firms (see `Grouping`).
         #[serde(default)]
         grouping: Grouping,
+        /// Stock target for inputs: a firm keeps this many days of the inputs
+        /// it has been using in its own store, bought ahead from the market
+        /// out of the cash above its wage reserve. 0: buys only as it works.
+        #[serde(default)]
+        input_days: f32,
     },
 }
 
@@ -175,6 +180,15 @@ pub struct Firm {
     pub input_bill: f32,
     #[serde(default)]
     pub inputs_today: f32,
+    /// Inputs kept in the firm's own store (its stock target), by product;
+    /// not for sale.
+    #[serde(default)]
+    pub inputs: Vec<f32>,
+    /// Inputs used per day by product, averaged over about a month, and today's.
+    #[serde(default)]
+    pub input_rate: Vec<f32>,
+    #[serde(default)]
+    pub input_used: Vec<f32>,
     /// Capital paid in (start-up grants, owners' capital): never paid out.
     #[serde(default)]
     pub capital: f32,
