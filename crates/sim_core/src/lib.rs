@@ -14,6 +14,7 @@ pub mod explain;
 pub mod goal;
 pub mod goods;
 pub mod governor;
+pub mod ladder;
 pub mod ledger;
 pub mod metrics;
 pub mod models;

@@ -35,6 +35,8 @@ pub enum ConsumptionParams {
         comfort_weight: f32,
         goods: Vec<BasketGood>,
     },
+    /// The needs ladder (`ladder.rs`): households buy what serves their needs.
+    Needs(crate::ladder::LadderParams),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -66,21 +68,28 @@ pub fn basket(listed: &[BasketGood], db: &crate::db::Db) -> Vec<BasketGood> {
         .products
         .iter()
         .filter_map(|p| {
-            p.household.as_ref().map(|h| BasketGood {
-                good: p.id.clone(),
-                want: h.want,
-                life_days: h.life_days,
-                taste: h.taste.clone(),
-                elasticity: h.elasticity,
-                min_wealth: h.min_wealth,
-            })
+            // `want: 0` declares a good only for the needs ladder (firewood).
+            p.household
+                .as_ref()
+                .filter(|h| h.want > 0.0)
+                .map(|h| BasketGood {
+                    good: p.id.clone(),
+                    want: h.want,
+                    life_days: h.life_days,
+                    taste: h.taste.clone(),
+                    elasticity: h.elasticity,
+                    min_wealth: h.min_wealth,
+                })
         })
         .collect()
 }
 
 impl ConsumptionParams {
     pub fn on(&self) -> bool {
-        matches!(self, ConsumptionParams::Basket { .. })
+        matches!(
+            self,
+            ConsumptionParams::Basket { .. } | ConsumptionParams::Needs(_)
+        )
     }
 }
 
@@ -111,9 +120,14 @@ pub fn spend(
     store: &mut crate::store::AgentStore,
     db: &crate::db::Db,
     params: &crate::world::Params,
+    env: &crate::env::Environment,
     tick: u64,
 ) {
     use crate::store::Activity;
+    if let ConsumptionParams::Needs(lp) = &params.market.consumption {
+        crate::ladder::spend(towns, store, db, params, env, lp, tick);
+        return;
+    }
     let ConsumptionParams::Basket {
         spend_share,
         interval,

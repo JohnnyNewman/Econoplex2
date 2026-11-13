@@ -20,6 +20,7 @@ pub fn settle(
     terrain: Res<Terrain>,
     mut sites: Query<&mut NaturalResource>,
     mut items: Query<(&Product, &mut TownId), With<Item>>,
+    env: Res<crate::env::Environment>,
 ) {
     let mp = &params.market;
     let np = db.content.products.len();
@@ -37,7 +38,7 @@ pub fn settle(
         }
     }
     firm_finances(&mut towns, &mut store, &db, &params);
-    crate::consumption::spend(&mut towns, &mut store, &db, &params, clock.tick);
+    crate::consumption::spend(&mut towns, &mut store, &db, &params, &env, clock.tick);
     let derived = derived_targets(&towns, &db, &params, &sites);
     // Each good's price dynamics: its class's, or its own override.
     let dynamics: Option<Vec<crate::pricing::ClassParams>> =

@@ -11,8 +11,13 @@ pub fn sense(
     mut towns: ResMut<Towns>,
     db: Res<Db>,
     params: Res<Params>,
+    env: Res<crate::env::Environment>,
 ) {
     let p = &params.needs;
+    let ladder = match &params.market.consumption {
+        crate::consumption::ConsumptionParams::Needs(lp) => Some(lp),
+        _ => None,
+    };
     let store = &mut *store;
 
     // Food that a recipe turns into more food (grain into flour for bread) is held
@@ -122,6 +127,10 @@ pub fn sense(
             Activity::Working(_) => {}
         }
 
+        if ladder.is_some() {
+            // The needs ladder sets happiness (below).
+            continue;
+        }
         let mut target =
             0.7 - 0.5 * st[HUNGER] - 0.3 * st[FATIGUE] + 0.2 * (store.wealth[i] / 50.0).tanh();
         // Household goods make a home comfortable (see `consumption`).
@@ -132,5 +141,8 @@ pub fn sense(
         }
         st[HAPPINESS] =
             (st[HAPPINESS] + p.happiness_rate * (target - st[HAPPINESS])).clamp(0.0, 1.0);
+    }
+    if let Some(lp) = ladder {
+        crate::ladder::daily(store, &mut towns, &db, &params, &env, lp);
     }
 }

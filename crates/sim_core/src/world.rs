@@ -226,6 +226,10 @@ pub struct Town {
     pub food_trend: f32,
     /// Person-days spent starving since the last yearly report.
     pub starving: u32,
+    /// Person-days spent cold (less than half the heat needed) since the start
+    /// (with the needs ladder).
+    #[serde(default)]
+    pub cold_days: u32,
     pub war: WarCounters,
     /// The town this one was conquered by and pays tribute to, if any.
     pub ruler: Option<u16>,
@@ -643,6 +647,7 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
             food_last: 0.0,
             food_trend: 0.0,
             starving: 0,
+            cold_days: 0,
             war: WarCounters::default(),
             ruler: None,
             moves: MoveCounters::default(),

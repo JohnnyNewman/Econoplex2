@@ -698,6 +698,7 @@ mod tests {
                 ..Default::default()
             },
             ground: sim_core::env::Ground { snow, wet: 0.0 },
+            day_mean_c: t,
         };
         let (a, b) = (local(-5.0, (0.0, 4.0), 1.0), local(15.0, (0.0, 4.0), 0.0));
         let towns = [(Vec2::ZERO, &a), (Vec2::new(1000.0, 0.0), &b)];

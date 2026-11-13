@@ -241,6 +241,10 @@
         // ]),
         // Default since 2026-11-13 (Nils's choice; costs in town-market.md).
         consumption: Basket(spend_share: 0.15, interval: 7, elasticity: 0.5, comfort_weight: 0.2, goods: []),
+        // The needs ladder (ladder.rs, step 4 of the economy redesign): households
+        // buy what serves their needs (content `household.serves`), warmth comes
+        // from house, clothes and fuel against the day's temperature. Off for now:
+        // consumption: Needs((interval: 7, gate_at: 0.7, gate_width: 0.15, comfort_c: 16.0, house_c: 6.0, max_clothes: 2.0, people_per_hearth: 4.0, savings_days: 60.0, cold_damage: 0.02, plan_days: 30.0)),
         // Price dynamics per price class (each good's class is in the content:
         // price_class, else food is Essential and the rest Commodity; Labour is the
         // jobs' wage factors). Inertia: Partial(speed) moves the log price speed x
