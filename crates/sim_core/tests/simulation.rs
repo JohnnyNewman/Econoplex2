@@ -1855,6 +1855,7 @@ fn workshops_pay_from_their_sales_and_money_is_conserved() {
         profit_tax: 0.2,
         close_days: 30,
         credit_days: 0.0,
+        input_days: 0.0,
         grouping: Default::default(),
     };
     let mut s = Simulation::new(db, params, &scenario);
@@ -1899,6 +1900,7 @@ fn towns_lend_to_workshops_and_get_repaid_with_interest() {
         profit_tax: 0.2,
         close_days: 30,
         credit_days: 0.0,
+        input_days: 0.0,
         grouping: Default::default(),
     };
     params.governor.enabled = false;
@@ -1948,6 +1950,7 @@ fn the_profit_tax_is_a_town_lever() {
             profit_tax: 0.0,
             close_days: 30,
             credit_days: 0.0,
+            input_days: 0.0,
             grouping: Default::default(),
         };
         params.governor.enabled = false;
@@ -2044,6 +2047,7 @@ fn workshops_buy_on_account_and_pay_from_their_sales() {
         profit_tax: 0.2,
         close_days: 30,
         credit_days: 10.0,
+        input_days: 0.0,
         grouping: Default::default(),
     };
     let mut s = Simulation::new(db, params, &scenario);
@@ -2089,6 +2093,7 @@ fn guild_firms_pool_a_domain_and_the_mint_answers_a_money_shortage() {
         profit_tax: 0.2,
         close_days: 30,
         credit_days: 0.0,
+        input_days: 0.0,
         grouping: Grouping::Guild,
     };
     params.market.mint_money_per_capita = 1e9;
@@ -2732,4 +2737,38 @@ fn a_stockpile_fills_the_town_store_and_draws_production() {
         .policy
         .stockpile
         .is_empty());
+}
+
+#[test]
+fn households_and_workshops_keep_their_own_stocks() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let sets = [
+        (
+            "market.consumption".to_string(),
+            "Needs((interval: 7, gate_at: 0.7, gate_width: 0.15, comfort_c: 16.0, house_c: 6.0, max_clothes: 2.0, fire_per_c: 0.5, fire_per_extra_person: 0.25, savings_days: 60.0, larder_days: 14.0, cold_damage: 0.02, plan_days: 30.0))".to_string(),
+        ),
+        (
+            "market.firms".to_string(),
+            "Workshops(start_cash: 100.0, reserve_days: 10.0, payout_rate: 0.05, profit_tax: 0.2, close_days: 30, credit_days: 10.0, grouping: Guild, input_days: 10.0)".to_string(),
+        ),
+    ];
+    let (db, params, mut scenario) =
+        sim_core::load_with(&AssetPaths::from_root(&root), &sets).unwrap();
+    scenario.seed = 15;
+    let mut s = Simulation::new(db, params, &scenario);
+    run_years(&mut s, 1);
+    let store = s.world.resource::<sim_core::AgentStore>();
+    let towns = s.world.resource::<sim_core::Towns>();
+    let larders = (0..store.len())
+        .filter(|&i| store.alive[i] && !store.larder[i].is_empty())
+        .count();
+    assert!(larders > 0, "households keep food at home");
+    let firm_inputs: f32 = towns
+        .0
+        .iter()
+        .flat_map(|t| t.firms.iter())
+        .flat_map(|f| f.inputs.iter())
+        .sum();
+    assert!(firm_inputs > 0.0, "workshops keep inputs in store");
+    check_goods(&s);
 }

@@ -160,3 +160,20 @@ the market's surplus and gives back when the market falls below half its own
 target. For tools and weapons the armory is the store: the target is the
 number kept unissued. `granary TOWN DAYS` stays as the food shorthand. The war
 redesign's kit rule writes per-good entries here.
+
+## Households' and workshops' own stock targets
+
+Nils: households and workshops need stock targets too, to keep running and to
+survive. Both off by default.
+
+- Households (`Needs(.., larder_days: D, ..)`): a household keeps D days of
+  food in its larder against bad times. Half of the savings need is then food
+  at home (safer than coin when prices spike), so food bought ahead competes
+  with fuel and goods by the same need-per-coin rule. 6 seeds x 20 years with
+  the ladder: D = 14 gives pop 1821 (1853 without), happiness 0.46 (0.44),
+  no starvation.
+- Workshops (`Workshops(.., input_days: D)`): each firm keeps D days of the
+  inputs it has been using in its own store (`Firm::inputs`, not for sale),
+  bought ahead with the cash above its wage reserve, and works from it first.
+  D = 10: pop 1862 (1869), capability 13.2 (12.6).
+- Fuel and clothes were already planned `plan_days` ahead by households.

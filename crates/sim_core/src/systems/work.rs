@@ -342,6 +342,20 @@ fn take_input(town: &mut crate::world::Town, p: usize, need: f32, buyer: Option<
     use crate::firms::FirmFlow;
     use crate::ledger::Flow;
     let price = town.price[p];
+    let mut need = need;
+    if let Some(f) = buyer {
+        // What the firm uses, for its stock target; its own store first.
+        let firm = &mut town.firms[f];
+        let np = firm.stock.len().max(p + 1);
+        firm.input_used.resize(np, 0.0);
+        firm.input_used[p] += need;
+        if let Some(own) = firm.inputs.get_mut(p) {
+            let q = own.min(need).max(0.0);
+            *own -= q;
+            need -= q;
+            town.flows.add(crate::goods::Flow::Input, p, q);
+        }
+    }
     let from_market = need.min(town.stock[p].max(0.0));
     town.stock[p] -= from_market;
     town.flows.add(crate::goods::Flow::Input, p, from_market);

@@ -155,6 +155,9 @@ pub fn census(store: &AgentStore, towns: &Towns, squads: &Squads, goods: usize) 
             for (p, &q) in f.stock.iter().enumerate().take(goods) {
                 held[p] += q as f64;
             }
+            for (p, &q) in f.inputs.iter().enumerate().take(goods) {
+                held[p] += q as f64;
+            }
         }
         for (p, &q) in t.granary.iter().enumerate().take(goods) {
             held[p] += q as f64;
@@ -527,7 +530,10 @@ pub fn held_by(
         Holder::Workshop(t, f) => towns.0[t as usize]
             .firms
             .get(f as usize)
-            .and_then(|f| f.stock.get(good).copied())
+            .map(|f| {
+                f.stock.get(good).copied().unwrap_or(0.0)
+                    + f.inputs.get(good).copied().unwrap_or(0.0)
+            })
             .unwrap_or(0.0),
         Holder::Home(i) | Holder::Person(i) => {
             if db.is_food[good] {

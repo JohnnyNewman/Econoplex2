@@ -61,6 +61,11 @@ pub struct LadderParams {
     pub fire_per_extra_person: f32,
     /// Days of food a household wants covered by its money and larder.
     pub savings_days: f32,
+    /// Stock target for food at home: days of food a household keeps in its
+    /// larder against bad times, bought ahead when it can (0: none; food is
+    /// then bought day by day). Half of savings is then food in the larder.
+    #[serde(default)]
+    pub larder_days: f32,
     /// Health lost per day of bitter cold (10 °C short) with no fire.
     pub cold_damage: f32,
     /// Days ahead a household plans its fuel and clothes for, from what it
@@ -184,6 +189,8 @@ struct Holdings {
     room_clothes: f32,
     /// Points held per need (Own and Consume goods; shelter from the home).
     points: [f32; N],
+    /// Food value a planned purchase would add to the larder.
+    extra_food: f32,
 }
 
 /// Adds what `owned` holds to `h`: only home goods (fuel, shelter) when
@@ -424,9 +431,15 @@ fn assess(
         .iter()
         .map(|&(f, q)| q * db.foods.iter().find(|x| x.0 == f).map_or(0.0, |x| x.1))
         .sum();
-    let larder_days = larder / view.hunger_per_day;
+    let larder_days = (larder + h.extra_food) / view.hunger_per_day;
     let money_days = wealth.max(0.0) / view.day_food_cost;
-    s[idx(Need::Savings)] = ((larder_days + money_days) / lp.savings_days.max(1.0)).min(1.0);
+    let reserve = ((larder_days + money_days) / lp.savings_days.max(1.0)).min(1.0);
+    s[idx(Need::Savings)] = if lp.larder_days > 0.0 {
+        // Food at home is safer than coin when prices spike or the market is bare.
+        0.5 * (larder_days / lp.larder_days).min(1.0) + 0.5 * reserve
+    } else {
+        reserve
+    };
     let ties = &store.ties[i];
     let bonds = ties.iter().map(|t| t.value.max(0.0)).sum::<f32>() / ties.len().max(1) as f32;
     s[idx(Need::Belonging)] =
@@ -639,6 +652,45 @@ pub fn spend(
                     best = Some((k, gain));
                 }
             }
+            // Food for the larder, while the household is short of its target.
+            let mut food_best: Option<(usize, f32)> = None;
+            if lp.larder_days > 0.0 {
+                for &(f, value) in &db.foods {
+                    let f = f as usize;
+                    let price = town.price[f];
+                    if price <= 0.0 || price > store.wealth[i] || town.stock[f] < 1.0 {
+                        continue;
+                    }
+                    let mut h2 = h;
+                    h2.extra_food = value;
+                    let after = score(
+                        &assess(store, i, &h2, store.wealth[i] - price, view, lp, db, true),
+                        lp,
+                    );
+                    let gain = (after - now) / price;
+                    if gain > 1e-6
+                        && best.is_none_or(|b| gain > b.1)
+                        && food_best.is_none_or(|b| gain > b.1)
+                    {
+                        food_best = Some((f, gain));
+                    }
+                }
+            }
+            if let Some((f, _)) = food_best {
+                let town = &mut towns.0[t];
+                let price = town.price[f];
+                town.stock[f] -= 1.0;
+                town.treasury += price;
+                town.ledger.add(crate::ledger::Flow::FoodSales, price);
+                store.wealth[i] -= price;
+                crate::decision::subsistence::store(
+                    &mut store.larder[i],
+                    f as u32,
+                    1.0,
+                    f32::INFINITY,
+                );
+                continue;
+            }
             let Some((k, _)) = best else { break };
             let p = goods[k].good;
             let town = &mut towns.0[t];
@@ -692,6 +744,7 @@ mod tests {
             fire_per_c: 0.5,
             fire_per_extra_person: 0.25,
             savings_days: 60.0,
+            larder_days: 0.0,
             cold_damage: 0.02,
             plan_days: 30.0,
         }
