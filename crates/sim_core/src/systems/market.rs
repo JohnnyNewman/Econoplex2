@@ -234,7 +234,7 @@ pub fn settle(
             town.flows.add(crate::goods::Flow::Spoiled, f, rotted);
         }
     }
-    crate::granary::tend(&mut towns, &db, &params, dpy);
+    crate::granary::tend(&mut towns, &db, &params, dpy, env.season);
 
     // Wealth tax: savings above the allowance flow back to the town treasury.
     // Each town's own rate.

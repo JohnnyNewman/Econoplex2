@@ -55,7 +55,7 @@ pub fn target_stock(db: &Db, town: &crate::world::Town, params: &Params, p: usiz
             .count()
             .max(1);
         return ((soldiers / rivals as f32).max(1.0) + town.policy.ordered(p))
-            .max(town.policy.stockpiled(p));
+            .max(town.stockpile_target(p));
     }
     let per_capita = if db.is_food[p] {
         mp.food_target_per_capita
@@ -63,7 +63,7 @@ pub fn target_stock(db: &Db, town: &crate::world::Town, params: &Params, p: usiz
         mp.target_per_capita
     };
     let base = (per_capita * town.residents.len() as f32).max(1.0) + town.policy.ordered(p);
-    let stockpile = town.policy.stockpiled(p);
+    let stockpile = town.stockpile_target(p);
     if stockpile <= 0.0 {
         return base;
     }
