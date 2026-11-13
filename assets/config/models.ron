@@ -344,6 +344,40 @@
         garrison_strength: 1.0,
         independence_rate: 0.05,
     ),
+    // Squad battles on a field (battle.rs, war redesign): every number has a unit.
+    // Not wired into the economy yet; `econoplex-sim --battle "cavalry*20 vs spearmen*30"`
+    // fights one. Matchups come from reach, armour, speed, skill and experience.
+    battle: (
+        dt: 1.0,                   // seconds per step
+        max_seconds: 10800.0,      // three hours
+        walk_speed: 1.4,           // m/s on foot
+        run_speed: 3.0,
+        horse_walk_speed: 2.5,
+        horse_charge_speed: 8.0,
+        charge_distance: 60.0,     // m: break into a run or a gallop
+        foot_spacing: 1.0,         // m of front per fighter
+        horse_spacing: 2.0,
+        frontage: 40.0,            // m: widest front a squad forms
+        base_hit: 0.35,            // chance a blow lands between equals
+        skill_slope: 3.0,
+        experience_weight: 0.15,   // effective skill per ln(1 + battles survived)
+        experience_full: 10.0,     // battles for full discipline from experience
+        shield_parry: 0.5,         // share of shield cover that also turns blows
+        close_speed: 0.5,          // m/s a short weapon closes inside a long one
+        charge_damage: 0.08,       // health per m/s of a horse's (or braced spear's) impact
+        foot_charge: 0.3,          // a running man's share of that
+        shot_accuracy: 0.5,        // arrow hit chance at point blank
+        range_falloff: 0.6,        // share of it lost at full range
+        mounted_size: 1.5,         // a rider is a bigger target
+        death_below: -0.5,         // health below this is death, above it a wound
+        morale_per_loss: 1.5,      // morale lost per share of the squad lost
+        flank_drain: 0.01,         // morale per second of blows in the flank
+        morale_regen: 0.002,       // morale per second out of the fight
+        waver_at: 0.4,
+        rout_at: 0.15,
+        wall_cover: 0.6,           // share of a man on the wall hidden from arrows
+        breach_width: 6.0,         // m of gate or breach attackers fight through
+    ),
     // Households move to towns where their trade sells better, food is plentiful,
     // people think alike and no raids come, so skills follow demand between towns.
     migration: (

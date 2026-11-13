@@ -5,6 +5,7 @@
 //! runs the [`SimTick`] schedule (see [`systems`] for the pipeline). The core is
 //! headless: the CLI runs it directly, the game runs it from Bevy's `FixedUpdate`.
 
+pub mod battle;
 pub mod components;
 pub mod config;
 pub mod db;
