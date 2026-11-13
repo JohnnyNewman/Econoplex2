@@ -77,7 +77,10 @@
         // times what a successful day pays here; beginners then see what a hard
         // trade pays those who master it).
         valuation: (horizon_days: 30.0, discount: 0.97, typical_success: 0.7, posted_pay_days: 90.0,
-            pay_basis: Average),
+            pay_basis: Average,
+            // Days of food the town must hold, and the agent afford, for food it
+            // can buy to count as meeting its food need when it weighs jobs (0: off).
+            food_secure_days: 0.0),
         // Component: each job's pay factor on the town's base wage share. Fixed: 1.
         // ExcessDemand: moves by step x (target_fill - takers / places) each day,
         // within min..max: crowded jobs pay less, empty ones more.

@@ -647,3 +647,40 @@ swords (931 → 350–613). The block is monetary, not prices:
 
 The circular flow of money through the town market is the next thing to fix.
 
+
+## Why the utility model fails, revisited (2026-11-13)
+
+Against today's defaults (balancing caravans, skilled matching), 6 seeds × 40
+years, Features model as reference:
+
+| setup | pop | starve | hh use | in use | capab | kinds/yr | swords |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Features (default) | 3978 | 0 | 62.1 | 86.8 | 31.2 | 21.4 | 5680 |
+| Utility alone | 1310 | 1.1 % | 63.9 | 108.7 | 28.7 | 24.7 | 50 |
+| Utility + subsistence `Keep(0.2, 10)` | 4126 | 0 | 44.4 | 63.0 | 20.5 | 15.2 | 291 |
+| + utility migration | 4091 | 0 | 44.3 | 61.9 | 20.9 | 15.1 | 165 |
+| + `pay_basis: OwnSuccess` | 4079 | 0 | 44.0 | 61.3 | 21.5 | 16.1 | 127 |
+| + loosening caps | 4189 | 0 | 44.1 | 62.3 | 23.0 | 16.2 | 225 |
+| Utility + subsistence + `food_secure_days: 10` (new) | 2915 | 0 | 47.4 | 84.0 | 25.6 | 21.9 | 81 |
+| same, 30 days | 3602 | 0 | 43.8 | 68.8 | 23.1 | 18.8 | 56 |
+
+(Household use is lower with subsistence because food kept at home never
+passes the market.)
+
+**The cause is food work, not the skill trap alone.** With subsistence, 78–100 %
+of adults end up farmers; in Greenvale everyone farms. Every day an agent is a
+little hungry, so its food need is partly unmet. A food job that lets it keep
+food counts as covering that need, and under CRRA a short need outweighs any
+pay. Food it could buy at the market didn't count. Without subsistence, the
+opposite happens: food jobs pay little at the floor price, too few take them,
+and people starve.
+
+**New option `decision.valuation.food_secure_days` (off).** While the town holds
+that many days of food and the agent can pay for them, its hunger counts as
+covered when it weighs jobs. It frees labour from farming (capability +5,
+variety +7), but the town then grows less food and the population falls (−29 %
+at 10 days).
+
+What would fix it is food work valued by what the town needs, not by the
+worker's own hunger. Today's Features model gets this from the per-town job
+places: food jobs have places while food is short.

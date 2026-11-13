@@ -321,7 +321,28 @@ impl Choice<'_> {
         let (db, params) = (self.db, self.params);
         let d = &params.decision;
         let t = store.town[i] as usize;
-        let st = store.state[i];
+        let mut st = store.state[i];
+        // Food the agent can buy counts as food it will have (food_secure_days).
+        if d.valuation.food_secure_days > 0.0 {
+            let town = &self.towns.0[t];
+            let meal = db
+                .foods
+                .iter()
+                .filter(|(p, _)| town.stock[*p as usize] >= 1.0)
+                .map(|(p, _)| town.price[*p as usize])
+                .fold(f32::MAX, f32::min);
+            if meal < f32::MAX {
+                let secure = valuation::food_security(
+                    town.food_stock(db),
+                    town.residents.len(),
+                    params.needs.hunger_per_day,
+                    store.wealth[i],
+                    meal,
+                    d.valuation.food_secure_days,
+                );
+                st[state::HUNGER] *= 1.0 - secure;
+            }
+        }
         let weights = utility::need_weights(&d.utility, &store.mind[i]);
         // Wealth after the rent of the coming weeks.
         let rent = self.towns.0[t].rent * d.valuation.horizon_weight();

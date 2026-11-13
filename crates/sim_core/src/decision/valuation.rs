@@ -33,6 +33,34 @@ pub struct ValuationParams {
     pub posted_pay_days: f32,
     /// What an agent expects a job to pay it.
     pub pay_basis: PayBasis,
+    /// Count food the agent can buy at the market as meeting its food need:
+    /// while the town holds food for `food_secure_days` of its residents and the
+    /// agent can pay for that many days' meals, its hunger counts as covered
+    /// when it weighs jobs. Then food jobs win only when food is scarce or
+    /// unaffordable, not because the agent is a little hungry today. 0: off
+    /// (only today's hunger counts).
+    #[serde(default)]
+    pub food_secure_days: f32,
+}
+
+/// How secure an agent's food is through the market, 0..1: the town's food
+/// stock against `days` of its residents' need, times what the agent can pay
+/// against `days` of meals at `meal_price`.
+pub fn food_security(
+    food_stock: f32,
+    residents: usize,
+    hunger_per_day: f32,
+    wealth: f32,
+    meal_price: f32,
+    days: f32,
+) -> f32 {
+    if days <= 0.0 {
+        return 0.0;
+    }
+    let need = residents.max(1) as f32 * hunger_per_day * days;
+    let stocked = (food_stock / need.max(1e-6)).clamp(0.0, 1.0);
+    let affordable = (wealth.max(0.0) / (meal_price.max(1e-6) * days)).clamp(0.0, 1.0);
+    stocked * affordable
 }
 
 /// `decision.valuation.pay_basis` in models.ron.
@@ -68,6 +96,7 @@ impl Default for ValuationParams {
             typical_success: 0.7,
             posted_pay_days: 90.0,
             pay_basis: PayBasis::Average,
+            food_secure_days: 0.0,
         }
     }
 }
@@ -159,6 +188,17 @@ mod tests {
             median_wealth: 30.0,
             weights: w,
         }
+    }
+
+    #[test]
+    fn food_is_secure_when_the_market_has_it_and_the_agent_can_pay() {
+        // 100 residents, 0.2 hunger a day, 10 days: the town needs 200 food.
+        assert_eq!(food_security(400.0, 100, 0.2, 100.0, 2.0, 10.0), 1.0);
+        assert!((food_security(100.0, 100, 0.2, 100.0, 2.0, 10.0) - 0.5).abs() < 1e-6);
+        // Plenty in stock, but the agent can pay for only half the meals.
+        assert!((food_security(400.0, 100, 0.2, 10.0, 2.0, 10.0) - 0.5).abs() < 1e-6);
+        // Off.
+        assert_eq!(food_security(400.0, 100, 0.2, 100.0, 2.0, 0.0), 0.0);
     }
 
     #[test]
