@@ -177,3 +177,30 @@ survive. Both off by default.
   bought ahead with the cash above its wage reserve, and works from it first.
   D = 10: pop 1862 (1869), capability 13.2 (12.6).
 - Fuel and clothes were already planned `plan_days` ahead by households.
+
+## Why stocking less gear shrinks the economy (2026-11-13)
+
+War thread finding: `military.kit_demand: Soldiers` (weapons stocked per
+soldier, not per head) cuts population 1914 -> 1834 and food per head 8.2 -> 4.3
+over 6 seeds x 20 years. Checked:
+
+| 6 seeds x 20 years | PerCapita | Soldiers |
+| --- | --- | --- |
+| swords | 984 | 200 |
+| input use | 136 | 96 |
+| household use | 87 | 76 |
+| wealth Gini | 0.63 | 0.32 |
+| raids / revolts | 29 / 4.3 | 34.5 / 7.2 |
+| same, raids off: pop | 1966 | 1930 |
+| same, raids off: food per head | 6.9 | 3.7 |
+
+- Under `firms: Treasury` the town buys every output, so a high weapon target
+  is a treasury-funded work programme: iron, coal, charcoal and smithing wages
+  (input use -30 to -40 % without it). Less of it means less income, less
+  household buying and much less inequality (smiths were the rich).
+- Food per head falls from 2.7 to 1.4 times the market's food target (3.0): the
+  lost part was surplus (glut 0.28 -> 0.09), not a shortage; nobody starves.
+- Most of the population loss is war: with fewer swords in store towns lose
+  more raids and face more revolts. With raids off the gap is 1.8 %.
+- No bug in the stock logic. Under the ruler's rules the gap is wider (1848 ->
+  1605): the treasury's sword spending also paid for the food levers.
