@@ -794,6 +794,7 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
     world.insert_resource(crate::history::History::default());
     world.insert_resource(SimClock::new(dpy, &params_time));
     world.insert_resource(crate::env::Environment::default());
+    world.insert_resource(crate::goods::Squads::default());
     world.insert_resource(seed);
     world.insert_resource(Decisions::default());
     world.insert_resource(WorkLog {

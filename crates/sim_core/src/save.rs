@@ -63,6 +63,8 @@ pub struct SavedEntity {
     pub task: Option<Task>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub participants: Option<Participants>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<crate::goods::Owner>,
 }
 
 impl SavedEntity {
@@ -82,6 +84,7 @@ impl SavedEntity {
             membership: e.get::<Membership>().copied(),
             task: e.get::<Task>().cloned(),
             participants: e.get::<Participants>().cloned(),
+            owner: e.get::<crate::goods::Owner>().copied(),
         };
         let any = s.agent.is_some()
             || s.pos.is_some()
@@ -123,6 +126,21 @@ impl SavedEntity {
             e.insert(Stored);
         }
         if let Some(c) = self.equipped_by {
+            e.insert(c);
+        }
+        // Items from saves made before owners existed: owned by the armory
+        // they sit in, or by the person who carries them.
+        let owner = self.owner.or_else(|| {
+            self.item?;
+            if let Some(b) = self.equipped_by {
+                Some(crate::goods::Owner(crate::goods::Holder::Person(b.0)))
+            } else {
+                self.town
+                    .filter(|_| self.stored)
+                    .map(|t| crate::goods::Owner(crate::goods::Holder::Armory(t.0)))
+            }
+        });
+        if let Some(c) = owner {
             e.insert(c);
         }
         if let Some(c) = self.nature {
@@ -172,6 +190,8 @@ pub struct SaveFile {
     /// Hours, season and weather (older saves start with clear ground).
     #[serde(default)]
     pub env: crate::env::Environment,
+    #[serde(default)]
+    pub squads: crate::goods::Squads,
 }
 
 impl SaveFile {
@@ -235,6 +255,7 @@ struct SaveRef<'a> {
     governors: &'a crate::governor::Governors,
     history: &'a crate::history::History,
     env: &'a crate::env::Environment,
+    squads: &'a crate::goods::Squads,
 }
 
 /// Fingerprint of the content a world was built from (FNV-1a, stable across builds).
@@ -273,6 +294,7 @@ fn save_ref(world: &World) -> SaveRef<'_> {
         governors: world.resource::<crate::governor::Governors>(),
         history: world.resource::<crate::history::History>(),
         env: world.resource::<crate::env::Environment>(),
+        squads: world.resource::<crate::goods::Squads>(),
     }
 }
 
@@ -395,6 +417,7 @@ pub fn restore(
         governors,
         history,
         env,
+        mut squads,
         ..
     } = save;
     let mut db = Db::build(
@@ -422,9 +445,15 @@ pub fn restore(
     store.lived_in.resize(store.len(), Vec::new());
     store.owned.resize(store.len(), Vec::new());
     store.comfort.resize(store.len(), 0.0);
+    store.armour.resize(store.len(), None);
+    store.shield.resize(store.len(), None);
+    store.mount.resize(store.len(), None);
     for i in 0..store.len() {
         store.equipped[i] = map.opt(store.equipped[i]);
         store.weapon[i] = map.opt(store.weapon[i]);
+        store.armour[i] = map.opt(store.armour[i]);
+        store.shield[i] = map.opt(store.shield[i]);
+        store.mount[i] = map.opt(store.mount[i]);
         if let Activity::Working(e) = store.activity[i] {
             store.activity[i] = Activity::Working(map.get(e));
         }
@@ -469,6 +498,10 @@ pub fn restore(
     clock.economy_days_per_day = time.economy_days_per_day.max(1);
     world.insert_resource(clock);
     world.insert_resource(env);
+    for s in &mut squads.list {
+        map.all(&mut s.items);
+    }
+    world.insert_resource(squads);
     world.insert_resource(seed);
     world.insert_resource(decisions);
     world.insert_resource(work_log);

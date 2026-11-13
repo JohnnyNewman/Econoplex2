@@ -119,3 +119,21 @@ field) before the market runs dry, and it also takes stock on the first day.
 With the player town (Greenvale) ungoverned, it now starves in some seeds
 (seed 44: 12,318 person-days) while the AI towns mostly get by; Ironhold, the
 mining town, still has famines in its first months, before the first harvest.
+
+## Items with owners (step 2b-1)
+
+`goods.rs`: every item (tool, weapon; later armour, shield, mount) has an
+`Owner(Holder)`. Holders: `Market(town)`, `Granary(town)`, `Workshop(town,
+firm)`, `Home(keeper)`, `Person(i)`, `Armory(town)`, `Squad(SquadId)`. Where an
+item is follows from its owner. Items move only through `to_armory` /
+`from_armory`, `to_person` / `from_person` (by `Slot`: tool, weapon, armour,
+shield, mount; content `equip.slot`), and `to_squad` / `from_squad`.
+`goods::wear(item, hours)` wears an item by the hour (8 hours = one use of its
+`durability`). `Squads` is a stub table for the war redesign (home town,
+members, place, kit); `eats_from` says where a person eats (their squad while
+marching, else their home); `carry_capacity` says what a holder can carry
+(squads: 25 kg per member for now; goods have `kg` in the content).
+
+`market.item_stock: Held` (off) makes the market's count of tools and weapons
+what its armory holds; the old count kept weapons carried by soldiers in stock.
+6 seeds x 20 years: pop 1918 -> 1913, swords 1373 -> 1332, raids 27.7 -> 22.5.

@@ -112,8 +112,7 @@ pub fn organize(
         }
         if let Some((k, _)) = best {
             let (e, _, _) = shelf.remove(k);
-            let at = town.armory.iter().position(|&x| x == e).unwrap();
-            town.armory.swap_remove(at);
+            crate::goods::from_armory(&mut town.armory, e);
             let prod = items.get(e).unwrap();
             // Tools are bought from the town, on credit if need be; wages repay it.
             let cost = town.price[prod.def as usize] * (0.5 + prod.quality);
@@ -135,13 +134,9 @@ pub fn organize(
                 prod.def as usize,
                 before - town.stock[prod.def as usize],
             );
-            store.equipped[i] = Some(e);
+            crate::goods::to_person(&mut commands, store, i, crate::goods::Slot::Tool, e);
             let dir = &db.domain_dirs[g.domain as usize];
             store.equip_vec[i] = dir.iter().map(|d| d * bonus).collect();
-            commands
-                .entity(e)
-                .remove::<Stored>()
-                .insert(EquippedBy(i as u32));
         }
     }
 }

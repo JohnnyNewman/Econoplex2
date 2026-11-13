@@ -225,3 +225,291 @@ mod tests {
         assert_eq!(f.net(7), 0.0);
     }
 }
+
+// ---------------------------------------------------------------- holders and items
+//
+// Step 2b of the economy redesign: every good has an owner. Tools and weapons
+// (and later armour, shields, mounts and clothes) are items: ECS entities with
+// a `Product` (good and quality), an `Item` (wear) and an `Owner`. Where an
+// item is follows from its owner: an armory is in its town, a person's gear is
+// with the person, a squad's kit is wherever the squad is.
+
+use bevy_ecs::prelude::*;
+
+/// A squad's index in [`Squads`].
+pub type SquadId = u32;
+
+/// Who holds goods.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Holder {
+    /// A town's market stock.
+    Market(u16),
+    /// A town's granary (`granary.rs`).
+    Granary(u16),
+    /// A workshop: (town, firm index into `Db::firm_keys`).
+    Workshop(u16, u32),
+    /// A household, by its keeper's store index (`ladder::Homes`).
+    Home(u32),
+    /// A person's own gear and goods, by store index.
+    Person(u32),
+    /// A town's armory: its tools and weapons not in use.
+    Armory(u16),
+    /// A squad on the march (`Squads`).
+    Squad(SquadId),
+}
+
+/// The owner of an item entity.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Owner(pub Holder);
+
+/// Where something is.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum Place {
+    Town(u16),
+    /// On the road from one town to another, `progress` 0..1 of the way.
+    Road {
+        from: u16,
+        to: u16,
+        progress: f32,
+    },
+    /// In the field: a town's nature site, by its index in `Town::nature_sites`.
+    Field {
+        town: u16,
+        site: u32,
+    },
+}
+
+/// Where a person carries an item.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Slot {
+    Tool,
+    Weapon,
+    Armour,
+    Shield,
+    Mount,
+}
+
+impl Slot {
+    pub const ALL: [Slot; 5] = [
+        Slot::Tool,
+        Slot::Weapon,
+        Slot::Armour,
+        Slot::Shield,
+        Slot::Mount,
+    ];
+
+    /// The slot a good goes in: its `equip.slot` in the content, else tools in
+    /// the tool slot and weapons in the weapon slot.
+    pub fn of(def: &sim_data::ProductDef) -> Option<Slot> {
+        if let Some(s) = def.equip.as_ref().and_then(|e| e.slot.as_deref()) {
+            return match s {
+                "tool" => Some(Slot::Tool),
+                "weapon" => Some(Slot::Weapon),
+                "armour" => Some(Slot::Armour),
+                "shield" => Some(Slot::Shield),
+                "mount" => Some(Slot::Mount),
+                _ => None,
+            };
+        }
+        match def.category {
+            sim_data::Category::Tool => Some(Slot::Tool),
+            sim_data::Category::Weapon => Some(Slot::Weapon),
+            _ => None,
+        }
+    }
+}
+
+/// Hours of use one unit of an item's `durability` stands for (a working day).
+pub const HOURS_PER_USE: f32 = 8.0;
+
+/// Wears `item` by `hours` of use (a day's work, a battle). Returns whether it
+/// broke (no durability left).
+pub fn wear(item: &mut crate::components::Item, hours: f32) -> bool {
+    item.worn_hours += hours.max(0.0);
+    while item.worn_hours >= HOURS_PER_USE && item.durability > 0 {
+        item.worn_hours -= HOURS_PER_USE;
+        item.durability -= 1;
+    }
+    item.durability == 0
+}
+
+/// The item person `i` has in `slot`.
+pub fn gear(store: &AgentStore, i: usize, slot: Slot) -> Option<Entity> {
+    match slot {
+        Slot::Tool => store.equipped[i],
+        Slot::Weapon => store.weapon[i],
+        Slot::Armour => store.armour.get(i).copied().flatten(),
+        Slot::Shield => store.shield.get(i).copied().flatten(),
+        Slot::Mount => store.mount.get(i).copied().flatten(),
+    }
+}
+
+fn gear_mut(store: &mut AgentStore, i: usize, slot: Slot) -> &mut Option<Entity> {
+    let n = store.len();
+    match slot {
+        Slot::Tool => &mut store.equipped[i],
+        Slot::Weapon => &mut store.weapon[i],
+        Slot::Armour => {
+            store.armour.resize(n, None);
+            &mut store.armour[i]
+        }
+        Slot::Shield => {
+            store.shield.resize(n, None);
+            &mut store.shield[i]
+        }
+        Slot::Mount => {
+            store.mount.resize(n, None);
+            &mut store.mount[i]
+        }
+    }
+}
+
+/// Puts `item` in town `town`'s armory (it must already be out of any other
+/// holder's hands).
+pub fn to_armory(commands: &mut Commands, armory: &mut Vec<Entity>, town: u16, item: Entity) {
+    commands
+        .entity(item)
+        .remove::<crate::components::EquippedBy>()
+        .insert((crate::components::Stored, Owner(Holder::Armory(town))));
+    armory.push(item);
+}
+
+/// Takes `item` out of an armory.
+pub fn from_armory(armory: &mut Vec<Entity>, item: Entity) {
+    if let Some(k) = armory.iter().position(|&e| e == item) {
+        armory.swap_remove(k);
+    }
+}
+
+/// Gives `item` to person `i` for `slot`.
+pub fn to_person(
+    commands: &mut Commands,
+    store: &mut AgentStore,
+    i: usize,
+    slot: Slot,
+    item: Entity,
+) {
+    *gear_mut(store, i, slot) = Some(item);
+    commands
+        .entity(item)
+        .remove::<crate::components::Stored>()
+        .insert((
+            crate::components::EquippedBy(i as u32),
+            Owner(Holder::Person(i as u32)),
+        ));
+}
+
+/// Takes person `i`'s item in `slot` from them.
+pub fn from_person(store: &mut AgentStore, i: usize, slot: Slot) -> Option<Entity> {
+    gear_mut(store, i, slot).take()
+}
+
+/// Gives `item` to squad `id` as kit (carried on the march, on nobody's person).
+pub fn to_squad(commands: &mut Commands, squads: &mut Squads, id: SquadId, item: Entity) {
+    if let Some(s) = squads.list.get_mut(id as usize) {
+        s.items.push(item);
+    }
+    commands
+        .entity(item)
+        .remove::<crate::components::Stored>()
+        .remove::<crate::components::EquippedBy>()
+        .insert(Owner(Holder::Squad(id)));
+}
+
+/// Takes `item` out of squad `id`'s kit.
+pub fn from_squad(squads: &mut Squads, id: SquadId, item: Entity) {
+    if let Some(s) = squads.list.get_mut(id as usize) {
+        s.items.retain(|&e| e != item);
+    }
+}
+
+/// A squad: people under arms who march, camp and fight together. A stub for
+/// the war redesign, which raises squads and moves them.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Squad {
+    /// The town that raised it, and where it goes back to.
+    pub home: u16,
+    /// Store indices of its people.
+    pub members: Vec<u32>,
+    pub place: Place,
+    /// Items it carries as kit (not on anyone's person).
+    pub items: Vec<Entity>,
+}
+
+#[derive(Resource, Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Squads {
+    pub list: Vec<Squad>,
+}
+
+impl Squads {
+    /// The squad person `i` marches with, if any.
+    pub fn squad_of(&self, i: usize) -> Option<SquadId> {
+        self.list
+            .iter()
+            .position(|s| s.members.contains(&(i as u32)))
+            .map(|k| k as SquadId)
+    }
+}
+
+/// Where person `i` eats and keeps warm right now: their squad's stores while
+/// they march with one, else their household (kept by `keeper`).
+pub fn eats_from(squads: &Squads, i: usize, keeper: usize) -> Holder {
+    match squads.squad_of(i) {
+        Some(id) => Holder::Squad(id),
+        None => Holder::Home(keeper as u32),
+    }
+}
+
+/// Weight a squad member carries besides their own gear, kg.
+pub const KG_PER_MEMBER: f32 = 25.0;
+
+/// How much a holder can carry, kg; `None`: no limit (a building's stores).
+/// A squad carries what its members can; the war redesign adds carts and mounts.
+pub fn carry_capacity(holder: Holder, squads: &Squads) -> Option<f32> {
+    match holder {
+        Holder::Squad(id) => Some(
+            squads
+                .list
+                .get(id as usize)
+                .map_or(0.0, |s| s.members.len() as f32 * KG_PER_MEMBER),
+        ),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod item_tests {
+    use super::*;
+    use crate::components::Item;
+
+    #[test]
+    fn an_item_wears_by_the_hour() {
+        let mut it = Item {
+            durability: 2,
+            worn_hours: 0.0,
+        };
+        assert!(!wear(&mut it, 6.0));
+        assert_eq!(it.durability, 2);
+        assert!(!wear(&mut it, 4.0));
+        assert_eq!(it.durability, 1);
+        assert!(wear(&mut it, 8.0));
+    }
+
+    #[test]
+    fn a_squad_carries_by_its_members() {
+        let mut squads = Squads::default();
+        assert_eq!(carry_capacity(Holder::Market(0), &squads), None);
+        squads.list.push(Squad {
+            home: 0,
+            members: vec![3, 4],
+            place: Place::Town(0),
+            items: Vec::new(),
+        });
+        assert_eq!(
+            carry_capacity(Holder::Squad(0), &squads),
+            Some(2.0 * KG_PER_MEMBER)
+        );
+        assert_eq!(eats_from(&squads, 4, 9), Holder::Squad(0));
+        assert_eq!(eats_from(&squads, 5, 9), Holder::Home(9));
+    }
+}

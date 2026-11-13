@@ -371,6 +371,17 @@ pub enum ScarcityCap {
     Loosen { rate: f32, max_factor: f32 },
 }
 
+/// How a market counts its tools and weapons.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ItemStock {
+    /// A count kept beside the items: up when made, down when a tool is taken
+    /// (weapons soldiers carry stay counted). The old rule.
+    #[default]
+    Counted,
+    /// What the town's armory holds, recounted daily.
+    Held,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MarketParams {
     pub price_adjust: f32,
@@ -427,6 +438,9 @@ pub struct MarketParams {
     pub public_spending: f32,
     /// Fraction of food stock that spoils per year.
     pub food_spoilage: f32,
+    /// How the market counts tools and weapons in stock.
+    #[serde(default)]
+    pub item_stock: ItemStock,
     /// Who keeps the town fed: town-wide rules, or the ruler (`granary.rs`).
     #[serde(default)]
     pub food_rules: crate::granary::FoodRules,

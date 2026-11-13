@@ -143,12 +143,8 @@ pub fn military(
                     .max_by(|a, b| a.1.total_cmp(&b.1).then(b.0.cmp(&a.0)));
                 let Some((slot, power)) = best else { break };
                 let e = town.armory.swap_remove(slot);
-                store.weapon[i] = Some(e);
+                crate::goods::to_person(&mut commands, store, i, crate::goods::Slot::Weapon, e);
                 store.weapon_power[i] = mp.weapon_power * power;
-                commands
-                    .entity(e)
-                    .remove::<Stored>()
-                    .insert(EquippedBy(i as u32));
             }
         }
     }
@@ -354,9 +350,8 @@ fn recruit_score(store: &AgentStore, i: usize) -> f32 {
 fn release(commands: &mut Commands, store: &mut AgentStore, armory: &mut Vec<Entity>, i: usize) {
     store.activity[i] = Activity::Idle;
     store.weapon_power[i] = 0.0;
-    if let Some(e) = store.weapon[i].take() {
-        commands.entity(e).remove::<EquippedBy>().insert(Stored);
-        armory.push(e);
+    if let Some(e) = crate::goods::from_person(store, i, crate::goods::Slot::Weapon) {
+        crate::goods::to_armory(commands, armory, store.town[i], e);
     }
 }
 
