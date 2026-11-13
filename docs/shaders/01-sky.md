@@ -36,6 +36,10 @@ Rule of thumb: never compute per pixel what you could compute once.
 The sun's path: `a = (hour − 6) / 24 · 2π` and `s = normalize(cos a, 0.85 sin a, 0.45 sin a)`.
 It rises in the east (+x) at 6, stands highest at 12 and sets in the west at 18.
 
+> **Since step 11** ([11-day-night-weather](11-day-night-weather.md)) the day is
+> longer than the night: the sun is up for 16 hours on average (14 in winter, 18 in
+> summer), the moon lights the night, and clouds, stars and the weather join the sky.
+
 | noon | sunset | night |
 | --- | --- | --- |
 | ![noon](../images/shader01_noon.jpg) | ![sunset](../images/shader01_sunset.jpg) | ![night](../images/shader01_night.jpg) |

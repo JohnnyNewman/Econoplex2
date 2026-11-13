@@ -132,3 +132,6 @@ side, so the GPU never has to run both.
   trade. `H` hides the UI.
 - **Step 10:** level of detail ([10-lod](10-lod.md)): impostor cards drawn with
   distance functions, dithered cross-fades. `K` tints people by level.
+- **Step 11:** day, night, seasons and weather ([11-day-night-weather](11-day-night-weather.md)):
+  one environment state feeds sky, light, fog and every material; rain and snow
+  as wrapped particles. `Y` weather, `U` season.

@@ -15,6 +15,7 @@
 //! shader the number keys control, and `0`–`4` pick its debug view (for the sky: (0 final, 1 view direction, 2 gradient parameter, 3 sun term, 4 free for
 //! the exercises).
 
+use crate::env::Environment;
 use bevy::light::{NotShadowCaster, NotShadowReceiver};
 use bevy::mesh::MeshVertexBufferLayoutRef;
 use bevy::pbr::{MaterialPipeline, MaterialPipelineKey};
@@ -38,8 +39,20 @@ impl Plugin for SkyPlugin {
         app.add_plugins(MaterialPlugin::<SkyMaterial>::default())
             .init_resource::<SkyClock>()
             .init_resource::<DebugTarget>()
+            .init_resource::<Environment>()
             .add_systems(Startup, spawn_sky)
-            .add_systems(Update, (sky_keys, update_sky, follow_camera).chain());
+            .init_resource::<crate::env::EnvOverride>()
+            .add_systems(
+                Update,
+                (
+                    sky_keys,
+                    crate::env::env_keys,
+                    crate::env::update_environment,
+                    update_sky,
+                    follow_camera,
+                )
+                    .chain(),
+            );
     }
 }
 
@@ -59,6 +72,15 @@ pub struct SkyUniform {
     pub sun_color: Vec4,
     /// x: debug view (0 final, 1 direction, 2 gradient, 3 sun term, 4 free); yzw unused.
     pub debug: Vec4,
+    /// xyz: unit vector toward the moon; w: moon phase (0 new, 0.5 full).
+    pub moon_dir: Vec4,
+    /// x: cloud cover 0..1, y: how bright the stars are 0..1, z: haze 0..1,
+    /// w: precipitation 0..1 (darkens the clouds).
+    pub weather: Vec4,
+    /// xy: where the wind blows (m/s), moves the clouds; zw unused.
+    pub wind: Vec4,
+    /// rgb: colour of the lit side of the clouds; a: their shadow side (0..1 of it).
+    pub cloud_color: Vec4,
 }
 
 /// The material: Bevy turns the `#[uniform(0)]` field into binding 0 of the
@@ -161,19 +183,47 @@ pub fn sun_direction(hour: f32) -> Vec3 {
     sun_direction_in(hour, 0.5)
 }
 
-/// The sun's direction at a time of day and a time of year: in winter (season
-/// 0) it climbs about half as high as at midsummer (season 0.5).
+/// Hours of daylight at a time of year: 16 on average (so the night is about
+/// a third of the day), 14 in midwinter, 18 at midsummer.
+pub fn day_length(season: f32) -> f32 {
+    16.0 - 2.0 * (season * std::f32::consts::TAU).cos()
+}
+
+/// Sunrise and sunset (hours), symmetric around noon.
+pub fn sunrise_sunset(season: f32) -> (f32, f32) {
+    let half = day_length(season) * 0.5;
+    (12.0 - half, 12.0 + half)
+}
+
+/// The sun's direction at a time of day and a time of year. The sun runs a
+/// circle once a day: east (+x) in the morning, highest at noon (tilted toward
+/// +z), west in the evening. The circle sits above the horizon for
+/// `day_length(season)` hours; in winter it also climbs about half as high.
 pub fn sun_direction_in(hour: f32, season: f32) -> Vec3 {
-    let a = (hour - 6.0) / 24.0 * std::f32::consts::TAU;
+    let a = (hour - 12.0) / 24.0 * std::f32::consts::TAU; // 0 at noon
+    let half = day_length(season) / 24.0 * std::f32::consts::PI; // half a day's arc
     let summer = 0.5 - 0.5 * (season * std::f32::consts::TAU).cos(); // 0 winter, 1 summer
-    let lift = 0.85 * (0.55 + 0.45 * summer);
-    Vec3::new(a.cos(), a.sin() * lift, a.sin() * 0.45).normalize()
+    let noon = 0.85 * (0.55 + 0.45 * summer); // height at noon
+                                              // y = A (cos a - cos half): zero at sunrise and sunset, `noon` at noon.
+    let y = noon * (a.cos() - half.cos()) / (1.0 - half.cos());
+    Vec3::new(-a.sin(), y, 0.45 * a.cos().max(0.0) + 0.1).normalize()
+}
+
+/// The moon's direction: roughly opposite the sun, a little higher, so it
+/// lights the night from the other side of the sky.
+pub fn moon_direction_in(hour: f32, season: f32) -> Vec3 {
+    let s = sun_direction_in(hour, season);
+    Vec3::new(-s.x, -s.y * 0.8 + 0.12, -s.z * 0.6 + 0.2).normalize()
 }
 
 impl SkyClock {
     /// Toward the sun, now.
     pub fn sun(&self) -> Vec3 {
         sun_direction_in(self.hour, self.season)
+    }
+    /// Toward the moon, now.
+    pub fn moon(&self) -> Vec3 {
+        moon_direction_in(self.hour, self.season)
     }
 }
 
@@ -273,17 +323,26 @@ fn sky_keys(
 /// sun light and the ambient light follow.
 fn update_sky(
     clock: Res<SkyClock>,
+    env: Res<Environment>,
     sky: Query<&MeshMaterial3d<SkyMaterial>, With<Sky>>,
     mut materials: ResMut<Assets<SkyMaterial>>,
     mut sun: Query<(&mut Transform, &mut DirectionalLight)>,
     mut ambient: ResMut<GlobalAmbientLight>,
 ) {
-    if !clock.is_changed() {
+    if !clock.is_changed() && !env.is_changed() {
         return;
     }
     let dir = clock.sun();
-    let (horizon, zenith, ground) = palette(dir.y);
+    let moon = clock.moon();
+    let w = &env.weather;
+    let (horizon, zenith, ground) = weathered_palette(dir.y, w.cloud, w.precip);
     let sun_rgb = sun_color(dir);
+    let light = sky_light(dir, moon, env.moon_phase(), w.cloud, w.precip);
+    // Clouds: lit by the sun by day (warm at dawn and dusk), by the moon at
+    // night; rain clouds are darker.
+    let lit = (sun_rgb / 6.0 * light.day * 1.1 + Vec3::new(0.06, 0.07, 0.11) * light.moon)
+        .lerp(zenith.max(horizon) * 0.9, 0.3)
+        * (1.0 - 0.55 * w.precip);
     for handle in &sky {
         if let Some(mut m) = materials.get_mut(handle) {
             m.sky = SkyUniform {
@@ -291,20 +350,90 @@ fn update_sky(
                 zenith: zenith.extend(1.0),
                 ground: ground.extend(1.0),
                 sun_dir: dir.extend(0.0),
-                sun_color: sun_rgb.extend(0.03),
+                sun_color: (sun_rgb * (1.0 - 0.9 * w.cloud)).extend(0.03),
                 debug: Vec4::new(clock.debug as f32, 0.0, 0.0, 0.0),
+                moon_dir: moon.extend(env.moon_phase()),
+                weather: Vec4::new(w.cloud, light.stars, w.haze, w.precip),
+                wind: w.wind.extend(0.0).extend(0.0),
+                cloud_color: lit.extend(0.55),
             };
         }
     }
-    // Light fades in and out around sunrise and sunset.
-    let day = ((dir.y + 0.05) / 0.3).clamp(0.0, 1.0);
-    for (mut tf, mut light) in &mut sun {
-        *tf = Transform::from_translation(dir * 100.0).looking_at(Vec3::ZERO, Vec3::Y);
-        light.illuminance = 9_000.0 * day;
-        light.color = Color::linear_rgb(sun_rgb.x / 6.0, sun_rgb.y / 6.0, sun_rgb.z / 6.0);
+    for (mut tf, mut l) in &mut sun {
+        *tf = Transform::from_translation(light.dir * 100.0).looking_at(Vec3::ZERO, Vec3::Y);
+        l.illuminance = light.illuminance;
+        l.color = light.color;
     }
-    ambient.color = Color::linear_rgb(zenith.x, zenith.y, zenith.z).mix(&Color::WHITE, 0.5);
-    ambient.brightness = 40.0 + 220.0 * day;
+    // At night the sky light is the deep blue of the zenith.
+    ambient.color =
+        Color::linear_rgb(zenith.x, zenith.y, zenith.z).mix(&Color::WHITE, 0.15 + 0.35 * light.day);
+    ambient.brightness = light.ambient;
+}
+
+/// The one directional light of the scene, and the ambient light, for a sun
+/// and moon position and the weather.
+#[derive(Clone, Copy, Debug)]
+pub struct SkyLight {
+    /// Toward the light (the sun by day, the moon at night).
+    pub dir: Vec3,
+    pub illuminance: f32,
+    pub color: Color,
+    pub ambient: f32,
+    /// How much it is day (0 night .. 1 full day) and how much moonlight there is.
+    pub day: f32,
+    pub moon: f32,
+    /// Star brightness, 0 .. 1.
+    pub stars: f32,
+}
+
+/// Sun light fades out around sunset; the moon takes over once the sun is
+/// well below the horizon (the light switches over in the darkest moment, so
+/// the jump of the shadows is not seen). Clouds dim both and soften the light
+/// toward ambient.
+pub fn sky_light(sun: Vec3, moon: Vec3, phase: f32, cloud: f32, precip: f32) -> SkyLight {
+    let day = ((sun.y + 0.05) / 0.3).clamp(0.0, 1.0);
+    let full = 1.0 - (phase - 0.5).abs() * 2.0; // 1 full, 0 new
+    let night = crate::env::smooth(-0.04, -0.16, sun.y);
+    let moon_light = night * (0.25 + 0.75 * full) * crate::env::smooth(-0.05, 0.15, moon.y);
+    let dim = 1.0 - 0.75 * cloud - 0.15 * precip;
+    let sun_rgb = sun_color(sun) / 6.0;
+    let (dir, illuminance, color) = if day > 0.0 || moon_light <= 0.0 {
+        (
+            sun,
+            9_000.0 * day * dim,
+            Color::linear_rgb(sun_rgb.x, sun_rgb.y, sun_rgb.z),
+        )
+    } else {
+        (
+            moon,
+            320.0 * moon_light * dim,
+            Color::linear_rgb(0.55, 0.65, 1.0),
+        )
+    };
+    SkyLight {
+        dir,
+        illuminance,
+        color,
+        // Overcast days are flat: less sun, a bit more sky light.
+        ambient: (15.0 + 20.0 * moon_light)
+            + 220.0 * day * (1.0 + 0.25 * cloud) * (1.0 - 0.3 * precip),
+        day,
+        moon: moon_light,
+        stars: night * (1.0 - cloud).powi(2) * (1.0 - 0.6 * full),
+    }
+}
+
+/// The sky palette under clouds: grey and flat, darker in rain.
+pub fn weathered_palette(e: f32, cloud: f32, precip: f32) -> (Vec3, Vec3, Vec3) {
+    let (h, z, g) = palette(e);
+    let grey = |c: Vec3, k: f32| {
+        let l = c.dot(Vec3::new(0.3, 0.55, 0.15));
+        c.lerp(Vec3::splat(l) * 0.95, cloud * k) * (1.0 - 0.45 * precip)
+    };
+    let zg = grey(z, 0.9);
+    let hg = grey(h, 0.7);
+    // Overcast: the zenith is almost as bright as the horizon.
+    (hg, zg.lerp(hg * 0.9, cloud * 0.6), grey(g, 0.5))
 }
 
 /// Keep the sphere centred on the camera, so the sky is always "infinitely" far.
@@ -315,5 +444,62 @@ fn follow_camera(
     let Some(cam) = cam.iter().next() else { return };
     for mut tf in &mut sky {
         tf.translation = cam.translation();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The sun is up for `day_length` hours: about two thirds of the day.
+    #[test]
+    fn the_night_is_about_a_third_of_the_day() {
+        for season in [0.0, 0.25, 0.5, 0.75] {
+            let up = (0..2400)
+                .filter(|i| sun_direction_in(*i as f32 / 100.0, season).y > 0.0)
+                .count() as f32
+                / 100.0;
+            assert!((up - day_length(season)).abs() < 0.05, "{season}: {up}");
+        }
+        assert!((day_length(0.25) - 16.0).abs() < 1e-3);
+        let (rise, set) = sunrise_sunset(0.25);
+        assert!(
+            sun_direction_in(rise + 0.1, 0.25).x > 0.5,
+            "rises in the east"
+        );
+        assert!(
+            sun_direction_in(set - 0.1, 0.25).x < -0.5,
+            "sets in the west"
+        );
+    }
+
+    #[test]
+    fn the_moon_lights_the_night_and_clouds_hide_the_stars() {
+        let night = sky_light(
+            sun_direction_in(1.0, 0.5),
+            moon_direction_in(1.0, 0.5),
+            0.5,
+            0.0,
+            0.0,
+        );
+        assert_eq!(night.day, 0.0);
+        assert!(night.illuminance > 50.0 && night.dir.y > 0.0, "{night:?}");
+        assert!(night.stars > 0.0);
+        let overcast = sky_light(
+            sun_direction_in(1.0, 0.5),
+            moon_direction_in(1.0, 0.5),
+            0.5,
+            1.0,
+            0.0,
+        );
+        assert_eq!(overcast.stars, 0.0);
+        let noon = sky_light(
+            sun_direction_in(12.0, 0.5),
+            moon_direction_in(12.0, 0.5),
+            0.5,
+            0.0,
+            0.0,
+        );
+        assert!(noon.illuminance > 8_000.0 && noon.dir.y > 0.5);
     }
 }
