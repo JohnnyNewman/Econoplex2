@@ -9,6 +9,14 @@ license.workspace = true
 name = "econoplex3d"
 path = "src/main.rs"
 
+[features]
+# Frame profiling (docs/profiling.md). `profile` records a span for every
+# system, render-graph node and simulation tick into a Chrome trace file
+# (open it in ui.perfetto.dev, or summarize it with tools/profile/analyze.py);
+# `profile-tracy` streams the same spans to the Tracy profiler instead.
+profile = ["bevy/trace_chrome"]
+profile-tracy = ["bevy/trace_tracy"]
+
 [dependencies]
 sim_core.workspace = true
 sim_data.workspace = true

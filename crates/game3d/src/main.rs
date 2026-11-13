@@ -7,7 +7,7 @@
 //!
 //! econoplex3d [--seed S] [--towns N] [--hour H] [--pbr] [--terrain-view N] [--grid-step K]
 //!     [--fog-view N] [--no-fog] [--days N] [--speed 0-8] [--paused] [--trade] [--culture] [--product-space] [--bloom-view] [--focus-town I] [--focus X,Z] [--view-from YAW,PITCH,DIST]
-//!     [--no-ui] [--no-lod] [--lod-view] [--fps] [--render-scale F] [--shot FILE]
+//!     [--no-ui] [--no-lod] [--lod-view] [--fps] [--render-scale F] [--shot FILE] [--quit-after S]
 //!     [--weather clear|cloudy|rain|storm|snow|fog] [--season spring|summer|autumn|winter]
 //! econoplex3d --playground [--hour H] [--view N] [--toon-view N] [--pbr] [--face-sun] [--shot FILE]
 //!     (shader playground)
@@ -115,6 +115,7 @@ fn main() {
     let mut no_lod = false;
     let mut lod_view = false;
     let mut fps = false;
+    let mut quit_after: Option<f32> = None;
     let mut render_scale = 1.0f32;
     let mut env_override = env::EnvOverride::default();
     let mut it = std::env::args().skip(1);
@@ -137,6 +138,7 @@ fn main() {
             "--no-lod" => no_lod = true,
             "--lod-view" => lod_view = true,
             "--fps" => fps = true,
+            "--quit-after" => quit_after = it.next().and_then(|v| v.parse().ok()),
             "--render-scale" => {
                 render_scale = it.next().and_then(|v| v.parse().ok()).unwrap_or(1.0)
             }
@@ -279,6 +281,7 @@ fn main() {
     .insert_resource(render_scale::RenderScale(render_scale))
     .insert_resource(args)
     .insert_resource(ShotPath(shot))
+    .insert_resource(QuitAfter(quit_after))
     .add_plugins((
         sky::SkyPlugin,
         toon::ToonPlugin,
@@ -305,7 +308,7 @@ fn main() {
     .add_systems(PreStartup, apply_outline_start)
     .insert_resource(overlay)
     .add_systems(Startup, setup)
-    .add_systems(Update, (shoot, hud::update_help))
+    .add_systems(Update, (shoot, quit_after_secs, hud::update_help))
     .run();
 }
 
@@ -620,6 +623,18 @@ fn shoot(
             .observe(save_to_disk(path.clone()));
     }
     if state.frames == 120 {
+        exit.write(AppExit::Success);
+    }
+}
+
+/// With `--quit-after S`: quit cleanly after S seconds of running, so a
+/// profiling run (`--features profile`, docs/profiling.md) has a fixed length
+/// and its trace file is written out.
+#[derive(Resource)]
+struct QuitAfter(Option<f32>);
+
+fn quit_after_secs(time: Res<Time<Real>>, quit: Res<QuitAfter>, mut exit: MessageWriter<AppExit>) {
+    if quit.0.is_some_and(|s| time.elapsed_secs() >= s) {
         exit.write(AppExit::Success);
     }
 }
