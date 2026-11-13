@@ -100,3 +100,22 @@ Where it starves (seeds 42-44, player town Greenvale ungoverned): mostly
 Ironhold, the mining town, then Brassmoor; Greenvale, the farm town, barely
 starves even unmanaged. The planner does not yet make food-poor AI towns safe,
 and the player's farm town is too easy to make the challenge felt.
+
+### Food planner (step 7b)
+
+Under `Ruler` rules a governor now forecasts: food made and eaten per day,
+averaged over a year (`governor.forecast_days`, from the goods ledger), and the
+days its market and granary food would last at that rate. Below
+`food_horizon_days` (90) it acts as if hungry (food subsidies, imports, a new
+field) before the market runs dry, and it also takes stock on the first day.
+
+| 6 seeds x 20 years, everything on, all towns governed | pop | starving |
+| --- | --- | --- |
+| Town rules | 1869 | 0 |
+| Ruler, granary + seed reserve (7a) | 1650 | 0.3 % |
+| + forecast | 1680 | 0.3 % |
+| + first-day decision | 1740 | 0.2 % |
+
+With the player town (Greenvale) ungoverned, it now starves in some seeds
+(seed 44: 12,318 person-days) while the AI towns mostly get by; Ironhold, the
+mining town, still has famines in its first months, before the first harvest.
