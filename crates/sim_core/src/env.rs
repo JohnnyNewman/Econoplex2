@@ -284,6 +284,18 @@ pub fn season(clock: &SimClock, time: &TimeParams) -> f32 {
     (f - f.floor()) as f32
 }
 
+/// The climate's mean temperature at a point of the year.
+pub fn climate_c(climate: &ClimateParams, season: f32) -> f32 {
+    match *climate {
+        ClimateParams::Constant { temperature } => temperature,
+        ClimateParams::Seasonal {
+            mean_c,
+            seasonal_swing_c,
+            ..
+        } => mean_c - seasonal_swing_c * (std::f32::consts::TAU * season).cos(),
+    }
+}
+
 /// Sunrise and sunset hours at this point of the year.
 pub fn sun_times(season: f32, d: &DayLength) -> (f32, f32) {
     let light = (d.equinox_hours - d.swing_hours * (TAU * season).cos()).clamp(0.0, 24.0);

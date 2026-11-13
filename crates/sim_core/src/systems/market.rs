@@ -337,9 +337,7 @@ pub fn settle(
 
     food_imports(&mut towns, &db, &params, &terrain, clock.tick);
 
-    for mut n in sites.iter_mut() {
-        n.amount = (n.amount + n.regrowth).min(n.capacity);
-    }
+    crate::farming::regrow(&towns, &db, &params, &env, &mut sites);
 }
 
 /// The market buys good `p` from the town's firms (in firm order) up to its

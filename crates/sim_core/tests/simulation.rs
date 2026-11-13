@@ -2451,3 +2451,44 @@ fn with_the_needs_ladder_winter_asks_for_fuel() {
     assert!(towns.0.iter().map(|t| t.cold_days).sum::<u32>() > 0);
     check_goods(&s);
 }
+
+#[test]
+fn seasonal_crops_stand_in_summer_and_not_in_winter() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let sets = [(
+        "farming".to_string(),
+        "Seasonal(crops: [\"field\", \"flax_field\", \"pasture\"], crop_capacity: 15.0, frost_loss: 0.05, rot_wet: 0.02, rot_cold: 0.01)".to_string(),
+    )];
+    let (db, params, mut scenario) =
+        sim_core::load_with(&AssetPaths::from_root(&root), &sets).unwrap();
+    scenario.seed = 8;
+    let mut s = Simulation::new(db, params, &scenario);
+    let field = s
+        .world
+        .resource::<sim_core::Db>()
+        .content
+        .nature_kind("field")
+        .unwrap();
+    let standing = |s: &mut Simulation| -> f32 {
+        let mut q = s.world.query::<&sim_core::components::NaturalResource>();
+        q.iter(&s.world)
+            .filter(|n| n.kind == field)
+            .map(|n| n.amount)
+            .sum()
+    };
+    // The year starts at the spring equinox: day 60 is late summer, day 100
+    // late winter.
+    for _ in 0..60 {
+        s.step();
+    }
+    let summer = standing(&mut s);
+    for _ in 0..40 {
+        s.step();
+    }
+    let winter = standing(&mut s);
+    assert!(
+        summer > 2.0 * winter.max(1.0),
+        "summer {summer}, winter {winter}"
+    );
+    check_goods(&s);
+}

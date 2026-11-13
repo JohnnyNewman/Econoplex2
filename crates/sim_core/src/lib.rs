@@ -11,6 +11,7 @@ pub mod db;
 pub mod decision;
 pub mod env;
 pub mod explain;
+pub mod farming;
 pub mod goal;
 pub mod goods;
 pub mod governor;

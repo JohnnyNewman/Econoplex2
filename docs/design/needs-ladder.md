@@ -55,3 +55,23 @@ At seed 42, winters leave 40 to 60 % of people cold even with firewood:
 charcoal sits at its price ceiling and firewood takes wood from the bakers
 (food satisfaction falls from 0.79 to 0.72). Fuel is the first resource
 conflict the ladder brings out; growing it is for the rulers (steps 6 and 7).
+
+## Seasons in farming (step 6)
+
+`farming: Seasonal(...)` (off by default, `farming.rs`): crops (fields, flax,
+pasture) grow with the day's mean temperature (none below 4 °C, full from
+14 °C), scaled so a year grows what the old daily rule did. A season's growth
+stands in the field (`crop_capacity` × capacity) until reaped; frost damages
+it, and it rots on wet ground and in the cold, so a crop not reaped by late
+autumn is lost.
+
+| 6 seeds x 20 years | pop | food/head | swords | capability |
+| --- | --- | --- | --- | --- |
+| default | 1918 | 8.9 | 1373 | 36.8 |
+| seasonal farming | 1929 | 8.1 | 1415 | 35.9 |
+| needs + households | 1884 | 8.9 | 911 | 35.5 |
+| needs + households + seasonal farming | 1869 | 9.6 | 978 | 35.7 |
+
+No starvation anywhere: the town-wide food rules (seed held back, farming
+drawn by town food scarcity) still smooth the hungry gap. Turning those into
+the ruler's levers is step 7.
