@@ -2681,3 +2681,55 @@ fn the_view_shows_needs_stores_and_the_armory() {
     let plain = sim_core::view::ViewSnapshot::capture(&sim(2).world, &mut Default::default());
     assert!(plain.towns[0].needs.is_empty());
 }
+
+#[test]
+fn a_stockpile_fills_the_town_store_and_draws_production() {
+    let mut s = sim(14);
+    s.step();
+    s.order("stockpile Greenvale grain 150").unwrap();
+    let grain = s
+        .world
+        .resource::<sim_core::Db>()
+        .content
+        .product("grain")
+        .unwrap() as usize;
+    let before = {
+        let w = &s.world;
+        sim_core::systems::decide::target_stock(
+            w.resource::<sim_core::Db>(),
+            &w.resource::<sim_core::Towns>().0[1],
+            w.resource::<sim_core::world::Params>(),
+            grain,
+        )
+    };
+    for _ in 0..60 {
+        s.step();
+    }
+    let towns = s.world.resource::<sim_core::Towns>();
+    let g = &towns.0[1];
+    assert_eq!(g.policy.stockpiled(grain), 150.0);
+    assert!(
+        g.granary.get(grain).copied().unwrap_or(0.0) > 0.0,
+        "the store took grain"
+    );
+    // While the store lacks grain, the market aims for more of it.
+    let w = &s.world;
+    let target = sim_core::systems::decide::target_stock(
+        w.resource::<sim_core::Db>(),
+        g,
+        w.resource::<sim_core::world::Params>(),
+        grain,
+    );
+    let lacks = 150.0 - g.granary[grain];
+    assert!(
+        lacks <= 0.0 || target > before - 1e-3,
+        "{target} vs {before}"
+    );
+    check_goods(&s);
+    s.order("stockpile Greenvale grain 0").unwrap();
+    s.step();
+    assert!(s.world.resource::<sim_core::Towns>().0[1]
+        .policy
+        .stockpile
+        .is_empty());
+}

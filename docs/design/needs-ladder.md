@@ -148,3 +148,15 @@ move a quantity between holders: no more than `from` holds and no more than `to`
 can carry (`carry_capacity` against `load_kg`). Moves change no total, so the
 goods ledger records nothing; the census now counts squad packs. People
 marching with a squad eat from its packs first (`squad_meal`).
+
+## Stock targets (town lever)
+
+Order `stockpile TOWN GOOD AMOUNT` (0 drops it), in `Town.policy.stockpile`:
+any good the town keeps in its stores against a siege or bad times (Nils:
+stock targets are one of the main levers of local government). The market's
+target stock rises by what the store still lacks, so prices and pay draw
+production toward it; the store (`Town.granary`, `Holder::Granary`) fills from
+the market's surplus and gives back when the market falls below half its own
+target. For tools and weapons the armory is the store: the target is the
+number kept unissued. `granary TOWN DAYS` stays as the food shorthand. The war
+redesign's kit rule writes per-good entries here.

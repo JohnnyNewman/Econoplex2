@@ -146,6 +146,9 @@ pub fn describe(order: &Order, db: &Db, towns: &Towns) -> String {
         ),
         Order::Imports { imports, .. } => format!("food imports {imports:?}").to_lowercase(),
         Order::Granary { days, .. } => format!("granary {days:.0} days of food"),
+        Order::Stockpile {
+            product: p, amount, ..
+        } => format!("stockpile {amount:.0} {}", product(*p)),
         Order::Reserve { on, .. } => {
             format!("seed reserve {}", if *on { "on" } else { "off" })
         }
