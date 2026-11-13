@@ -125,12 +125,13 @@ pub fn lifecycle(
             if let Some(g) = store.guild[i].take() {
                 commands.entity(g.membership).despawn();
             }
-            for item in [store.equipped[i].take(), store.weapon[i].take()]
-                .into_iter()
-                .flatten()
-            {
-                commands.entity(item).remove::<EquippedBy>().insert(Stored);
-                towns.0[store.town[i] as usize].armory.push(item);
+            // Their gear goes back to the town's armory.
+            for slot in crate::goods::Slot::ALL {
+                let Some(item) = crate::goods::from_person(store, i, slot) else {
+                    continue;
+                };
+                let t = store.town[i];
+                crate::goods::to_armory(&mut commands, &mut towns.0[t as usize].armory, t, item);
             }
         }
     }

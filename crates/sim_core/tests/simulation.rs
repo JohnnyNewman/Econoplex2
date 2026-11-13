@@ -2543,3 +2543,35 @@ fn a_granary_fills_from_a_full_market_and_feeds_a_hungry_one() {
     );
     assert!(after < before, "{after} vs {before}");
 }
+
+#[test]
+fn every_item_has_an_owner_that_holds_it() {
+    use sim_core::components::{Item, Product};
+    use sim_core::goods::{gear, Holder, Owner, Slot};
+    let mut s = full(5);
+    run_years(&mut s, 2);
+    let mut q = s
+        .world
+        .query::<(bevy_ecs::entity::Entity, &Product, &Owner)>();
+    let owned: Vec<_> = q.iter(&s.world).map(|(e, _, o)| (e, *o)).collect();
+    let items = s.world.query::<&Item>().iter(&s.world).count();
+    let towns = &s.world.resource::<sim_core::Towns>().0;
+    let store = s.world.resource::<sim_core::AgentStore>();
+    for &(e, owner) in &owned {
+        match owner.0 {
+            Holder::Armory(t) => assert!(towns[t as usize].armory.contains(&e)),
+            Holder::Person(i) => assert!(
+                Slot::ALL
+                    .iter()
+                    .any(|&slot| gear(store, i as usize, slot) == Some(e)),
+                "person {i} does not carry {e:?}"
+            ),
+            other => panic!("unexpected owner {other:?}"),
+        }
+    }
+    assert!(
+        !owned.is_empty() && owned.len() == items,
+        "{} owned of {items} items",
+        owned.len()
+    );
+}

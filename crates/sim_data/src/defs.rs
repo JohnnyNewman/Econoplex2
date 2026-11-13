@@ -52,6 +52,10 @@ pub struct EquipDef {
     pub bonus: f32,
     #[serde(default = "default_durability")]
     pub durability: u32,
+    /// Where it is carried: "tool", "weapon", "armour", "shield" or "mount".
+    /// Default: tools in the tool slot, weapons in the weapon slot.
+    #[serde(default)]
+    pub slot: Option<String>,
 }
 
 fn default_durability() -> u32 {
@@ -98,6 +102,13 @@ pub struct ProductDef {
     /// there, every good that says so is in the household basket.
     #[serde(default)]
     pub household: Option<HouseholdDef>,
+    /// Weight of one unit, kg (for carrying).
+    #[serde(default = "one_kg")]
+    pub kg: f32,
+}
+
+fn one_kg() -> f32 {
+    1.0
 }
 
 /// How households use a good (see `sim_core::consumption`).

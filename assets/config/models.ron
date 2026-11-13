@@ -245,6 +245,9 @@
         // (seed held back, farming drawn by scarcity); Ruler leaves it to the
         // ruler's levers and the granary (order `granary TOWN DAYS`).
         food_rules: Town,
+        // Tools and weapons in stock: Counted (old rule; weapons soldiers carry
+        // stay counted) or Held (what the armory holds).
+        item_stock: Counted,
         granary_spoilage: 0.25,
         // The needs ladder (ladder.rs, step 4 of the economy redesign): households
         // buy what serves their needs (content `household.serves`), warmth comes

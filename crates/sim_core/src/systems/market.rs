@@ -19,11 +19,30 @@ pub fn settle(
     clock: Res<SimClock>,
     terrain: Res<Terrain>,
     mut sites: Query<&mut NaturalResource>,
-    mut items: Query<(&Product, &mut TownId), With<Item>>,
+    mut items: Query<(&Product, &mut TownId, Option<&mut crate::goods::Owner>), With<Item>>,
     env: Res<crate::env::Environment>,
 ) {
     let mp = &params.market;
     let np = db.content.products.len();
+    // With `item_stock: Held`, the market's count of tools and weapons is what
+    // its armory holds (weapons carried by soldiers are no longer counted).
+    if mp.item_stock == crate::config::ItemStock::Held {
+        for town in towns.0.iter_mut() {
+            let mut held = vec![0.0f32; np];
+            for &e in &town.armory {
+                if let Ok((pr, _, _)) = items.get(e) {
+                    held[pr.def as usize] += 1.0;
+                }
+            }
+            for (p, &h) in held.iter().enumerate() {
+                if db.category(p as u32).is_item() && town.stock[p] != h {
+                    let gone = town.stock[p] - h;
+                    town.stock[p] = h;
+                    town.flows.add(crate::goods::Flow::Equipped, p, gone);
+                }
+            }
+        }
+    }
     // Demand-driven pricing: the stock each good's users need.
     if mp.mint_money_per_capita > 0.0 {
         for town in towns.0.iter_mut() {
@@ -314,10 +333,16 @@ pub fn settle(
                             let k = towns.0[a]
                                 .armory
                                 .iter()
-                                .position(|e| items.get(*e).is_ok_and(|(pr, _)| pr.def == p as u32))
+                                .position(|e| {
+                                    items.get(*e).is_ok_and(|(pr, _, _)| pr.def == p as u32)
+                                })
                                 .expect("counted above");
                             let e = towns.0[a].armory.swap_remove(k);
-                            items.get_mut(e).unwrap().1 .0 = b as u16;
+                            let (_, mut tid, owner) = items.get_mut(e).unwrap();
+                            tid.0 = b as u16;
+                            if let Some(mut o) = owner {
+                                o.0 = crate::goods::Holder::Armory(b as u16);
+                            }
                             towns.0[b].armory.push(e);
                         }
                     }
@@ -749,10 +774,10 @@ fn land_price(
 fn armory_count(
     armory: &[Entity],
     def: u32,
-    items: &Query<(&Product, &mut TownId), With<Item>>,
+    items: &Query<(&Product, &mut TownId, Option<&mut crate::goods::Owner>), With<Item>>,
 ) -> usize {
     armory
         .iter()
-        .filter(|e| items.get(**e).is_ok_and(|(p, _)| p.def == def))
+        .filter(|e| items.get(**e).is_ok_and(|(p, _, _)| p.def == def))
         .count()
 }

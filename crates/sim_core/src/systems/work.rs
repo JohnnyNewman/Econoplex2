@@ -744,9 +744,13 @@ pub fn produce(
                         let item = commands
                             .spawn((
                                 Product { def: p, quality },
-                                Item { durability },
+                                Item {
+                                    durability,
+                                    worn_hours: 0.0,
+                                },
                                 Stored,
                                 TownId(task.town),
+                                crate::goods::Owner(crate::goods::Holder::Armory(task.town)),
                             ))
                             .id();
                         town.armory.push(item);

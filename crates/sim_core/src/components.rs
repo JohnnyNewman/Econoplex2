@@ -35,10 +35,14 @@ pub struct Structure {
     pub footprint: (f32, f32),
 }
 
-/// Individually tracked good (tools, weapons) with wear.
+/// Individually tracked good (tools, weapons) with wear: `durability` uses
+/// left, each `goods::HOURS_PER_USE` hours of use; `worn_hours` is the use
+/// since the last whole one (see `goods::wear`).
 #[derive(Component, Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct Item {
     pub durability: u32,
+    #[serde(default)]
+    pub worn_hours: f32,
 }
 
 /// Item sits in its town's armory.

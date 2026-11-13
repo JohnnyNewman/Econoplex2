@@ -55,6 +55,13 @@ pub struct AgentStore {
     /// Soldiers' weapon and its cached fighting power.
     pub weapon: Vec<Option<Entity>>,
     pub weapon_power: Vec<f32>,
+    /// Armour, shield and mount slots (`goods::Slot`).
+    #[serde(default)]
+    pub armour: Vec<Option<Entity>>,
+    #[serde(default)]
+    pub shield: Vec<Option<Entity>>,
+    #[serde(default)]
+    pub mount: Vec<Option<Entity>>,
     // --- bookkeeping
     pub alive: Vec<bool>,
     pub entity: Vec<Entity>,
@@ -135,6 +142,9 @@ impl AgentStore {
         self.equipped.push(None);
         self.weapon.push(None);
         self.weapon_power.push(0.0);
+        self.armour.push(None);
+        self.shield.push(None);
+        self.mount.push(None);
         self.alive.push(true);
         self.entity.push(a.entity);
         self.town.push(a.town);
