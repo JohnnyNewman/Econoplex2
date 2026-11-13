@@ -58,7 +58,11 @@ fn downsample13(uv: vec2<f32>) -> vec3<f32> {
 
 @fragment
 fn prefilter(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
-    let c = downsample13(in.uv);
+    var c = downsample13(in.uv);
+    // One NaN or infinite pixel in the scene would spread through the blur into
+    // a black square: drop it, and cap very bright pixels.
+    if any(c != c) { c = vec3<f32>(0.0); }
+    c = min(c, vec3<f32>(64.0));
     // Soft threshold: a quadratic ramp over [threshold - knee, threshold + knee],
     // then linear. Divide by the brightness to scale the colour, not clip it.
     let br = max(max(c.r, c.g), c.b);

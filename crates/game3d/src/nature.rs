@@ -109,7 +109,13 @@ pub fn tree_material(color: Color) -> TreeMaterial {
             perceptual_roughness: 1.0,
             ..default()
         },
-        extension: TreeExt::default(),
+        // rim.z = 1: foliage, it turns with the seasons (step 11).
+        extension: TreeExt {
+            toon: ToonUniform {
+                rim: Vec4::new(1.0, 3.0, 1.0, 0.0),
+                ..default()
+            },
+        },
     }
 }
 

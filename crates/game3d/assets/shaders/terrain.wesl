@@ -13,7 +13,7 @@ import bevy_pbr::render::{
     pbr_functions::{apply_pbr_lighting, main_pass_post_lighting_processing},
 };
 import super::toon_lighting::{Toon, toon_params, toon_terms};
-import super::fog::apply_fog;
+import super::fog::{apply_fog, seasonal};
 // The uniform block, the textures and the height helpers, shared with the
 // shadow pass (terrain_prepass.wesl).
 import super::terrain_common::{terrain, biomes, texel_coord, height_at, normal_at, displaced};
@@ -101,6 +101,9 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let rock = vec3(0.60, 0.56, 0.50);
     let high = smoothstep(6.0, 12.0, p.y);
     albedo = mix(albedo, rock, max(smoothstep(0.25, 0.45, slope), high * 0.8));
+
+    // Step 11: the season and the weather (meadows and fields are foliage).
+    albedo = seasonal(albedo, n, p, 0.5 * (b.r + b.g) * (1.0 - smoothstep(0.25, 0.45, slope)), terrain.toon.fog);
 
     // Culture overlay (M6): the land around each town takes the colour of its
     // culture, fading out toward the edge of its radius. Where two towns'

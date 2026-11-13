@@ -17,7 +17,7 @@ import bevy_pbr::render::{
     pbr_functions::main_pass_post_lighting_processing,
 };
 import super::toon_lighting::{Toon, toon_params, toon_terms};
-import super::fog::apply_fog;
+import super::fog::{apply_fog, seasonal};
 
 // One blade; matches the 8 floats per blade written in src/nature.rs.
 struct Blade {
@@ -52,17 +52,20 @@ fn vertex(vertex_in: Vertex, @builtin(vertex_index) vertex_index: u32) -> Vertex
     // vertices but no pixels.
     let d = length(view.world_position - b.pos);
     let keep = smoothstep(grass.params.y, grass.params.x, d);
-    let height = b.height * keep;
+    // Step 11: deep snow buries the grass.
+    let height = b.height * keep * (1.0 - 0.7 * grass.toon.fog.ground.x);
 
     // The blade's width direction, rotated by its lean.
     let across = vec3<f32>(cos(b.lean), 0.0, sin(b.lean)) * v.position.x * keep;
 
     // Wind: a wave rolling across the field, times slow gusts. The bend grows
     // with h squared, like a bending stalk: the root stays put.
-    let dir = grass.wind.xy;
+    // Step 11: the wind of the weather; a gale bends the blades much further.
+    let dir = grass.toon.fog.wind.xy;
+    let strength = 0.35 + 1.8 * grass.toon.fog.wind.z;
     let wave = sin(dot(b.pos.xz, dir) * grass.wind.w - globals.time * 2.0) * 0.5 + 0.5;
     let gust = sin(globals.time * 0.7 + b.pos.x * 0.05 + b.pos.z * 0.03) * 0.5 + 0.5;
-    let bend = (0.25 + wave * gust) * grass.wind.z * h * h;
+    let bend = (0.25 + wave * gust) * grass.wind.z * strength * h * h;
     // Keep the blade's length: as the tip moves sideways it also drops.
     let up = h * height * cos(bend);
     let side = sin(bend) * height;
@@ -89,7 +92,8 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     // Dark at the root, light at the tip, varied per blade.
     let root = vec3<f32>(0.16, 0.30, 0.12);
     let tip = mix(vec3<f32>(0.50, 0.68, 0.26), vec3<f32>(0.70, 0.72, 0.32), tint);
-    let albedo = mix(root, tip, h);
+    // Step 11: seasons; snow settles on the tips (the normal tilts up along the blade).
+    let albedo = seasonal(mix(root, tip, h), vec3<f32>(0.0, h, 0.0), in.world_position.xyz, 0.5, grass.toon.fog);
 
     let t = toon_terms(pbr, toon_params(grass.toon));
     var out: FragmentOutput;

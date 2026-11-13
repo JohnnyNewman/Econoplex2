@@ -1,6 +1,7 @@
 //! The help text in the corner: time of day, which shader the number keys
 //! control, and each shader's current debug view.
 
+use crate::env::{EnvOverride, Environment, SEASON_NAMES};
 use crate::fog::FogSettings;
 use crate::sky::{DebugTarget, SkyClock};
 use crate::terrain::TerrainSettings;
@@ -32,12 +33,15 @@ pub fn spawn_help(commands: &mut Commands, title: &'static str, camera: &'static
     ));
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn update_help(
     clock: Res<SkyClock>,
     toon: Res<ToonSettings>,
     terrain: Res<TerrainSettings>,
     fog: Res<FogSettings>,
     target: Res<DebugTarget>,
+    env: Res<Environment>,
+    over: Res<EnvOverride>,
     mut text: Query<(&mut Text, &Help)>,
 ) {
     if !clock.is_changed()
@@ -45,6 +49,7 @@ pub fn update_help(
         && !terrain.is_changed()
         && !fog.is_changed()
         && !target.is_changed()
+        && !env.is_changed()
     {
         return;
     }
@@ -53,7 +58,8 @@ pub fn update_help(
     for (mut t, help) in &mut text {
         t.0 = format!(
             "{}\n\
-         time {:02}:{:02}  [ ] change  T run ({})\n\
+         time {:02}:{:02}  [ ] change  T run ({})   sunrise {:.1}, sunset {:.1}\n\
+         {}   Y weather ({})  U season ({})\n\
          {} sky view {}: {}\n\
          {} toon view {}: {}   M toon/PBR ({})\n\
          {} terrain view {}: {}   L grid step {}\n\
@@ -65,6 +71,11 @@ pub fn update_help(
             h.floor() as u32,
             (h.fract() * 60.0) as u32,
             if clock.running { "on" } else { "off" },
+            crate::sky::sunrise_sunset(clock.season).0,
+            crate::sky::sunrise_sunset(clock.season).1,
+            describe(&env),
+            over.weather.map_or("auto", |p| p.name()),
+            over.season.map_or("auto", |s| SEASON_NAMES[s as usize]),
             mark(DebugTarget::Sky),
             clock.debug,
             SkyClock::VIEWS[clock.debug as usize],
@@ -83,4 +94,24 @@ pub fn update_help(
             help.camera,
         );
     }
+}
+
+/// One line on the weather: `14 °C, wind 6 m/s, rain 40 %, cloud 80 %, snow cover 0 %`.
+pub fn describe(env: &Environment) -> String {
+    let w = &env.weather;
+    let kind = if w.precip < 0.05 {
+        "dry"
+    } else if w.snow_fraction() > 0.5 {
+        "snow"
+    } else {
+        "rain"
+    };
+    format!(
+        "{:.0} °C, wind {:.0} m/s, {kind} {:.0} %, cloud {:.0} %, snow cover {:.0} %",
+        w.temperature,
+        w.wind.length(),
+        w.precip * 100.0,
+        w.cloud * 100.0,
+        env.ground.snow * 100.0
+    )
 }

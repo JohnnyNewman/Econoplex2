@@ -284,6 +284,7 @@ fn sync_scene(
     outlines: Option<Res<Outlines>>,
     world: Res<World3d>,
     mut clock: ResMut<SkyClock>,
+    env_override: Res<crate::env::EnvOverride>,
 ) {
     let (Some(mut kit), Some(outlines)) = (kit, outlines) else {
         return;
@@ -312,7 +313,7 @@ fn sync_scene(
 
     // The calendar sets the season (the time of day stays yours: `[` `]`, `T`).
     let season = snap.season();
-    if clock.season != season {
+    if env_override.season.is_none() && clock.season != season {
         clock.season = season;
     }
 

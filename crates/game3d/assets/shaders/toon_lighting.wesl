@@ -22,7 +22,8 @@ struct Toon {
     shadow_tint: vec4<f32>, // rgb: colour of the shadow side
     ramp: vec4<f32>,        // x: wrap, y: band edge a, z: band edge b, w: softness
     debug: vec4<f32>,       // x: debug view, y: 1 = toon, 0 = Bevy PBR lighting
-    rim: vec4<f32>,         // step 05: x strength, y power (fresnel exponent)
+    rim: vec4<f32>,         // step 05: x strength, y power (fresnel exponent);
+                            // step 11: z 1 = foliage (turns with the seasons)
     fog: Fog,               // step 04
 };
 

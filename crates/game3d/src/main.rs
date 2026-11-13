@@ -8,6 +8,7 @@
 //! econoplex3d [--seed S] [--towns N] [--hour H] [--pbr] [--terrain-view N] [--grid-step K]
 //!     [--fog-view N] [--no-fog] [--days N] [--speed 0-4] [--paused] [--trade] [--culture] [--product-space] [--bloom-view] [--focus-town I] [--focus X,Z] [--view-from YAW,PITCH,DIST]
 //!     [--no-ui] [--no-lod] [--lod-view] [--fps] [--render-scale F] [--shot FILE]
+//!     [--weather clear|cloudy|rain|storm|snow|fog] [--season spring|summer|autumn|winter]
 //! econoplex3d --playground [--hour H] [--view N] [--toon-view N] [--pbr] [--face-sun] [--shot FILE]
 //!     (shader playground)
 
@@ -24,6 +25,7 @@ mod buildings;
 mod camera;
 mod crowd;
 mod crowd_compute;
+mod env;
 mod fog;
 mod hud;
 mod live;
@@ -31,6 +33,7 @@ mod nature;
 mod outline;
 mod overlay;
 mod playground;
+mod precip;
 mod render_scale;
 mod roads;
 mod sky;
@@ -113,6 +116,7 @@ fn main() {
     let mut lod_view = false;
     let mut fps = false;
     let mut render_scale = 1.0f32;
+    let mut env_override = env::EnvOverride::default();
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -135,6 +139,20 @@ fn main() {
             "--fps" => fps = true,
             "--render-scale" => {
                 render_scale = it.next().and_then(|v| v.parse().ok()).unwrap_or(1.0)
+            }
+            "--weather" => {
+                let name = it.next().unwrap_or_default();
+                env_override.weather = env::Preset::parse(&name);
+                if env_override.weather.is_none() {
+                    eprintln!("unknown weather `{name}`");
+                }
+            }
+            "--season" => {
+                let name = it.next().unwrap_or_default();
+                env_override.season = env::SEASON_NAMES
+                    .iter()
+                    .position(|s| *s == name)
+                    .map(|i| i as u32);
             }
             "--trade" => overlay = overlay::Overlay::Trade,
             "--culture" => overlay = overlay::Overlay::Culture,
@@ -271,6 +289,8 @@ fn main() {
         render_scale::RenderScalePlugin,
         roads::RoadsPlugin,
     ))
+    .add_plugins(precip::PrecipPlugin)
+    .insert_resource(env_override)
     .insert_resource(clock)
     .insert_resource(toon_settings)
     .insert_resource(terrain_settings)
