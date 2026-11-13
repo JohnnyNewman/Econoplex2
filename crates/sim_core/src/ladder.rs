@@ -23,8 +23,13 @@
 //! Warmth is physical. Each day a person loses heat by the degrees the day's
 //! mean temperature falls short of `comfort_c`, after the house (`house_c`)
 //! and the clothes worn (their insulation, up to `max_clothes` pieces). The
-//! rest has to come from fuel burned at the hearth, shared by
-//! `people_per_hearth`. Without it people get cold, and cold hurts health.
+//! rest has to come from fuel burned at the household's hearth. Without it
+//! people get cold, and cold hurts health.
+//!
+//! Households (step 5): a couple and their children share one home. Its keeper
+//! holds the fuel and the home goods (pots, linen) and buys them for everyone
+//! at the hearth; clothes, ale and silver stay each person's own. One fire
+//! warms the whole family, so a family burns less per head than people alone.
 //!
 //! Food is still eaten by the hunger rule in `needs.rs`; its satisfaction is
 //! `1 - hunger`.
@@ -49,8 +54,11 @@ pub struct LadderParams {
     pub house_c: f32,
     /// Pieces of clothing worn at once.
     pub max_clothes: f32,
-    /// People sharing one hearth's fire.
-    pub people_per_hearth: f32,
+    /// Fuel one hearth burns per degree the room falls short, degree-days a day.
+    pub fire_per_c: f32,
+    /// How much more fuel each further person at the hearth takes (0.25: a
+    /// family of four burns 1.75 times what one person alone does).
+    pub fire_per_extra_person: f32,
     /// Days of food a household wants covered by its money and larder.
     pub savings_days: f32,
     /// Health lost per day of bitter cold (10 °C short) with no fire.
@@ -71,6 +79,8 @@ pub struct LadderGood {
     pub good: usize,
     pub life_days: f32,
     pub serves: Vec<Serves>,
+    /// Kept for the whole household (fuel, and goods that serve shelter).
+    pub home: bool,
 }
 
 /// Every good whose content says which needs it serves.
@@ -85,6 +95,10 @@ pub fn goods(db: &Db) -> Vec<LadderGood> {
                 good: p,
                 life_days: h.life_days.max(1.0),
                 serves: h.serves.clone(),
+                home: h
+                    .serves
+                    .iter()
+                    .any(|s| s.by == Use::Burn || s.need == Need::Shelter),
             })
         })
         .collect()
@@ -157,24 +171,38 @@ pub fn happiness(sat: &Sat, lp: &LadderParams) -> f32 {
         / 5.0
 }
 
-/// What a person holds that serves needs, summed by kind.
+/// What a person can draw on: their own clothes and goods, and the hearth and
+/// home goods of their household.
 #[derive(Debug, Clone, Copy, Default)]
 struct Holdings {
-    /// Degree-days of heat in fuel.
+    /// Degree-days of heat in the household's fuel.
     fuel: f32,
-    /// Insulation of the clothes worn, °C.
+    /// Insulation of the clothes this person wears, °C.
     clothes: f32,
-    /// Points held per need (Own and Consume goods).
+    /// People at the hearth, and the mean insulation of their clothes.
+    size: f32,
+    room_clothes: f32,
+    /// Points held per need (Own and Consume goods; shelter from the home).
     points: [f32; N],
 }
 
-fn holdings(owned: &[(u32, f32)], goods: &[LadderGood], lp: &LadderParams) -> Holdings {
-    let mut h = Holdings::default();
+/// Adds what `owned` holds to `h`: only home goods (fuel, shelter) when
+/// `home`, only personal goods otherwise.
+fn add_holdings(
+    h: &mut Holdings,
+    owned: &[(u32, f32)],
+    goods: &[LadderGood],
+    lp: &LadderParams,
+    home: bool,
+) {
     let mut pieces = 0.0f32;
     for &(p, q) in owned {
         let Some(g) = goods.iter().find(|g| g.good == p as usize) else {
             continue;
         };
+        if g.home != home {
+            continue;
+        }
         for s in &g.serves {
             match (s.by, s.need) {
                 (Use::Burn, Need::Warmth) => h.fuel += q * s.amount,
@@ -189,12 +217,97 @@ fn holdings(owned: &[(u32, f32)], goods: &[LadderGood], lp: &LadderParams) -> Ho
             }
         }
     }
-    h
 }
 
-/// Heat a person has to get from the fire today, degree-days (shared hearth).
-pub fn heat_need(mean_c: f32, clothes_c: f32, lp: &LadderParams) -> f32 {
-    (lp.comfort_c - (mean_c + lp.house_c + clothes_c)).max(0.0) / lp.people_per_hearth.max(1.0)
+/// Households: people who share a hearth, a larder of home goods and the
+/// fire. A couple keeps one home (kept by the partner with the lower index);
+/// children live with their parents; everyone else keeps their own.
+#[derive(Debug, Clone)]
+pub struct Homes {
+    /// Per person: who keeps their home (holds the fuel and home goods).
+    pub keeper: Vec<usize>,
+    /// Per keeper: people at the hearth, and the sum of their clothes' insulation.
+    size: Vec<f32>,
+    clothes: Vec<f32>,
+}
+
+impl Homes {
+    pub fn of(store: &AgentStore, goods: &[LadderGood], lp: &LadderParams) -> Homes {
+        let n = store.len();
+        let alive = |k: usize| k < n && store.alive[k];
+        let adult_home = |i: usize| match store.partner[i] {
+            Some(p) if alive(p as usize) && (p as usize) < i => p as usize,
+            _ => i,
+        };
+        let keeper: Vec<usize> = (0..n)
+            .map(|i| {
+                if matches!(store.activity[i], Activity::Child) {
+                    if let Some((a, b)) = store.parents[i] {
+                        for p in [a as usize, b as usize] {
+                            if alive(p) && store.town[p] == store.town[i] {
+                                return adult_home(p);
+                            }
+                        }
+                    }
+                }
+                adult_home(i)
+            })
+            .collect();
+        let mut size = vec![0.0f32; n];
+        let mut clothes = vec![0.0f32; n];
+        for i in 0..n {
+            if !store.alive[i] {
+                continue;
+            }
+            let mut h = Holdings::default();
+            add_holdings(&mut h, &store.owned[i], goods, lp, false);
+            size[keeper[i]] += 1.0;
+            clothes[keeper[i]] += h.clothes;
+        }
+        Homes {
+            keeper,
+            size,
+            clothes,
+        }
+    }
+
+    /// What person `i` draws on, with `own` and `home` standing in for their
+    /// own goods and their keeper's.
+    fn holdings_with(
+        &self,
+        i: usize,
+        own: &[(u32, f32)],
+        home: &[(u32, f32)],
+        goods: &[LadderGood],
+        lp: &LadderParams,
+    ) -> Holdings {
+        let k = self.keeper[i];
+        let mut h = Holdings::default();
+        add_holdings(&mut h, own, goods, lp, false);
+        add_holdings(&mut h, home, goods, lp, true);
+        h.size = self.size[k].max(1.0);
+        h.room_clothes = self.clothes[k] / h.size;
+        h
+    }
+
+    fn holdings(
+        &self,
+        store: &AgentStore,
+        i: usize,
+        goods: &[LadderGood],
+        lp: &LadderParams,
+    ) -> Holdings {
+        self.holdings_with(i, &store.owned[i], &store.owned[self.keeper[i]], goods, lp)
+    }
+}
+
+/// Fuel one hearth burns in a day, degree-days: `fire_per_c` per degree the
+/// room falls short of comfort after the house and the clothes worn, and a
+/// share more (`fire_per_extra_person`) for each further person at it.
+pub fn fire_need(mean_c: f32, clothes_c: f32, size: f32, lp: &LadderParams) -> f32 {
+    (lp.comfort_c - (mean_c + lp.house_c + clothes_c)).max(0.0)
+        * lp.fire_per_c
+        * (1.0 + lp.fire_per_extra_person * (size - 1.0).max(0.0))
 }
 
 /// Share of the next `days` days' heat that `fuel` covers.
@@ -285,8 +398,8 @@ fn town_views(
         .collect()
 }
 
-/// A person's satisfaction, with `h` held and `wealth` in hand, looking
-/// `days` ahead for warmth.
+/// A person's satisfaction, with `h` to draw on and `wealth` in hand; with
+/// `plan`, warmth looks ahead over the planning days.
 #[allow(clippy::too_many_arguments)]
 fn assess(
     store: &AgentStore,
@@ -306,11 +419,15 @@ fn assess(
         let need: f32 = view
             .ahead
             .iter()
-            .map(|&c| heat_need(c, h.clothes, lp))
+            .map(|&c| fire_need(c, h.room_clothes, h.size, lp))
             .sum();
         coverage(h.fuel, need, 1.0)
     } else {
-        coverage(h.fuel, heat_need(view.mean_c, h.clothes, lp), 1.0)
+        coverage(
+            h.fuel,
+            fire_need(view.mean_c, h.room_clothes, h.size, lp),
+            1.0,
+        )
     };
     s[idx(Need::Rest)] = (1.0 - st[FATIGUE]).clamp(0.0, 1.0);
     s[idx(Need::Shelter)] = view.housed * (0.7 + 0.3 * held(h.points[idx(Need::Shelter)]));
@@ -332,8 +449,8 @@ fn assess(
     s
 }
 
-/// Daily: clothes and household goods wear, fuel burns as the cold asks, cold
-/// hurts, and happiness follows the ladder.
+/// Daily: clothes and goods wear, each hearth burns the fuel the cold asks
+/// for, cold hurts, and happiness follows the ladder.
 pub fn daily(
     store: &mut AgentStore,
     towns: &mut Towns,
@@ -346,12 +463,11 @@ pub fn daily(
     let goods = goods(db);
     let views = town_views(towns, db, params, env);
     let rate = params.needs.happiness_rate;
+    // Wear and use-up over each good's life.
     for i in 0..store.len() {
-        if !store.alive[i] || matches!(store.activity[i], Activity::Captive) {
+        if !store.alive[i] {
             continue;
         }
-        let view = &views[store.town[i] as usize];
-        // Wear and use-up over each good's life.
         for e in store.owned[i].iter_mut() {
             if let Some(g) = goods.iter().find(|g| g.good == e.0 as usize) {
                 if g.serves.iter().any(|s| s.by != Use::Burn) {
@@ -359,21 +475,30 @@ pub fn daily(
                 }
             }
         }
-        let h = holdings(&store.owned[i], &goods, lp);
-        let need = heat_need(view.mean_c, h.clothes, lp);
-        // Burn what the day needs, fuel by fuel.
+    }
+    let homes = Homes::of(store, &goods, lp);
+    // Each hearth burns what the day needs, fuel by fuel.
+    let mut warm = vec![1.0f32; store.len()];
+    for k in 0..store.len() {
+        if !store.alive[k] || homes.keeper[k] != k {
+            continue;
+        }
+        let view = &views[store.town[k] as usize];
+        let size = homes.size[k].max(1.0);
+        let need = fire_need(view.mean_c, homes.clothes[k] / size, size, lp);
         let mut left = need;
-        for e in store.owned[i].iter_mut() {
+        for e in store.owned[k].iter_mut() {
             if left <= 0.0 {
                 break;
             }
-            let Some(g) = goods.iter().find(|g| g.good == e.0 as usize) else {
-                continue;
-            };
-            let Some(heat) = g
-                .serves
+            let Some(heat) = goods
                 .iter()
-                .find(|s| s.by == Use::Burn && s.need == Need::Warmth)
+                .find(|g| g.good == e.0 as usize)
+                .and_then(|g| {
+                    g.serves
+                        .iter()
+                        .find(|s| s.by == Use::Burn && s.need == Need::Warmth)
+                })
                 .map(|s| s.amount.max(1e-3))
             else {
                 continue;
@@ -382,19 +507,27 @@ pub fn daily(
             e.1 -= burn;
             left -= burn * heat;
         }
+        warm[k] = if need > 0.0 { 1.0 - left / need } else { 1.0 };
+    }
+    for i in 0..store.len() {
         store.owned[i].retain(|e| e.1 > 0.01);
-        let warm = if need > 0.0 { 1.0 - left / need } else { 1.0 };
-        if warm < 0.5 {
+    }
+    for i in 0..store.len() {
+        if !store.alive[i] || matches!(store.activity[i], Activity::Captive) {
+            continue;
+        }
+        let view = &views[store.town[i] as usize];
+        let w = warm[homes.keeper[i]];
+        if w < 0.5 {
             towns.0[store.town[i] as usize].cold_days += 1;
         }
+        let h = homes.holdings(store, i, &goods, lp);
         let short_c = (lp.comfort_c - (view.mean_c + lp.house_c + h.clothes)).max(0.0);
-        let st = &mut store.state[i];
-        st[HEALTH] -= lp.cold_damage * (1.0 - warm) * (short_c / 10.0).min(1.5);
-        let h = holdings(&store.owned[i], &goods, lp);
         let mut sat = assess(store, i, &h, store.wealth[i], view, lp, db, false);
-        sat[idx(Need::Warmth)] = warm;
+        sat[idx(Need::Warmth)] = w;
         let target = happiness(&sat, lp);
         let st = &mut store.state[i];
+        st[HEALTH] -= lp.cold_damage * (1.0 - w) * (short_c / 10.0).min(1.5);
         st[HAPPINESS] = (st[HAPPINESS] + rate * (target - st[HAPPINESS])).clamp(0.0, 1.0);
     }
 }
@@ -410,10 +543,11 @@ pub fn all(
 ) -> Vec<Option<Sat>> {
     let goods = goods(db);
     let views = town_views(towns, db, params, env);
+    let homes = Homes::of(store, &goods, lp);
     (0..store.len())
         .map(|i| {
             store.alive[i].then(|| {
-                let h = holdings(&store.owned[i], &goods, lp);
+                let h = homes.holdings(store, i, &goods, lp);
                 assess(
                     store,
                     i,
@@ -430,7 +564,10 @@ pub fn all(
 }
 
 /// Every `interval` days (staggered), each adult buys what raises its weighted
-/// satisfaction most per coin, while that beats keeping the money.
+/// satisfaction most per coin, while that beats keeping the money: clothes and
+/// other personal goods for themself, and, if they keep the home, fuel and home
+/// goods for the household (worth as much as it does for everyone at the
+/// hearth).
 pub fn spend(
     towns: &mut Towns,
     store: &mut AgentStore,
@@ -445,6 +582,7 @@ pub fn spend(
         return;
     }
     let views = town_views(towns, db, params, env);
+    let homes = Homes::of(store, &goods, lp);
     let iv = lp.interval.max(1) as u64;
     let firms_on = params.market.firms.on();
     for i in 0..store.len() {
@@ -456,8 +594,10 @@ pub fn spend(
         }
         let t = store.town[i] as usize;
         let view = &views[t];
+        let keeps_home = homes.keeper[i] == i;
+        let size = homes.size[i].max(1.0);
         for _ in 0..16 {
-            let h = holdings(&store.owned[i], &goods, lp);
+            let h = homes.holdings(store, i, &goods, lp);
             let now = score(
                 &assess(store, i, &h, store.wealth[i], view, lp, db, true),
                 lp,
@@ -466,6 +606,9 @@ pub fn spend(
             // The good worth most per coin, counting the savings the money is worth.
             let mut best: Option<(usize, f32)> = None;
             for (k, g) in goods.iter().enumerate() {
+                if g.home && !keeps_home {
+                    continue;
+                }
                 let p = g.good;
                 let price = town.price[p];
                 if price <= 0.0 || price > store.wealth[i] {
@@ -485,12 +628,25 @@ pub fn spend(
                     Some(e) => e.1 += 1.0,
                     None => owned.push((p as u32, 1.0)),
                 }
-                let h2 = holdings(&owned, &goods, lp);
+                let home: &[(u32, f32)] = if keeps_home {
+                    &owned
+                } else {
+                    &store.owned[homes.keeper[i]]
+                };
+                let h2 = homes.holdings_with(i, &owned, home, &goods, lp);
                 let after = score(
                     &assess(store, i, &h2, store.wealth[i] - price, view, lp, db, true),
                     lp,
                 );
-                let gain = (after - now) / price;
+                // Fuel and home goods serve everyone at the hearth; the money
+                // is only the buyer's.
+                let saving_loss = score(
+                    &assess(store, i, &h, store.wealth[i] - price, view, lp, db, true),
+                    lp,
+                ) - now;
+                let goods_gain = after - now - saving_loss;
+                let worth = if g.home { size } else { 1.0 };
+                let gain = (goods_gain * worth + saving_loss) / price;
                 if gain > 1e-6 && best.is_none_or(|b| gain > b.1) {
                     best = Some((k, gain));
                 }
@@ -545,7 +701,8 @@ mod tests {
             comfort_c: 16.0,
             house_c: 6.0,
             max_clothes: 2.0,
-            people_per_hearth: 4.0,
+            fire_per_c: 0.5,
+            fire_per_extra_person: 0.25,
             savings_days: 60.0,
             cold_damage: 0.02,
             plan_days: 30.0,
@@ -571,12 +728,15 @@ mod tests {
     }
 
     #[test]
-    fn cold_days_need_fire_and_clothes_cut_it() {
+    fn cold_days_need_fire_and_a_family_shares_it() {
         let lp = lp();
-        assert_eq!(heat_need(15.0, 0.0, &lp), 0.0);
-        let bare = heat_need(-5.0, 0.0, &lp);
-        let dressed = heat_need(-5.0, 6.0, &lp);
-        assert!((bare - 15.0 / 4.0).abs() < 1e-5 && dressed < bare);
+        assert_eq!(fire_need(15.0, 0.0, 1.0, &lp), 0.0);
+        let bare = fire_need(-5.0, 0.0, 1.0, &lp);
+        let dressed = fire_need(-5.0, 6.0, 1.0, &lp);
+        assert!((bare - 15.0 * 0.5).abs() < 1e-5 && dressed < bare);
+        // Four people at one fire burn less than four fires.
+        let family = fire_need(-5.0, 0.0, 4.0, &lp);
+        assert!(family > bare && family < 4.0 * bare);
         assert_eq!(coverage(0.0, bare, 7.0), 0.0);
         assert!((coverage(bare * 7.0, bare, 7.0) - 1.0).abs() < 1e-5);
     }
