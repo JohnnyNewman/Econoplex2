@@ -179,6 +179,96 @@ fn panels(
                             });
                     });
             });
+            ui.collapsing("Weather", |ui| {
+                let (env, _, _, _) = live.env();
+                let local = env.at(ti);
+                let w = local.weather;
+                egui::Grid::new("weather").num_columns(2).show(ui, |ui| {
+                    ui.label("time");
+                    ui.label(format!(
+                        "{:02.0}:00, {:?}, {}",
+                        env.hour.floor(),
+                        env.phase,
+                        season_name(env.season)
+                    ));
+                    ui.end_row();
+                    ui.label("temperature");
+                    ui.label(format!(
+                        "{:.0} °C (today's mean {:.0} °C)",
+                        w.temperature, local.day_mean_c
+                    ));
+                    ui.end_row();
+                    ui.label("sky");
+                    ui.label(sky_words(w.cloud, w.precip, w.snow_fraction()));
+                    ui.end_row();
+                    ui.label("wind");
+                    ui.label(format!("{:.0} m/s", w.wind_speed()));
+                    ui.end_row();
+                    ui.label("ground");
+                    ui.label(format!(
+                        "snow {:.0}%, wet {:.0}%",
+                        local.ground.snow * 100.0,
+                        local.ground.wet * 100.0
+                    ));
+                    ui.end_row();
+                });
+            });
+            ui.collapsing("Food and stores", |ui| {
+                egui::Grid::new("stores").num_columns(2).show(ui, |ui| {
+                    ui.label("food in stock");
+                    ui.label(format!("{:.0} days", town.food_days));
+                    ui.end_row();
+                    ui.label("granary");
+                    ui.label(if town.granary_days > 0.0 {
+                        format!(
+                            "{:.0} food (aims for {:.0} days)",
+                            town.granary_food, town.granary_days
+                        )
+                    } else {
+                        "none".into()
+                    });
+                    ui.end_row();
+                    ui.label("seed grain");
+                    ui.label(if town.seed_reserve {
+                        "held back"
+                    } else {
+                        "free to eat"
+                    });
+                    ui.end_row();
+                    ui.label("starving this year");
+                    ui.label(format!("{} person-days", town.starving));
+                    ui.end_row();
+                    ui.label("cold so far");
+                    ui.label(format!("{} person-days", town.cold_days));
+                    ui.end_row();
+                });
+                if !town.armory.is_empty() {
+                    ui.label("armory:");
+                    for &(p, n) in &town.armory {
+                        ui.label(format!(
+                            "  {n} × {}",
+                            live.product_names
+                                .get(p as usize)
+                                .map_or("?", |s| s.as_str())
+                        ));
+                    }
+                }
+            });
+            if !town.needs.is_empty() {
+                ui.collapsing("Needs", |ui| {
+                    for (k, need) in sim_data::Need::ALL.iter().enumerate() {
+                        let v = town.needs.get(k).copied().unwrap_or(0.0);
+                        ui.horizontal(|ui| {
+                            ui.add_sized([90.0, 16.0], egui::Label::new(format!("{need:?}")));
+                            ui.add(
+                                egui::ProgressBar::new(v.clamp(0.0, 1.0))
+                                    .desired_width(140.0)
+                                    .text(format!("{:.0}%", v * 100.0)),
+                            );
+                        });
+                    }
+                });
+            }
         });
 
     // ---------------------------------------------------------------- Govern
@@ -668,4 +758,29 @@ fn culture_legend(ui: &mut egui::Ui, culture: &[f32]) {
         ui.painter().rect_filled(rect, 3.0, swatch);
     });
     ui.small("0.5 is neutral (grey). People are coloured by their own beliefs, so newcomers and minorities stand out.");
+}
+
+/// The season's name for a fraction of the year (0 = midwinter).
+fn season_name(season: f32) -> &'static str {
+    match ((season + 0.125).fract() * 4.0) as u32 {
+        0 => "winter",
+        1 => "spring",
+        2 => "summer",
+        _ => "autumn",
+    }
+}
+
+/// A few words for the sky.
+fn sky_words(cloud: f32, precip: f32, snow: f32) -> String {
+    if precip > 0.05 {
+        let what = if snow > 0.5 { "snow" } else { "rain" };
+        let how = if precip > 0.6 { "heavy " } else { "" };
+        format!("{how}{what}")
+    } else if cloud > 0.7 {
+        "overcast".into()
+    } else if cloud > 0.3 {
+        "cloudy".into()
+    } else {
+        "clear".into()
+    }
 }

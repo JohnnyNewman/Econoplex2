@@ -2640,3 +2640,27 @@ fn a_squad_carries_rations_eats_them_and_keeps_the_books() {
         "the squad ate from its packs: {left} of {moved}"
     );
 }
+
+#[test]
+fn the_view_shows_needs_stores_and_the_armory() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let sets = [(
+        "market.consumption".to_string(),
+        "Needs((interval: 7, gate_at: 0.7, gate_width: 0.15, comfort_c: 16.0, house_c: 6.0, max_clothes: 2.0, fire_per_c: 0.5, fire_per_extra_person: 0.25, savings_days: 60.0, cold_damage: 0.02, plan_days: 30.0))".to_string(),
+    )];
+    let (db, params, mut scenario) =
+        sim_core::load_with(&AssetPaths::from_root(&root), &sets).unwrap();
+    scenario.seed = 2;
+    let mut s = Simulation::new(db, params, &scenario);
+    for _ in 0..60 {
+        s.step();
+    }
+    let snap = sim_core::view::ViewSnapshot::capture(&s.world, &mut Default::default());
+    let t = &snap.towns[0];
+    assert_eq!(t.needs.len(), sim_data::Need::ALL.len());
+    assert!(t.needs.iter().all(|v| (0.0..=1.0).contains(v)));
+    assert!(t.food_days > 0.0 && t.seed_reserve);
+    // Without the ladder there is nothing to show.
+    let plain = sim_core::view::ViewSnapshot::capture(&sim(2).world, &mut Default::default());
+    assert!(plain.towns[0].needs.is_empty());
+}

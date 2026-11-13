@@ -70,6 +70,30 @@ pub struct TownView {
     /// Value shipped to each town by caravan (at the buyer's price), as a daily
     /// average over about a month; indexed by town.
     pub exports: Vec<f32>,
+    /// Residents' mean satisfaction per need on the ladder, in
+    /// `sim_data::Need::ALL` order (empty unless `market.consumption: Needs`).
+    #[serde(default)]
+    pub needs: Vec<f32>,
+    /// Food in the granary (food value), and the days of food it aims for.
+    #[serde(default)]
+    pub granary_food: f32,
+    #[serde(default)]
+    pub granary_days: f32,
+    /// Whether seed grain is held back (always under the town food rules).
+    #[serde(default)]
+    pub seed_reserve: bool,
+    /// Food in the market and in larders, as days of the residents' food.
+    #[serde(default)]
+    pub food_days: f32,
+    /// Person-days cold and starving since the start (cold: with the needs
+    /// ladder) and since the last yearly report (starving).
+    #[serde(default)]
+    pub cold_days: u32,
+    #[serde(default)]
+    pub starving: u32,
+    /// Tools and weapons in the armory: (product def, count).
+    #[serde(default)]
+    pub armory: Vec<(u32, u32)>,
 }
 
 /// What a person is doing, as a view sees it.
@@ -230,6 +254,8 @@ impl ViewSnapshot {
     /// returned here.
     pub fn capture(world: &World, seen: &mut Seen) -> Self {
         let clock = world.resource::<SimClock>();
+        let needs = needs_by_town(world);
+        let armories = armory_counts(world);
         let towns = world.resource::<Towns>();
         let db = world.resource::<Db>();
         let store = world.resource::<crate::AgentStore>();
@@ -276,7 +302,32 @@ impl ViewSnapshot {
             towns: towns
                 .0
                 .iter()
-                .map(|t| TownView {
+                .enumerate()
+                .map(|(ti, t)| TownView {
+                    needs: needs.get(ti).cloned().unwrap_or_default(),
+                    granary_food: crate::granary::held(t, db),
+                    granary_days: t.policy.granary_days,
+                    seed_reserve: world
+                        .get_resource::<crate::world::Params>()
+                        .is_some_and(|p| crate::granary::keeps_reserve(t, p)),
+                    food_days: {
+                        let hunger = world
+                            .get_resource::<crate::world::Params>()
+                            .map_or(0.12, |p| p.needs.hunger_per_day)
+                            .max(1e-3);
+                        let larders: f32 = t
+                            .residents
+                            .iter()
+                            .flat_map(|&i| store.larder[i as usize].iter())
+                            .map(|&(f, q)| {
+                                q * db.foods.iter().find(|x| x.0 == f).map_or(0.0, |x| x.1)
+                            })
+                            .sum();
+                        (t.food_stock(db) + larders) / (t.residents.len().max(1) as f32 * hunger)
+                    },
+                    cold_days: t.cold_days,
+                    starving: t.starving,
+                    armory: armories.get(ti).cloned().unwrap_or_default(),
                     name: t.name.clone(),
                     pos: t.pos,
                     population: t.residents.len() as u32,
@@ -347,6 +398,63 @@ impl ViewSnapshot {
     pub fn season(&self) -> f32 {
         self.day_of_year as f32 / self.days_per_year.max(1) as f32
     }
+}
+
+/// Mean satisfaction per need by town, if the needs ladder is on.
+fn needs_by_town(world: &World) -> Vec<Vec<f32>> {
+    let Some(params) = world.get_resource::<crate::world::Params>() else {
+        return Vec::new();
+    };
+    let crate::consumption::ConsumptionParams::Needs(lp) = &params.market.consumption else {
+        return Vec::new();
+    };
+    let (Some(env), Some(store)) = (
+        world.get_resource::<crate::env::Environment>(),
+        world.get_resource::<crate::AgentStore>(),
+    ) else {
+        return Vec::new();
+    };
+    let towns = world.resource::<Towns>();
+    let db = world.resource::<Db>();
+    let sats = crate::ladder::all(store, towns, db, params, env, lp);
+    let n = sim_data::Need::ALL.len();
+    let mut sum = vec![vec![0.0f32; n]; towns.0.len()];
+    let mut count = vec![0.0f32; towns.0.len()];
+    for (i, s) in sats.iter().enumerate() {
+        let Some(s) = s else { continue };
+        let t = store.town[i] as usize;
+        for k in 0..n {
+            sum[t][k] += s[k];
+        }
+        count[t] += 1.0;
+    }
+    sum.into_iter()
+        .zip(count)
+        .map(|(v, c)| v.into_iter().map(|x| x / c.max(1.0)).collect())
+        .collect()
+}
+
+/// Tools and weapons in each town's armory, by product.
+fn armory_counts(world: &World) -> Vec<Vec<(u32, u32)>> {
+    let towns = world.resource::<Towns>();
+    towns
+        .0
+        .iter()
+        .map(|t| {
+            let mut counts: Vec<(u32, u32)> = Vec::new();
+            for &e in &t.armory {
+                let Some(p) = world.get::<crate::components::Product>(e) else {
+                    continue;
+                };
+                match counts.iter_mut().find(|c| c.0 == p.def) {
+                    Some(c) => c.1 += 1,
+                    None => counts.push((p.def, 1)),
+                }
+            }
+            counts.sort();
+            counts
+        })
+        .collect()
 }
 
 #[cfg(test)]
