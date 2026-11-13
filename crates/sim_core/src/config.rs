@@ -800,6 +800,22 @@ pub struct GovernorParams {
     /// With `market.food_rules: Ruler`: days of food the granary aims to hold.
     #[serde(default = "granary_days")]
     pub granary_days: f32,
+    /// Days over which food made and eaten are averaged for the forecast.
+    #[serde(default = "forecast_days")]
+    pub forecast_days: f32,
+    /// With `market.food_rules: Ruler`: a governor treats the town as hungry
+    /// while its food in store would last fewer days than this at the
+    /// forecast's rate.
+    #[serde(default = "food_horizon_days")]
+    pub food_horizon_days: f32,
+}
+
+fn forecast_days() -> f32 {
+    120.0
+}
+
+fn food_horizon_days() -> f32 {
+    90.0
 }
 
 fn granary_spoilage() -> f32 {
@@ -841,6 +857,8 @@ impl Default for GovernorParams {
             max_loan_share: 0.3,
             max_profit_tax: 0.5,
             granary_days: granary_days(),
+            forecast_days: forecast_days(),
+            food_horizon_days: food_horizon_days(),
             personalities: vec![
                 ("balanced".into(), crate::governor::Personality::default()),
                 (

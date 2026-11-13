@@ -43,6 +43,14 @@ pub struct GovernorState {
     pub price_ratio: Vec<f32>,
     /// Checks in a row with the treasury low (for minting).
     pub broke_checks: u32,
+    /// Food made and eaten per day (food value), averaged over about a year,
+    /// and the running totals they were last taken from (the food forecast).
+    #[serde(default)]
+    pub food_made: f32,
+    #[serde(default)]
+    pub food_eaten: f32,
+    #[serde(default)]
+    pub flows_seen: Option<(f64, f64)>,
     /// Latest decisions, newest last: (tick, what and why).
     pub decisions: VecDeque<(u64, String)>,
 }
@@ -137,6 +145,24 @@ pub fn govern(
             st.idle = idle;
         }
         st.food += a * (food - st.food);
+        // Food made and eaten, from the town's goods flows.
+        let (made, eaten) = db.foods.iter().fold((0.0f64, 0.0f64), |(m, e), &(f, v)| {
+            let f = f as usize;
+            (
+                m + town.flows.get(crate::goods::Flow::Made, f) * v as f64,
+                e + town.flows.get(crate::goods::Flow::Eaten, f) * v as f64,
+            )
+        });
+        if let Some((m0, e0)) = st.flows_seen {
+            let y = 1.0 / gp.forecast_days.max(1.0);
+            st.food_made += y * ((made - m0) as f32 - st.food_made);
+            st.food_eaten += y * ((eaten - e0) as f32 - st.food_eaten);
+        } else {
+            // First look: assume the town makes what it eats.
+            st.food_eaten = pop * params.needs.hunger_per_day;
+            st.food_made = st.food_eaten;
+        }
+        st.flows_seen = Some((made, eaten));
         st.treasury += a * (treasury - st.treasury);
         st.idle += a * (idle - st.idle);
         for p in 0..np {
@@ -145,7 +171,13 @@ pub fn govern(
         }
     }
 
-    if gp.interval == 0 || clock.tick == 0 || !clock.tick.is_multiple_of(gp.interval as u64) {
+    // Under the ruler's food rules a governor also takes stock on the first
+    // day: nothing else feeds the town while it waits a month.
+    let first_day = clock.tick == 1 && !params.market.food_rules.town();
+    if gp.interval == 0
+        || clock.tick == 0
+        || !(clock.tick.is_multiple_of(gp.interval as u64) || first_day)
+    {
         return;
     }
     let mp = &params.market;
@@ -171,8 +203,19 @@ pub fn govern(
 
         // --- food: subsidize what feeds people while the town goes hungry
         let food_target = mp.food_target_per_capita;
-        let hungry = st.food < gp.food_low * food_target;
-        let fed = st.food > gp.food_ok * food_target;
+        // The forecast: days the food in store lasts at the year's rate of
+        // making against eating. Under the ruler's rules a governor acts on it
+        // before the market runs dry.
+        let store_food = town.food_stock(&db) + crate::granary::held(town, &db);
+        let deficit = st.food_eaten - st.food_made;
+        let days_left = if deficit > 1e-3 {
+            store_food / deficit
+        } else {
+            f32::INFINITY
+        };
+        let foresee = !mp.food_rules.town() && days_left < gp.food_horizon_days;
+        let hungry = st.food < gp.food_low * food_target || foresee;
+        let fed = st.food > gp.food_ok * food_target && !foresee;
         for &(f, _) in &db.foods {
             let f = f as usize;
             let now = p.subsidy[f];
