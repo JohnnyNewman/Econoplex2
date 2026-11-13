@@ -239,3 +239,13 @@ Learned shares by month at seed 17 after 3 years (month 1 = spring equinox):
 The curves are noisy (raids, migration, price swings) and learned, not
 designed; firewood is counted as used when households buy it (planned a month
 ahead), not when it burns.
+
+## The new economy is the default (2026-11-13)
+
+Nils: always go with the more principled mechanism until it is time for
+fine-tuning. `models.ron` now defaults to the needs ladder (with households and
+a 14-day larder), seasonal farming, the ruler's food rules, daylight work and
+armory-held gear (the `new_economy` preset is the same). State hash at seed 42
+over 10 years: `7e49f13d8c7ee3bf` (was `fcf216872512dde5`). 6 seeds x 20 years:
+population 1446, starving 0.46 % of person-days, food per head 3.2. Tests
+calibrated to the old economy pin it with `legacy()` in `tests/simulation.rs`.

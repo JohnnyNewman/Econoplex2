@@ -368,6 +368,42 @@ fn coworkers_come_to_trust_each_other() {
     assert_eq!(stats.len(), towns.0.len());
 }
 
+/// The economy before the redesign's defaults (2026-11-13): the household
+/// basket, crops all year, the town-wide food rules, full working days and
+/// counted gear; for tests calibrated to it.
+fn legacy(p: &mut sim_core::config::ModelParams) {
+    p.market.consumption = sim_core::consumption::ConsumptionParams::Basket {
+        spend_share: 0.15,
+        interval: 7,
+        elasticity: 0.5,
+        comfort_weight: 0.2,
+        goods: Vec::new(),
+    };
+    p.farming = sim_core::farming::FarmingParams::AllYear;
+    p.market.food_rules = sim_core::granary::FoodRules::Town;
+    p.time.work_hours = sim_core::env::WorkHours::AllDay;
+    p.market.item_stock = sim_core::config::ItemStock::Counted;
+}
+
+fn sim_legacy(seed: u64) -> Simulation {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    legacy(&mut params);
+    scenario.seed = seed;
+    for t in &mut scenario.towns {
+        t.population = 60;
+    }
+    Simulation::new(db, params, &scenario)
+}
+
+fn full_legacy(seed: u64) -> Simulation {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    legacy(&mut params);
+    scenario.seed = seed;
+    Simulation::new(db, params, &scenario)
+}
+
 fn full(seed: u64) -> Simulation {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     let (db, params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
@@ -379,6 +415,7 @@ fn full(seed: u64) -> Simulation {
 fn full_without_basket(seed: u64) -> Simulation {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    legacy(&mut params);
     params.market.consumption = sim_core::consumption::ConsumptionParams::None;
     scenario.seed = seed;
     Simulation::new(db, params, &scenario)
@@ -397,7 +434,7 @@ fn run_years(s: &mut Simulation, years: u32) {
 
 #[test]
 fn orders_are_parsed_applied_and_logged() {
-    let mut s = sim(4);
+    let mut s = sim_legacy(4);
     assert!(s.order("subsidy Atlantis bread 0.3").is_err());
     assert!(s.order("subsidy Greenvale gold 0.3").is_err());
     assert!(s.order("charter Greenvale cooking on").is_err());
@@ -949,7 +986,7 @@ fn a_government_order_is_delivered_and_lifts_a_glut() {
     // A glutted good (Greenvale's bread): the order raises the stock the market
     // wants, so the price (the signal that draws bakers back) goes up.
     let price = |order: Option<&str>| -> f32 {
-        let mut s = full(8);
+        let mut s = full_legacy(8);
         if let Some(o) = order {
             s.order(o).unwrap();
         }
@@ -1096,6 +1133,7 @@ fn a_hungry_town_subsidizes_food_then_winds_it_down() {
 fn a_broke_town_raises_taxes_and_mints() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     let (db, mut params, scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    legacy(&mut params);
     params.market.starting_coins = 0.0;
     let mut s = Simulation::new(db, params, &scenario);
     for _ in 0..150 {
@@ -1117,6 +1155,7 @@ fn governors_do_not_swing_back_and_forth() {
     // Forty years: every town's wealth tax should move in long runs, not flip.
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    legacy(&mut params);
     scenario.seed = 2;
     for t in &mut scenario.towns {
         t.population = 60;
@@ -1210,6 +1249,7 @@ fn under_the_utility_model_the_rich_work_less() {
     // lot rest more readily than poor ones.
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    legacy(&mut params);
     scenario.seed = 9;
     params.decision.model = sim_core::config::DecisionModel::Utility;
     params.decision.choice = sim_core::decision::choice::ChoiceParams::Logit {
@@ -1500,6 +1540,7 @@ fn households_keep_food_and_the_books_still_balance() {
     use sim_core::decision::subsistence::SubsistenceParams;
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     let (db, mut params, scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    legacy(&mut params);
     params.decision.subsistence = SubsistenceParams::Keep {
         share: 0.3,
         larder_meals: 6.0,
@@ -1642,6 +1683,7 @@ fn households_only_move_to_towns_they_know() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     let run = |knowledge: KnowledgeParams| {
         let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+        legacy(&mut params);
         scenario.seed = 5;
         params.migration.consider = 0.5;
         params.migration.min_gain = 0.1;
@@ -2122,6 +2164,7 @@ fn a_hungry_broke_town_imports_food_on_credit_and_recovers() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     let run = |imports: bool, seed: u64| {
         let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+        legacy(&mut params);
         scenario.seed = seed;
         params.governor.enabled = false;
         // Calibrated with first-come jobs: skilled matching keeps this town fed.
@@ -2419,10 +2462,11 @@ fn a_compressed_calendar_runs_ten_days_of_economy_per_game_day() {
         ("time.days_per_month".to_string(), "1".to_string()),
         ("time.economy_days_per_day".to_string(), "10".to_string()),
     ];
-    let (db, params, mut scenario) =
+    let (db, mut params, mut scenario) =
         sim_core::load_with(&AssetPaths::from_root(&root), &sets).unwrap();
+    legacy(&mut params);
     scenario.seed = 9;
-    let mut plain = sim(9);
+    let mut plain = sim_legacy(9);
     let mut s = {
         for t in &mut scenario.towns {
             t.population = 60;
@@ -2683,13 +2727,14 @@ fn the_view_shows_needs_stores_and_the_armory() {
     assert!(t.needs.iter().all(|v| (0.0..=1.0).contains(v)));
     assert!(t.food_days > 0.0 && t.seed_reserve);
     // Without the ladder there is nothing to show.
-    let plain = sim_core::view::ViewSnapshot::capture(&sim(2).world, &mut Default::default());
+    let plain =
+        sim_core::view::ViewSnapshot::capture(&sim_legacy(2).world, &mut Default::default());
     assert!(plain.towns[0].needs.is_empty());
 }
 
 #[test]
 fn a_stockpile_fills_the_town_store_and_draws_production() {
-    let mut s = sim(14);
+    let mut s = sim_legacy(14);
     s.step();
     s.order("stockpile Greenvale grain 150").unwrap();
     let grain = s
