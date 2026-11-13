@@ -417,6 +417,8 @@ fn full_without_basket(seed: u64) -> Simulation {
     let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
     legacy(&mut params);
     params.market.consumption = sim_core::consumption::ConsumptionParams::None;
+    // Calibrated with weapons stocked per resident (smithing work the treasury pays for).
+    params.military.kit_demand = sim_core::config::KitDemand::PerCapita;
     scenario.seed = seed;
     Simulation::new(db, params, &scenario)
 }
@@ -1166,6 +1168,8 @@ fn governors_do_not_swing_back_and_forth() {
     params.market.caravans = sim_core::config::Caravans::Fixed;
     // And without household buying (it moves treasuries too).
     params.market.consumption = sim_core::consumption::ConsumptionParams::None;
+    // And with weapons stocked per resident: the treasury's sword buying steadies it.
+    params.military.kit_demand = sim_core::config::KitDemand::PerCapita;
     let mut s = Simulation::new(db, params, &scenario);
     run_years(&mut s, 40);
     let log = &s.world.resource::<sim_core::policy::OrderQueue>().log;

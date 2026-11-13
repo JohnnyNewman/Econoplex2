@@ -552,10 +552,10 @@ pub enum KitDemand {
     /// good, or by default one piece per soldier it means to keep plus a levy
     /// reserve, shared among the goods that fill the same slot (a sword or a
     /// spear, mail or a padded coat). See `military::kit_reserve`.
+    #[default]
     Soldiers,
     /// Like any other good: `market.target_per_capita` per resident, for every
     /// kind of weapon. The old rule.
-    #[default]
     PerCapita,
 }
 
