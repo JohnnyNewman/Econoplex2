@@ -58,7 +58,7 @@ pub fn update_help(
     for (mut t, help) in &mut text {
         t.0 = format!(
             "{}\n\
-         time {:02}:{:02}  [ ] change  T run ({})   sunrise {:.1}, sunset {:.1}\n\
+         time {:02}:{:02}  [ ] change  T run ({})  {}   sunrise {:.1}, sunset {:.1}\n\
          {}   Y weather ({})  U season ({})\n\
          {} sky view {}: {}\n\
          {} toon view {}: {}   M toon/PBR ({})\n\
@@ -71,8 +71,13 @@ pub fn update_help(
             h.floor() as u32,
             (h.fract() * 60.0) as u32,
             if clock.running { "on" } else { "off" },
-            crate::sky::sunrise_sunset(clock.season).0,
-            crate::sky::sunrise_sunset(clock.season).1,
+            match (env.source, clock.free) {
+                (crate::env::EnvSource::Sim, false) => "sim time",
+                (crate::env::EnvSource::Sim, true) => "set by hand, C sim time",
+                _ => "",
+            },
+            12.0 - clock.day_hours() / 2.0,
+            12.0 + clock.day_hours() / 2.0,
             describe(&env),
             over.weather.map_or("auto", |p| p.name()),
             over.season.map_or("auto", |s| SEASON_NAMES[s as usize]),

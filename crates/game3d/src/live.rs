@@ -11,15 +11,16 @@
 //! The view then keeps the scene in step with the newest snapshot:
 //! - buildings appear when the sim builds them and go when they are gone;
 //! - each town shows one house per six residents (at least twelve);
-//! - the calendar sets the season, which sets how high the sun climbs;
+//! - the sim's clock and weather drive day and night, seasons and weather
+//!   (`publish_env`, see env.rs);
 //! - a status line shows the date, the speed, the population and the latest
 //!   events.
 //!
 //! Keys: `Space` pause, `,` / `.` slower / faster.
 
 use crate::buildings::{spawn_building, spawn_house, BuildingSpec, Kit, Style};
+use crate::env::{Ground, SimEnv, Weather};
 use crate::outline::Outlines;
-use crate::sky::SkyClock;
 use crate::toon::ToonMaterial;
 use crate::{height, World3d, SCALE};
 use bevy::prelude::*;
@@ -31,8 +32,37 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-/// Game speeds in simulated days per second (as in the 2D game).
-pub const SPEEDS: [f32; 5] = [1.0, 4.0, 12.0, 30.0, 60.0];
+/// Game speeds in simulated days per second. Play is about 5 minutes a day
+/// (Nils's choice), so day and night pass at a watchable pace; the faster
+/// speeds (1 minute, 12 s, then 1 to 120 days a second) are for letting the
+/// economy run.
+pub const SPEEDS: [f32; 9] = [
+    1.0 / 300.0,
+    1.0 / 60.0,
+    1.0 / 12.0,
+    1.0,
+    4.0,
+    12.0,
+    30.0,
+    60.0,
+    120.0,
+];
+/// The speed the view starts at (5 minutes a day).
+pub const DEFAULT_SPEED: usize = 0;
+
+/// A speed as people read it: `5 min/day`, `12 s/day`, `30 days/s`.
+pub fn speed_label(days_per_sec: f32) -> String {
+    if days_per_sec >= 1.0 {
+        format!("{days_per_sec:.0} days/s")
+    } else {
+        let secs = 1.0 / days_per_sec;
+        if secs >= 60.0 {
+            format!("{:.0} min/day", secs / 60.0)
+        } else {
+            format!("{secs:.0} s/day")
+        }
+    }
+}
 
 pub struct LivePlugin;
 
@@ -40,7 +70,8 @@ impl Plugin for LivePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Shown>()
             .add_systems(Startup, (spawn_status, init_kit))
-            .add_systems(Update, (live_keys, sync_scene, update_status).chain());
+            .add_systems(Update, (live_keys, sync_scene, update_status).chain())
+            .add_systems(Update, publish_env.before(crate::env::update_environment));
     }
 }
 
@@ -61,6 +92,13 @@ struct Shared {
     /// Orders the simulation could not parse, with the reason.
     errors: Vec<String>,
     quit: bool,
+    /// The sim's time of day and weather after its latest tick (it changes
+    /// every tick; the snapshot only once a day), when that tick ran, and how
+    /// long a tick lasts at the current speed (the view smooths the hour).
+    env: Arc<sim_core::env::Environment>,
+    env_at: Instant,
+    tick_secs: f32,
+    ticks_per_day: u32,
 }
 
 /// The view's handle on the running simulation.
@@ -119,6 +157,14 @@ impl LiveSim {
             why_town: None,
             errors: Vec::new(),
             quit: false,
+            env: Arc::new(sim.world.resource::<sim_core::env::Environment>().clone()),
+            env_at: Instant::now(),
+            tick_secs: 1.0,
+            ticks_per_day: sim
+                .world
+                .resource::<sim_core::SimClock>()
+                .ticks_per_day
+                .max(1),
         }));
         let thread_shared = shared.clone();
         std::thread::Builder::new()
@@ -155,6 +201,24 @@ impl LiveSim {
     /// Ask the simulation to explain this town after each tick (or stop).
     pub fn explain(&self, town: Option<u16>) {
         self.shared.lock().unwrap().why_town = town;
+    }
+
+    /// The sim's latest time of day and weather, how far (0..1) the view is
+    /// into the tick after it, and how many real seconds a day lasts now
+    /// (infinite while paused).
+    pub fn env(&self) -> (Arc<sim_core::env::Environment>, f32, f32, u32) {
+        let s = self.shared.lock().unwrap();
+        let frac = if s.paused {
+            0.5
+        } else {
+            (s.env_at.elapsed().as_secs_f32() / s.tick_secs.max(1e-4)).min(1.0)
+        };
+        let day_secs = if s.paused {
+            f32::INFINITY
+        } else {
+            1.0 / SPEEDS[s.speed]
+        };
+        (s.env.clone(), frac, day_secs, s.ticks_per_day)
     }
 
     pub fn speed_and_pause(&self) -> (usize, bool) {
@@ -218,21 +282,123 @@ fn run(sim: &mut Simulation, shared: &Mutex<Shared>, mut seen: sim_core::view::S
             }
             continue;
         }
-        sim.step();
-        let interval = Duration::from_secs_f32(1.0 / SPEEDS[speed]);
-        // Keep the pace, but don't try to catch up after a slow stretch.
-        next = (next + interval).max(now);
-        let mut snap = ViewSnapshot::capture(&sim.world, &mut seen);
-        explained = why_town;
-        if let Some(t) = why_town {
-            snap.why = Some((t, sim_core::explain::explain(&sim.world, t)));
-            snap.skills = Some((t, sim_core::view::town_skills(&sim.world, t)));
+        // Run the ticks that are due: a day has `ticks_per_day` of them, so at
+        // high speeds several run per pass. A full snapshot at the end of
+        // each day, the time of day and weather after every tick.
+        let tpd = sim
+            .world
+            .resource::<sim_core::SimClock>()
+            .ticks_per_day
+            .max(1);
+        let interval = Duration::from_secs_f32(1.0 / (SPEEDS[speed] * tpd as f32));
+        let mut ran = 0;
+        while Instant::now() >= next && ran < 4 * tpd {
+            sim.step_tick();
+            ran += 1;
+            next += interval;
+            if !sim.world.resource::<sim_core::SimClock>().day_done() {
+                continue;
+            }
+            let mut snap = ViewSnapshot::capture(&sim.world, &mut seen);
+            explained = why_town;
+            if let Some(t) = why_town {
+                snap.why = Some((t, sim_core::explain::explain(&sim.world, t)));
+                snap.skills = Some((t, sim_core::view::town_skills(&sim.world, t)));
+            }
+            let mut s = shared.lock().unwrap();
+            s.events.extend(snap.events.iter().cloned());
+            s.samples.extend(snap.samples.iter().cloned());
+            s.latest = Arc::new(snap);
         }
+        // Keep the pace, but don't try to catch up after a slow stretch.
+        next = next.max(now);
+        let env = Arc::new(sim.world.resource::<sim_core::env::Environment>().clone());
         let mut s = shared.lock().unwrap();
-        s.events.extend(snap.events.iter().cloned());
-        s.samples.extend(snap.samples.iter().cloned());
-        s.latest = Arc::new(snap);
+        s.env = env;
+        s.env_at = Instant::now();
+        s.tick_secs = interval.as_secs_f32();
+        s.ticks_per_day = tpd;
     }
+}
+
+/// Hand the sim's time and weather to the view (env.rs): the hour moves on
+/// smoothly between ticks, and the weather is that of the towns near the
+/// camera's focus, weighted by closeness.
+fn publish_env(
+    mut commands: Commands,
+    live: Res<LiveSim>,
+    world: Res<World3d>,
+    camera: Query<&crate::camera::WorldCamera>,
+    current: Option<Res<SimEnv>>,
+) {
+    let (env, frac, day_secs, tpd) = live.env();
+    let tick_hours = 24.0 / tpd as f32;
+    // `env.hour` is the middle of the latest tick; move on through the next.
+    let hour = (env.hour + (frac - 0.5) * tick_hours).rem_euclid(24.0);
+    let focus = camera.iter().next().map_or(Vec2::ZERO, |c| {
+        Vec2::new(c.focus.x * SCALE, -c.focus.z * SCALE)
+    });
+    let towns: Vec<(Vec2, &sim_core::env::LocalEnv)> = world
+        .scenario
+        .towns
+        .iter()
+        .map(|t| Vec2::new(t.position.0, t.position.1))
+        .zip(env.towns.iter())
+        .collect();
+    let (weather, ground) = blend_towns(&towns, focus);
+    let next = SimEnv {
+        hour,
+        season: env.season,
+        day: env.day as f32 + (frac - 0.5) * tick_hours / 24.0,
+        day_hours: env.sunset - env.sunrise,
+        weather,
+        ground,
+        day_secs,
+    };
+    if current.as_deref() != Some(&next) {
+        commands.insert_resource(next);
+    }
+}
+
+/// The weather at `at` (sim map coordinates) from the towns' weather,
+/// weighted by inverse squared distance. The sim's wind (x, y on its map)
+/// becomes 3D (x, -z).
+pub fn blend_towns(towns: &[(Vec2, &sim_core::env::LocalEnv)], at: Vec2) -> (Weather, Ground) {
+    let mut sum = 0.0;
+    let (mut w, mut g) = (
+        Weather {
+            temperature: 0.0,
+            wind: Vec2::ZERO,
+            cloud: 0.0,
+            precip: 0.0,
+            haze: 0.0,
+        },
+        Ground::default(),
+    );
+    for (pos, local) in towns {
+        let k = 1.0 / (pos.distance_squared(at) + 100.0);
+        let lw = &local.weather;
+        w.temperature += lw.temperature * k;
+        w.wind += Vec2::new(lw.wind.0, -lw.wind.1) * k;
+        w.cloud += lw.cloud * k;
+        w.precip += lw.precip * k;
+        w.haze += lw.haze * k;
+        g.snow += local.ground.snow * k;
+        g.wet += local.ground.wet * k;
+        sum += k;
+    }
+    if sum == 0.0 {
+        return (Weather::default(), Ground::default());
+    }
+    let s = 1.0 / sum;
+    w.temperature *= s;
+    w.wind *= s;
+    w.cloud *= s;
+    w.precip *= s;
+    w.haze *= s;
+    g.snow *= s;
+    g.wet *= s;
+    (w, g)
 }
 
 /// Buildings and houses currently in the scene.
@@ -283,8 +449,6 @@ fn sync_scene(
     mut meshes: ResMut<Assets<Mesh>>,
     outlines: Option<Res<Outlines>>,
     world: Res<World3d>,
-    mut clock: ResMut<SkyClock>,
-    env_override: Res<crate::env::EnvOverride>,
 ) {
     let (Some(mut kit), Some(outlines)) = (kit, outlines) else {
         return;
@@ -310,12 +474,6 @@ fn sync_scene(
     live.shown_tick = Some(snap.tick);
     let t = &world.terrain;
     let ground = |p: (f32, f32)| Vec3::new(p.0 / SCALE, height(t, p), -p.1 / SCALE);
-
-    // The calendar sets the season (the time of day stays yours: `[` `]`, `T`).
-    let season = snap.season();
-    if env_override.season.is_none() && clock.season != season {
-        clock.season = season;
-    }
 
     // Styles (M8): a town whose era or wealth tier changed is rebuilt in its
     // new style (its buildings respawn below, its houses further down).
@@ -467,11 +625,11 @@ fn update_status(live: Res<LiveSim>, mut text: Query<&mut Text, With<Status>>) {
         .map(|t| format!("{} {}", t.name, t.population))
         .collect();
     let mut line = format!(
-        "Year {year}, day {} ({season})   {}   {} days/s   Space pause, , . speed\n\
+        "Year {year}, day {} ({season})   {}   {}   Space pause, , . speed\n\
          {pop} people: {}",
         s.day_of_year + 1,
         if paused { "PAUSED" } else { "running" },
-        SPEEDS[speed],
+        speed_label(SPEEDS[speed]),
         towns.join(", "),
     );
     for e in live.recent.iter().take(4) {
@@ -527,5 +685,57 @@ mod tests {
         let errors = live.take_errors();
         assert_eq!(errors.len(), 1, "{errors:?}");
         assert!(errors[0].starts_with("tax Nowhere"));
+    }
+
+    /// The weather where the camera looks is mostly that of the nearest town;
+    /// the sim's wind (map x, y) becomes 3D (x, -z).
+    #[test]
+    fn weather_follows_the_nearest_town() {
+        let local = |t: f32, wind: (f32, f32), snow: f32| sim_core::env::LocalEnv {
+            weather: sim_core::env::Weather {
+                temperature: t,
+                wind,
+                ..Default::default()
+            },
+            ground: sim_core::env::Ground { snow, wet: 0.0 },
+        };
+        let (a, b) = (local(-5.0, (0.0, 4.0), 1.0), local(15.0, (0.0, 4.0), 0.0));
+        let towns = [(Vec2::ZERO, &a), (Vec2::new(1000.0, 0.0), &b)];
+        let (w, g) = blend_towns(&towns, Vec2::new(50.0, 0.0));
+        assert!(w.temperature < -4.0 && g.snow > 0.95, "{w:?} {g:?}");
+        assert!((w.wind - Vec2::new(0.0, -4.0)).length() < 1e-3);
+        let (mid, _) = blend_towns(&towns, Vec2::new(500.0, 0.0));
+        assert!((mid.temperature - 5.0).abs() < 1e-3);
+    }
+
+    /// The sim's clock reaches the view: its hour moves on tick by tick.
+    #[test]
+    fn the_view_gets_the_sims_hours() {
+        let paths = sim_core::AssetPaths::discover();
+        let (db, params, scenario) = sim_core::load(&paths).unwrap();
+        let sim = Simulation::new(db, params, &scenario);
+        let live = LiveSim::start(sim, 2, false); // 12 s a day: a tick a second
+        let first = live.env().0.hour;
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let moved = loop {
+            let (env, _, day_secs, tpd) = live.env();
+            if env.hour != first {
+                assert!(tpd > 1 && day_secs.is_finite());
+                break true;
+            }
+            if Instant::now() > deadline {
+                break false;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        };
+        assert!(moved, "the hour never changed");
+    }
+
+    #[test]
+    fn speeds_read_as_people_say_them() {
+        assert_eq!(speed_label(SPEEDS[DEFAULT_SPEED]), "5 min/day");
+        assert_eq!(speed_label(1.0 / 12.0), "12 s/day");
+        assert_eq!(speed_label(30.0), "30 days/s");
+        assert!(SPEEDS.windows(2).all(|w| w[0] < w[1]));
     }
 }

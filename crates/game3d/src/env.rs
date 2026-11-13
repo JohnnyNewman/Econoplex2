@@ -11,15 +11,18 @@
 //! - rain and snow (precip.rs).
 //!
 //! Where the values come from is the [`EnvSource`]:
-//! - `Stub` (for now): a small made-up weather model in this file, driven by
-//!   the view's clock (`SkyClock`) and the sim's calendar (the season);
-//! - later the simulation's own clock and weather, published in its snapshot.
-//!   Day and night and the weather change gameplay there (work hours, warmth,
-//!   harvests, travel), so the view must show the sim's state, not its own.
-//!   Only `update_environment` changes then.
+//! - `Sim` (the live view): the simulation's clock and weather. Day and night
+//!   and the weather change gameplay there (work hours, warmth, harvests,
+//!   travel), so the view shows the sim's state, not its own. live.rs hands
+//!   it over as [`SimEnv`] each frame: the hour smoothed between the sim's
+//!   ticks, the weather where the camera looks. At fast game speeds a day
+//!   would flash by in a second, so the view holds a steady afternoon then;
+//! - `Stub` (the playground, which has no simulation): a small made-up
+//!   weather model in this file, driven by the view's own clock.
 //!
 //! Keys: `Y` cycles the weather (auto, clear, cloudy, rain, storm, snow, fog),
-//! `U` the season (auto, spring, summer, autumn, winter).
+//! `U` the season (auto, spring, summer, autumn, winter). `[` `]` `T` set the
+//! hour by hand (sky.rs), `C` follows the simulation's clock again.
 
 use crate::sky::SkyClock;
 use bevy::prelude::*;
@@ -28,7 +31,7 @@ use std::f32::consts::TAU;
 /// The weather right now.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Weather {
-    /// Air temperature in Â°C.
+    /// Air temperature in °C.
     pub temperature: f32,
     /// Where the wind blows toward (3D x, z; m/s).
     pub wind: Vec2,
@@ -71,9 +74,43 @@ pub struct Ground {
 /// Where the environment comes from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum EnvSource {
-    /// The stand-in weather model below.
+    /// The stand-in weather model below (no simulation: the playground).
     #[default]
     Stub,
+    /// The live simulation's clock and weather ([`SimEnv`]).
+    Sim,
+}
+
+/// The simulation's time and weather as the live view hands them over each
+/// frame (live.rs): the hour smoothed between the sim's ticks, the weather
+/// where the camera looks (blended from the nearest towns).
+#[derive(Resource, Clone, Debug, PartialEq)]
+pub struct SimEnv {
+    pub hour: f32,
+    pub season: f32,
+    pub day: f32,
+    /// Sunrise to sunset today, hours.
+    pub day_hours: f32,
+    pub weather: Weather,
+    pub ground: Ground,
+    /// Real seconds one simulated day lasts now (infinite while paused).
+    pub day_secs: f32,
+}
+
+/// Below this many real seconds per simulated day, day and night would flash
+/// by: the view holds a steady afternoon instead (seasons and weather still
+/// follow the sim).
+pub const STEADY_BELOW_SECS: f32 = 4.0;
+/// The hour shown at fast speeds.
+pub const STEADY_HOUR: f32 = 13.0;
+
+/// The hour the view shows for the sim's hour at this speed.
+pub fn shown_hour(sim: &SimEnv) -> f32 {
+    if sim.day_secs < STEADY_BELOW_SECS {
+        STEADY_HOUR
+    } else {
+        sim.hour
+    }
 }
 
 /// Time of day, season and weather, as everything in the view should draw them.
@@ -218,13 +255,19 @@ pub fn env_keys(keys: Res<ButtonInput<KeyCode>>, mut over: ResMut<EnvOverride>) 
     }
 }
 
-/// Once per frame: the environment from the clock (and, later, the sim).
+/// Once per frame: the environment from the simulation (live view) or the
+/// stand-in model (playground), with the keyboard's overrides on top.
 pub fn update_environment(
     over: Res<EnvOverride>,
+    sim: Option<Res<SimEnv>>,
     mut clock: ResMut<SkyClock>,
     mut env: ResMut<Environment>,
     mut last: Local<Option<(f32, f32)>>,
 ) {
+    if let Some(sim) = sim {
+        from_sim(&sim, &over, &mut clock, &mut env);
+        return;
+    }
     // A forced season moves the sun too, so it goes into the clock.
     if let Some(s) = over.season {
         let want = SEASON_MID[s as usize % 4];
@@ -267,6 +310,50 @@ pub fn update_environment(
         *env = next;
     }
 }
+/// The environment from the simulation. The clock follows the sim's hour
+/// (unless set by hand) and season (unless forced); a forced weather replaces
+/// the sim's, with the ground settled for it.
+fn from_sim(sim: &SimEnv, over: &EnvOverride, clock: &mut SkyClock, env: &mut Environment) {
+    let season = over
+        .season
+        .map_or(sim.season, |s| SEASON_MID[s as usize % 4]);
+    if clock.season != season {
+        clock.season = season;
+    }
+    let day_hours = if over.season.is_some() {
+        None
+    } else {
+        Some(sim.day_hours)
+    };
+    if clock.day_hours != day_hours {
+        clock.day_hours = day_hours;
+    }
+    if !clock.free {
+        let hour = shown_hour(sim);
+        if (clock.hour - hour).abs() > 1e-4 {
+            clock.hour = hour;
+        }
+    }
+    let (weather, ground) = match over.weather {
+        Some(p) => {
+            let w = p.weather(sim.weather);
+            (w, settled_ground(&w, season))
+        }
+        None => (sim.weather, sim.ground),
+    };
+    let next = Environment {
+        source: EnvSource::Sim,
+        hour: clock.hour,
+        season,
+        day: sim.day,
+        weather,
+        ground,
+    };
+    if *env != next {
+        *env = next;
+    }
+}
+
 /// Days in the stub's year (only for turning the season into days).
 const DAYS_PER_YEAR: f32 = 360.0;
 
@@ -402,5 +489,52 @@ mod tests {
         assert!(e(0.76).autumn() > 0.99 && e(0.5).autumn() == 0.0);
         assert!(e(0.0).winter() > 0.99 && e(0.98).winter() > 0.9);
         assert!(e(0.5).winter() == 0.0);
+    }
+
+    fn sim_env(hour: f32, day_secs: f32) -> SimEnv {
+        SimEnv {
+            hour,
+            season: 0.3,
+            day: 10.0,
+            day_hours: 13.0,
+            weather: Weather::default(),
+            ground: Ground {
+                snow: 0.0,
+                wet: 0.4,
+            },
+            day_secs,
+        }
+    }
+
+    #[test]
+    fn the_clock_follows_the_sim_unless_set_by_hand() {
+        let (mut clock, mut env) = (SkyClock::default(), Environment::default());
+        let over = EnvOverride::default();
+        from_sim(&sim_env(21.0, 10.0), &over, &mut clock, &mut env);
+        assert_eq!((clock.hour, clock.season), (21.0, 0.3));
+        assert_eq!(clock.day_hours(), 13.0);
+        assert_eq!(env.source, EnvSource::Sim);
+        assert_eq!(env.ground.wet, 0.4);
+        // Fast: a steady afternoon instead of flashing days.
+        from_sim(&sim_env(21.0, 1.0), &over, &mut clock, &mut env);
+        assert_eq!(clock.hour, STEADY_HOUR);
+        // Set by hand: the hour stays.
+        clock.free = true;
+        clock.hour = 3.0;
+        from_sim(&sim_env(21.0, 10.0), &over, &mut clock, &mut env);
+        assert_eq!(clock.hour, 3.0);
+    }
+
+    #[test]
+    fn forced_weather_and_season_win_over_the_sim() {
+        let (mut clock, mut env) = (SkyClock::default(), Environment::default());
+        let over = EnvOverride {
+            weather: Some(Preset::Snow),
+            season: Some(3),
+        };
+        from_sim(&sim_env(12.0, 10.0), &over, &mut clock, &mut env);
+        assert_eq!(clock.season, 0.0);
+        assert!(env.weather.precip > 0.5 && env.weather.temperature < 0.0);
+        assert!(env.ground.snow > 0.5);
     }
 }

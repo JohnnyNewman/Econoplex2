@@ -121,6 +121,11 @@ pub struct SkyClock {
     /// Fraction of the year, 0..1 (0.5 = midsummer). The live simulation sets
     /// it from its calendar; it decides how high the sun climbs.
     pub season: f32,
+    /// Sunrise to sunset in hours, when the simulation says (else `day_length`).
+    pub day_hours: Option<f32>,
+    /// The hour is set by hand (`[` `]` `T`) instead of following the
+    /// simulation's clock; `C` follows the simulation again.
+    pub free: bool,
 }
 
 impl Default for SkyClock {
@@ -131,6 +136,8 @@ impl Default for SkyClock {
             running: false,
             debug: 0,
             season: 0.5,
+            day_hours: None,
+            free: false,
         }
     }
 }
@@ -183,13 +190,16 @@ pub fn sun_direction(hour: f32) -> Vec3 {
     sun_direction_in(hour, 0.5)
 }
 
-/// Hours of daylight at a time of year: 16 on average (so the night is about
-/// a third of the day), 14 in midwinter, 18 at midsummer.
+/// Hours from sunrise to sunset at a time of year, as the simulation's default
+/// `time.day_length`: 12 at the equinoxes, 8 in midwinter, 16 at midsummer.
+/// Dawn and dusk add about two hours each, so full night is about a third of
+/// the day. With the live simulation, its own sunrise and sunset are used.
 pub fn day_length(season: f32) -> f32 {
-    16.0 - 2.0 * (season * std::f32::consts::TAU).cos()
+    12.0 - 4.0 * (season * std::f32::consts::TAU).cos()
 }
 
 /// Sunrise and sunset (hours), symmetric around noon.
+#[cfg(test)]
 pub fn sunrise_sunset(season: f32) -> (f32, f32) {
     let half = day_length(season) * 0.5;
     (12.0 - half, 12.0 + half)
@@ -200,8 +210,13 @@ pub fn sunrise_sunset(season: f32) -> (f32, f32) {
 /// +z), west in the evening. The circle sits above the horizon for
 /// `day_length(season)` hours; in winter it also climbs about half as high.
 pub fn sun_direction_in(hour: f32, season: f32) -> Vec3 {
+    sun_direction_at(hour, season, day_length(season))
+}
+
+/// The sun's direction for a given length of the day (sunrise to sunset, hours).
+pub fn sun_direction_at(hour: f32, season: f32, day_hours: f32) -> Vec3 {
     let a = (hour - 12.0) / 24.0 * std::f32::consts::TAU; // 0 at noon
-    let half = day_length(season) / 24.0 * std::f32::consts::PI; // half a day's arc
+    let half = day_hours.clamp(1.0, 23.0) / 24.0 * std::f32::consts::PI; // half a day's arc
     let summer = 0.5 - 0.5 * (season * std::f32::consts::TAU).cos(); // 0 winter, 1 summer
     let noon = 0.85 * (0.55 + 0.45 * summer); // height at noon
                                               // y = A (cos a - cos half): zero at sunrise and sunset, `noon` at noon.
@@ -211,19 +226,27 @@ pub fn sun_direction_in(hour: f32, season: f32) -> Vec3 {
 
 /// The moon's direction: roughly opposite the sun, a little higher, so it
 /// lights the night from the other side of the sky.
+#[cfg(test)]
 pub fn moon_direction_in(hour: f32, season: f32) -> Vec3 {
-    let s = sun_direction_in(hour, season);
+    moon_from_sun(sun_direction_in(hour, season))
+}
+
+fn moon_from_sun(s: Vec3) -> Vec3 {
     Vec3::new(-s.x, -s.y * 0.8 + 0.12, -s.z * 0.6 + 0.2).normalize()
 }
 
 impl SkyClock {
     /// Toward the sun, now.
     pub fn sun(&self) -> Vec3 {
-        sun_direction_in(self.hour, self.season)
+        sun_direction_at(self.hour, self.season, self.day_hours())
     }
     /// Toward the moon, now.
     pub fn moon(&self) -> Vec3 {
-        moon_direction_in(self.hour, self.season)
+        moon_from_sun(self.sun())
+    }
+    /// Sunrise to sunset today: the simulation's, or the default for the season.
+    pub fn day_hours(&self) -> f32 {
+        self.day_hours.unwrap_or_else(|| day_length(self.season))
     }
 }
 
@@ -295,6 +318,14 @@ fn sky_keys(
     }
     if keys.just_pressed(KeyCode::KeyT) {
         clock.running = !clock.running;
+        clock.free = true;
+    }
+    if keys.just_pressed(KeyCode::BracketLeft) || keys.just_pressed(KeyCode::BracketRight) {
+        clock.free = true;
+    }
+    if keys.just_pressed(KeyCode::KeyC) && clock.free {
+        clock.free = false;
+        clock.running = false;
     }
     let dt = time.delta_secs();
     if clock.running {
@@ -451,9 +482,10 @@ fn follow_camera(
 mod tests {
     use super::*;
 
-    /// The sun is up for `day_length` hours: about two thirds of the day.
+    /// The sun is up for `day_length` hours; with dawn and dusk (about two
+    /// hours each) full night is about a third of the day.
     #[test]
-    fn the_night_is_about_a_third_of_the_day() {
+    fn the_sun_is_up_for_the_day_length() {
         for season in [0.0, 0.25, 0.5, 0.75] {
             let up = (0..2400)
                 .filter(|i| sun_direction_in(*i as f32 / 100.0, season).y > 0.0)
@@ -461,7 +493,8 @@ mod tests {
                 / 100.0;
             assert!((up - day_length(season)).abs() < 0.05, "{season}: {up}");
         }
-        assert!((day_length(0.25) - 16.0).abs() < 1e-3);
+        assert!((day_length(0.25) - 12.0).abs() < 1e-3);
+        assert!((day_length(0.5) - 16.0).abs() < 1e-3);
         let (rise, set) = sunrise_sunset(0.25);
         assert!(
             sun_direction_in(rise + 0.1, 0.25).x > 0.5,
