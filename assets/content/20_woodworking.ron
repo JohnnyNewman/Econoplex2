@@ -9,7 +9,9 @@
     products: [
         (id: "wood",     name: "Wood",     category: Raw,      base_price: 1.0, price_class: Some(Essential)),
         (id: "plank",    name: "Plank",    category: Material, base_price: 1.5),
-        (id: "charcoal", name: "Charcoal", category: Material, base_price: 3.0),
+        // Fuel for the hearth (firewood starved the wood chains far more).
+        (id: "charcoal", name: "Charcoal", category: Material, base_price: 3.0,
+            household: Some((want: 1.0, life_days: 15.0))),
         (id: "hilt",     name: "Hilt",     category: Material, base_price: 6.0),
         (id: "axe", name: "Axe", category: Tool, era: 3, base_price: 25.0,
             equip: Some((domain: "forestry", bonus: 0.25))),

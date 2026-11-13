@@ -231,7 +231,7 @@
         // or the market. Owning what it wants raises happiness by comfort_weight.
         // Example:
         // With goods: [] the basket is every good whose content declares
-        // household use (clothes and pots; town-market.md says why not more):
+        // household use (clothes, pots, ale, cloth, charcoal, silver):
         // consumption: Basket(spend_share: 0.3, interval: 7, elasticity: 0.5, comfort_weight: 0.2, goods: []),
         // Or list the goods here:
         // consumption: Basket(spend_share: 0.3, interval: 7, elasticity: 0.5, comfort_weight: 0.2, goods: [
@@ -239,7 +239,8 @@
         //     (good: "pot", want: 3.0, life_days: 360.0, taste: Some("tradition")),
         //     (good: "ale", want: 2.0, life_days: 7.0, taste: Some("sociability")),
         // ]),
-        consumption: None,
+        // Default since 2026-11-13 (Nils's choice; costs in town-market.md).
+        consumption: Basket(spend_share: 0.15, interval: 7, elasticity: 0.5, comfort_weight: 0.2, goods: []),
         // Price dynamics per price class (each good's class is in the content:
         // price_class, else food is Essential and the rest Commodity; Labour is the
         // jobs' wage factors). Inertia: Partial(speed) moves the log price speed x

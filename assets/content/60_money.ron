@@ -13,7 +13,9 @@
     ],
     products: [
         (id: "silver_ore", name: "Silver ore", category: Raw,      base_price: 4.0),
-        (id: "silver",     name: "Silver",     category: Material, era: 2, base_price: 40.0),
+        // Jewellery and plate: a luxury, bought from spare money.
+        (id: "silver",     name: "Silver",     category: Material, era: 2, base_price: 40.0,
+            household: Some((want: 0.2, life_days: 3000.0, taste: Some("ambition"), elasticity: Some(1.5), min_wealth: Some(2.0)))),
         (id: "mint", name: "Mint", category: Building, era: 2, base_price: 400.0, slots: 4),
         (id: "coin", name: "Coin", category: Material, era: 2, base_price: 1.0, coin: 1.0),
     ],

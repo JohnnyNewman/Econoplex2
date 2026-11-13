@@ -375,6 +375,15 @@ fn full(seed: u64) -> Simulation {
     Simulation::new(db, params, &scenario)
 }
 
+/// `full`, without the household basket (for tests calibrated before it).
+fn full_without_basket(seed: u64) -> Simulation {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    params.market.consumption = sim_core::consumption::ConsumptionParams::None;
+    scenario.seed = seed;
+    Simulation::new(db, params, &scenario)
+}
+
 fn run_years(s: &mut Simulation, years: u32) {
     let days = s
         .world
@@ -454,12 +463,13 @@ fn a_school_teaches_its_subject_and_pays_the_teacher() {
 
 #[test]
 fn closed_borders_keep_migrants_out_and_subsidies_draw_workers() {
-    let mut s = full(6);
+    // Calibrated without household buying (households now buy cloth too).
+    let mut s = full_without_basket(6);
     s.order("immigration Greenvale closed").unwrap();
     // A good with spare capacity to grow (Timberwick's planks are already bound by
     // workshop space and construction demand).
     s.order("subsidy Greenvale cloth 1.0").unwrap();
-    let mut base = full(6);
+    let mut base = full_without_basket(6);
     let mut arrived = 0;
     let mut made = [0.0f32; 2];
     let cloth = s
@@ -1042,6 +1052,8 @@ fn a_hungry_town_subsidizes_food_then_winds_it_down() {
     let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
     // Calibrated with first-come jobs: skilled matching keeps this town fed.
     params.decision.matching = sim_core::decision::matching::MatchingParams::FirstCome;
+    // And without household buying, which changes what the town spends on.
+    params.market.consumption = sim_core::consumption::ConsumptionParams::None;
     scenario.seed = 4;
     let b = &mut scenario.towns[3];
     for n in &mut b.nature {
@@ -1112,6 +1124,8 @@ fn governors_do_not_swing_back_and_forth() {
     // Calibrated with fixed caravans; balancing trade moves treasuries more
     // (one more tax reversal in 40 years).
     params.market.caravans = sim_core::config::Caravans::Fixed;
+    // And without household buying (it moves treasuries too).
+    params.market.consumption = sim_core::consumption::ConsumptionParams::None;
     let mut s = Simulation::new(db, params, &scenario);
     run_years(&mut s, 40);
     let log = &s.world.resource::<sim_core::policy::OrderQueue>().log;
