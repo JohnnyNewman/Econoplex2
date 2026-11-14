@@ -28,6 +28,7 @@ fn main() {
             larder_days: 0.0,
             cold_damage: 0.02,
             plan_days: 30.0,
+            fixed_needs: Vec::new(),
         });
     }
     if let Some(s) = seed {

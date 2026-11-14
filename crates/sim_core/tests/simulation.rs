@@ -3029,3 +3029,36 @@ fn an_army_marches_eats_its_rations_fights_and_comes_home() {
         "the squad was not disbanded"
     );
 }
+
+#[test]
+fn fixed_needs_stay_where_they_are_set() {
+    // Belonging and esteem are held at a neutral 0.5 by default for now
+    // (little serves them yet), so nobody's satisfaction there moves.
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, params, scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    let mut s = Simulation::new(db, params, &scenario);
+    for _ in 0..30 {
+        s.step();
+    }
+    let w = &s.world;
+    let params = w.resource::<sim_core::world::Params>();
+    let sim_core::consumption::ConsumptionParams::Needs(lp) = &params.market.consumption else {
+        panic!("the needs ladder is the default");
+    };
+    assert!(!lp.fixed_needs.is_empty());
+    let sats = sim_core::ladder::all(
+        w.resource::<sim_core::AgentStore>(),
+        w.resource::<sim_core::Towns>(),
+        w.resource::<sim_core::Db>(),
+        params,
+        w.resource::<sim_core::env::Environment>(),
+        lp,
+    );
+    let all = sim_data::Need::ALL;
+    for sat in sats.iter().flatten() {
+        for &(need, v) in &lp.fixed_needs {
+            let k = all.iter().position(|&n| n == need).unwrap();
+            assert_eq!(sat[k], v, "{need:?}");
+        }
+    }
+}

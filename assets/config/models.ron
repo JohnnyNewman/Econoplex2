@@ -262,7 +262,9 @@
         // from house, clothes and fuel against the day's temperature; households
         // share a hearth and keep two weeks of food at home. Default since
         // 2026-11-13 (Nils: the principled mechanism first, tune later).
-        consumption: Needs((interval: 7, gate_at: 0.7, gate_width: 0.15, comfort_c: 16.0, house_c: 6.0, max_clothes: 2.0, fire_per_c: 0.5, fire_per_extra_person: 0.25, savings_days: 60.0, larder_days: 14.0, cold_damage: 0.02, plan_days: 30.0)),
+        // fixed_needs holds belonging and esteem at a neutral 0.5 for now (Nils,
+        // 2026-11-14): little serves them yet; growth is neutral already.
+        consumption: Needs((interval: 7, gate_at: 0.7, gate_width: 0.15, comfort_c: 16.0, house_c: 6.0, max_clothes: 2.0, fire_per_c: 0.5, fire_per_extra_person: 0.25, savings_days: 60.0, larder_days: 14.0, cold_damage: 0.02, plan_days: 30.0, fixed_needs: [(Belonging, 0.5), (Esteem, 0.5)])),
         // Price dynamics per price class (each good's class is in the content:
         // price_class, else food is Essential and the rest Commodity; Labour is the
         // jobs' wage factors). Inertia: Partial(speed) moves the log price speed x

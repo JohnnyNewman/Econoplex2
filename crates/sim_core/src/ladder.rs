@@ -72,6 +72,11 @@ pub struct LadderParams {
     /// knows of the seasons (today's warm or cold spell fades over a few days).
     #[serde(default = "plan_days")]
     pub plan_days: f32,
+    /// Needs held at a fixed satisfaction for now, whatever people own, for
+    /// example `[(Belonging, 0.5), (Esteem, 0.5)]` while the upper rungs have
+    /// little content. Goods then earn nothing for serving such a need.
+    #[serde(default)]
+    pub fixed_needs: Vec<(Need, f32)>,
 }
 
 fn plan_days() -> f32 {
@@ -473,6 +478,9 @@ fn assess(
     s[idx(Need::Esteem)] = held(h.points[idx(Need::Esteem)]);
     // Nothing serves growth yet (learning and faith come later): neutral.
     s[idx(Need::Growth)] = 0.5;
+    for &(n, v) in &lp.fixed_needs {
+        s[idx(n)] = v.clamp(0.0, 1.0);
+    }
     s
 }
 
@@ -773,6 +781,7 @@ mod tests {
             larder_days: 0.0,
             cold_damage: 0.02,
             plan_days: 30.0,
+            fixed_needs: Vec::new(),
         }
     }
 
