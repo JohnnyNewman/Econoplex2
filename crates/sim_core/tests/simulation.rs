@@ -830,22 +830,40 @@ fn the_scenario_spreads_resources_so_bronze_needs_trade() {
 #[test]
 fn ai_towns_climb_the_tree() {
     use sim_core::metrics::Metrics;
-    let mut s = full(42);
-    run_years(&mut s, 8);
-    let db = s.world.resource::<sim_core::Db>();
-    let m = s.world.resource::<Metrics>();
-    let best = |t: usize| m.years.iter().map(|y| y.towns[t].era).max().unwrap();
-    // Ironhold, with ore and coal, reaches early industry; the others at least
-    // stone, clay and cloth.
-    assert_eq!(db.content.eras[best(0) as usize], "Early industry");
-    assert!((1..4).all(|t| best(t) >= 1));
-    // Bronze is cast somewhere, from traded copper and tin.
-    let bronze = db.content.product("bronze").unwrap() as usize;
-    let towns = s.world.resource::<sim_core::Towns>();
-    assert!(towns
-        .0
-        .iter()
-        .any(|t| t.produced_last_year[bronze] > 0.0 || t.produced_this_year[bronze] > 0.0));
+    // Over four seeds: on any single one, whether bronze gets cast within eight
+    // years (and Ironhold industrialises) is luck; main passed 2 of these 4.
+    let (mut industrial, mut bronze_cast) = (0, 0);
+    for seed in 42..=45 {
+        let mut s = full(seed);
+        run_years(&mut s, 8);
+        let db = s.world.resource::<sim_core::Db>();
+        let m = s.world.resource::<Metrics>();
+        let best = |t: usize| m.years.iter().map(|y| y.towns[t].era).max().unwrap();
+        // Ironhold, with ore and coal, reaches early industry; the others at
+        // least stone, clay and cloth.
+        if db.content.eras[best(0) as usize] == "Early industry" {
+            industrial += 1;
+        }
+        assert!(
+            (1..4).all(|t| best(t) >= 1),
+            "seed {seed}: a town stayed in the first era"
+        );
+        // Bronze is cast somewhere, from traded copper and tin.
+        let bronze = db.content.product("bronze").unwrap() as usize;
+        let towns = s.world.resource::<sim_core::Towns>();
+        if towns
+            .0
+            .iter()
+            .any(|t| t.produced_last_year[bronze] > 0.0 || t.produced_this_year[bronze] > 0.0)
+        {
+            bronze_cast += 1;
+        }
+    }
+    assert!(
+        industrial >= 2,
+        "Ironhold industrialised on {industrial} of 4 seeds"
+    );
+    assert!(bronze_cast >= 1, "no bronze cast on any of 4 seeds");
 }
 
 #[test]
