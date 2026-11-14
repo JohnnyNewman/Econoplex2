@@ -249,3 +249,30 @@ armory-held gear (the `new_economy` preset is the same). State hash at seed 42
 over 10 years: `7e49f13d8c7ee3bf` (was `fcf216872512dde5`). 6 seeds x 20 years:
 population 1446, starving 0.46 % of person-days, food per head 3.2. Tests
 calibrated to the old economy pin it with `legacy()` in `tests/simulation.rs`.
+
+## Decisions by the ladder's derivative (`decision.model: Ladder`)
+
+Nils: the derivative of a person's total satisfaction should give the decision
+what to do next. `ladder::gradient(sat)` is the slope of the weighted
+satisfaction per need: its own rung's gate, plus how raising it opens the rungs
+above. Job choice under `decision.model: Ladder`: a day's work is worth its
+expected pay (plus what the practice earns later) times the value of a coin
+(the larger of a meal's worth of food for the hungry and savings for the fed),
+minus the rest it costs times the rest slope; resting is worth the rest it
+gives. `decision.ladder_scale` sets how sharply people pick the best option.
+Purchases already worked this way.
+
+First results, 6 seeds x 20 years on the new defaults (not the default yet):
+
+| decision model | pop | starving |
+| --- | --- | --- |
+| Features (default) | 1446 | 0.46 % |
+| Ladder, scale 200 | 947 | 2.95 % |
+| Ladder, scale 1000 | 992 | 2.47 % |
+| Utility | 407 | 3.92 % |
+
+Better than the old utility model, worse than the feature weights. At seed 42
+after 5 years, Ladder towns have fewer woodcutters (Greenvale none, against 17 %
+of workers with Features), fewer fields and less farming in Ironhold (49 %
+against 66 %). Next: find which term undervalues wood and fields (pay that the
+price ceiling caps; no value yet for the town-wide need for firewood).
