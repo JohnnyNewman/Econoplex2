@@ -256,28 +256,36 @@ pub struct Homes {
     clothes: Vec<f32>,
 }
 
-impl Homes {
-    pub fn of(store: &AgentStore, goods: &[LadderGood], lp: &LadderParams) -> Homes {
-        let n = store.len();
-        let alive = |k: usize| k < n && store.alive[k];
-        let adult_home = |i: usize| match store.partner[i] {
-            Some(p) if alive(p as usize) && (p as usize) < i => p as usize,
-            _ => i,
-        };
-        let keeper: Vec<usize> = (0..n)
-            .map(|i| {
-                if matches!(store.activity[i], Activity::Child) {
-                    if let Some((a, b)) = store.parents[i] {
-                        for p in [a as usize, b as usize] {
-                            if alive(p) && store.town[p] == store.town[i] {
-                                return adult_home(p);
-                            }
+/// Per person: who keeps their home. A couple keeps one home (kept by the
+/// partner with the lower index); children live with a parent in their town;
+/// everyone else keeps their own. Views use it to put families in one house.
+pub fn keepers(store: &AgentStore) -> Vec<usize> {
+    let n = store.len();
+    let alive = |k: usize| k < n && store.alive[k];
+    let adult_home = |i: usize| match store.partner[i] {
+        Some(p) if alive(p as usize) && (p as usize) < i => p as usize,
+        _ => i,
+    };
+    (0..n)
+        .map(|i| {
+            if matches!(store.activity[i], Activity::Child) {
+                if let Some((a, b)) = store.parents[i] {
+                    for p in [a as usize, b as usize] {
+                        if alive(p) && store.town[p] == store.town[i] {
+                            return adult_home(p);
                         }
                     }
                 }
-                adult_home(i)
-            })
-            .collect();
+            }
+            adult_home(i)
+        })
+        .collect()
+}
+
+impl Homes {
+    pub fn of(store: &AgentStore, goods: &[LadderGood], lp: &LadderParams) -> Homes {
+        let n = store.len();
+        let keeper = keepers(store);
         let mut size = vec![0.0f32; n];
         let mut clothes = vec![0.0f32; n];
         for i in 0..n {

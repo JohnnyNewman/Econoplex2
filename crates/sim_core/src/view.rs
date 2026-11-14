@@ -120,6 +120,10 @@ pub struct PeopleView {
     /// the squad's goal.
     pub target: Vec<(f32, f32)>,
     pub doing: Vec<Doing>,
+    /// Each person's household: the store index of who keeps their home
+    /// (`ladder::keepers`). Everyone with the same keeper lives in one house.
+    #[serde(default)]
+    pub home: Vec<u32>,
     /// Each person's own culture: the first three ideological axes of their
     /// mind (tradition, faith, liberty; 0..1, 0.5 neutral).
     #[serde(default)]
@@ -265,6 +269,7 @@ impl ViewSnapshot {
         let db = world.resource::<Db>();
         let store = world.resource::<crate::AgentStore>();
         let mut people = PeopleView::default();
+        let keepers = crate::ladder::keepers(store);
         for i in 0..store.len() {
             if !store.alive[i] {
                 continue;
@@ -273,6 +278,7 @@ impl ViewSnapshot {
             people.id.push(i as u32);
             people.town.push(store.town[i]);
             people.target.push(store.target[i]);
+            people.home.push(keepers.get(i).map_or(i, |&k| k) as u32);
             let ideology = &store.mind[i][sim_data::dims::mind::IDEOLOGY_START..];
             people.culture.push(std::array::from_fn(|k| {
                 ideology.get(k).copied().unwrap_or(0.5)

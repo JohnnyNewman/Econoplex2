@@ -69,6 +69,7 @@ pub struct LivePlugin;
 impl Plugin for LivePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Shown>()
+            .init_resource::<TownHomes>()
             .add_systems(Startup, (spawn_status, init_kit))
             .add_systems(Update, (live_keys, sync_scene, update_status).chain())
             .add_systems(Update, publish_env.before(crate::env::update_environment));
@@ -459,6 +460,11 @@ struct Shown {
     styles: Vec<Option<Style>>,
 }
 
+/// Per town: the doors of its houses (3D x, z), in the order the houses
+/// stand on the spiral. Each household lives in one of them (crowd.rs).
+#[derive(Resource, Default)]
+pub struct TownHomes(pub Vec<Vec<Vec2>>);
+
 /// A town's houses: each with its map position, how far along the spiral we
 /// are, and the one entity that draws them all (rebuilt when they change).
 #[derive(Default)]
@@ -505,6 +511,7 @@ fn sync_scene(
     mut meshes: ResMut<Assets<Mesh>>,
     outlines: Option<Res<Outlines>>,
     world: Res<World3d>,
+    mut homes: ResMut<TownHomes>,
 ) {
     let (Some(mut kit), Some(outlines)) = (kit, outlines) else {
         return;
@@ -638,6 +645,18 @@ fn sync_scene(
         // Draw the town's houses again, as one mesh, if they changed.
         if houses.changed {
             houses.changed = false;
+            // The doors: a step in front of each house, on its turned front.
+            if homes.0.len() < snap.towns.len() {
+                homes.0.resize(snap.towns.len(), Vec::new());
+            }
+            homes.0[ti] = houses
+                .list
+                .iter()
+                .map(|(h, _)| {
+                    let door = h.at + h.rot * Vec3::new(0.0, 0.0, 0.9);
+                    Vec2::new(door.x, door.z)
+                })
+                .collect();
             if let Some(e) = houses.drawn.take() {
                 commands.entity(e).despawn();
             }

@@ -477,15 +477,30 @@ fn day_plan(id: u32, doing: Doing, hour: f32, work: Vec2, home: Vec2, centre: Ve
 
 /// Where a person lives and works (3D x, z), as their day plan uses them
 /// (`None` if they are not in the snapshot).
-pub fn spots_of(snap: &sim_core::view::ViewSnapshot, id: u32) -> Option<(Vec2, Vec2)> {
+pub fn spots_of(
+    snap: &sim_core::view::ViewSnapshot,
+    homes: &crate::live::TownHomes,
+    id: u32,
+) -> Option<(Vec2, Vec2)> {
     let k = snap.people.id.iter().position(|&i| i == id)?;
     let work = Vec2::new(snap.people.target[k].0, -snap.people.target[k].1) / SCALE + jitter(id);
+    Some((home_at(snap, homes, k), work))
+}
+
+/// The door of the house person number `k` of the snapshot lives in: their
+/// household (`PeopleView::home`, the one who keeps it) has one house of the
+/// town, so a family shares it. Before the houses stand, a spot on the
+/// houses' spiral.
+fn home_at(snap: &sim_core::view::ViewSnapshot, homes: &crate::live::TownHomes, k: usize) -> Vec2 {
+    let id = snap.people.id[k];
+    let keeper = snap.people.home.get(k).copied().unwrap_or(id);
     let ti = snap.people.town.get(k).copied().unwrap_or(0) as usize;
-    let home = snap
-        .towns
+    if let Some(doors) = homes.0.get(ti).filter(|d| !d.is_empty()) {
+        return doors[(unit(keeper, 7) * doors.len() as f32) as usize % doors.len()];
+    }
+    snap.towns
         .get(ti)
-        .map_or(work, |t| home_of(id, t.pos, ti, t.population));
-    Some((home, work))
+        .map_or(Vec2::ZERO, |t| home_of(keeper, t.pos, ti, t.population))
 }
 
 /// A house of the town for this person: a spot on the spiral the houses
@@ -537,6 +552,7 @@ fn update_targets(
     mut crowd: Query<(&mut Mesh3d, &mut Visibility)>,
     overlay: Res<crate::overlay::Overlay>,
     clock: Res<crate::sky::SkyClock>,
+    homes: Res<crate::live::TownHomes>,
     mut last: Local<Vec<[f32; 8]>>,
 ) {
     let (Some(mut handles), Some(terrain)) = (handles, terrain) else {
@@ -578,13 +594,12 @@ fn update_targets(
             let doing = people.doing[k];
             let work = Vec2::new(people.target[k].0, -people.target[k].1) / SCALE + jitter(id);
             let ti = people.town.get(k).copied().unwrap_or(0) as usize;
-            let (home, centre) = match snap.towns.get(ti) {
-                Some(t) => (
-                    home_of(id, t.pos, ti, t.population),
-                    Vec2::new(t.pos.0, -t.pos.1) / SCALE,
-                ),
-                None => (work, work),
-            };
+            // A small offset per person, so a family stands round its door.
+            let home = home_at(&snap, &homes, k) + jitter(id) * 0.35;
+            let centre = snap
+                .towns
+                .get(ti)
+                .map_or(work, |t| Vec2::new(t.pos.0, -t.pos.1) / SCALE);
             let plan = day_plan(id, doing, clock.hour, work, home, centre);
             let (mut rgb, size) = look(doing, snap.domains);
             if let (true, Some(c)) = (by_culture, people.culture.get(k)) {

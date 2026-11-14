@@ -261,11 +261,12 @@ fn place_markers(
     selected: Res<Selected>,
     live: Res<LiveSim>,
     world: Res<crate::World3d>,
+    homes: Res<crate::live::TownHomes>,
     mut markers: Query<(&Marker, &mut Transform, &mut Visibility)>,
 ) {
     let spots = selected
         .0
-        .and_then(|id| crate::crowd::spots_of(&live.snapshot, id));
+        .and_then(|id| crate::crowd::spots_of(&live.snapshot, &homes, id));
     let working = selected
         .0
         .and_then(|id| live.snapshot.people.id.iter().position(|&i| i == id))
