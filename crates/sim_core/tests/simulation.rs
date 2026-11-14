@@ -3029,3 +3029,72 @@ fn an_army_marches_eats_its_rations_fights_and_comes_home() {
         "the squad was not disbanded"
     );
 }
+
+#[test]
+fn a_live_battle_waits_for_the_player_then_settles() {
+    use sim_core::systems::military::{
+        live_battle_view, live_battle_waiting, order_live_battle, resolve_live_battle, LiveBattles,
+    };
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let mut s = Simulation::from_paths(&AssetPaths::from_root(&root)).unwrap();
+    s.world.insert_resource(LiveBattles(true));
+    let player = s
+        .world
+        .resource::<sim_core::policy::PlayerTown>()
+        .0
+        .expect("the scenario has a player town") as usize;
+    let (me, them) = {
+        let towns = s.world.resource::<sim_core::Towns>();
+        let other = (0..towns.0.len()).find(|&t| t != player).unwrap();
+        (towns.0[player].name.clone(), towns.0[other].name.clone())
+    };
+    s.order(&format!("army {me} 0.15")).unwrap();
+    for _ in 0..40 {
+        s.step();
+    }
+    s.order(&format!("raid {me} {them}")).unwrap();
+    let mut waited = false;
+    for _ in 0..200 {
+        s.step();
+        if live_battle_waiting(&s.world) {
+            waited = true;
+            break;
+        }
+    }
+    assert!(waited, "the player's raid never reached a battle");
+    let view = live_battle_view(&s.world).unwrap();
+    assert_eq!(view.player_side, 0);
+    let mine = view.squads.iter().position(|q| q.side == 0).unwrap();
+    // The raid holds while the battle waits.
+    let progress = |s: &Simulation| {
+        s.world.resource::<sim_core::Towns>().0[player]
+            .raid
+            .as_ref()
+            .map(|r| (r.progress, r.back))
+    };
+    let before = progress(&s);
+    s.step();
+    assert_eq!(
+        progress(&s),
+        before,
+        "the raid moved on while its battle waited"
+    );
+    order_live_battle(&mut s.world, mine, sim_core::battle::Order::Hold);
+    assert_eq!(
+        live_battle_view(&s.world).unwrap().orders[mine],
+        sim_core::battle::Order::Hold
+    );
+    resolve_live_battle(&mut s.world);
+    assert!(!live_battle_waiting(&s.world));
+    s.step();
+    let towns = s.world.resource::<sim_core::Towns>();
+    let raid = towns.0[player].raid.as_ref();
+    assert!(raid.is_none_or(|r| r.back), "the battle was not settled");
+    assert!(
+        s.world
+            .resource::<sim_core::systems::military::PendingBattle>()
+            .0
+            .is_none(),
+        "the battle is still pending"
+    );
+}

@@ -66,7 +66,7 @@ pub fn military(
     gear_defs: Query<&Product, Without<Stored>>,
     mut squads: ResMut<crate::goods::Squads>,
     env: Res<crate::env::Environment>,
-    mut battle_log: Option<ResMut<crate::battle::BattleLog>>,
+    mut links: WarLinks,
 ) {
     let mp = &params.military;
     let loyalty = params.trust.loyalty;
@@ -246,9 +246,72 @@ pub fn military(
         } else {
             now >= raid.arrive
         };
+        // A live battle the player is fighting: wait for it, then settle it.
+        let pending_here = links
+            .pending
+            .as_ref()
+            .and_then(|p| p.0.as_ref())
+            .is_some_and(|b| b.attacker == t);
+        if pending_here {
+            let done = links
+                .pending
+                .as_ref()
+                .and_then(|p| p.0.as_ref())
+                .is_some_and(|b| b.battle.finished());
+            if done {
+                let live = links.pending.as_mut().and_then(|p| p.0.take()).unwrap();
+                let (fallen_a, fallen_d) =
+                    settle_field_battle(store, &params.battle, &live.battle, &live.groups);
+                let won = live.battle.report().winner == Some(0);
+                let fought = aftermath(
+                    &mut commands,
+                    &mut raid,
+                    t,
+                    &mut towns,
+                    store,
+                    &db,
+                    &models,
+                    &params,
+                    &fight,
+                    &mut rng,
+                    Outcome {
+                        won,
+                        fallen_a,
+                        fallen_d,
+                        defenders: live.defenders,
+                        attack: live.attack,
+                        defense: live.defense,
+                    },
+                );
+                wear_kit(&mut commands, store, &mut kit, &fought, mp.battle_hours);
+                raid.back = true;
+            } else {
+                towns.0[t].raid = Some(raid);
+                continue;
+            }
+        }
         if arrived && !raid.fought {
             raid.fought = true;
             raid.back = true;
+            let live_ok = links.live.as_ref().is_some_and(|l| l.0)
+                && links.pending.as_ref().is_some_and(|p| p.0.is_none())
+                && mp.battles == crate::config::BattleModel::Field
+                && links
+                    .player
+                    .as_ref()
+                    .and_then(|p| p.0)
+                    .is_some_and(|p| p as usize == t || p == raid.target);
+            if live_ok {
+                let player = links.player.as_ref().and_then(|p| p.0).unwrap();
+                if let Some(live) = prepare_live_battle(
+                    &raid, t, &towns, store, &db, &params, &fight, &gear_defs, &mut rng, player,
+                ) {
+                    links.pending.as_mut().unwrap().0 = Some(live);
+                    raid.back = false;
+                    towns.0[t].raid = Some(raid);
+                    continue;
+                }
+            }
             let fought = battle(
                 &mut commands,
                 &mut raid,
@@ -261,7 +324,7 @@ pub fn military(
                 &fight,
                 &gear_defs,
                 &mut rng,
-                battle_log.as_deref_mut(),
+                links.battle_log.as_deref_mut(),
             );
             // A battle wears everyone's kit; what breaks is gone.
             wear_kit(&mut commands, store, &mut kit, &fought, mp.battle_hours);
@@ -766,6 +829,66 @@ fn battle(
             out
         }
     };
+    aftermath(
+        commands,
+        raid,
+        attacker,
+        towns,
+        store,
+        db,
+        models,
+        params,
+        fight,
+        rng,
+        Outcome {
+            won,
+            fallen_a,
+            fallen_d,
+            defenders,
+            attack,
+            defense,
+        },
+    )
+}
+
+/// How a fight went, for its aftermath.
+struct Outcome {
+    won: bool,
+    fallen_a: u32,
+    fallen_d: u32,
+    /// Everyone who fought for the defenders (soldiers and militia).
+    defenders: Vec<u32>,
+    /// Strength of each side before the fight (`squad_power`).
+    attack: f32,
+    defense: f32,
+}
+
+/// What follows a raid's fight: civilians hurt, survivors' learning, plunder,
+/// captives, conquest and the war tallies. Returns everyone who fought.
+#[allow(clippy::too_many_arguments)]
+fn aftermath(
+    commands: &mut Commands,
+    raid: &mut Raid,
+    attacker: usize,
+    towns: &mut Towns,
+    store: &mut AgentStore,
+    db: &Db,
+    models: &Models,
+    params: &Params,
+    fight: &CapVec,
+    rng: &mut ChaCha8Rng,
+    outcome: Outcome,
+) -> Vec<u32> {
+    let mp = &params.military;
+    let d = raid.target as usize;
+    let Outcome {
+        won,
+        fallen_a,
+        fallen_d,
+        defenders,
+        attack,
+        defense,
+    } = outcome;
     // Civilians are hurt when the defense breaks.
     if won {
         for &i in &towns.0[d].residents {
@@ -940,6 +1063,60 @@ fn field_battle(
     seed: u64,
     record: Option<Record<'_>>,
 ) -> (bool, u32, u32) {
+    let bp = &params.battle;
+    let (mut b, groups) = match setup_field_battle(
+        store, db, params, fight, gear_defs, attackers, defenders, militia, seed,
+    ) {
+        Setup::Decided(won) => return (won, 0, 0),
+        Setup::Battle(b, groups) => (*b, groups),
+    };
+    let size = b.field_size();
+    let report = match record {
+        Some(Record {
+            log,
+            town,
+            at,
+            facing,
+        }) => {
+            let (report, squads, frames) = b.run_recorded(5.0);
+            log.push(crate::battle::Replay {
+                town,
+                at,
+                facing,
+                field: size,
+                squads,
+                frames,
+                winner: report.winner,
+            });
+            report
+        }
+        None => b.run(),
+    };
+    let (fa, fd) = settle_field_battle(store, bp, &b, &groups);
+    (report.winner == Some(0), fa, fd)
+}
+
+/// A field battle ready to fight, or decided because one side has nobody.
+enum Setup {
+    Decided(bool),
+    /// The battle, and each squad's side and people (squad order).
+    Battle(Box<crate::battle::Battle>, Vec<(u8, Vec<u32>)>),
+}
+
+/// Groups each side's people by what they carry (weapon, mount) into squads,
+/// the militia as its own, and sets up the battle.
+#[allow(clippy::too_many_arguments)]
+fn setup_field_battle(
+    store: &AgentStore,
+    db: &Db,
+    params: &Params,
+    fight: &CapVec,
+    gear_defs: &Query<&Product, Without<Stored>>,
+    attackers: &[u32],
+    defenders: &[u32],
+    militia: &[u32],
+    seed: u64,
+) -> Setup {
     use crate::battle::{Battle, Field, Kit, Member, SquadSpec};
     use crate::goods::Slot;
     let bp = &params.battle;
@@ -1040,42 +1217,34 @@ fn field_battle(
         })
         .collect();
     if !specs.iter().any(|s| s.side == 0) {
-        return (false, 0, 0);
+        return Setup::Decided(false);
     }
     if !specs.iter().any(|s| s.side == 1) {
-        return (true, 0, 0);
+        return Setup::Decided(true);
     }
-    let size = (field.width, field.height);
-    let mut b = Battle::new(bp.clone(), field, specs, seed);
-    let report = match record {
-        Some(Record {
-            log,
-            town,
-            at,
-            facing,
-        }) => {
-            let (report, squads, frames) = b.run_recorded(5.0);
-            log.push(crate::battle::Replay {
-                town,
-                at,
-                facing,
-                field: size,
-                squads,
-                frames,
-                winner: report.winner,
-            });
-            report
-        }
-        None => b.run(),
-    };
+    let b = Battle::new(bp.clone(), field, specs, seed);
+    Setup::Battle(
+        Box::new(b),
+        groups.into_iter().map(|(k, p)| (k.0, p)).collect(),
+    )
+}
+
+/// Health after a field battle goes back to the people: the dead die, the
+/// badly wounded are hurt. Returns how many died on each side.
+fn settle_field_battle(
+    store: &mut AgentStore,
+    bp: &crate::battle::BattleParams,
+    b: &crate::battle::Battle,
+    groups: &[(u8, Vec<u32>)],
+) -> (u32, u32) {
     let mut fallen = [0u32; 2];
-    for (g, (key, people)) in groups.iter().enumerate() {
+    for (g, (side, people)) in groups.iter().enumerate() {
         for (m, &i) in b.members(g).iter().zip(people) {
             let k = i as usize;
             let st = &mut store.state[k];
             if m.health <= bp.death_below {
                 st[state::HEALTH] = 0.0;
-                fallen[key.0 as usize] += 1;
+                fallen[(*side as usize).min(1)] += 1;
             } else if m.health <= 0.0 {
                 // Badly wounded, out of the fight.
                 st[state::HEALTH] = st[state::HEALTH].min(0.1);
@@ -1084,7 +1253,7 @@ fn field_battle(
             }
         }
     }
-    (report.winner == Some(0), fallen[0], fallen[1])
+    (fallen[0], fallen[1])
 }
 
 /// After a won fight the raiders carry off what they can: the goods worth most
@@ -1125,4 +1294,158 @@ fn plunder(raid: &mut Raid, d: usize, towns: &mut Towns, store: &AgentStore, db:
         raid.loot[p] += q;
         room -= q * kg;
     }
+}
+
+/// Whether battles that involve the player's town wait for the player
+/// (`LiveBattles(true)`, set by the game) or resolve at once (the default).
+#[derive(Resource, Debug, Clone, Copy, Default)]
+pub struct LiveBattles(pub bool);
+
+/// A battle waiting for the player: the simulation holds still while the game
+/// steps it and gives orders, and settles it once it is over.
+pub struct LiveBattle {
+    pub battle: crate::battle::Battle,
+    /// Each squad's side and people.
+    groups: Vec<(u8, Vec<u32>)>,
+    pub attacker: usize,
+    pub target: usize,
+    defenders: Vec<u32>,
+    attack: f32,
+    defense: f32,
+    /// Where it is fought (map), the attackers' heading, and the player's side.
+    pub at: (f32, f32),
+    pub facing: (f32, f32),
+    pub player_side: u8,
+}
+
+#[derive(Resource, Default)]
+pub struct PendingBattle(pub Option<LiveBattle>);
+
+/// The war system's links to the battle log, a pending live battle, and who
+/// the player is.
+#[derive(bevy_ecs::system::SystemParam)]
+pub struct WarLinks<'w> {
+    battle_log: Option<ResMut<'w, crate::battle::BattleLog>>,
+    pending: Option<ResMut<'w, PendingBattle>>,
+    live: Option<Res<'w, LiveBattles>>,
+    player: Option<Res<'w, crate::policy::PlayerTown>>,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn prepare_live_battle(
+    raid: &Raid,
+    attacker: usize,
+    towns: &Towns,
+    store: &AgentStore,
+    db: &Db,
+    params: &Params,
+    fight: &CapVec,
+    gear_defs: &Query<&Product, Without<Stored>>,
+    rng: &mut ChaCha8Rng,
+    player: u16,
+) -> Option<LiveBattle> {
+    let mp = &params.military;
+    let loyalty = params.trust.loyalty;
+    let d = raid.target as usize;
+    let attack = squad_power(store, &raid.soldiers, fight, loyalty);
+    let defense = total_defense(store, towns, d, fight, mp, loyalty);
+    let away: Vec<u32> = towns.0[d]
+        .raid
+        .as_ref()
+        .map_or(Vec::new(), |r| r.soldiers.clone());
+    let mut defenders: Vec<u32> = towns.0[d]
+        .squad
+        .iter()
+        .copied()
+        .filter(|s| !away.contains(s))
+        .collect();
+    let militia = muster_militia(store, &towns.0[d], &defenders, mp);
+    let seed = rng.random::<u64>();
+    let Setup::Battle(battle, groups) = setup_field_battle(
+        store,
+        db,
+        params,
+        fight,
+        gear_defs,
+        &raid.soldiers,
+        &defenders,
+        &militia,
+        seed,
+    ) else {
+        return None;
+    };
+    defenders.extend(militia);
+    let (home, there) = (towns.0[attacker].pos, towns.0[d].pos);
+    let (dx, dy) = (there.0 - home.0, there.1 - home.1);
+    let len = dx.hypot(dy).max(1e-3);
+    let facing = (dx / len, dy / len);
+    Some(LiveBattle {
+        battle: *battle,
+        groups,
+        attacker,
+        target: d,
+        defenders,
+        attack,
+        defense,
+        at: (there.0 - facing.0 * 60.0, there.1 - facing.1 * 60.0),
+        facing,
+        player_side: if player as usize == attacker { 0 } else { 1 },
+    })
+}
+
+/// The battle waiting for the player, as the game shows it.
+pub fn live_battle_view(world: &World) -> Option<crate::battle::LiveView> {
+    let live = world.get_resource::<PendingBattle>()?.0.as_ref()?;
+    Some(
+        live.battle
+            .live_view(live.target as u16, live.at, live.facing, live.player_side),
+    )
+}
+
+/// Advances the waiting battle by `seconds` (whole steps).
+pub fn step_live_battle(world: &mut World, seconds: f32) {
+    let Some(mut pending) = world.get_resource_mut::<PendingBattle>() else {
+        return;
+    };
+    let Some(live) = pending.0.as_mut() else {
+        return;
+    };
+    let steps = (seconds / live.battle.params.dt.max(1e-3)).round().max(1.0) as usize;
+    for _ in 0..steps {
+        live.battle.step();
+    }
+}
+
+/// An order to one of the player's squads in the waiting battle.
+pub fn order_live_battle(world: &mut World, squad: usize, order: crate::battle::Order) {
+    let Some(mut pending) = world.get_resource_mut::<PendingBattle>() else {
+        return;
+    };
+    let Some(live) = pending.0.as_mut() else {
+        return;
+    };
+    if live.battle.side(squad) == Some(live.player_side) {
+        live.battle.set_order(squad, order);
+    }
+}
+
+/// Fights the waiting battle to its end at once (auto-resolve).
+pub fn resolve_live_battle(world: &mut World) {
+    let Some(mut pending) = world.get_resource_mut::<PendingBattle>() else {
+        return;
+    };
+    if let Some(live) = pending.0.as_mut() {
+        while !live.battle.finished() {
+            live.battle.step();
+        }
+    }
+}
+
+/// Whether a battle waits for the player (the game holds the clock until it
+/// is over).
+pub fn live_battle_waiting(world: &World) -> bool {
+    world
+        .get_resource::<PendingBattle>()
+        .and_then(|p| p.0.as_ref())
+        .is_some_and(|b| !b.battle.finished())
 }

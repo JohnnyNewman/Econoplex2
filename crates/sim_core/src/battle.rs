@@ -534,6 +534,23 @@ pub struct Replay {
     pub winner: Option<u8>,
 }
 
+/// A battle being fought live, as the game shows it and the player commands it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct LiveView {
+    pub town: u16,
+    pub at: (f32, f32),
+    pub facing: (f32, f32),
+    pub field: (f32, f32),
+    pub squads: Vec<ReplaySquad>,
+    pub orders: Vec<Order>,
+    pub morale: Vec<f32>,
+    pub frame: ReplayFrame,
+    /// The side the player fights on (0 attacks, 1 defends).
+    pub player_side: u8,
+    pub finished: bool,
+    pub winner: Option<u8>,
+}
+
 /// Battles fought, for the view (the newest few; `total` counts all of them so
 /// a reader can tell which it has seen).
 #[derive(bevy_ecs::prelude::Resource, Clone, Debug, Default)]
@@ -659,6 +676,47 @@ impl Battle {
             self.step();
         }
         self.finish()
+    }
+
+    pub fn field_size(&self) -> (f32, f32) {
+        (self.field.width, self.field.height)
+    }
+
+    pub fn side(&self, squad: usize) -> Option<u8> {
+        self.squads.get(squad).map(|s| s.spec.side)
+    }
+
+    /// The battle as the game shows it while the player fights it.
+    pub fn live_view(
+        &self,
+        town: u16,
+        at: (f32, f32),
+        facing: (f32, f32),
+        player_side: u8,
+    ) -> LiveView {
+        let finished = self.finished();
+        LiveView {
+            town,
+            at,
+            facing,
+            field: self.field_size(),
+            squads: self
+                .squads
+                .iter()
+                .map(|s| ReplaySquad {
+                    name: s.spec.name.clone(),
+                    side: s.spec.side,
+                    mounted: s.spec.kit.mounted,
+                    start: s.spec.members.len() as u16,
+                })
+                .collect(),
+            orders: self.squads.iter().map(|s| s.order).collect(),
+            morale: self.squads.iter().map(|s| s.morale).collect(),
+            frame: self.frame(),
+            player_side,
+            finished,
+            winner: if finished { self.report().winner } else { None },
+        }
     }
 
     /// Where every squad stands now.
