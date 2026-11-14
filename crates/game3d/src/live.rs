@@ -673,13 +673,19 @@ mod tests {
         let (db, params, scenario) = sim_core::load(&paths).unwrap();
         let sim = Simulation::new(db, params, &scenario);
         let live = LiveSim::start(sim, SPEEDS.len() - 1, false);
-        let town = live.snapshot.towns[0].name.clone();
+        // The player's town: an AI governor would set the others' taxes back.
+        let k = scenario
+            .player
+            .as_ref()
+            .and_then(|p| live.snapshot.towns.iter().position(|t| &t.name == p))
+            .unwrap_or(0);
+        let town = live.snapshot.towns[k].name.clone();
         live.order_text(format!("tax {town} wealth 1.75"));
         live.order_text("tax Nowhere wealth 1".into());
         let deadline = Instant::now() + Duration::from_secs(30);
         let applied = loop {
             let snap = live.shared.lock().unwrap().latest.clone();
-            if (snap.towns[0].policy.wealth_tax - 1.75).abs() < 1e-4 {
+            if (snap.towns[k].policy.wealth_tax - 1.75).abs() < 1e-4 {
                 break true;
             }
             if Instant::now() > deadline {

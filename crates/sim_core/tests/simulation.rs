@@ -417,6 +417,8 @@ fn full_without_basket(seed: u64) -> Simulation {
     let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
     legacy(&mut params);
     params.market.consumption = sim_core::consumption::ConsumptionParams::None;
+    // Calibrated with weapons stocked per resident (smithing work the treasury pays for).
+    params.military.kit_demand = sim_core::config::KitDemand::PerCapita;
     scenario.seed = seed;
     Simulation::new(db, params, &scenario)
 }
@@ -1092,6 +1094,8 @@ fn a_hungry_town_subsidizes_food_then_winds_it_down() {
     params.decision.matching = sim_core::decision::matching::MatchingParams::FirstCome;
     // And without household buying, which changes what the town spends on.
     params.market.consumption = sim_core::consumption::ConsumptionParams::None;
+    // And with weapons stocked per resident (the treasury's other big purchase).
+    params.military.kit_demand = sim_core::config::KitDemand::PerCapita;
     scenario.seed = 4;
     let b = &mut scenario.towns[3];
     for n in &mut b.nature {
@@ -1166,6 +1170,8 @@ fn governors_do_not_swing_back_and_forth() {
     params.market.caravans = sim_core::config::Caravans::Fixed;
     // And without household buying (it moves treasuries too).
     params.market.consumption = sim_core::consumption::ConsumptionParams::None;
+    // And with weapons stocked per resident: the treasury's sword buying steadies it.
+    params.military.kit_demand = sim_core::config::KitDemand::PerCapita;
     let mut s = Simulation::new(db, params, &scenario);
     run_years(&mut s, 40);
     let log = &s.world.resource::<sim_core::policy::OrderQueue>().log;
@@ -2824,8 +2830,10 @@ fn stockpile_targets_follow_the_seasons() {
     // stockpiles should be fullest before the lean months, not all year.
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     let sets = sim_core::read_preset(&root.join("config/presets/new_economy.ron")).unwrap();
-    let (db, params, mut scenario) =
+    let (db, mut params, mut scenario) =
         sim_core::load_with(&AssetPaths::from_root(&root), &sets).unwrap();
+    // Calibrated with weapons stocked per resident.
+    params.military.kit_demand = sim_core::config::KitDemand::PerCapita;
     scenario.seed = 17;
     let mut s = Simulation::new(db, params, &scenario);
     run_years(&mut s, 3);
@@ -2868,4 +2876,41 @@ fn the_new_economy_preset_loads_and_runs() {
         s.step();
     }
     check_goods(&s);
+}
+
+#[test]
+fn kit_reserve_follows_soldiers_until_the_government_sets_a_stockpile() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, mut params, scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    params.military.kit_demand = sim_core::config::KitDemand::Soldiers;
+    params.military.levy_reserve = 0.05;
+    let mut s = Simulation::new(db, params, &scenario);
+    let target = |s: &Simulation, id: &str| {
+        let db = s.world.resource::<sim_core::Db>();
+        let p = db.content.product(id).unwrap() as usize;
+        let params = s.world.resource::<sim_core::world::Params>();
+        let town = &s.world.resource::<sim_core::Towns>().0[0];
+        sim_core::systems::decide::target_stock(db, town, params, p)
+    };
+    let (horse, mail, sword) = (
+        target(&s, "horse"),
+        target(&s, "mail"),
+        target(&s, "longsword_1"),
+    );
+    let people = s.world.resource::<sim_core::Towns>().0[0].residents.len() as f32;
+    // One mount good: soldiers plus the levy reserve, a few per hundred people.
+    assert!(
+        horse > 0.05 * people && horse < 0.2 * people,
+        "horses {horse} for {people}"
+    );
+    // Armour is split between mail and padded coats; weapons among many goods.
+    assert!(
+        mail < horse && sword < mail,
+        "mail {mail}, sword {sword}, horse {horse}"
+    );
+    // A stockpile order replaces the default.
+    let town = s.world.resource::<sim_core::Towns>().0[0].name.clone();
+    s.order(&format!("stockpile {town} horse 40")).unwrap();
+    s.step();
+    assert_eq!(target(&s, "horse"), 40.0);
 }

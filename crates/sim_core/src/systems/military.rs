@@ -356,6 +356,32 @@ fn recruit_score(store: &AgentStore, i: usize) -> f32 {
     m[mind::AMBITION] + m[mind::RISK] + (p[0] + p[1] + p[2]) / 3.0
 }
 
+/// Pieces of a kit good a town keeps when its government sets no stockpile
+/// for it (`military.kit_demand: Soldiers`): one per soldier it means to keep
+/// plus one per adult of the levy reserve (`military.levy_reserve` of its
+/// residents), shared among the goods that fill the same slot.
+pub fn kit_reserve(
+    db: &Db,
+    town: &crate::world::Town,
+    params: &crate::config::ModelParams,
+    p: usize,
+) -> f32 {
+    let mp = &params.military;
+    let def = &db.content.products[p];
+    let share = town.policy.army_share.unwrap_or(mp.soldier_share);
+    let people = town.residents.len() as f32;
+    let soldiers = (share * people).max(town.squad.len() as f32);
+    let slot = crate::goods::Slot::of(def);
+    let rivals = db
+        .content
+        .products
+        .iter()
+        .filter(|q| q.category == Category::Weapon && crate::goods::Slot::of(q) == slot)
+        .count()
+        .max(1);
+    (soldiers + mp.levy_reserve * people) / rivals as f32
+}
+
 /// The slots a soldier fills from the armory.
 const KIT_SLOTS: [crate::goods::Slot; 4] = [
     crate::goods::Slot::Weapon,
