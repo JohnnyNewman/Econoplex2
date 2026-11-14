@@ -160,6 +160,24 @@ pub fn score(sat: &Sat, lp: &LadderParams) -> f32 {
         .sum()
 }
 
+/// How much the weighted satisfaction rises per unit of each need: the
+/// derivative of [`score`]. A need's own rung counts with its gate, and raising
+/// it also opens the rungs above a little, so their satisfaction counts too.
+/// This is what decides what is worth doing next (`decision.model: Ladder`).
+pub fn gradient(sat: &Sat, lp: &LadderParams) -> Sat {
+    let base = score(sat, lp);
+    let h = 1e-3;
+    let mut g = [0.0f32; N];
+    for k in 0..N {
+        let mut s = *sat;
+        // Step down when the need is full, so the slope is still measured.
+        let step = if s[k] + h <= 1.0 { h } else { -h };
+        s[k] += step;
+        g[k] = (score(&s, lp) - base) / step;
+    }
+    g
+}
+
 /// Happiness the ladder gives, 0..1: each rung's satisfaction weighted by its
 /// gate, over the five rungs.
 pub fn happiness(sat: &Sat, lp: &LadderParams) -> f32 {
@@ -748,6 +766,25 @@ mod tests {
             cold_damage: 0.02,
             plan_days: 30.0,
         }
+    }
+
+    #[test]
+    fn the_slope_points_at_the_lowest_unmet_rung() {
+        let lp = lp();
+        // Hungry and cold: food and warmth are worth most.
+        let mut sat = [0.9; N];
+        sat[idx(Need::Food)] = 0.2;
+        sat[idx(Need::Warmth)] = 0.3;
+        let g = gradient(&sat, &lp);
+        assert!(
+            g[idx(Need::Food)] > 5.0 * g[idx(Need::Esteem)].abs().max(1e-3),
+            "{g:?}"
+        );
+        // Fed and warm: the upper rungs count, and food still counts through
+        // the gates it holds open.
+        let full = gradient(&[0.9; N], &lp);
+        assert!(full[idx(Need::Esteem)] > 0.5, "{full:?}");
+        assert!(full[idx(Need::Food)] >= full[idx(Need::Esteem)], "{full:?}");
     }
 
     #[test]

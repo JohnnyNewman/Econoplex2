@@ -183,6 +183,10 @@ pub struct DecisionParams {
     /// docs/design/agent-decisions.md).
     #[serde(default)]
     pub model: DecisionModel,
+    /// With `model: Ladder`: scale from satisfaction per day to the choice
+    /// rule's units (how sharply people pick the best option).
+    #[serde(default = "ladder_scale")]
+    pub ladder_scale: f32,
     /// Component: how agents form price and pay expectations.
     #[serde(default)]
     pub expectations: crate::decision::expectations::ExpectationsParams,
@@ -229,6 +233,11 @@ pub enum DecisionModel {
     /// Expected utility of the agent's needs over a few weeks, from its own
     /// expected pay and chance of success (`decision::valuation`).
     Utility,
+    /// The needs ladder's derivative: each option is worth the change it makes
+    /// to the person's needs, weighted by how much each need raises their
+    /// weighted satisfaction (`ladder::gradient`). Needs
+    /// `market.consumption: Needs`.
+    Ladder,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1089,4 +1098,8 @@ pub enum Caravans {
     Balance {
         max_load: f32,
     },
+}
+
+fn ladder_scale() -> f32 {
+    200.0
 }

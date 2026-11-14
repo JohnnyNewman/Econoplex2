@@ -46,6 +46,9 @@
         // components below are being built (docs/design/agent-decisions.md); each
         // can be swapped on its own.
         model: Features,
+        // With model: Ladder (choices by the needs ladder's derivative): how
+        // sharply people pick the option that raises their satisfaction most.
+        ladder_scale: 200.0,
         // Component: price and pay expectations. Adaptive moves base_rate +
         // curiosity_rate x curiosity of the way toward each observation; Fixed
         // expects the last observation.
