@@ -66,6 +66,7 @@ pub fn military(
     gear_defs: Query<&Product, Without<Stored>>,
     mut squads: ResMut<crate::goods::Squads>,
     env: Res<crate::env::Environment>,
+    mut battle_log: Option<ResMut<crate::battle::BattleLog>>,
 ) {
     let mp = &params.military;
     let loyalty = params.trust.loyalty;
@@ -260,6 +261,7 @@ pub fn military(
                 &fight,
                 &gear_defs,
                 &mut rng,
+                battle_log.as_deref_mut(),
             );
             // A battle wears everyone's kit; what breaks is gone.
             wear_kit(&mut commands, store, &mut kit, &fought, mp.battle_hours);
@@ -690,6 +692,7 @@ fn battle(
     fight: &CapVec,
     gear_defs: &Query<&Product, Without<Stored>>,
     rng: &mut ChaCha8Rng,
+    log: Option<&mut crate::battle::BattleLog>,
 ) -> Vec<u32> {
     let mp = &params.military;
     let loyalty = params.trust.loyalty;
@@ -736,6 +739,12 @@ fn battle(
             // Townsfolk take up arms beside the soldiers at home.
             let militia = muster_militia(store, &towns.0[d], &defenders, mp);
             let seed = rng.random::<u64>();
+            // The field lies outside the defenders' town, toward the attackers.
+            let (home, there) = (towns.0[attacker].pos, towns.0[d].pos);
+            let (dx, dy) = (there.0 - home.0, there.1 - home.1);
+            let len = dx.hypot(dy).max(1e-3);
+            let facing = (dx / len, dy / len);
+            let at = (there.0 - facing.0 * 60.0, there.1 - facing.1 * 60.0);
             let out = field_battle(
                 store,
                 db,
@@ -746,6 +755,12 @@ fn battle(
                 &defenders,
                 &militia,
                 seed,
+                log.map(|log| Record {
+                    log,
+                    town: d as u16,
+                    at,
+                    facing,
+                }),
             );
             defenders.extend(militia);
             out
@@ -898,6 +913,15 @@ fn muster_militia(
     pool.into_iter().take(n).map(|(_, i)| i).collect()
 }
 
+/// Where to record a field battle for the view: the log, the town fought
+/// over, the field's centre on the map and the attackers' heading.
+struct Record<'a> {
+    log: &'a mut crate::battle::BattleLog,
+    town: u16,
+    at: (f32, f32),
+    facing: (f32, f32),
+}
+
 /// A raid's fight as squads on a field (`battle.rs`): each side's people are
 /// grouped by what they carry (weapon, mount), so spearmen fight as spearmen
 /// and riders as riders; the militia is its own squad. Health afterwards goes
@@ -914,6 +938,7 @@ fn field_battle(
     defenders: &[u32],
     militia: &[u32],
     seed: u64,
+    record: Option<Record<'_>>,
 ) -> (bool, u32, u32) {
     use crate::battle::{Battle, Field, Kit, Member, SquadSpec};
     use crate::goods::Slot;
@@ -1020,8 +1045,29 @@ fn field_battle(
     if !specs.iter().any(|s| s.side == 1) {
         return (true, 0, 0);
     }
+    let size = (field.width, field.height);
     let mut b = Battle::new(bp.clone(), field, specs, seed);
-    let report = b.run();
+    let report = match record {
+        Some(Record {
+            log,
+            town,
+            at,
+            facing,
+        }) => {
+            let (report, squads, frames) = b.run_recorded(5.0);
+            log.push(crate::battle::Replay {
+                town,
+                at,
+                facing,
+                field: size,
+                squads,
+                frames,
+                winner: report.winner,
+            });
+            report
+        }
+        None => b.run(),
+    };
     let mut fallen = [0u32; 2];
     for (g, (key, people)) in groups.iter().enumerate() {
         for (m, &i) in b.members(g).iter().zip(people) {

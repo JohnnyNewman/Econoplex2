@@ -93,6 +93,8 @@ struct Shared {
     person: Option<Arc<sim_core::view::PersonInfo>>,
     /// History samples since the view last took them.
     samples: Vec<Sample>,
+    /// Battles fought since the view last took them.
+    battles: Vec<sim_core::battle::Replay>,
     /// Orders the simulation could not parse, with the reason.
     errors: Vec<String>,
     quit: bool,
@@ -118,6 +120,8 @@ pub struct LiveSim {
     pub recent: VecDeque<Event>,
     /// The monthly history so far (one sample per town and month).
     pub history: Vec<Sample>,
+    /// Battles fought and not yet shown (`battles.rs` takes them).
+    pub battles: Vec<sim_core::battle::Replay>,
     /// Product names by def, and the building types a town can commission
     /// (product id, name).
     pub product_names: Vec<String>,
@@ -158,6 +162,7 @@ impl LiveSim {
             orders: Vec::new(),
             text_orders: Vec::new(),
             samples: Vec::new(),
+            battles: Vec::new(),
             why_town: None,
             inspect: None,
             person: None,
@@ -183,6 +188,7 @@ impl LiveSim {
             shown_tick: None,
             recent: VecDeque::new(),
             history,
+            battles: Vec::new(),
             product_names,
             building_kinds,
         }
@@ -303,6 +309,7 @@ fn run(sim: &mut Simulation, shared: &Mutex<Shared>, mut seen: sim_core::view::S
             let mut snap = (*s.latest).clone();
             snap.events.clear();
             snap.samples.clear();
+            snap.battles.clear();
             snap.why = why_town.map(|t| (t, sim_core::explain::explain(&sim.world, t)));
             snap.skills = why_town.map(|t| (t, sim_core::view::town_skills(&sim.world, t)));
             s.latest = Arc::new(snap);
@@ -347,6 +354,7 @@ fn run(sim: &mut Simulation, shared: &Mutex<Shared>, mut seen: sim_core::view::S
             let mut s = shared.lock().unwrap();
             s.events.extend(snap.events.iter().cloned());
             s.samples.extend(snap.samples.iter().cloned());
+            s.battles.extend(snap.battles.iter().cloned());
             s.latest = Arc::new(snap);
         }
         // Keep the pace, but don't try to catch up after a slow stretch.
@@ -507,9 +515,11 @@ fn sync_scene(
         let latest = s.latest.clone();
         let events = std::mem::take(&mut s.events);
         let samples = std::mem::take(&mut s.samples);
+        let battles = std::mem::take(&mut s.battles);
         drop(s);
         live.snapshot = latest;
         live.history.extend(samples);
+        live.battles.extend(battles);
         for e in events {
             live.recent.push_front(e);
         }

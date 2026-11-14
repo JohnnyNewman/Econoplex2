@@ -21,6 +21,7 @@ use sim_core::terrain::Terrain;
 use std::path::PathBuf;
 
 mod bake;
+mod battles;
 mod bloom;
 mod buildings;
 mod camera;
@@ -57,6 +58,8 @@ struct Args {
     towns: u32,
     /// Overrides of models.ron (`--preset FILE`).
     sets: Vec<(String, String)>,
+    /// A squad battle to stage beside the focus town (`--battle LINEUP`).
+    battle: Option<String>,
 }
 
 /// Bevy's asset plugin, pointed at `crates/game3d/assets` (shaders), so the
@@ -107,6 +110,7 @@ fn main() {
         focus: None,
         bloom_view: false,
         sets: Vec::new(),
+        battle: None,
     };
     let (mut shot, mut hour, mut view, mut playground, mut face_sun) =
         (None, None, None, false, false);
@@ -214,6 +218,7 @@ fn main() {
                     .unwrap_or(live::DEFAULT_SPEED)
             }
             "--paused" => paused = true,
+            "--battle" => args.battle = it.next(),
             "--grid-step" => {
                 terrain_settings.step = it
                     .next()
@@ -322,6 +327,7 @@ fn main() {
         precip::PrecipPlugin,
         lights::LightsPlugin,
         inspect::InspectPlugin,
+        battles::BattlesPlugin,
     ))
     .insert_resource(env_override)
     .insert_resource(clock)
