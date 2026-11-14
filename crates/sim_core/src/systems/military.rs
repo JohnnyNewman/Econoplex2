@@ -87,12 +87,11 @@ pub fn military(
     if mp.muster_interval > 0 && clock.tick.is_multiple_of(mp.muster_interval as u64) {
         // The threat next door: the largest army a road leads from.
         let armies: Vec<f32> = towns.0.iter().map(|t| t.squad.len() as f32).collect();
-        for t in 0..n_towns {
-            let threat = (0..n_towns)
+        for (t, town) in towns.0.iter_mut().enumerate() {
+            town.threat = (0..n_towns)
                 .filter(|&o| o != t && terrain.road(t, o).is_finite())
                 .map(|o| armies[o])
                 .fold(0.0f32, f32::max);
-            towns.0[t].threat = threat;
         }
         for town in towns.0.iter_mut() {
             let adults = town
