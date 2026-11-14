@@ -33,7 +33,7 @@ import bevy_pbr::render::{
 };
 import super::toon_lighting::{Toon, toon_params, toon_terms};
 import super::fog::{Fog, apply_fog};
-import super::lights::Env;
+import super::lights::{Env, lamp_term};
 
 // One person; matches the 12 floats per person in src/crowd.rs and walk.wesl.
 struct Person {
@@ -326,7 +326,12 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         albedo = tint;
     }
     let t = toon_terms(pbr, toon_params(crowd.toon));
-    var lit = albedo * t.light;
+    // Step 12: the lamps and fires nearest the camera light people too.
+    var lamps = vec3<f32>(0.0);
+    for (var i = 0u; i < u32(env.lamps_info.x); i++) {
+        lamps += lamp_term(env.lamps[i], in.world_position.xyz, pbr.N);
+    }
+    var lit = albedo * (t.light + lamps);
     // The selected person (inspect.rs): gold, glowing a little.
     if crowd.selected.x >= 0.0 && index == u32(crowd.selected.x) {
         lit = mix(lit, vec3<f32>(1.0, 0.78, 0.25), 0.6) + vec3<f32>(0.6, 0.45, 0.1);

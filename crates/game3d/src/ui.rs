@@ -89,6 +89,7 @@ fn panels(
     mut cams: Query<&mut WorldCamera>,
     hidden: Res<UiHidden>,
     mut selected: ResMut<crate::inspect::Selected>,
+    mut follow: ResMut<crate::inspect::Follow>,
 ) -> Result {
     if hidden.0 {
         return Ok(());
@@ -496,7 +497,7 @@ fn panels(
             ));
         });
 
-    person_window(ctx, &live, &snap, &mut selected);
+    person_window(ctx, &live, &snap, &mut selected, &mut follow, &mut cams);
 
     capture.pointer = ctx.egui_wants_pointer_input() || ctx.is_pointer_over_egui();
     capture.keyboard = ctx.egui_wants_keyboard_input();
@@ -510,6 +511,8 @@ fn person_window(
     live: &LiveSim,
     snap: &sim_core::view::ViewSnapshot,
     selected: &mut crate::inspect::Selected,
+    follow: &mut crate::inspect::Follow,
+    cams: &mut Query<&mut WorldCamera>,
 ) {
     let (Some(id), info) = live.person() else {
         return;
@@ -544,6 +547,17 @@ fn person_window(
             };
             ui.label(doing);
             ui.label(format!("wealth {:.1}", p.wealth));
+            ui.horizontal(|ui| {
+                if ui.button("Look at").clicked() {
+                    if let Some(pos) = follow.pos {
+                        for mut cam in cams.iter_mut() {
+                            cam.focus = pos;
+                        }
+                    }
+                }
+                ui.toggle_value(&mut follow.on, "Follow");
+                ui.small("rings: home (gold), work (blue)");
+            });
             if !p.needs.is_empty() {
                 ui.separator();
                 ui.strong("Needs");

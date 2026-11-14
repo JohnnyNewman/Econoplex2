@@ -7,25 +7,53 @@
 //! arrives, a frame or two later. The selected person is lit gold (people.wesl)
 //! and the simulation describes them after every tick (`sim_core::view::person`),
 //! shown in the "Person" panel (ui.rs).
+//!
+//! While someone is selected, their slot of the people buffer is read back
+//! every frame (48 bytes), so the camera can follow them ("Follow" in the
+//! panel; panning with the keys or the middle button stops it), and rings
+//! mark their home (gold) and workplace (blue) on the ground.
 
 use crate::camera::UiCapture;
 use crate::crowd::{CrowdHandles, Slots, PERSON_FLOATS};
 use crate::live::LiveSim;
 use bevy::prelude::*;
-use bevy::render::gpu_readback::{ReadbackComplete, ReadbackOnce};
+use bevy::render::gpu_readback::{Readback, ReadbackComplete, ReadbackOnce};
 
 pub struct InspectPlugin;
 
 impl Plugin for InspectPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Pick>()
-            .add_systems(Update, (click, resolve).chain());
+            .init_resource::<Follow>()
+            .add_systems(Startup, spawn_markers)
+            .add_systems(
+                Update,
+                (click, resolve, track, follow, place_markers)
+                    .chain()
+                    .before(crate::camera::world_camera),
+            );
     }
 }
 
 /// The person selected (agent store index), if any.
 #[derive(Resource, Default, Debug, Clone, Copy, PartialEq)]
 pub struct Selected(pub Option<u32>);
+
+/// The selected person's position (from the GPU, a frame late) and whether
+/// the camera follows them.
+#[derive(Resource, Default)]
+pub struct Follow {
+    pub on: bool,
+    pub pos: Option<Vec3>,
+    /// The slot being read back, and the entity reading it.
+    reading: Option<(usize, Entity)>,
+}
+
+/// The rings on the ground at the selected person's home and workplace.
+#[derive(Component)]
+struct Marker {
+    home: bool,
+}
 
 /// A click waiting for the people buffer to come back from the GPU.
 #[derive(Resource, Default)]
@@ -127,6 +155,143 @@ fn resolve(
     let id = nearest(&floats, ray).and_then(|slot| slots.id_of(slot));
     selected.0 = id;
     live.inspect(id);
+}
+
+/// Keep a readback of the selected person's slot running (48 bytes a frame).
+fn track(
+    mut commands: Commands,
+    selected: Res<Selected>,
+    slots: Res<Slots>,
+    handles: Option<Res<CrowdHandles>>,
+    mut follow: ResMut<Follow>,
+) {
+    let want = selected.0.and_then(|id| slots.slot_of(id));
+    if follow.reading.map(|(s, _)| s) == want {
+        return;
+    }
+    if let Some((_, e)) = follow.reading.take() {
+        commands.entity(e).despawn();
+    }
+    follow.pos = None;
+    let (Some(slot), Some(handles)) = (want, handles) else {
+        follow.on = false;
+        return;
+    };
+    let bytes = (PERSON_FLOATS * 4) as u64;
+    let e = commands
+        .spawn(Readback::buffer_range(
+            handles.people.clone(),
+            slot as u64 * bytes,
+            bytes,
+        ))
+        .observe(|ev: On<ReadbackComplete>, mut follow: ResMut<Follow>| {
+            let f: Vec<f32> = ev
+                .data
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|b| f32::from_le_bytes(*b))
+                .collect();
+            // An empty slot (indoors at night, or gone): keep the last place.
+            if f.len() >= 8 && f[7] != 0.0 {
+                follow.pos = Some(Vec3::new(f[0], f[1], f[2]));
+            }
+        })
+        .id();
+    follow.reading = Some((slot, e));
+}
+
+/// With "Follow" on: glide the camera's focus to the selected person. Panning
+/// by hand stops it.
+fn follow(
+    time: Res<Time>,
+    keys: Res<ButtonInput<KeyCode>>,
+    mouse: Res<ButtonInput<MouseButton>>,
+    mut follow: ResMut<Follow>,
+    mut cams: Query<&mut crate::camera::WorldCamera>,
+) {
+    let pan = [
+        KeyCode::KeyW,
+        KeyCode::KeyA,
+        KeyCode::KeyS,
+        KeyCode::KeyD,
+        KeyCode::Home,
+    ];
+    if keys.any_pressed(pan) || mouse.pressed(MouseButton::Middle) {
+        follow.on = false;
+    }
+    let (true, Some(p)) = (follow.on, follow.pos) else {
+        return;
+    };
+    let k = 1.0 - (-6.0 * time.delta_secs()).exp();
+    for mut cam in &mut cams {
+        cam.focus = cam.focus.lerp(p, k);
+    }
+}
+
+fn spawn_markers(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    let ring = meshes.add(Torus::new(0.55, 0.75));
+    for (home, colour) in [
+        (true, Color::srgb(1.0, 0.75, 0.2)),
+        (false, Color::srgb(0.3, 0.6, 1.0)),
+    ] {
+        commands.spawn((
+            Marker { home },
+            Mesh3d(ring.clone()),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color: colour,
+                emissive: LinearRgba::from(colour) * 2.0,
+                unlit: true,
+                ..default()
+            })),
+            Transform::default(),
+            Visibility::Hidden,
+            bevy::light::NotShadowCaster,
+        ));
+    }
+}
+
+/// The rings at the selected person's home and workplace (hidden without a
+/// selection, and the workplace one for those who don't work).
+fn place_markers(
+    selected: Res<Selected>,
+    live: Res<LiveSim>,
+    world: Res<crate::World3d>,
+    mut markers: Query<(&Marker, &mut Transform, &mut Visibility)>,
+) {
+    let spots = selected
+        .0
+        .and_then(|id| crate::crowd::spots_of(&live.snapshot, id));
+    let working = selected
+        .0
+        .and_then(|id| live.snapshot.people.id.iter().position(|&i| i == id))
+        .is_some_and(|k| {
+            matches!(
+                live.snapshot.people.doing[k],
+                sim_core::view::Doing::Working(_)
+            )
+        });
+    for (m, mut t, mut v) in &mut markers {
+        let Some((home, work)) = spots else {
+            v.set_if_neq(Visibility::Hidden);
+            continue;
+        };
+        if !m.home && !working {
+            v.set_if_neq(Visibility::Hidden);
+            continue;
+        }
+        let at = if m.home { home } else { work };
+        let y = crate::ground(&world.terrain, (at.x * crate::SCALE, -at.y * crate::SCALE));
+        let place = Transform::from_xyz(at.x, y + 0.08, at.y);
+        if *t != place {
+            *t = place;
+        }
+        v.set_if_neq(Visibility::Inherited);
+    }
 }
 
 #[cfg(test)]
