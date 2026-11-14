@@ -95,6 +95,11 @@ struct Shared {
     samples: Vec<Sample>,
     /// Battles fought since the view last took them.
     battles: Vec<sim_core::battle::Replay>,
+    /// The battle waiting for the player, as it stands now.
+    live_battle: Option<Arc<sim_core::battle::LiveView>>,
+    /// Orders to the player's squads in it, and a request to auto-resolve it.
+    battle_orders: Vec<(usize, sim_core::battle::Order)>,
+    battle_resolve: bool,
     /// Orders the simulation could not parse, with the reason.
     errors: Vec<String>,
     quit: bool,
@@ -139,6 +144,9 @@ impl Drop for LiveSim {
 impl LiveSim {
     /// Start the simulation thread. `sim` has already run any fast-forward days.
     pub fn start(mut sim: Simulation, speed: usize, paused: bool) -> Self {
+        // Battles the player's town fights wait for the player (`battles.rs`).
+        sim.world
+            .insert_resource(sim_core::systems::military::LiveBattles(true));
         let db = sim.world.resource::<sim_core::Db>();
         let product_names = db.content.products.iter().map(|p| p.name.clone()).collect();
         let building_kinds = (0..db.content.products.len())
@@ -163,6 +171,9 @@ impl LiveSim {
             text_orders: Vec::new(),
             samples: Vec::new(),
             battles: Vec::new(),
+            live_battle: None,
+            battle_orders: Vec::new(),
+            battle_resolve: false,
             why_town: None,
             inspect: None,
             person: None,
@@ -203,6 +214,25 @@ impl LiveSim {
     /// Queue a text order (the CLI's syntax) for the next tick.
     pub fn order_text(&self, text: String) {
         self.shared.lock().unwrap().text_orders.push(text);
+    }
+
+    /// The battle waiting for the player, if any.
+    pub fn live_battle(&self) -> Option<Arc<sim_core::battle::LiveView>> {
+        self.shared.lock().unwrap().live_battle.clone()
+    }
+
+    /// An order to one of the player's squads in the waiting battle.
+    pub fn order_battle(&self, squad: usize, order: sim_core::battle::Order) {
+        self.shared
+            .lock()
+            .unwrap()
+            .battle_orders
+            .push((squad, order));
+    }
+
+    /// Fight the waiting battle to its end at once.
+    pub fn resolve_battle(&self) {
+        self.shared.lock().unwrap().battle_resolve = true;
     }
 
     /// Orders the simulation rejected since the last call.
@@ -254,6 +284,9 @@ impl LiveSim {
     }
 }
 
+/// Battle seconds per real second while the player fights a battle.
+const BATTLE_SPEED: f32 = 6.0;
+
 /// The simulation thread: step at the game speed, publish after every tick.
 fn run(sim: &mut Simulation, shared: &Mutex<Shared>, mut seen: sim_core::view::Seen) {
     let mut next = Instant::now();
@@ -261,6 +294,8 @@ fn run(sim: &mut Simulation, shared: &Mutex<Shared>, mut seen: sim_core::view::S
     let mut explained: Option<u16> = None;
     // The person last described, and at which tick.
     let mut described: Option<(u32, u64)> = None;
+    // When a waiting battle takes its next step.
+    let mut next_battle = Instant::now();
     loop {
         // The inspector: describe the chosen person after every tick, and at
         // once when the choice changes (also while paused).
@@ -299,6 +334,38 @@ fn run(sim: &mut Simulation, shared: &Mutex<Shared>, mut seen: sim_core::view::S
             if let Err(e) = sim.order(&text) {
                 shared.lock().unwrap().errors.push(format!("{text}: {e}"));
             }
+        }
+        // A battle waiting for the player holds the clock; it runs in real
+        // time (unless paused) and takes the player's orders.
+        {
+            use sim_core::systems::military as war;
+            let (battle_orders, resolve) = {
+                let mut s = shared.lock().unwrap();
+                (
+                    std::mem::take(&mut s.battle_orders),
+                    std::mem::take(&mut s.battle_resolve),
+                )
+            };
+            for (squad, order) in battle_orders {
+                war::order_live_battle(&mut sim.world, squad, order);
+            }
+            if resolve {
+                war::resolve_live_battle(&mut sim.world);
+            }
+            let waiting = war::live_battle_waiting(&sim.world);
+            if waiting && !paused && Instant::now() >= next_battle {
+                war::step_live_battle(&mut sim.world, 1.0);
+                next_battle += Duration::from_secs_f32(1.0 / BATTLE_SPEED);
+                next_battle = next_battle.max(Instant::now() - Duration::from_millis(200));
+            }
+            let view = war::live_battle_view(&sim.world).map(Arc::new);
+            shared.lock().unwrap().live_battle = view;
+            if waiting {
+                std::thread::sleep(Duration::from_millis(5));
+                next = Instant::now();
+                continue;
+            }
+            next_battle = Instant::now();
         }
         let why_town = shared.lock().unwrap().why_town;
         if paused && why_town != explained {
@@ -811,5 +878,62 @@ mod tests {
         assert_eq!(speed_label(1.0 / 12.0), "12 s/day");
         assert_eq!(speed_label(30.0), "30 days/s");
         assert!(SPEEDS.windows(2).all(|w| w[0] < w[1]));
+    }
+
+    /// A battle the player's town fights holds the clock until it is fought:
+    /// the view sees it, orders reach it, and fighting it out lets time run on.
+    #[test]
+    fn the_players_battle_holds_the_clock_until_fought() {
+        let paths = sim_core::AssetPaths::discover();
+        let (db, params, scenario) = sim_core::load(&paths).unwrap();
+        let sim = Simulation::new(db, params, &scenario);
+        let live = LiveSim::start(sim, SPEEDS.len() - 1, false);
+        let towns: Vec<String> = live.snapshot.towns.iter().map(|t| t.name.clone()).collect();
+        let me = scenario.player.clone().unwrap();
+        let them = towns.iter().find(|t| **t != me).unwrap().clone();
+        live.order_text(format!("army {me} 0.15"));
+        std::thread::sleep(Duration::from_millis(300));
+        live.order_text(format!("raid {me} {them}"));
+        let deadline = Instant::now() + Duration::from_secs(60);
+        let view = loop {
+            if let Some(v) = live.live_battle() {
+                break Some(v);
+            }
+            if Instant::now() > deadline {
+                break None;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        };
+        let view = view.expect("the player's raid never reached a battle");
+        // The clock holds while the battle waits.
+        let tick = live.shared.lock().unwrap().latest.tick;
+        std::thread::sleep(Duration::from_millis(300));
+        assert_eq!(live.shared.lock().unwrap().latest.tick, tick);
+        let mine = view
+            .squads
+            .iter()
+            .position(|q| q.side == view.player_side)
+            .unwrap();
+        live.order_battle(mine, sim_core::battle::Order::Hold);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while live
+            .live_battle()
+            .is_some_and(|v| v.orders[mine] != sim_core::battle::Order::Hold)
+        {
+            assert!(
+                Instant::now() < deadline,
+                "the order never reached the battle"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        live.resolve_battle();
+        let deadline = Instant::now() + Duration::from_secs(30);
+        while live.shared.lock().unwrap().latest.tick == tick {
+            assert!(
+                Instant::now() < deadline,
+                "time never ran on after the battle"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
     }
 }
