@@ -297,6 +297,11 @@ pub struct Slots {
 }
 
 impl Slots {
+    /// The slot of this person (agent store index), if they have one.
+    pub fn slot_of(&self, id: u32) -> Option<usize> {
+        self.of.get(&id).copied()
+    }
+
     /// Who is in this slot (agent store index), if anyone.
     pub fn id_of(&self, slot: usize) -> Option<u32> {
         self.of.iter().find(|(_, &s)| s == slot).map(|(&id, _)| id)
@@ -468,6 +473,19 @@ fn day_plan(id: u32, doing: Doing, hour: f32, work: Vec2, home: Vec2, centre: Ve
         out: true,
         at_work: false,
     }
+}
+
+/// Where a person lives and works (3D x, z), as their day plan uses them
+/// (`None` if they are not in the snapshot).
+pub fn spots_of(snap: &sim_core::view::ViewSnapshot, id: u32) -> Option<(Vec2, Vec2)> {
+    let k = snap.people.id.iter().position(|&i| i == id)?;
+    let work = Vec2::new(snap.people.target[k].0, -snap.people.target[k].1) / SCALE + jitter(id);
+    let ti = snap.people.town.get(k).copied().unwrap_or(0) as usize;
+    let home = snap
+        .towns
+        .get(ti)
+        .map_or(work, |t| home_of(id, t.pos, ti, t.population));
+    Some((home, work))
 }
 
 /// A house of the town for this person: a spot on the spiral the houses

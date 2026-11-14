@@ -70,7 +70,7 @@ impl WorldCamera {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn world_camera(
+pub fn world_camera(
     keys: Res<ButtonInput<KeyCode>>,
     mouse: Res<ButtonInput<MouseButton>>,
     motion: Res<AccumulatedMouseMotion>,
