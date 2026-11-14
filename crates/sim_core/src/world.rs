@@ -827,6 +827,7 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
     world.insert_resource(crate::env::Environment::default());
     world.insert_resource(crate::goods::Squads::default());
     world.insert_resource(crate::battle::BattleLog::default());
+    world.insert_resource(crate::systems::military::PendingBattle::default());
     world.insert_resource(seed);
     world.insert_resource(Decisions::default());
     world.insert_resource(WorkLog {
