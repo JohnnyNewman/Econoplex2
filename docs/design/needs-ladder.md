@@ -309,3 +309,21 @@ Two principled fixes, both off by default for now:
 With Ladder + Demand + Marginal as defaults, five tests fail: the first year
 loses 7 % of its people (before the first harvest), government orders and
 caravans move less, and workshops (as firms) collapse.
+
+## Ladder decisions are the default (2026-11-14)
+
+Nils: go with the new model. Defaults now: `decision.model: Ladder`,
+`market.pricing: Demand(cover_days: 10, blocked_workers: 2)`,
+`market.building_value: Marginal(payback_days: 10, max_factor: 1)`. The
+building value now compares a new building's best pay with the lower quartile
+of the town's pay (what the workers who would fill it earn now), not the
+median. State hash at seed 42, 10 years: `b6667483965e194b`.
+
+6 seeds x 20 years: population 1308 (1140 with the feature weights), starving
+1.0 % of person-days (0.88 %), food per head 2.4, diversity 21.7 (29.6),
+capability 27.7 (about 40): people follow pay, so towns make fewer kinds of
+goods. The first winter is hard for the mining town (Ironhold loses about a
+quarter of its people at seed 42); `first_year_has_no_famine` now asks that no
+town lose a third and the world keep 90 %. Tests calibrated to the old models
+pin them with `legacy()`, which now also sets Features, StockTarget pricing and
+the Load building value.

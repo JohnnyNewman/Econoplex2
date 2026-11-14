@@ -1,10 +1,11 @@
 //! Jobs audit: what each job pays and how many take it, per town. Diagnostic.
-//! cargo run --release -p sim_cli --example jobs_audit -- [years] [seed] [path=value ...]
+//! cargo run --release -p sim_cli --example jobs_audit -- [years|Nd] [seed] [path=value ...]
 use sim_core::{AgentStore, AssetPaths, Db, Simulation, Towns};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let years: u64 = args.get(1).and_then(|v| v.parse().ok()).unwrap_or(3);
+    // "3" = three years; "40d" = forty days.
+    let span = args.get(1).cloned().unwrap_or_else(|| "3".into());
     let seed: Option<u64> = args.get(2).and_then(|v| v.parse().ok());
     let sets: Vec<(String, String)> = args
         .iter()
@@ -20,11 +21,15 @@ fn main() {
         scenario.seed = s;
     }
     let dpy = params.life.days_per_year as u64;
+    let days = match span.strip_suffix('d') {
+        Some(d) => d.parse().unwrap_or(40),
+        None => span.parse::<u64>().unwrap_or(3) * dpy,
+    };
     let mut sim = Simulation::new(db, params, &scenario);
     let mut counts: Vec<Vec<u32>> = Vec::new();
-    for day in 0..years * dpy {
+    for day in 0..days {
         sim.step();
-        if day + 30 >= years * dpy {
+        if day + 30 >= days {
             // Who worked what over the last month.
             let store = sim.world.resource::<AgentStore>();
             let towns = sim.world.resource::<Towns>();
