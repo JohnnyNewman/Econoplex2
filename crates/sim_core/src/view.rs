@@ -131,6 +131,8 @@ pub struct PeopleView {
 pub struct Seen {
     pub events: usize,
     pub samples: usize,
+    /// Battles fought (`BattleLog::total`) when last captured.
+    pub battles: usize,
 }
 
 /// Everything a view needs for one tick.
@@ -160,6 +162,9 @@ pub struct ViewSnapshot {
     /// view asked; set like `why`.
     #[serde(default)]
     pub skills: Option<(u16, TownSkills)>,
+    /// Battles fought since the previous capture, to play back.
+    #[serde(default)]
+    pub battles: Vec<crate::battle::Replay>,
 }
 
 /// The product space's fixed part: the skills, their domains, and the links
@@ -295,6 +300,14 @@ impl ViewSnapshot {
                 (new, samples)
             })
             .unwrap_or_default();
+        let battles = world
+            .get_resource::<crate::battle::BattleLog>()
+            .map(|log| {
+                let new = log.since(seen.battles);
+                seen.battles = log.total;
+                new
+            })
+            .unwrap_or_default();
         ViewSnapshot {
             tick: clock.tick,
             day_of_year: clock.day_of_year(),
@@ -391,6 +404,7 @@ impl ViewSnapshot {
             samples,
             why: None,
             skills: None,
+            battles,
         }
     }
 

@@ -349,6 +349,15 @@ pub struct Raid {
     pub captives: Vec<u32>,
     /// Goods carried home (indexed by product).
     pub loot: Vec<f32>,
+    /// The squad the soldiers march as (`goods::Squads`), with `march: Weather`.
+    #[serde(default)]
+    pub squad: Option<u32>,
+    /// Share of the road behind it, 0 at home .. 1 at the target.
+    #[serde(default)]
+    pub progress: f32,
+    /// Fought and marching home.
+    #[serde(default)]
+    pub back: bool,
 }
 
 /// Military events since the last yearly report.
@@ -817,6 +826,7 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
     world.insert_resource(SimClock::new(dpy, &params_time));
     world.insert_resource(crate::env::Environment::default());
     world.insert_resource(crate::goods::Squads::default());
+    world.insert_resource(crate::battle::BattleLog::default());
     world.insert_resource(seed);
     world.insert_resource(Decisions::default());
     world.insert_resource(WorkLog {

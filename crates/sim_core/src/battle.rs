@@ -500,6 +500,71 @@ impl fmt::Display for Report {
     }
 }
 
+/// One squad in a battle replay.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ReplaySquad {
+    pub name: String,
+    pub side: u8,
+    pub mounted: bool,
+    /// Fighters at the start.
+    pub start: u16,
+}
+
+/// Where every squad stood at one moment of a battle: (x, y) in metres on the
+/// field, fighters still standing, and its state.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ReplayFrame {
+    pub t: f32,
+    pub squads: Vec<(f32, f32, u16, SquadState)>,
+}
+
+/// A fought battle, for the 3D view to play back where it happened.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Replay {
+    /// The town fought over, and the map position of the field's centre.
+    pub town: u16,
+    pub at: (f32, f32),
+    /// Map direction from the attackers' side of the field to the defenders'
+    /// (the field's +x), unit length.
+    pub facing: (f32, f32),
+    /// Field size, metres.
+    pub field: (f32, f32),
+    pub squads: Vec<ReplaySquad>,
+    pub frames: Vec<ReplayFrame>,
+    pub winner: Option<u8>,
+}
+
+/// Battles fought, for the view (the newest few; `total` counts all of them so
+/// a reader can tell which it has seen).
+#[derive(bevy_ecs::prelude::Resource, Clone, Debug, Default)]
+pub struct BattleLog {
+    pub replays: std::collections::VecDeque<Replay>,
+    pub total: usize,
+}
+
+impl BattleLog {
+    /// Battles kept for a view that falls behind.
+    pub const KEEP: usize = 16;
+
+    pub fn push(&mut self, replay: Replay) {
+        self.replays.push_back(replay);
+        self.total += 1;
+        while self.replays.len() > Self::KEEP {
+            self.replays.pop_front();
+        }
+    }
+
+    /// Replays after the first `seen` battles ever fought.
+    pub fn since(&self, seen: usize) -> Vec<Replay> {
+        let first = self.total - self.replays.len();
+        self.replays
+            .iter()
+            .skip(seen.saturating_sub(first))
+            .cloned()
+            .collect()
+    }
+}
+
 /// A battle in progress.
 pub struct Battle {
     pub params: BattleParams,
@@ -594,6 +659,43 @@ impl Battle {
             self.step();
         }
         self.finish()
+    }
+
+    /// Where every squad stands now.
+    pub fn frame(&self) -> ReplayFrame {
+        ReplayFrame {
+            t: self.t,
+            squads: self
+                .squads
+                .iter()
+                .map(|s| (s.spec.pos.0, s.spec.pos.1, s.alive() as u16, s.state))
+                .collect(),
+        }
+    }
+
+    /// Like [`Self::run`], recording a frame every `every` seconds (and the last).
+    pub fn run_recorded(&mut self, every: f32) -> (Report, Vec<ReplaySquad>, Vec<ReplayFrame>) {
+        let squads = self
+            .squads
+            .iter()
+            .map(|s| ReplaySquad {
+                name: s.spec.name.clone(),
+                side: s.spec.side,
+                mounted: s.spec.kit.mounted,
+                start: s.alive() as u16,
+            })
+            .collect();
+        let mut frames = vec![self.frame()];
+        let mut next = every;
+        while !self.finished() {
+            self.step();
+            if self.t >= next {
+                frames.push(self.frame());
+                next += every;
+            }
+        }
+        frames.push(self.frame());
+        (self.finish(), squads, frames)
     }
 
     /// Survivors gain a battle's experience; the report is returned and the
@@ -1437,6 +1539,35 @@ mod tests {
                 assert!(p.fight.is_some(), "{} has no fight values", p.id);
             }
         }
+    }
+
+    #[test]
+    fn a_recorded_battle_ends_where_the_report_says() {
+        let (field, specs) = parse_lineup("cavalry*20 vs archers*30").unwrap();
+        let mut b = Battle::new(BattleParams::default(), field, specs, 5);
+        let (report, squads, frames) = b.run_recorded(5.0);
+        assert_eq!(squads.len(), 2);
+        assert!(frames.len() > 2);
+        let last = frames.last().unwrap();
+        for (k, s) in report.squads.iter().enumerate() {
+            assert_eq!(last.squads[k].2 as usize, s.standing);
+            assert_eq!(last.squads[k].3, s.state);
+        }
+        let mut log = BattleLog::default();
+        for _ in 0..BattleLog::KEEP + 3 {
+            log.push(Replay {
+                town: 0,
+                at: (0.0, 0.0),
+                facing: (1.0, 0.0),
+                field: (600.0, 400.0),
+                squads: squads.clone(),
+                frames: Vec::new(),
+                winner: report.winner,
+            });
+        }
+        assert_eq!(log.replays.len(), BattleLog::KEEP);
+        assert_eq!(log.since(log.total - 2).len(), 2);
+        assert_eq!(log.since(0).len(), BattleLog::KEEP);
     }
 
     #[test]
