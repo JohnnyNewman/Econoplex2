@@ -596,6 +596,32 @@ fn person_window(
             }
             ui.separator();
             ui.strong("Household");
+            // Everyone who shares this person's home (the same keeper).
+            let keeper = snap
+                .people
+                .id
+                .iter()
+                .position(|&i| i == p.id)
+                .and_then(|k| snap.people.home.get(k).copied());
+            let mates: Vec<u32> = match keeper {
+                Some(h) => snap
+                    .people
+                    .id
+                    .iter()
+                    .zip(&snap.people.home)
+                    .filter(|&(&i, &home)| home == h && i != p.id)
+                    .map(|(&i, _)| i)
+                    .collect(),
+                None => Vec::new(),
+            };
+            if mates.is_empty() {
+                ui.label("lives alone (gold ring: their house)");
+            } else {
+                ui.label(format!(
+                    "{} people at this hearth (gold ring: their house)",
+                    mates.len() + 1
+                ));
+            }
             let mut member = |ui: &mut egui::Ui, label: &str, who: u32| {
                 ui.horizontal(|ui| {
                     ui.label(label);
@@ -614,8 +640,16 @@ fn person_window(
             for &c in &p.children {
                 member(ui, "child", c);
             }
-            if p.partner.is_none() && p.parents.is_none() && p.children.is_empty() {
-                ui.label("lives alone");
+            // Others at the hearth who are not close family (e.g. a parent's
+            // other children).
+            let family: Vec<u32> = p
+                .partner
+                .into_iter()
+                .chain(p.parents.map_or(Vec::new(), |(a, b)| vec![a, b]))
+                .chain(p.children.iter().copied())
+                .collect();
+            for &m in mates.iter().filter(|m| !family.contains(m)) {
+                member(ui, "lives here", m);
             }
         });
     if !open {
