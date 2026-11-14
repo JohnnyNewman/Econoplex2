@@ -155,14 +155,15 @@ pub fn settle(
                     true,
                 ) = (mp.building_value, town.building_count(p as u32) > 0)
                 {
-                    // The town's typical pay: the median over the jobs that pay.
+                    // What the workers who would fill it earn now: the pay of
+                    // the town's poorer jobs (the lower quartile of those that pay).
                     let mut paid: Vec<f32> =
                         town.pay_rate.iter().copied().filter(|&x| x > 0.0).collect();
                     let typical = if paid.is_empty() {
                         0.0
                     } else {
-                        let mid = paid.len() / 2;
-                        *paid.select_nth_unstable_by(mid, f32::total_cmp).1
+                        let q = paid.len() / 4;
+                        *paid.select_nth_unstable_by(q, f32::total_cmp).1
                     };
                     let best = db
                         .recipes

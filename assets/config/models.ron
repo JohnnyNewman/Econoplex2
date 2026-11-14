@@ -45,7 +45,9 @@
         // Which model picks jobs. Features: the weights above. The utility-based
         // components below are being built (docs/design/agent-decisions.md); each
         // can be swapped on its own.
-        model: Features,
+        // Default since 2026-11-14 (Nils): choices by the needs ladder's derivative.
+        // Before: model: Features,
+        model: Ladder,
         // With model: Ladder (choices by the needs ladder's derivative): how
         // sharply people pick the option that raises their satisfaction most.
         ladder_scale: 200.0,
@@ -209,7 +211,9 @@
         // what profitable trades held up only by their shortage would use
         // (blocked_workers workers each); final goods keep the per-resident target.
         // Example: pricing: Demand(cover_days: 10.0, blocked_workers: 2.0),
-        pricing: StockTarget,
+        // Default since 2026-11-14: inputs priced by what trades use (derived
+        // demand). Before: pricing: StockTarget,
+        pricing: Demand(cover_days: 10.0, blocked_workers: 2.0),
         // Who buys output and pays wages. Treasury: the town market buys every
         // output and pays its makers from the treasury. Workshops(...): each
         // town's workplaces of one kind are a firm with cash and stock; the market
@@ -314,7 +318,7 @@
         // Another building of a type the town has: Load (old rule: base price
         // while nearly full) or Marginal(payback_days, max_factor): what its
         // places would earn above the town's typical pay.
-        building_value: Load,
+        building_value: Marginal(payback_days: 10.0, max_factor: 1.0),
         // Land: towns clear fields and plant woodlots when theirs are worn down.
         free_land: 6,
         land_threshold: 0.7,
