@@ -47,6 +47,7 @@ struct Person {
 struct Crowd {
     toon: Toon,
     lod: vec4<f32>, // x: figure-to-card distance, y: far cut-off, z: fade band, w: tint by level
+    selected: vec4<f32>, // x: the selected person's slot, or -1 (src/inspect.rs)
 };
 @group(constants::MATERIAL_BIND_GROUP) @binding(100) var<uniform> crowd: Crowd;
 @group(constants::MATERIAL_BIND_GROUP) @binding(101) var<storage, read> people: array<Person>;
@@ -325,7 +326,12 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         albedo = tint;
     }
     let t = toon_terms(pbr, toon_params(crowd.toon));
-    let fogged = apply_fog(albedo * t.light, in.world_position.xyz, env.fog);
+    var lit = albedo * t.light;
+    // The selected person (inspect.rs): gold, glowing a little.
+    if crowd.selected.x >= 0.0 && index == u32(crowd.selected.x) {
+        lit = mix(lit, vec3<f32>(1.0, 0.78, 0.25), 0.6) + vec3<f32>(0.6, 0.45, 0.1);
+    }
+    let fogged = apply_fog(lit, in.world_position.xyz, env.fog);
     var out: FragmentOutput;
     out.color = main_pass_post_lighting_processing(pbr, vec4<f32>(fogged, 1.0));
     return out;

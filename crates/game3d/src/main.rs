@@ -7,7 +7,7 @@
 //!
 //! econoplex3d [--seed S] [--towns N] [--hour H] [--pbr] [--terrain-view N] [--grid-step K]
 //!     [--fog-view N] [--no-fog] [--days N] [--speed 0-8] [--paused] [--trade] [--culture] [--product-space] [--bloom-view] [--focus-town I] [--focus X,Z] [--view-from YAW,PITCH,DIST]
-//!     [--no-ui] [--no-lod] [--lod-view] [--fps] [--render-scale F] [--shot FILE] [--quit-after S]
+//!     [--no-ui] [--no-lod] [--lod-view] [--fps] [--render-scale F] [--shot FILE] [--quit-after S] [--select ID]
 //!     [--weather clear|cloudy|rain|storm|snow|fog] [--season spring|summer|autumn|winter]
 //!     [--preset FILE]
 //! econoplex3d --playground [--hour H] [--view N] [--toon-view N] [--pbr] [--face-sun] [--shot FILE]
@@ -29,6 +29,7 @@ mod crowd_compute;
 mod env;
 mod fog;
 mod hud;
+mod inspect;
 mod lights;
 mod live;
 mod nature;
@@ -121,6 +122,7 @@ fn main() {
     let mut lod_view = false;
     let mut fps = false;
     let mut quit_after: Option<f32> = None;
+    let mut select: Option<u32> = None;
     let mut render_scale = 1.0f32;
     let mut env_override = env::EnvOverride::default();
     let mut it = std::env::args().skip(1);
@@ -151,6 +153,7 @@ fn main() {
             "--lod-view" => lod_view = true,
             "--fps" => fps = true,
             "--quit-after" => quit_after = it.next().and_then(|v| v.parse().ok()),
+            "--select" => select = it.next().and_then(|v| v.parse().ok()),
             "--render-scale" => {
                 render_scale = it.next().and_then(|v| v.parse().ok()).unwrap_or(1.0)
             }
@@ -256,6 +259,8 @@ fn main() {
     }
     let space = sim_core::view::ProductSpace::new(sim.world.resource::<sim_core::Db>());
     let live = live::LiveSim::start(sim, speed, paused);
+    // `--select ID`: start with this person selected (inspect.rs).
+    live.inspect(select);
 
     let mut app = App::new();
     if fps {
@@ -295,6 +300,7 @@ fn main() {
     .insert_resource(args)
     .insert_resource(ShotPath(shot))
     .insert_resource(QuitAfter(quit_after))
+    .insert_resource(inspect::Selected(select))
     .add_plugins((
         sky::SkyPlugin,
         toon::ToonPlugin,
@@ -312,7 +318,11 @@ fn main() {
         render_scale::RenderScalePlugin,
         roads::RoadsPlugin,
     ))
-    .add_plugins((precip::PrecipPlugin, lights::LightsPlugin))
+    .add_plugins((
+        precip::PrecipPlugin,
+        lights::LightsPlugin,
+        inspect::InspectPlugin,
+    ))
     .insert_resource(env_override)
     .insert_resource(clock)
     .insert_resource(toon_settings)
