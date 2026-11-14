@@ -400,6 +400,137 @@ impl ViewSnapshot {
     }
 }
 
+/// One person, as the inspector of a view shows them (`person`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct PersonInfo {
+    /// Index in the agent store (as `PeopleView::id`).
+    pub id: u32,
+    pub town: u16,
+    pub age_years: f32,
+    pub female: bool,
+    /// What they do: "child", "idle", "resting", "soldier", "captive", or
+    /// "working".
+    pub activity: String,
+    /// The recipe they worked at today, if any.
+    pub job: Option<String>,
+    pub wealth: f32,
+    /// Satisfaction per need (name, 0..1), if the needs ladder is on.
+    pub needs: Vec<(String, f32)>,
+    /// Food kept from their own work (product name, units).
+    pub larder: Vec<(String, f32)>,
+    /// Household goods held (product name, units).
+    pub owned: Vec<(String, f32)>,
+    /// What they carry or wear (slot, product name).
+    pub gear: Vec<(String, String)>,
+    pub partner: Option<u32>,
+    pub parents: Option<(u32, u32)>,
+    pub children: Vec<u32>,
+}
+
+/// Everything a view shows about the living person with store index `id`;
+/// `None` if there is no such person.
+pub fn person(world: &World, id: u32) -> Option<PersonInfo> {
+    let store = world.get_resource::<crate::AgentStore>()?;
+    let db = world.resource::<Db>();
+    let i = id as usize;
+    if i >= store.len() || !store.alive[i] {
+        return None;
+    }
+    let product = |k: u32| {
+        db.content
+            .products
+            .get(k as usize)
+            .map_or_else(|| format!("#{k}"), |p| p.name.clone())
+    };
+    let activity = match store.activity[i] {
+        crate::store::Activity::Child => "child",
+        crate::store::Activity::Idle => "idle",
+        crate::store::Activity::Resting => "resting",
+        crate::store::Activity::Working(_) => "working",
+        crate::store::Activity::Soldier => "soldier",
+        crate::store::Activity::Captive => "captive",
+    };
+    let job = store.worked_today[i]
+        .or(store.last_recipe[i])
+        .and_then(|r| db.recipes.get(r as usize))
+        .map(|r| r.name.clone());
+    let needs = person_needs(world, i);
+    let goods = |list: &[(u32, f32)]| -> Vec<(String, f32)> {
+        list.iter()
+            .filter(|(_, q)| *q > 0.0)
+            .map(|&(k, q)| (product(k), q))
+            .collect()
+    };
+    let mut gear = Vec::new();
+    for (slot, name) in [
+        (crate::goods::Slot::Tool, "tool"),
+        (crate::goods::Slot::Weapon, "weapon"),
+        (crate::goods::Slot::Armour, "armour"),
+        (crate::goods::Slot::Shield, "shield"),
+        (crate::goods::Slot::Mount, "mount"),
+    ] {
+        if let Some(e) = crate::goods::gear(store, i, slot) {
+            let item = world
+                .get::<crate::components::Product>(e)
+                .map_or_else(|| "item".to_string(), |p| product(p.def));
+            gear.push((name.to_string(), item));
+        }
+    }
+    let children = (0..store.len())
+        .filter(|&c| store.alive[c] && store.parents[c].is_some_and(|(a, b)| a == id || b == id))
+        .map(|c| c as u32)
+        .collect();
+    Some(PersonInfo {
+        id,
+        town: store.town[i],
+        age_years: store.age_days[i] as f32
+            / world.resource::<SimClock>().days_per_year.max(1) as f32,
+        female: store.female[i],
+        activity: activity.to_string(),
+        job,
+        wealth: store.wealth[i],
+        needs,
+        larder: store.larder.get(i).map_or_else(Vec::new, |l| goods(l)),
+        owned: store.owned.get(i).map_or_else(Vec::new, |o| goods(o)),
+        gear,
+        partner: store.partner[i],
+        parents: store.parents[i],
+        children,
+    })
+}
+
+/// One person's satisfaction per need, if the needs ladder is on.
+fn person_needs(world: &World, i: usize) -> Vec<(String, f32)> {
+    let Some(params) = world.get_resource::<crate::world::Params>() else {
+        return Vec::new();
+    };
+    let crate::consumption::ConsumptionParams::Needs(lp) = &params.market.consumption else {
+        return Vec::new();
+    };
+    let (Some(env), Some(store)) = (
+        world.get_resource::<crate::env::Environment>(),
+        world.get_resource::<crate::AgentStore>(),
+    ) else {
+        return Vec::new();
+    };
+    let sats = crate::ladder::all(
+        store,
+        world.resource::<Towns>(),
+        world.resource::<Db>(),
+        params,
+        env,
+        lp,
+    );
+    let Some(Some(sat)) = sats.get(i) else {
+        return Vec::new();
+    };
+    sim_data::Need::ALL
+        .iter()
+        .zip(sat.iter())
+        .map(|(n, &v)| (format!("{n:?}").to_lowercase(), v))
+        .collect()
+}
+
 /// Mean satisfaction per need by town, if the needs ladder is on.
 fn needs_by_town(world: &World) -> Vec<Vec<f32>> {
     let Some(params) = world.get_resource::<crate::world::Params>() else {

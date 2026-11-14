@@ -108,6 +108,8 @@ pub struct CrowdUniform {
     /// Level of detail: figure-to-card distance, far cut-off, cross-fade band,
     /// tint by level (1) or not (0).
     pub lod: Vec4,
+    /// x: the selected person's slot, or -1 (inspect.rs); yzw unused.
+    pub selected: Vec4,
 }
 
 /// The level-of-detail distances (3D units) and switches.
@@ -263,12 +265,12 @@ fn crowd_mesh(n: usize) -> Mesh {
 /// The crowd entity, its material and buffers, and how many people they have
 /// room for.
 #[derive(Resource)]
-struct CrowdHandles {
-    entity: Entity,
-    material: Handle<CrowdMaterial>,
-    people: Handle<ShaderBuffer>,
-    targets: Handle<ShaderBuffer>,
-    capacity: usize,
+pub struct CrowdHandles {
+    pub entity: Entity,
+    pub material: Handle<CrowdMaterial>,
+    pub people: Handle<ShaderBuffer>,
+    pub targets: Handle<ShaderBuffer>,
+    pub capacity: usize,
 }
 
 /// The terrain heightmap and its placement, for the walking (set by main.rs
@@ -286,7 +288,7 @@ pub struct CrowdTerrain {
 /// in one tick is reused only from the next one, so the GPU sees it empty for at
 /// least a frame and the next person in it appears at their goal.
 #[derive(Resource, Default)]
-struct Slots {
+pub struct Slots {
     of: HashMap<u32, usize>,
     free: Vec<usize>,
     cooling: Vec<usize>,
@@ -295,6 +297,11 @@ struct Slots {
 }
 
 impl Slots {
+    /// Who is in this slot (agent store index), if anyone.
+    pub fn id_of(&self, slot: usize) -> Option<u32> {
+        self.of.iter().find(|(_, &s)| s == slot).map(|(&id, _)| id)
+    }
+
     /// Bring the slots up to date with the people of a new tick: free the slots
     /// of those who are gone (reusable from the next tick), give newcomers one.
     fn assign(&mut self, ids: &[u32]) {
@@ -352,6 +359,7 @@ fn spawn_crowd(
             crowd: CrowdUniform {
                 toon: ToonUniform::default(),
                 lod: LodSettings::default().uniform(),
+                selected: Vec4::new(-1.0, 0.0, 0.0, 0.0),
             },
             people: people.clone(),
             fog: FOG_BUFFER,
@@ -611,14 +619,24 @@ fn update_crowd_material(
     keys: Res<ButtonInput<KeyCode>>,
     mut lod: ResMut<LodSettings>,
     mut materials: ResMut<Assets<CrowdMaterial>>,
+    selected: Res<crate::inspect::Selected>,
+    slots: Res<Slots>,
+    mut lit: Local<Option<f32>>,
 ) {
     if keys.just_pressed(KeyCode::KeyK) {
         lod.show = !lod.show;
     }
-    if !toon.is_changed() && !lod.is_changed() {
+    // The selected person's slot (it stays the same while they live).
+    let slot = selected
+        .0
+        .and_then(|id| slots.of.get(&id))
+        .map_or(-1.0, |&s| s as f32);
+    if !toon.is_changed() && !lod.is_changed() && *lit == Some(slot) {
         return;
     }
+    *lit = Some(slot);
     for (_, m) in materials.iter_mut() {
+        m.extension.crowd.selected.x = slot;
         m.extension.crowd.lod = lod.uniform();
         m.extension.crowd.toon.debug.y = toon.on as u32 as f32;
         m.extension.crowd.toon.rim.x = if toon.rim { 1.0 } else { 0.0 };

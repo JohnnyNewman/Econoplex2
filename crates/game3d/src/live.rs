@@ -87,6 +87,10 @@ struct Shared {
     text_orders: Vec<String>,
     /// The town the view wants explained (the "why" view), if any.
     why_town: Option<u16>,
+    /// The person the view inspects (store index), and what the simulation
+    /// last said about them (after every tick, and at once on a new choice).
+    inspect: Option<u32>,
+    person: Option<Arc<sim_core::view::PersonInfo>>,
     /// History samples since the view last took them.
     samples: Vec<Sample>,
     /// Orders the simulation could not parse, with the reason.
@@ -155,6 +159,8 @@ impl LiveSim {
             text_orders: Vec::new(),
             samples: Vec::new(),
             why_town: None,
+            inspect: None,
+            person: None,
             errors: Vec::new(),
             quit: false,
             env: Arc::new(sim.world.resource::<sim_core::env::Environment>().clone()),
@@ -198,6 +204,21 @@ impl LiveSim {
         std::mem::take(&mut self.shared.lock().unwrap().errors)
     }
 
+    /// Inspect this person (store index), or nobody.
+    pub fn inspect(&self, id: Option<u32>) {
+        let mut s = self.shared.lock().unwrap();
+        if s.inspect != id {
+            s.inspect = id;
+            s.person = None;
+        }
+    }
+
+    /// The inspected person, as the simulation last described them.
+    pub fn person(&self) -> (Option<u32>, Option<Arc<sim_core::view::PersonInfo>>) {
+        let s = self.shared.lock().unwrap();
+        (s.inspect, s.person.clone())
+    }
+
     /// Ask the simulation to explain this town after each tick (or stop).
     pub fn explain(&self, town: Option<u16>) {
         self.shared.lock().unwrap().why_town = town;
@@ -232,7 +253,23 @@ fn run(sim: &mut Simulation, shared: &Mutex<Shared>, mut seen: sim_core::view::S
     let mut next = Instant::now();
     // The town last explained, so a new choice is explained even while paused.
     let mut explained: Option<u16> = None;
+    // The person last described, and at which tick.
+    let mut described: Option<(u32, u64)> = None;
     loop {
+        // The inspector: describe the chosen person after every tick, and at
+        // once when the choice changes (also while paused).
+        let want = shared.lock().unwrap().inspect;
+        let tick = sim.world.resource::<sim_core::SimClock>().tick;
+        if let Some(id) = want {
+            if described != Some((id, tick)) {
+                described = Some((id, tick));
+                let info = sim_core::view::person(&sim.world, id).map(Arc::new);
+                let mut s = shared.lock().unwrap();
+                if s.inspect == Some(id) {
+                    s.person = info;
+                }
+            }
+        }
         let (speed, paused, orders, texts, quit) = {
             let mut s = shared.lock().unwrap();
             (

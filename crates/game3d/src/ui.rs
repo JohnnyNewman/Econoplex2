@@ -88,6 +88,7 @@ fn panels(
     mut highlight: ResMut<WhyHighlight>,
     mut cams: Query<&mut WorldCamera>,
     hidden: Res<UiHidden>,
+    mut selected: ResMut<crate::inspect::Selected>,
 ) -> Result {
     if hidden.0 {
         return Ok(());
@@ -495,9 +496,121 @@ fn panels(
             ));
         });
 
+    person_window(ctx, &live, &snap, &mut selected);
+
     capture.pointer = ctx.egui_wants_pointer_input() || ctx.is_pointer_over_egui();
     capture.keyboard = ctx.egui_wants_keyboard_input();
     Ok(())
+}
+
+/// The "Person" panel: the selected person as the simulation describes them
+/// (inspect.rs). Household members are buttons that select them.
+fn person_window(
+    ctx: &egui::Context,
+    live: &LiveSim,
+    snap: &sim_core::view::ViewSnapshot,
+    selected: &mut crate::inspect::Selected,
+) {
+    let (Some(id), info) = live.person() else {
+        return;
+    };
+    let mut open = true;
+    let mut pick: Option<Option<u32>> = None;
+    egui::Window::new("Person")
+        .id(egui::Id::new("person"))
+        .open(&mut open)
+        .default_pos([12.0, 120.0])
+        .default_width(260.0)
+        .show(ctx, |ui| {
+            let Some(p) = info else {
+                ui.label(format!("#{id}: no longer alive, or being looked up..."));
+                return;
+            };
+            let town = snap
+                .towns
+                .get(p.town as usize)
+                .map_or("?", |t| t.name.as_str());
+            ui.heading(format!(
+                "#{} · {} · {:.0} years · {}",
+                p.id,
+                if p.female { "woman" } else { "man" },
+                p.age_years,
+                town
+            ));
+            let doing = match &p.job {
+                Some(job) if p.activity == "working" => format!("works: {job}"),
+                Some(job) => format!("{} (last worked: {job})", p.activity),
+                None => p.activity.clone(),
+            };
+            ui.label(doing);
+            ui.label(format!("wealth {:.1}", p.wealth));
+            if !p.needs.is_empty() {
+                ui.separator();
+                ui.strong("Needs");
+                egui::Grid::new("person-needs")
+                    .num_columns(2)
+                    .show(ui, |ui| {
+                        for (need, v) in &p.needs {
+                            ui.label(need);
+                            ui.add(
+                                egui::ProgressBar::new(v.clamp(0.0, 1.0))
+                                    .desired_width(140.0)
+                                    .text(format!("{:.0} %", v * 100.0)),
+                            );
+                            ui.end_row();
+                        }
+                    });
+            }
+            let list = |ui: &mut egui::Ui, title: &str, items: &[(String, f32)]| {
+                if items.is_empty() {
+                    return;
+                }
+                ui.separator();
+                ui.strong(title);
+                for (name, q) in items {
+                    ui.label(format!("{q:.1} {name}"));
+                }
+            };
+            list(ui, "Larder", &p.larder);
+            list(ui, "Household goods", &p.owned);
+            if !p.gear.is_empty() {
+                ui.separator();
+                ui.strong("Equipment");
+                for (slot, item) in &p.gear {
+                    ui.label(format!("{slot}: {item}"));
+                }
+            }
+            ui.separator();
+            ui.strong("Household");
+            let mut member = |ui: &mut egui::Ui, label: &str, who: u32| {
+                ui.horizontal(|ui| {
+                    ui.label(label);
+                    if ui.small_button(format!("#{who}")).clicked() {
+                        pick = Some(Some(who));
+                    }
+                });
+            };
+            if let Some(partner) = p.partner {
+                member(ui, "partner", partner);
+            }
+            if let Some((a, b)) = p.parents {
+                member(ui, "parent", a);
+                member(ui, "parent", b);
+            }
+            for &c in &p.children {
+                member(ui, "child", c);
+            }
+            if p.partner.is_none() && p.parents.is_none() && p.children.is_empty() {
+                ui.label("lives alone");
+            }
+        });
+    if !open {
+        pick = Some(None);
+    }
+    if let Some(who) = pick {
+        selected.0 = who;
+        live.inspect(who);
+    }
 }
 
 /// The history series a chart can show.
