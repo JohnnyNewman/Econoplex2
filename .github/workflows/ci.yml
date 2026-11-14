@@ -47,3 +47,11 @@ jobs:
         run: cargo test --workspace --locked
       - name: CLI smoke test
         run: cargo run --locked -p sim_cli -- --years 2
+      - name: Tech tree chart is current
+        run: |
+          cargo run --locked -p sim_cli -- --tech-tree > /tmp/tech-tree.mmd
+          diff -u docs/tech-tree.mmd /tmp/tech-tree.mmd || {
+            echo "docs/tech-tree.mmd is out of date: run"
+            echo "  cargo run -p sim_cli -- --tech-tree > docs/tech-tree.mmd"
+            exit 1
+          }
