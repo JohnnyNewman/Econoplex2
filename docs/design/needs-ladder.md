@@ -276,3 +276,36 @@ after 5 years, Ladder towns have fewer woodcutters (Greenvale none, against 17 %
 of workers with Features), fewer fields and less farming in Ironhold (49 %
 against 66 %). Next: find which term undervalues wood and fields (pay that the
 price ceiling caps; no value yet for the town-wide need for firewood).
+
+### Why ladder decisions starve more, and what helps (2026-11-14)
+
+`examples/jobs_audit [years] [seed] [path=value ...]` shows what each job pays
+and how many take it. At seed 42, year 3, Ironhold, with ladder decisions:
+baking pays 17 a day but the two bakeries hold only 15 people (bread at its
+price ceiling), flour and grain sit at their price floor (milling 0.20,
+farming 0.88), and the rest crowd into woodcutting at 0.66. Ladder decisions
+follow pay, so a price system that does not pass the bread shortage back to
+flour, grain and new bakeries hurts them more than the feature weights.
+
+Two principled fixes, both off by default for now:
+- `market.pricing: Demand(..)` (already there): an input's target stock is
+  what the trades that use it need, so a busy bakery raises flour's price.
+- `market.building_value: Marginal(payback_days, max_factor)` (new): while a
+  town's buildings of a type are full, another is worth its slots times how
+  much more its best job pays than the town's typical job, over the payback
+  days. Without the "full" condition towns overbuild (Ironhold: 101 buildings).
+
+6 seeds x 20 years on main (kit for soldiers on):
+
+| decisions | pricing | buildings | pop | starving |
+| --- | --- | --- | --- | --- |
+| Features | StockTarget | Load (default) | 1140 | 0.88 % |
+| Features | Demand | Load | 1143 | 0.82 % |
+| Features | Demand | Marginal(10, 1) | 1121 | 0.90 % |
+| Ladder | StockTarget | Load | 980 | 2.76 % |
+| Ladder | Demand | Load | 1275 | 1.30 % |
+| Ladder | Demand | Marginal(10, 1) | 1220 | 1.27 % |
+
+With Ladder + Demand + Marginal as defaults, five tests fail: the first year
+loses 7 % of its people (before the first harvest), government orders and
+caravans move less, and workshops (as firms) collapse.

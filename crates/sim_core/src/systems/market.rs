@@ -147,6 +147,41 @@ pub fn settle(
                     };
                     continue;
                 }
+                if let (
+                    crate::config::BuildingValue::Marginal {
+                        payback_days,
+                        max_factor,
+                    },
+                    true,
+                ) = (mp.building_value, town.building_count(p as u32) > 0)
+                {
+                    // The town's typical pay: the median over the jobs that pay.
+                    let mut paid: Vec<f32> =
+                        town.pay_rate.iter().copied().filter(|&x| x > 0.0).collect();
+                    let typical = if paid.is_empty() {
+                        0.0
+                    } else {
+                        let mid = paid.len() / 2;
+                        *paid.select_nth_unstable_by(mid, f32::total_cmp).1
+                    };
+                    let best = db
+                        .recipes
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, m)| m.building == Some(p as u32))
+                        .map(|(r, _)| town.pay_rate.get(r).copied().unwrap_or(0.0))
+                        .fold(0.0f32, f32::max);
+                    let slots = db.content.products[p].slots.max(1) as f32;
+                    // New places only earn while the ones the town has are full.
+                    let full = town.building_load[p] >= mp.build_threshold;
+                    let gain = if full {
+                        slots * (best - typical).max(0.0) * payback_days
+                    } else {
+                        0.0
+                    };
+                    town.price[p] = gain.min(base * max_factor);
+                    continue;
+                }
                 town.price[p] = if town.building_count(p as u32) == 0 {
                     base * mp.new_building_appeal
                 } else {

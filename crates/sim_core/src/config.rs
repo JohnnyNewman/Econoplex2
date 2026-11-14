@@ -380,6 +380,20 @@ pub enum ScarcityCap {
     Loosen { rate: f32, max_factor: f32 },
 }
 
+/// What another building of a type a town already has is worth to it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+pub enum BuildingValue {
+    /// Base price while the buildings are nearly full (`build_threshold`) and
+    /// their goods sell above base price (the old rule).
+    #[default]
+    Load,
+    /// What its places would earn: while the town's buildings of the type are
+    /// full (`build_threshold`), its slots times how much more its best job
+    /// pays than the town's typical job, over `payback_days`, at most
+    /// `max_factor` times base price. Workers build what pays back.
+    Marginal { payback_days: f32, max_factor: f32 },
+}
+
 /// How a market counts its tools and weapons.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ItemStock {
@@ -477,6 +491,9 @@ pub struct MarketParams {
     pub build_threshold: f32,
     /// Price, as a share of base price, a town offers for a building type it lacks.
     pub new_building_appeal: f32,
+    /// What a town pays for another building of a type it has.
+    #[serde(default)]
+    pub building_value: BuildingValue,
     /// Plots of new land (fields, woodlots) each town can still open up.
     pub free_land: u32,
     /// A town opens new land when its sites of a kind are this depleted on average.

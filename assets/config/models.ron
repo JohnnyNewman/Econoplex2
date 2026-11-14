@@ -311,6 +311,10 @@
         // Construction: a town pays for a new building when the ones it has are this full.
         build_threshold: 0.75,
         new_building_appeal: 0.3,
+        // Another building of a type the town has: Load (old rule: base price
+        // while nearly full) or Marginal(payback_days, max_factor): what its
+        // places would earn above the town's typical pay.
+        building_value: Load,
         // Land: towns clear fields and plant woodlots when theirs are worn down.
         free_land: 6,
         land_threshold: 0.7,

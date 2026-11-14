@@ -383,6 +383,8 @@ fn legacy(p: &mut sim_core::config::ModelParams) {
     p.market.food_rules = sim_core::granary::FoodRules::Town;
     p.time.work_hours = sim_core::env::WorkHours::AllDay;
     p.market.item_stock = sim_core::config::ItemStock::Counted;
+    p.market.pricing = sim_core::config::Pricing::StockTarget;
+    p.market.building_value = sim_core::config::BuildingValue::Load;
 }
 
 fn sim_legacy(seed: u64) -> Simulation {
