@@ -402,3 +402,14 @@ town's poorer jobs (the lower quartile) for the work.
 
 8 seeds x 20 years: population 1713 -> 1724, starving 0.43 % -> 0.32 %, food
 per head 4.7 -> 5.3. Over 30 years food per head is 5.37 (health band raised).
+
+## Savings as months of security (plan Phase 2.3)
+
+The savings need is now: how many months of the lower needs (food, a share of
+the fire, clothes wearing out, rent) the household could pay for at today's
+prices from its coin and stores, scored ln(1 + months) / ln(13): 0.27 at one
+month, 0.54 at three, 0.76 at six, 1 at twelve. With a larder target, half the
+need is still food at home. Work is valued by the same slope (what one more
+coin adds to the months). `savings_days` is gone.
+
+8 seeds x 30 years: population 2376, starving 0.28 %, food per head 6.1.
