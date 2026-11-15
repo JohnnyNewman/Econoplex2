@@ -98,8 +98,7 @@ pub struct ProductDef {
     /// essential, everything else a commodity.
     #[serde(default)]
     pub price_class: Option<PriceClass>,
-    /// Households use it: with `market.consumption: Basket` and no goods listed
-    /// there, every good that says so is in the household basket.
+    /// Households use it: the needs it serves (see `HouseholdDef`).
     #[serde(default)]
     pub household: Option<HouseholdDef>,
     /// Weight of one unit, kg (for carrying).
@@ -137,24 +136,11 @@ fn one_kg() -> f32 {
     1.0
 }
 
-/// How households use a good (see `sim_core::consumption`).
+/// How households use a good (see `sim_core::ladder`).
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct HouseholdDef {
-    /// Units a household of median income and middling taste wants to hold.
-    pub want: f32,
     /// Days a unit lasts.
     pub life_days: f32,
-    /// Mind dimension (by name) that makes an agent want more of it.
-    #[serde(default)]
-    pub taste: Option<String>,
-    /// How much more richer households want (overrides the basket's
-    /// `elasticity`): above 1 for luxuries.
-    #[serde(default)]
-    pub elasticity: Option<f32>,
-    /// A luxury bought only from spare money: a household buys it only while
-    /// its wealth is at least this many times its town's median.
-    #[serde(default)]
-    pub min_wealth: Option<f32>,
     /// The needs it serves (with `market.consumption: Needs`), and how much.
     #[serde(default)]
     pub serves: Vec<Serves>,
