@@ -221,8 +221,16 @@ mod tests {
         // 25 days of bread, flour for 10 days of baking, grain for 90 of milling.
         let per_day = s[bread] / 25.0;
         assert!(per_day > 300.0 * 0.12, "{per_day}");
-        assert!((s[flour] - per_day * 0.5 * 10.0).abs() < 1e-2, "{}", s[flour]);
-        assert!((s[grain] - per_day * 0.5 * 90.0).abs() < 1e-1, "{}", s[grain]);
+        assert!(
+            (s[flour] - per_day * 0.5 * 10.0).abs() < 1e-2,
+            "{}",
+            s[flour]
+        );
+        assert!(
+            (s[grain] - per_day * 0.5 * 90.0).abs() < 1e-1,
+            "{}",
+            s[grain]
+        );
         // It scales with the town: an outpost of one gets a three-hundredth.
         assert!((s1[bread] * 300.0 - s[bread]).abs() < 1e-2);
     }
