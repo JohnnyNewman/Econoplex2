@@ -221,6 +221,10 @@ pub struct Town {
     pub raid: Option<Raid>,
     /// No new raid before this tick.
     pub raid_ready: u64,
+    /// The largest army among the towns a road leads to (soldiers), recounted
+    /// at each muster; kit is kept to match it (`military::kit_reserve`).
+    #[serde(default)]
+    pub threat: f32,
     /// Food stock yesterday and its daily change, averaged over about two months.
     pub food_last: f32,
     pub food_trend: f32,
@@ -674,6 +678,7 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
             squad: Vec::new(),
             raid: None,
             raid_ready: 0,
+            threat: 0.0,
             food_last: 0.0,
             food_trend: 0.0,
             starving: 0,

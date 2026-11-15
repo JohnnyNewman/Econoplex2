@@ -581,6 +581,23 @@ pub struct MilitaryParams {
     /// back should take.
     #[serde(default = "default_ration_margin")]
     pub ration_margin: f32,
+    /// How a town decides to raid on its own.
+    #[serde(default)]
+    pub decision: WarDecision,
+}
+
+/// How a town decides to raid on its own (an ordered raid always goes).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum WarDecision {
+    /// Every muster, weigh each neighbour: forecast the fight by simulating it,
+    /// what the survivors could carry home and any tribute, against wages and
+    /// rations for the trip and the soldiers expected to die (a year's pay
+    /// each). March on the best one worth it, unless snow or a storm says wait.
+    #[default]
+    Planner,
+    /// A daily draw on `raid_appetite` x the soldiers' temper, at the richest
+    /// neighbour beaten by `raid_margin`. The old rule.
+    Appetite,
 }
 
 fn default_ration_margin() -> f32 {

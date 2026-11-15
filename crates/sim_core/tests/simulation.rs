@@ -417,6 +417,7 @@ fn old_war(p: &mut sim_core::config::ModelParams) {
     p.military.kit_demand = sim_core::config::KitDemand::PerCapita;
     p.military.battles = sim_core::config::BattleModel::Roll;
     p.military.march = sim_core::config::MarchModel::Fixed;
+    p.military.decision = sim_core::config::WarDecision::Appetite;
 }
 
 fn sim_legacy(seed: u64) -> Simulation {

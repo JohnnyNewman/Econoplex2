@@ -372,6 +372,9 @@
         battles: Field,
         march: Weather,
         ration_margin: 1.25,       // rations for 1.25 times the expected trip
+        // Planner: raid when a simulated fight says the haul beats wages, rations
+        // and the expected dead; Appetite: the old random draw.
+        decision: Planner,
     ),
     // Squad battles on a field (battle.rs, war redesign): every number has a unit.
     // Not wired into the economy yet; `econoplex-sim --battle "cavalry*20 vs spearmen*30"`
