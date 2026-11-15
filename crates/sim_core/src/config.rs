@@ -434,7 +434,7 @@ pub struct MarketParams {
     /// How the market counts tools and weapons in stock.
     #[serde(default)]
     pub item_stock: ItemStock,
-    /// Who keeps the town fed: town-wide rules, or the ruler (`granary.rs`).
+    /// Who keeps the town fed: the ruler (`granary.rs`).
     #[serde(default)]
     pub food_rules: crate::granary::FoodRules,
     /// Spoilage in a granary, as a share of the market's.
@@ -889,15 +889,14 @@ pub struct GovernorParams {
     pub max_loan_share: f32,
     /// Highest profit tax a governor sets (steps of `income_tax_step`).
     pub max_profit_tax: f32,
-    /// With `market.food_rules: Ruler`: days of food the granary aims to hold.
+    /// Days of food the granary aims to hold.
     #[serde(default = "granary_days")]
     pub granary_days: f32,
     /// Days over which food made and eaten are averaged for the forecast.
     #[serde(default = "forecast_days")]
     pub forecast_days: f32,
-    /// With `market.food_rules: Ruler`: a governor treats the town as hungry
-    /// while its food in store would last fewer days than this at the
-    /// forecast's rate.
+    /// A governor treats the town as hungry while its food in store would
+    /// last fewer days than this at the forecast's rate.
     #[serde(default = "food_horizon_days")]
     pub food_horizon_days: f32,
 }

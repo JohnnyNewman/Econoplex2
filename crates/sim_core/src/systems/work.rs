@@ -520,7 +520,7 @@ pub fn produce(
             store.worked_today[w as usize] = Some(r);
         }
         let day = (workers.len() as f32).powf(params.work.work_exponent);
-        task.progress += if outdoor_share != 1.0 && db.outdoor[task.recipe as usize] {
+        task.progress += if db.outdoor[task.recipe as usize] {
             day * outdoor_share
         } else {
             day

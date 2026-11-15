@@ -52,12 +52,10 @@ fn one() -> u32 {
 /// Hours of outdoor work (fields, forests, mines, building, clearing land).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum WorkHours {
-    /// A full working day all year, whatever the light (the old model).
-    #[default]
-    AllDay,
     /// Outdoor work goes on while it is light: a day's work at the equinox,
     /// two thirds of it in midwinter (8 hours against 12), a third more in
     /// midsummer. Indoor work keeps a full day.
+    #[default]
     Daylight,
 }
 
@@ -74,7 +72,7 @@ impl Default for TimeParams {
             year_starts_at: spring(),
             day_length: DayLength::default(),
             economy_days_per_day: 1,
-            work_hours: WorkHours::AllDay,
+            work_hours: WorkHours::Daylight,
         }
     }
 }
@@ -458,7 +456,6 @@ pub fn run_economy(world: &mut World) {
 /// day). Indoor jobs always get 1.
 pub fn outdoor_work_share(env: &Environment, time: &TimeParams) -> f32 {
     match time.work_hours {
-        WorkHours::AllDay => 1.0,
         WorkHours::Daylight => {
             ((env.sunset - env.sunrise) / time.day_length.equinox_hours.max(1.0)).max(0.0)
         }

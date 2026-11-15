@@ -58,7 +58,8 @@ conflict the ladder brings out; growing it is for the rulers (steps 6 and 7).
 
 ## Seasons in farming (step 6)
 
-`farming: Seasonal(...)` (off by default, `farming.rs`): crops (fields, flax,
+`farming: Seasonal(...)` (`farming.rs`; then off by default, now the only
+farming model, see below): crops (fields, flax,
 pasture) grow with the day's mean temperature (none below 4 °C, full from
 14 °C), scaled so a year grows what the old daily rule did. A season's growth
 stands in the field (`crop_capacity` × capacity) until reaped; frost damages
@@ -78,7 +79,8 @@ the ruler's levers is step 7.
 
 ## Food as the ruler's challenge (step 7, first part)
 
-`market.food_rules: Ruler` (off by default, `granary.rs`) drops the two
+`market.food_rules: Ruler` (`granary.rs`; then off by default, now the only
+food rule, see below) drops the two
 town-wide food rules: seed grain is no longer held back unless the ruler orders
 it (`reserve TOWN on`), and people are no longer drawn to farm by the town's
 food scarcity, only by pay. New lever: `granary TOWN DAYS`, food the town keeps
@@ -103,7 +105,7 @@ and the player's farm town is too easy to make the challenge felt.
 
 ### Food planner (step 7b)
 
-Under `Ruler` rules a governor now forecasts: food made and eaten per day,
+A governor now forecasts: food made and eaten per day,
 averaged over a year (`governor.forecast_days`, from the goods ledger), and the
 days its market and granary food would last at that rate. Below
 `food_horizon_days` (90) it acts as if hungry (food subsidies, imports, a new
@@ -332,3 +334,15 @@ the Load building value.
 The `Features` and `Utility` decision models have since been removed
 (agent-decisions.md); `Ladder` is the only one. Under a consumption model
 other than `Needs` it reads the ladder's default parameters.
+
+## The old farming, food and work rules removed (2026-11-15)
+
+Seasonal farming, the ruler's food rules and daylight work are the defaults
+(since 2026-11-13), and the rules before them are now gone: `farming: AllYear`
+(every nature site regrows the same amount every day), `market.food_rules:
+Town` (seed grain always held back) and `time.work_hours: AllDay` (a full
+outdoor working day all year). `Seasonal`, `Ruler` and `Daylight` are the only
+variants left: the seed reserve is the ruler's order (`reserve TOWN on`), and
+a governor always forecasts its food, takes stock on the first day, holds the
+seed back and keeps a granary. The "Town rules" rows in the tables above are
+the record of how the old food rules ran.
