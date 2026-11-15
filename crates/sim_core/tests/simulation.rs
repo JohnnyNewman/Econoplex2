@@ -235,7 +235,7 @@ fn households_migrate_and_carry_their_skills() {
 
 #[test]
 fn food_comes_first_and_gluts_stop_production() {
-    let mut s = sim(3);
+    let mut s = sim_legacy(3);
     let dpy = s.world.resource::<sim_core::SimClock>().days_per_year;
     for _ in 0..dpy {
         s.step();
@@ -421,6 +421,7 @@ fn legacy(p: &mut sim_core::config::ModelParams) {
     p.market.pricing = sim_core::config::Pricing::StockTarget;
     p.market.building_value = sim_core::config::BuildingValue::Load;
     p.decision.model = sim_core::config::DecisionModel::Features;
+    p.start = sim_core::start::StartParams::Scenario;
 }
 
 /// The war rules these tests were calibrated with: weapons stocked per
@@ -1017,7 +1018,7 @@ fn a_higher_wage_share_pays_makers_more() {
     let wages = |order: Option<&str>| -> f64 {
         (8..12)
             .map(|seed| {
-                let mut s = full(seed);
+                let mut s = full_legacy(seed);
                 if let Some(o) = order {
                     s.order(o).unwrap();
                 }
