@@ -134,8 +134,9 @@ members, place, kit); `eats_from` says where a person eats (their squad while
 marching, else their home); `carry_capacity` says what a holder can carry
 (squads: 25 kg per member for now; goods have `kg` in the content).
 
-`market.item_stock: Held` (off) makes the market's count of tools and weapons
-what its armory holds; the old count kept weapons carried by soldiers in stock.
+`market.item_stock: Held` makes the market's count of tools and weapons what
+its armory holds; the old count (`Counted`, removed 2026-11-15) kept weapons
+carried by soldiers in stock.
 6 seeds x 20 years: pop 1918 -> 1913, swords 1373 -> 1332, raids 27.7 -> 22.5.
 
 ## Stacks (step 2b-2)
@@ -299,7 +300,7 @@ Two principled fixes, both off by default for now:
 
 | decisions | pricing | buildings | pop | starving |
 | --- | --- | --- | --- | --- |
-| Features | StockTarget | Load (default) | 1140 | 0.88 % |
+| Features | StockTarget | Load (then the default; both since removed) | 1140 | 0.88 % |
 | Features | Demand | Load | 1143 | 0.82 % |
 | Features | Demand | Marginal(10, 1) | 1121 | 0.90 % |
 | Ladder | StockTarget | Load | 980 | 2.76 % |

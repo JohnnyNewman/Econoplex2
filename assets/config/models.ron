@@ -176,13 +176,10 @@
         // day (up to max_factor x base); otherwise it falls back. Example:
         // scarcity_cap: Loosen(rate: 0.01, max_factor: 50.0),
         scarcity_cap: Fixed,
-        // StockTarget: every good aims for a fixed stock per resident. Demand(...):
-        // goods used as inputs aim for cover_days of their trades' daily use plus
-        // what profitable trades held up only by their shortage would use
-        // (blocked_workers workers each); final goods keep the per-resident target.
-        // Example: pricing: Demand(cover_days: 10.0, blocked_workers: 2.0),
-        // Default since 2026-11-14: inputs priced by what trades use (derived
-        // demand). Before: pricing: StockTarget,
+        // Demand(...): goods used as inputs aim for cover_days of their trades'
+        // daily use plus what profitable trades held up only by their shortage
+        // would use (blocked_workers workers each); final goods aim for the
+        // per-resident target, food for both.
         pricing: Demand(cover_days: 10.0, blocked_workers: 2.0),
         // Who buys output and pays wages. Treasury: the town market buys every
         // output and pays its makers from the treasury. Workshops(...): each
@@ -204,8 +201,7 @@
         // (seed held back, farming drawn by scarcity); Ruler leaves it to the
         // ruler's levers and the granary (order `granary TOWN DAYS`).
         food_rules: Ruler,
-        // Tools and weapons in stock: Counted (old rule; weapons soldiers carry
-        // stay counted) or Held (what the armory holds).
+        // Tools and weapons in stock: Held (what the armory holds).
         item_stock: Held,
         granary_spoilage: 0.25,
         // The needs ladder (ladder.rs, step 4 of the economy redesign): households
@@ -267,9 +263,8 @@
         // Construction: a town pays for a new building when the ones it has are this full.
         build_threshold: 0.75,
         new_building_appeal: 0.3,
-        // Another building of a type the town has: Load (old rule: base price
-        // while nearly full) or Marginal(payback_days, max_factor): what its
-        // places would earn above the town's typical pay.
+        // Another building of a type the town has: Marginal(payback_days,
+        // max_factor): what its places would earn above the town's typical pay.
         building_value: Marginal(payback_days: 10.0, max_factor: 1.0),
         // Land: towns clear fields and plant woodlots when theirs are worn down.
         free_land: 6,
