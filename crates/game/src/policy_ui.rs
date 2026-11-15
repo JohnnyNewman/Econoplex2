@@ -91,7 +91,10 @@ fn subsidizable(db: &Db) -> Vec<usize> {
         .collect()
 }
 
-pub fn spawn_policy_panel(mut commands: Commands) {
+pub fn spawn_policy_panel(
+    mut commands: Commands,
+    column: Single<Entity, With<crate::hud::RightColumn>>,
+) {
     let font = TextFont {
         font_size: FontSize::Px(13.0),
         ..default()
@@ -142,14 +145,13 @@ pub fn spawn_policy_panel(mut commands: Commands) {
             });
         };
 
-    commands
+    // In the right-hand column under the inspector (hud.rs), at full height.
+    let panel = commands
         .spawn((
             Node {
-                position_type: PositionType::Absolute,
-                right: Val::Px(8.0),
-                bottom: Val::Px(56.0),
                 padding: UiRect::all(Val::Px(8.0)),
                 flex_direction: FlexDirection::Column,
+                flex_shrink: 0.0,
                 ..default()
             },
             BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.7)),
@@ -233,7 +235,9 @@ pub fn spawn_policy_panel(mut commands: Commands) {
                 button(r, "place", Action::Place);
                 value(r, Field::Commissions, 90.0);
             });
-        });
+        })
+        .id();
+    commands.entity(*column).add_child(panel);
 }
 
 /// Turn button presses into orders for the player's town.
@@ -616,6 +620,9 @@ mod tests {
         let mut app = App::new();
         app.add_plugins((MinimalPlugins, ButtonPlugin));
         sim_core::world::setup(app.world_mut(), db, params, &scenario);
+        // The panel goes into the right-hand column (hud.rs).
+        app.world_mut()
+            .spawn((Node::default(), crate::hud::RightColumn));
         app.insert_resource(PolicyCursor::default())
             .insert_resource(Placing::default())
             .add_systems(Startup, spawn_policy_panel)

@@ -84,14 +84,14 @@ pub fn spawn_reports(mut commands: Commands) {
         .spawn((
             Node {
                 position_type: PositionType::Absolute,
-                left: Val::Percent(34.0),
+                left: Val::Px(660.0),
                 top: Val::Px(8.0),
-                max_width: Val::Px(560.0),
+                max_width: Val::Px(600.0),
                 padding: UiRect::all(Val::Px(8.0)),
                 flex_direction: FlexDirection::Column,
                 ..default()
             },
-            BackgroundColor(Color::srgba(0.02, 0.03, 0.02, 0.93)),
+            BackgroundColor(Color::srgba(0.02, 0.03, 0.02, 0.97)),
             Visibility::Hidden,
             // Above the other panels, which it may cover while open.
             GlobalZIndex(10),
