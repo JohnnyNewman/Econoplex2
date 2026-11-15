@@ -334,6 +334,26 @@ town lose a third and the world keep 90 %. Tests calibrated to the old models
 pin them with `legacy()`, which now also sets Features, StockTarget pricing and
 the Load building value.
 
+## Steady-state start (plan Phase 2.1)
+
+`start: Steady(food_days, input_days, raw_days)` (default; `start.rs`) starts
+every town as if its economy had been running, with amounts worked out from the
+recipes, needs and population (so they hold for an outpost of one household as
+for a town of 300):
+
+- Market food: `food_days` (25) of what the residents eat. A person eats a whole
+  loaf when hunger passes the threshold, so about 0.2 loaves a day, not 0.12.
+- Pipelines: walking each food recipe back, inputs for `input_days` (10) of the
+  work that uses them (flour), goods harvested from nature for `raw_days` (90:
+  grain to the next harvest, oven wood).
+- Households: the larder target (`larder_days` of food), fuel for the planning
+  days at the year's mean temperature for each home, and the clothes people
+  can wear.
+
+For 300 people: about 1,600 bread, 320 flour, 2,900 grain, 1,450 wood. Over 4
+seeds and 15 years, the year-2 famine falls to about a third (starving samples
+66 against 197 with the scenario's stock), but year 2 is still the worst year:
+the labour shortage in milling and baking (food audit) is Phase 2.2.
 The `Features` and `Utility` decision models have since been removed
 (agent-decisions.md); `Ladder` is the only one. Under a consumption model
 other than `Needs` it reads the ladder's default parameters.

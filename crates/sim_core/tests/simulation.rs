@@ -232,7 +232,7 @@ fn households_migrate_and_carry_their_skills() {
 
 #[test]
 fn food_comes_first_and_gluts_stop_production() {
-    let mut s = sim(3);
+    let mut s = sim_bare(3);
     let dpy = s.world.resource::<sim_core::SimClock>().days_per_year;
     for _ in 0..dpy {
         s.step();
@@ -397,6 +397,27 @@ fn coworkers_come_to_trust_each_other() {
         .towns;
     assert!(stats.iter().all(|t| t.trust > 0.0));
     assert_eq!(stats.len(), towns.0.len());
+}
+
+/// `sim` / `full` with only the scenario's stock at the start (no steady-state
+/// start), for tests calibrated to it.
+fn sim_bare(seed: u64) -> Simulation {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    params.start = sim_core::start::StartParams::Scenario;
+    scenario.seed = seed;
+    for t in &mut scenario.towns {
+        t.population = 60;
+    }
+    Simulation::new(db, params, &scenario)
+}
+
+fn full_bare(seed: u64) -> Simulation {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    params.start = sim_core::start::StartParams::Scenario;
+    scenario.seed = seed;
+    Simulation::new(db, params, &scenario)
 }
 
 fn full(seed: u64) -> Simulation {
@@ -950,7 +971,7 @@ fn a_higher_wage_share_pays_makers_more() {
     let wages = |order: Option<&str>| -> f64 {
         (8..12)
             .map(|seed| {
-                let mut s = full(seed);
+                let mut s = full_bare(seed);
                 if let Some(o) = order {
                     s.order(o).unwrap();
                 }
@@ -1141,6 +1162,8 @@ fn a_hungry_town_subsidizes_food_then_winds_it_down() {
 fn a_broke_town_raises_taxes_and_mints() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     let (db, mut params, scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    // Calibrated with only the scenario\'s stock at the start.
+    params.start = sim_core::start::StartParams::Scenario;
     params.market.starting_coins = 0.0;
     let mut s = Simulation::new(db, params, &scenario);
     for _ in 0..150 {
@@ -1164,6 +1187,8 @@ fn governors_do_not_swing_back_and_forth() {
     // 24 changes and changes a subsidy 129 times, about three a year.)
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    // Calibrated with only the scenario\'s stock at the start.
+    params.start = sim_core::start::StartParams::Scenario;
     scenario.seed = 2;
     for t in &mut scenario.towns {
         t.population = 60;
@@ -1329,6 +1354,8 @@ fn valuing_skills_draws_the_young_into_work_they_are_still_learning() {
     let learning_share = |learning: LearningValueParams, seed: u64| {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
         let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+        // Calibrated with only the scenario\'s stock at the start.
+        params.start = sim_core::start::StartParams::Scenario;
         scenario.seed = seed;
         params.decision.learning = learning;
         // Posted pay stays on: on the needs ladder a job is worth its pay, and
@@ -2049,6 +2076,8 @@ fn a_hungry_broke_town_imports_food_on_credit_and_recovers() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     let run = |imports: bool, seed: u64| {
         let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+        // Calibrated with only the scenario\'s stock at the start.
+        params.start = sim_core::start::StartParams::Scenario;
         scenario.seed = seed;
         params.governor.enabled = false;
         // With two fields, as before the seasonal harvest, the town now feeds
