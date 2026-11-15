@@ -332,10 +332,10 @@ pub fn run(
             .map(|j| results[j].values())
             .collect();
         let n = rows.len() as f64;
-        let mean: Vec<f64> = (0..16)
+        let mean: Vec<f64> = (0..COLUMNS.len())
             .map(|k| rows.iter().map(|r| r[k]).sum::<f64>() / n)
             .collect();
-        let sd: Vec<f64> = (0..16)
+        let sd: Vec<f64> = (0..COLUMNS.len())
             .map(|k| (rows.iter().map(|r| (r[k] - mean[k]).powi(2)).sum::<f64>() / n).sqrt())
             .collect();
         print!("{:<width$}", label(c));
