@@ -400,3 +400,38 @@ and carries the egui panels, which stay sharp. The help text is drawn with the
 CPU-bound (about 5.3 ms) and doesn't change. With a throttled GPU the pixel work
 dominates, which is what this option is for. At 1 (default) nothing changes.
 
+## Rules for many things (2026-11-15)
+
+The game is heading for grand-strategy scale: many kinds of things (unit
+types, building styles per culture, crops, banners) and many copies of each
+(armies, carts, livestock, distant towns). The 3D view's frame is limited by
+Bevy's CPU work per drawn entity and per material, not by the GPU
+(see the render-pipeline explainer and docs/profiling.md). So:
+
+1. **Many copies of a thing are a buffer and one draw, never an entity each.**
+   The crowd is the model: about 1,500 people are one entity, a storage
+   buffer and a compute shader (`crowd.rs`, `walk.wesl`). Armies, soldiers in
+   a battle, carts and animals follow it: the CPU hands over one small record
+   per squad (or per soldier), the GPU places, animates and draws them.
+2. **Things that share a look share one material.** A material instance per
+   thing makes Bevy build and switch a bind group per thing and stops it from
+   batching. Put per-thing data in a buffer the shader indexes (the grass:
+   one blade buffer, each vertex carries its blade's index; baked buildings:
+   one white material, colours as vertex colours). Where things really need
+   different textures or parameters, make the material bindless
+   (`#[bindless]` on `AsBindGroup`) from the start.
+3. **Far things are merged.** A town's houses are one mesh (`spawn_houses`);
+   distant towns and armies should become one cheap mesh, an impostor or a
+   banner with a number.
+4. **Work that repeats every frame goes on the GPU; one-off generation stays on
+   the CPU.** Animation, sway, walking, fog, lights: GPU. Baking meshes,
+   placing trees and grass, day plans: CPU, once or when something changes.
+   The simulation itself stays on the CPU (it must be deterministic); the GPU
+   only shows it.
+5. **Values that change every frame live in the shared buffer**
+   (`fog::FOG_BUFFER`, `struct Env`), never in a material: a changed material
+   is uploaded and re-specialised, and its meshes re-bounded.
+6. **Meshes whose shader moves their vertices carry their own bounds and
+   `NoAutoAabb`.** Otherwise Bevy recomputes the bounds from the mesh when the
+   entity appears and frustum culling drops it. This is what hid all the grass
+   from some upgrade until 2026-11-15.
