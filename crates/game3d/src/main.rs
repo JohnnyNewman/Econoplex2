@@ -1,9 +1,9 @@
-//! Econoplex 3D view: a first prototype for the graphics/UI subproject (see
+//! Econoplex 3D view, the graphics/UI subproject (see
 //! docs/design/graphics-ui.md). It builds a world from the seed with
 //! `sim_core::worldgen` and shows it as a stylised 3D landscape: procedural
 //! terrain coloured by biome, rivers, scattered trees, and each town as a cluster
 //! of low-poly houses, under a procedural sky (shader step 01) with distance fog
-//! and bloom. It only reads the scenario; the simulation itself does not run yet.
+//! and bloom. The simulation runs behind it on its own thread (see `live.rs`).
 //!
 //! econoplex3d [--seed S] [--towns N] [--hour H] [--pbr] [--terrain-view N] [--grid-step K]
 //!     [--fog-view N] [--no-fog] [--days N] [--speed 0-8] [--paused] [--trade] [--culture] [--product-space] [--bloom-view] [--focus-town I] [--focus X,Z] [--view-from YAW,PITCH,DIST]

@@ -34,6 +34,9 @@ flowchart LR
     p_brick["Brick"]
     p_masons_yard[["Mason's yard"]]
     p_kiln[["Kiln"]]
+    p_bow["Bow"]
+    p_shield["Shield"]
+    p_padded_coat["Padded coat"]
   end
   subgraph era2["2 Bronze"]
     p_shears["Shears"]
@@ -41,6 +44,8 @@ flowchart LR
     p_tin["Tin"]
     p_bronze["Bronze"]
     p_bronze_spear["Bronze spear (lvl 1)"]
+    p_horse["Horse"]
+    p_stable[["Stable"]]
     p_silver["Silver"]
     p_mint[["Mint"]]
     p_coin(("Coin"))
@@ -60,6 +65,9 @@ flowchart LR
     p_longsword_1["Iron longsword (lvl 1)"]
     p_longsword_2["Steel longsword (lvl 2)"]
     p_longsword_3["Fine steel longsword (lvl 3)"]
+    p_iron_spear["Iron spear (lvl 2)"]
+    p_lance["Lance"]
+    p_mail["Mail shirt"]
     p_plough["Iron plough"]
   end
   subgraph era4["4 Early industry"]
@@ -90,6 +98,7 @@ flowchart LR
   n_flax_field --> p_flax
   n_forest --> p_wood
   n_ore_vein --> p_ore
+  n_pasture --> p_horse
   n_pasture --> p_wool
   n_quarry --> p_stone
   n_silver_vein --> p_silver_ore
@@ -105,6 +114,7 @@ flowchart LR
   p_clay --> p_kiln
   p_clay --> p_pot
   p_cloth --> p_clothes
+  p_cloth --> p_padded_coat
   p_coal --> p_coke
   p_coke --> p_iron
   p_coke --> p_steel
@@ -119,6 +129,7 @@ flowchart LR
   p_flour --> p_bread
   p_grain --> p_ale
   p_grain --> p_flour
+  p_grain --> p_horse
   p_hilt --> p_longsword_1
   p_hilt --> p_longsword_2
   p_hilt --> p_longsword_3
@@ -128,8 +139,11 @@ flowchart LR
   p_iron --> p_coin
   p_iron --> p_hammer
   p_iron --> p_iron_blade
+  p_iron --> p_iron_spear
+  p_iron --> p_lance
   p_iron --> p_machine_parts
   p_iron --> p_machine_shop
+  p_iron --> p_mail
   p_iron --> p_pickaxe
   p_iron --> p_plough
   p_iron --> p_sickle
@@ -164,6 +178,7 @@ flowchart LR
   p_masons_yard -.-> p_cut_stone
   p_mint -.-> p_coin
   p_roller_mill -.-> p_flour
+  p_stable -.-> p_horse
   p_textile_mill -.-> p_cloth
   p_textile_mill -.-> p_yarn
   p_weaving_shed -.-> p_cloth

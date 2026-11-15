@@ -5,6 +5,12 @@ This describes the market as the code runs it with the default `models.ron`
 consumption). The optional variants are summarised at the end. The numbers come
 from a run with seed 42 at the end of year 10.
 
+**Status (2026-11-14):** the defaults have moved on since this was written. Prices
+now follow demand (`pricing: Demand`), households consume by the needs ladder
+(`consumption: Needs`), caravans use `Balance` and building value is `Marginal`.
+The town market is still the only firm (`firms: Treasury`). Read the sections on
+stock-target pricing and "no household consumption" as history.
+
 ## Who holds what
 
 - **Each town has one market.** Its stock (`Town::stock`) is the town's warehouse,

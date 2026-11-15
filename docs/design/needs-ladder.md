@@ -1,7 +1,7 @@
 # Needs ladder
 
 Step 4 of the economy redesign (items, time, needs). Code: `crates/sim_core/src/ladder.rs`.
-Off by default: `market.consumption: Needs(...)` (example in models.ron).
+On by default since 2026-11-13: `market.consumption: Needs(...)` and `decision.model: Ladder` in models.ron.
 
 ## Model
 

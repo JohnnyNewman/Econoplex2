@@ -1,22 +1,32 @@
 # Econoplex
 
-An RTS prototype where every unit is an economic agent. Skills, minds, bodies and
+A strategy game where every person is an economic agent. Skills, minds, bodies and
 needs are vectors, so production, learning, decisions and culture become linear
 algebra over thousands of agents. Inspired by agent-based modelling and Hidalgo's
 economic complexity: capabilities live in people, spread through apprenticeship,
 and towns diversify along the product space.
 
-This is the first prototype: a headless simulation core plus a simple Bevy 2D view.
+You rule one town among several. Nothing is scripted: prices, trades, wars and
+migration all follow from what people need, what they can do and what their town
+holds. You steer with the same levers the AI governors use (taxes, subsidies,
+schools, armies, buildings) and the people respond.
+
+The repository holds a headless simulation, a command line tool to run and measure
+it, and two clients on the same simulation: a 3D view (`game3d`) and a simpler 2D
+view (`game`) that doubles as a test bench.
 
 ## Quick start
 
-Requires Rust 1.85 or newer.
+Requires Rust 1.97.1 or newer.
 
 ```bash
-# The game (Bevy 2D view)
+# The 3D client (generated world, live simulation, day and night, weather)
+cargo run --release -p game3d
+
+# The 2D client (policy panel, economy panel, product space)
 cargo run --release -p game
 
-# Start the game from a save (F5 quicksaves to saves/quicksave.bin, F9 loads it)
+# Start the 2D client from a save (F5 quicksaves to saves/quicksave.bin, F9 loads it)
 cargo run --release -p game -- --load game.ron
 
 # Headless: 30 years, metrics per year
@@ -40,19 +50,49 @@ cargo run --release -p sim_cli -- --years 25 --order "0:immigration Greenvale en
 cargo run --release -p sim_cli -- --years 10 --save game.ron
 cargo run --release -p sim_cli -- --load game.ron --years 5
 
+# Fight one battle, or the same battle on 200 seeds for win rates
+cargo run --release -p sim_cli -- --battle "cavalry*20 vs spearmen*30"
+cargo run --release -p sim_cli -- --battle "swordsmen*45,archers*20 vs walls spearmen*30" --seeds 200
+
+# Event log, monthly history and weather as CSV
+cargo run --release -p sim_cli -- --years 10 --events events.csv --history history.csv --weather weather.csv
+
 # The product space derived from the skill graph
 cargo run --release -p sim_cli -- --embedding
 
-# The technology tree as a Mermaid flowchart (docs/tech-tree.mmd, rendered in docs/tech-tree.png)
-cargo run --release -p sim_cli -- --tech-tree
+# The technology tree as a Mermaid flowchart (kept in docs/tech-tree.mmd; CI checks it is current)
+cargo run --release -p sim_cli -- --tech-tree > docs/tech-tree.mmd
+
+# The final state hash, for determinism checks
+cargo run --release -p sim_cli -- --years 5 --hash
 
 # Tests (content validation, models, determinism)
 cargo test --release
 ```
 
-The first build compiles Bevy and takes a while.
+The first build compiles Bevy and takes a while. `econoplex-sim --help` lists every
+option and order.
 
-### Game controls
+### 3D client controls
+
+| Key | Action |
+| --- | --- |
+| W A S D | Move the camera |
+| Q / E | Turn the camera |
+| Mouse wheel | Zoom |
+| Home | Back to the starting view |
+| Space | Pause |
+| , and . | Slower and faster |
+| Left click | Inspect a person or a town |
+| Esc | Deselect |
+| V | Cycle the map overlays (trade, culture, product space) |
+| H | Show or hide the panels |
+
+The options of `econoplex3d` (seed, number of towns, season, weather, screenshots)
+are listed at the top of `crates/game3d/src/main.rs`.
+The shader work behind the look is written up step by step in `docs/shaders/`.
+
+### 2D client controls
 
 | Key | Action |
 | --- | --- |
@@ -87,7 +127,8 @@ that takes effect the next day.
 | `sim_data` | Content model (skills, products, recipes, nature) loaded from RON, validation, skill embedding |
 | `sim_core` | Headless simulation on `bevy_ecs`: agent vector store, entities, tick pipeline, pluggable models, metrics |
 | `sim_cli` | `econoplex-sim`: run N years headless, print metrics, export CSV, inspect the embedding |
-| `game` | `econoplex`: Bevy app that runs the simulation in `FixedUpdate` and renders it |
+| `game` | `econoplex`: 2D Bevy client that runs the simulation in `FixedUpdate` and renders it |
+| `game3d` | `econoplex3d`: 3D client (terrain, towns, crowds, day and night, weather, battles) and the shader playground |
 
 All tunable data lives in `assets/`:
 
@@ -95,6 +136,30 @@ All tunable data lives in `assets/`:
   alphabetically; later files can add or override entries by id (the modding hook).
 - `assets/config/models.ron`: every formula constant, plus which model variant to use.
 - `assets/config/scenario.ron`: towns, populations, land, buildings, seed.
+
+Design notes for the larger systems are in `docs/design/`: the needs ladder, agent
+decisions, the town market, firms, time and weather, and graphics and UI.
+
+### Which models run by default
+
+Most systems can be switched between variants in `models.ron`. These are the ones
+that shape a default run:
+
+| System | Default | What it means |
+| --- | --- | --- |
+| Decisions (`decision.model`) | `Ladder` | People choose by what improves their needs most |
+| Consumption (`market.consumption`) | `Needs` | Households buy food, clothes, firewood and a home to fill nine needs on five rungs |
+| Prices (`market.pricing`) | `Demand` | Prices follow how many days of demand the stock covers |
+| Firms (`market.firms`) | `Treasury` | The town market buys all output and pays wages from the treasury |
+| Building value (`market.building_value`) | `Marginal` | A new building is worth what it would add |
+| Food rules (`market.food_rules`) | `Ruler` | The ruler sets how much food is held back |
+| Trade (`market.caravans`) | `Balance` | Caravans carry goods from where they are cheap to where they are dear |
+| Farming (`farming`) | `Seasonal` | Crops are sown and harvested by season, with frost and rot |
+| Climate and weather (`climate`, `weather`) | `Seasonal`, `Fronts` | A year has seasons, and weather fronts cross the map |
+| Working day (`time.work_hours`) | `Daylight` | People work while it is light |
+| Battles (`military.battles`) | `Field` | Squads with their own kit, skill and morale fight on a field |
+| Marching (`military.march`) | `Weather` | Rain and snow slow an army |
+| Kit (`military.kit_demand`) | `Soldiers` | Towns want weapons and armour for the soldiers they have |
 
 ## How the simulation works
 
@@ -118,7 +183,7 @@ between two skills counts shared prerequisites, so the product space falls out o
 geometry.
 
 Capability vectors are sized at load time: one dimension per skill, rounded up to a
-multiple of 8 (37 skills give 40 dimensions), so the product space stays exact however
+multiple of 8, so the product space stays exact however
 far the content grows. `embedding.dims` in `models.ron` can set a size instead. With
 fewer dimensions than skills, NMF compresses the space while keeping vectors
 nonnegative. A save records its dimension and is refused if the game now uses another.
@@ -128,12 +193,12 @@ earlier fixed 32-wide arrays), 7.8 ms at 40 and 9.0 ms at 64.
 
 ### The technology tree
 
-![Technology tree](docs/tech-tree.png)
+The full chart is [docs/tech-tree.mmd](docs/tech-tree.mmd), written by
+`econoplex-sim --tech-tree` (GitHub draws it when you open the file).
 
 The content (`assets/content/*.ron`) spans five eras: **wood and grain**, **stone,
-clay and cloth**, **bronze**, **iron and steel**, and **early industry**. It has 37
-skills in 13 domains, 47 goods, 14 workplaces, 71 recipes and 11 kinds of natural
-resource:
+clay and cloth**, **bronze**, **iron and steel**, and **early industry**. Each file
+adds skills, goods, workplaces, recipes and natural resources:
 
 | File | Adds |
 | --- | --- |
@@ -173,12 +238,17 @@ workshop. Validation checks that every good and building can be made from natura
 resources and starter buildings, through recipes whose inputs and buildings can
 themselves be made. `econoplex-sim --tech-tree` prints the tree as a Mermaid chart.
 
-### One tick = one day
+### A day in the simulation
+
+A day is cut into `time.ticks_per_day` ticks (12 by default). The economy runs on
+the first tick of the day; the other ticks move the hours and the weather on. A year
+is 120 days by default, so generations show in short runs. Each day runs these steps
+in order:
 
 | Step | What happens |
 | --- | --- |
-| sense | Hunger rises; agents buy and eat the best food in their town, leaving the mills' grain reserve alone; health, fatigue and happiness update |
-| decide | Each idle adult scores a sample of open jobs and resting: utility = (bias + Wm·mind + Ws·state) · features, softmax with temperature. Jobs fill up: nature, inputs and building slots limit how many can take each one |
+| sense | Hunger, cold and fatigue rise; households eat from their larder and buy what their needs call for at the town market; health and happiness update |
+| decide | Each idle adult weighs a sample of open jobs and resting by how much each would improve their needs (the needs ladder, `docs/design/needs-ladder.md`). Jobs fill up: nature, inputs and building slots limit how many can take each one |
 | assign | Agents choosing the same job form teams; inputs and nature are reserved; task entities spawn; children join a working parent |
 | produce | Teams pool capabilities (element-wise max minus coordination cost); success = sigmoid(k·(effective − difficulty)); quality is the weakest link of step and inputs. The town buys the output and pays wages from its treasury; finished construction becomes a new building |
 | learn | Practice with diminishing returns; master-to-apprentice diffusion along the skill direction only |
@@ -191,11 +261,10 @@ themselves be made. `econoplex-sim --tech-tree` prints the tree as a Mermaid cha
 | lifecycle | Aging and Gompertz mortality, bequests, partnering by mind affinity, births with genetic inheritance |
 | metrics | Yearly: diversity, RCA, economic complexity index, specialization, culture |
 
-Decision features are `[value, skill, effort, novelty, social, need]`. Value is a job's
-profit relative to the average job the town offers, so oversupplied trades lose
-appeal. Skills are never inherited: children of smiths become smiths only by working
-next to their parents. The need feature counts a job's food potential, so milling and
-cutting wood for the bakery help against hunger too, not only farming and baking.
+The needs ladder has nine needs on five rungs: food, warmth and rest; shelter, health
+and savings; belonging; esteem; growth. A higher rung only starts to matter once the
+rungs below are mostly met. Skills are never inherited: children of smiths become
+smiths only by working next to their parents.
 
 ### Money
 
@@ -288,9 +357,11 @@ year 40 on others. Greenvale has no ore and must trade or conquer to compete. Le
 ### Food
 
 Grain becomes flour in the mills, and flour and wood become bread in the bakeries.
-Eaten as bread, a harvest feeds about six times as many people as eaten raw. Fields
-and forests regrow at a fixed rate, so every town has a ceiling. Three rules keep
-towns from crashing into it:
+Eaten as bread, a harvest feeds about six times as many people as eaten raw. Crops
+follow the seasons: fields, flax and pasture grow through the warm months and are
+harvested before winter, frost costs part of a standing crop, and stored food rots
+faster when it is wet. A town therefore has to carry its harvest through the winter.
+Three rules keep towns from crashing into their ceiling:
 
 - **Gluts stop production.** Nobody makes a good once the town holds `glut_factor`
   times its target stock. Mills stop turning edible grain into flour the bakeries
@@ -330,18 +401,25 @@ can enter a new line of work. Construction recipes live in
 Every town keeps a squad of up to `soldier_share` of its adults, as many as its
 treasury can pay for a month. Recruits are the most ambitious, risk-loving and
 physically strong idle adults. Soldiers stop working, are paid `soldier_pay` a day,
-take the best longsword in the armory, and learn the Fighting skill by drilling.
+take the best weapons and armour in the armory, and learn the Fighting skill by drilling.
 
 A town whose squad is `raid_margin` times stronger than a neighbor's defense (its
 soldiers at home plus a small militia strength per adult) may raid it, more often
-when its soldiers are ambitious and risk-loving. The squad marches across the map,
-fights on arrival (win chance A^k / (A^k + D^k)), and both sides lose fighters in
-proportion to the enemy's strength. A winning raid takes `loot_share` of the
-defender's treasury at once and carries the same share of its stores home. It also
-takes `captive_share` of the defender's idle adults (at most `captives_per_soldier`
-per surviving soldier), who march home with the squad and then live and work in the
-captor's town. Fallen fighters die, so their skills die with them; captives take
-theirs to the winner. All of this is in the `military` section of `models.ron`.
+when its soldiers are ambitious and risk-loving. The squad marches along the road,
+slower in rain and snow, and fights on arrival.
+
+A battle is fought between squads on a field (`battle.rs`). Each squad has a kit
+(spearmen, swordsmen, archers, cavalry, levy, heavy infantry, horse archers), a
+size, skill and morale. Kits counter each other, and a squad that loses heart breaks
+before it is wiped out. `econoplex-sim --battle` fights any line-up directly, and
+with `--seeds N` reports win rates, which is how the battle model is tuned.
+
+A winning raid takes `loot_share` of the defender's treasury at once and carries the
+same share of its stores home. It also takes `captive_share` of the defender's idle
+adults (at most `captives_per_soldier` per surviving soldier), who march home with
+the squad and then live and work in the captor's town. Fallen fighters die, so their
+skills die with them; captives take theirs to the winner. The settings are in the
+`military` and `battle` sections of `models.ron`.
 
 ### Conquest
 
@@ -571,6 +649,7 @@ the mean and spread per setting; `--csv` writes every run.
 The tick schedule runs single-threaded in a fixed order, every system draws from its
 own RNG stream derived from the seed and tick, and nothing iterates hash maps. Same
 seed, same state hash (`econoplex-sim --hash`, and the `same_seed_same_state` test).
+The hash covers everything a save file holds.
 
 ### Saving
 
@@ -585,42 +664,38 @@ about 12,000 agents is roughly 20 MB and loads in under a second.
 
 ## What a 30-year run shows
 
-With the default scenario (four towns, 1,200 agents), the population roughly doubles
-over 30 years and keeps growing to about 3,500 by year 40, while the money supply stays
-fixed. Over 40-year runs on eight seeds, nobody starved after the towns cleared their
-free land.
-Towns specialize differently from identical rules: Ironhold and Brassmoor, with ore, a
-furnace and a smithy, become sword makers with the highest complexity scores.
-Greenvale, without a smithy, becomes the breadbasket with the lowest score and buys
-its sickles from the smiths. Timberwick builds the most (more mills and bakeries,
-and its own smithy). Level-3 longswords stay rare. The sword towns field the
-largest squads and raid their neighbors every year or two, mostly successfully, and
-carry off a few captives each time. Crushing wins make tributaries, which
-usually rise up again within a few years; one town rarely rules all the others. A few percent of each town's people move every
-year, more of them toward towns with food to spare.
+With the default scenario (four towns, 1,200 people) on eight seeds, the population
+grows to about 1,500 over 30 years. People spend about 1.2% of their days starving,
+most of it in a famine in the second year, when the starting stores are used up
+before production has found its level. Towns hold about two days of food per head
+at year end and make about 24 different goods each.
 
-Performance on one core: about 1.7 ms per tick at 2,000 agents. With `--scale 42`
-(50,400 agents at the start, 63,000 after 15 years) a tick takes 40 ms in the first
-years and 55 ms on average over 15 years, well inside the 250 ms a 4 Hz game needs.
-`--profile` shows the split: choosing jobs takes about a quarter, forming teams,
-producing and the yearly life cycle about an eighth each.
+Towns specialize differently from identical rules: the towns with ore, a furnace and
+a smithy become the weapon makers with the highest complexity scores, and the town
+without a smithy becomes the breadbasket and buys its tools. The weapon towns field
+the largest squads and raid their neighbors. Crushing wins make tributaries, which
+usually rise up again within a few years; one town rarely rules all the others. A
+few percent of each town's people move every year, more of them toward towns with
+food to spare.
 
-## Known limitations of this prototype
+`--profile` shows where the time goes, and `docs/profiling.md` has measurements.
 
-- The town treasury is the only buyer of production; there are no private firms,
-  and weapons still pile up in town armories.
-- Prices are in fixed nominal terms, so a growing population with a fixed money
-  supply means lower wealth per person rather than lower prices.
+## Known limitations
+
+- Food is not yet secure: every town goes hungry in its second year, and the food
+  reserve is days where it should be months.
+- The town treasury is the only buyer of production. Workshops that pay from their
+  own sales exist behind a switch (`docs/design/firms.md`) but are not in use.
+- People choose a job afresh each day. There are no careers yet.
+- Belonging and esteem are held at a neutral value until there are goods and
+  institutions that serve them.
+- Money is stored as floating point numbers.
+- Battles are decided squad by squad. Individual soldiers, formations and terrain on
+  the battlefield are not simulated, and walls do not yet count.
+- A conquered town keeps its own people and economy and only pays tribute. There is
+  no exploration and no founding of new towns.
 - Buildings never wear out or get demolished.
-- War has raids and conquest but no sieges or occupation: a conquered town keeps its
-  own people and economy and only pays tribute. A squad fights as one block with no
-  tactical movement, and captives become ordinary townspeople at once.
-- Migration only looks at the agent's latest trade, not at everything they could do.
 - Terrain is fixed: roads are not built or improved, and rivers cannot be bridged.
-- Each town's land is a fixed budget of plots that it uses up early. Opening land does
-  not yet follow population growth, and towns never turn forest into fields or the
-  other way round.
-- Agent slots are never reused, so memory grows with births.
-- `days_per_year` is 120 so generations are visible in short runs.
-
-See the roadmap document for the next phases.
+- Each town's land is a fixed budget of plots that it uses up early.
+- The 2D client does not yet show everything the 3D client does.
+- A year is 120 days so generations are visible in short runs.
