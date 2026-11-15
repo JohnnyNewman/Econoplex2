@@ -621,7 +621,8 @@ Prices are now a swappable module (`sim_core::pricing`, `market.*` in models.ron
 The defaults keep the legacy rule, so the default state hash is unchanged.
 
 - **Targets** (`market.pricing`):
-  - `StockTarget` (legacy): a fixed stock per resident.
+  - `StockTarget` (legacy): a fixed stock per resident. Removed 2026-11-15;
+    `Demand` is the only rule.
   - `Demand(cover_days, blocked_workers)`: goods used as inputs aim for `cover_days`
     of their trades' daily use, plus what profitable trades held up only by their
     shortage would use. Final goods keep the per-resident target; food gets both.
