@@ -177,7 +177,10 @@ pub struct Town {
     pub stock: Vec<f32>,
     pub quality: Vec<f32>,
     pub price: Vec<f32>,
-    pub treasury: f32,
+    pub treasury: crate::coin::Coin,
+    /// All the coin this town's mints have struck, to the unit.
+    #[serde(default)]
+    pub minted: crate::coin::Coin,
     /// (building product def, entity, position)
     pub buildings: Vec<(u32, Entity, (f32, f32))>,
     pub nature_sites: Vec<Entity>,
@@ -457,7 +460,7 @@ impl Town {
             crate::policy::Minting::Off => false,
             crate::policy::Minting::Auto => {
                 let n = self.residents.len().max(1) as f32;
-                self.treasury < mp.mint_below_per_capita * n
+                self.treasury.coins() < mp.mint_below_per_capita * n
                     || (mp.mint_money_per_capita > 0.0
                         && self.money_per_capita < mp.mint_money_per_capita)
             }
@@ -478,16 +481,22 @@ pub struct Towns(pub Vec<Town>);
 /// All money in the world: agents' wealth plus town treasuries. Every transfer
 /// moves money between these, so this stays constant over a run.
 pub fn total_money(store: &AgentStore, towns: &Towns) -> f64 {
-    let agents: f64 = (0..store.len())
+    total_coin(store, towns).coins_f64()
+}
+
+/// All the money there is, to the unit: what living people hold, the
+/// treasuries and the firms' cash.
+pub fn total_coin(store: &AgentStore, towns: &Towns) -> crate::coin::Coin {
+    let agents: crate::coin::Coin = (0..store.len())
         .filter(|&i| store.alive[i])
-        .map(|i| store.wealth[i] as f64)
+        .map(|i| store.wealth[i])
         .sum();
-    agents
-        + towns
-            .0
-            .iter()
-            .map(|t| t.treasury as f64 + t.firms.iter().map(|f| f.cash as f64).sum::<f64>())
-            .sum::<f64>()
+    let towns: crate::coin::Coin = towns
+        .0
+        .iter()
+        .map(|t| t.treasury + t.firms.iter().map(|f| f.cash).sum::<crate::coin::Coin>())
+        .sum();
+    agents + towns
 }
 
 /// Choices made in the decide step, consumed by assign.
@@ -648,7 +657,8 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
             stock,
             quality: vec![0.5; np],
             price: db.base_price.clone(),
-            treasury: params.market.starting_coins,
+            treasury: crate::coin::Coin::from_coins(params.market.starting_coins),
+            minted: crate::coin::Coin::ZERO,
             buildings,
             nature_sites,
             armory: Vec::new(),
@@ -800,7 +810,7 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
                     aptitude: rng.random_range(0.6..1.4),
                     parents: None,
                     target,
-                    wealth: 20.0,
+                    wealth: crate::coin::Coin::from_coins(20.0),
                 },
                 age_years >= params.life.adult_age,
             );

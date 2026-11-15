@@ -550,7 +550,7 @@ pub fn daily(
         }
         let h = homes.holdings(store, i, &goods, lp);
         let short_c = (lp.comfort_c - (view.mean_c + lp.house_c + h.clothes)).max(0.0);
-        let mut sat = assess(store, i, &h, store.wealth[i], view, lp, db, false);
+        let mut sat = assess(store, i, &h, store.wealth[i].coins(), view, lp, db, false);
         sat[idx(Need::Warmth)] = w;
         let target = happiness(&sat, lp);
         let st = &mut store.state[i];
@@ -579,7 +579,7 @@ pub fn all(
                     store,
                     i,
                     &h,
-                    store.wealth[i],
+                    store.wealth[i].coins(),
                     &views[store.town[i] as usize],
                     lp,
                     db,
@@ -626,7 +626,7 @@ pub fn spend(
         for _ in 0..16 {
             let h = homes.holdings(store, i, &goods, lp);
             let now = score(
-                &assess(store, i, &h, store.wealth[i], view, lp, db, true),
+                &assess(store, i, &h, store.wealth[i].coins(), view, lp, db, true),
                 lp,
             );
             let town = &towns.0[t];
@@ -638,7 +638,7 @@ pub fn spend(
                 }
                 let p = g.good;
                 let price = town.price[p];
-                if price <= 0.0 || price > store.wealth[i] {
+                if price <= 0.0 || price > store.wealth[i].coins() {
                     continue;
                 }
                 let available = town.stock[p] >= 1.0
@@ -662,13 +662,31 @@ pub fn spend(
                 };
                 let h2 = homes.holdings_with(i, &owned, home, &goods, lp);
                 let after = score(
-                    &assess(store, i, &h2, store.wealth[i] - price, view, lp, db, true),
+                    &assess(
+                        store,
+                        i,
+                        &h2,
+                        store.wealth[i].coins() - price,
+                        view,
+                        lp,
+                        db,
+                        true,
+                    ),
                     lp,
                 );
                 // Fuel and home goods serve everyone at the hearth; the money
                 // is only the buyer's.
                 let saving_loss = score(
-                    &assess(store, i, &h, store.wealth[i] - price, view, lp, db, true),
+                    &assess(
+                        store,
+                        i,
+                        &h,
+                        store.wealth[i].coins() - price,
+                        view,
+                        lp,
+                        db,
+                        true,
+                    ),
                     lp,
                 ) - now;
                 let goods_gain = after - now - saving_loss;
@@ -684,13 +702,22 @@ pub fn spend(
                 for &(f, value) in &db.foods {
                     let f = f as usize;
                     let price = town.price[f];
-                    if price <= 0.0 || price > store.wealth[i] || town.stock[f] < 1.0 {
+                    if price <= 0.0 || price > store.wealth[i].coins() || town.stock[f] < 1.0 {
                         continue;
                     }
                     let mut h2 = h;
                     h2.extra_food = value;
                     let after = score(
-                        &assess(store, i, &h2, store.wealth[i] - price, view, lp, db, true),
+                        &assess(
+                            store,
+                            i,
+                            &h2,
+                            store.wealth[i].coins() - price,
+                            view,
+                            lp,
+                            db,
+                            true,
+                        ),
                         lp,
                     );
                     let gain = (after - now) / price;
@@ -706,9 +733,9 @@ pub fn spend(
                 let town = &mut towns.0[t];
                 let price = town.price[f];
                 town.stock[f] -= 1.0;
-                town.treasury += price;
+                town.treasury += crate::coin::Coin::from_coins(price);
                 town.ledger.add(crate::ledger::Flow::FoodSales, price);
-                store.wealth[i] -= price;
+                store.wealth[i] -= crate::coin::Coin::from_coins(price);
                 crate::decision::subsistence::store(
                     &mut store.larder[i],
                     f as u32,
@@ -731,12 +758,12 @@ pub fn spend(
             match firm {
                 Some(f) => {
                     town.firms[f].stock[p] -= 1.0;
-                    town.firms[f].cash += price;
+                    town.firms[f].cash += crate::coin::Coin::from_coins(price);
                     town.firms[f].book(crate::firms::FirmFlow::DirectSales, price);
                 }
                 None => {
                     town.stock[p] -= 1.0;
-                    town.treasury += price;
+                    town.treasury += crate::coin::Coin::from_coins(price);
                     town.ledger.add(crate::ledger::Flow::HouseholdGoods, price);
                 }
             }
@@ -746,7 +773,7 @@ pub fn spend(
             town.consumed_year.resize(np, 0.0);
             town.goods_today[p] += 1.0;
             town.consumed_year[p] += 1.0;
-            store.wealth[i] -= price;
+            store.wealth[i] -= crate::coin::Coin::from_coins(price);
             match store.owned[i].iter_mut().find(|e| e.0 as usize == p) {
                 Some(e) => e.1 += 1.0,
                 None => store.owned[i].push((p as u32, 1.0)),

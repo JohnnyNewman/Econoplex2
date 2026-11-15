@@ -373,11 +373,11 @@ pub fn record(
                 town: t as u16,
                 population: pop as u32,
                 food_per_capita: town.food_stock(&db) / pop.max(1) as f32,
-                treasury: town.treasury,
+                treasury: town.treasury.coins(),
                 mean_wealth: town
                     .residents
                     .iter()
-                    .map(|&i| store.wealth[i as usize])
+                    .map(|&i| store.wealth[i as usize].coins())
                     .sum::<f32>()
                     / pop.max(1) as f32,
                 soldiers: town.squad.len() as u32,

@@ -71,15 +71,17 @@ fn bequeath(store: &mut AgentStore, towns: &mut Towns, dead: &[usize]) {
         }
         match children.get(&(i as u32)) {
             Some(kids) if !kids.is_empty() => {
-                let share = w / kids.len() as f32;
+                // Equal shares; the units left over go to the eldest listed.
+                let (share, rest) = w.split(kids.len());
                 for &c in kids {
                     store.wealth[c] += share;
                 }
+                store.wealth[kids[0]] += rest;
             }
             _ => {
                 let town = &mut towns.0[store.town[i] as usize];
                 town.treasury += w;
-                town.ledger.add(crate::ledger::Flow::Estates, w);
+                town.ledger.add(crate::ledger::Flow::Estates, w.coins());
             }
         }
     }
@@ -269,7 +271,7 @@ pub fn lifecycle(
                 aptitude,
                 parents: Some((mother as u32, father as u32)),
                 target: store.target[mother],
-                wealth: 0.0,
+                wealth: crate::coin::Coin::ZERO,
             },
             false,
         );

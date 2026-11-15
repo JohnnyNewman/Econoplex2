@@ -196,7 +196,7 @@ pub fn job_capacity(
                     .map(|&(p, q)| town.price[p as usize] * q)
                     .sum();
                 if per_batch > 0.0 {
-                    let funds = f.cash.max(0.0) + params.market.firms.credit_room(f);
+                    let funds = f.cash.coins().max(0.0) + params.market.firms.credit_room(f);
                     cap = cap.min(funds / per_batch * m.duration);
                 }
             }
@@ -458,7 +458,7 @@ impl Choice<'_> {
                     town.food_stock(db),
                     town.residents.len(),
                     params.needs.hunger_per_day,
-                    store.wealth[i],
+                    store.wealth[i].coins(),
                     meal,
                     d.valuation.food_secure_days,
                 );
@@ -470,7 +470,7 @@ impl Choice<'_> {
         let rent = self.towns.0[t].rent * d.valuation.horizon_weight();
         let situation = valuation::Situation {
             state: &st,
-            wealth: (store.wealth[i] - rent).max(0.0),
+            wealth: (store.wealth[i].coins() - rent).max(0.0),
             median_wealth: self.median_wealth[t],
             weights: &weights,
         };
@@ -625,7 +625,7 @@ pub fn decide(
             let mut w: Vec<f32> = t
                 .residents
                 .iter()
-                .map(|&i| store.wealth[i as usize])
+                .map(|&i| store.wealth[i as usize].coins())
                 .collect();
             if w.is_empty() {
                 return 1.0;

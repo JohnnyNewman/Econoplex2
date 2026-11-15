@@ -571,12 +571,12 @@ pub fn apply_orders(
             } => {
                 let f = firm as usize;
                 if params.market.firms.on() && f < town.firms.len() {
-                    let amount = amount.min(town.treasury.max(0.0));
+                    let amount = amount.min(town.treasury.coins().max(0.0));
                     if amount > 0.0 {
-                        town.treasury -= amount;
+                        town.treasury -= crate::coin::Coin::from_coins(amount);
                         town.ledger.add(crate::ledger::Flow::LoansOut, amount);
                         let firm = &mut town.firms[f];
-                        firm.cash += amount;
+                        firm.cash += crate::coin::Coin::from_coins(amount);
                         firm.book(crate::firms::FirmFlow::Loans, amount);
                         firm.loans.push(crate::firms::Loan {
                             left: amount,

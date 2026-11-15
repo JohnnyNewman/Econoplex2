@@ -300,15 +300,16 @@ impl Ctx<'_> {
 
     fn treasury(&self, towns: &Towns) -> Option<Finding> {
         let reserve = self.params.market.mint_below_per_capita * self.pop();
-        if self.t.treasury >= reserve {
+        if self.t.treasury.coins() >= reserve {
             return None;
         }
         let mut f = Finding::new(
             format!(
                 "The treasury is low: {:.0}, a reserve would be {:.0}",
-                self.t.treasury, reserve
+                self.t.treasury.coins(),
+                reserve
             ),
-            0.4 + 0.5 * (1.0 - self.t.treasury / reserve.max(1.0)),
+            0.4 + 0.5 * (1.0 - self.t.treasury.coins() / reserve.max(1.0)),
         );
         let monthly = &self.t.ledger.monthly;
         let mut flows: Vec<(Flow, f32)> = Flow::ALL

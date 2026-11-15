@@ -447,7 +447,7 @@ pub fn update_policy_panel(
             Field::Title => format!(
                 "Your town: {}   treasury {:.0}{}",
                 town.name,
-                town.treasury,
+                town.treasury.coins(),
                 if let Some(b) = placing.0 {
                     format!(
                         "\nClick the map to place the {} (Esc cancels)",

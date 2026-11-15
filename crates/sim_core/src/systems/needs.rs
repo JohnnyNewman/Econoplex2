@@ -56,10 +56,10 @@ pub fn sense(
         store.worked_today[i] = None;
         if !matches!(store.activity[i], Activity::Child | Activity::Captive) {
             let town = &mut towns.0[store.town[i] as usize];
-            let pay = town.rent.min(store.wealth[i].max(0.0));
+            let pay = town.rent.min(store.wealth[i].coins().max(0.0));
             if pay > 0.0 {
-                store.wealth[i] -= pay;
-                town.treasury += pay;
+                store.wealth[i] -= crate::coin::Coin::from_coins(pay);
+                town.treasury += crate::coin::Coin::from_coins(pay);
                 town.ledger.add(crate::ledger::Flow::Rent, pay);
             }
         }
@@ -97,9 +97,9 @@ pub fn sense(
                         firm.stock[f] -= 1.0;
                         town.flows.add(crate::goods::Flow::Eaten, f, 1.0);
                         st[HUNGER] = (st[HUNGER] - value).max(0.0);
-                        let pay = town.price[f].min(store.wealth[i].max(0.0));
-                        store.wealth[i] -= pay;
-                        firm.cash += pay;
+                        let pay = town.price[f].min(store.wealth[i].coins().max(0.0));
+                        store.wealth[i] -= crate::coin::Coin::from_coins(pay);
+                        firm.cash += crate::coin::Coin::from_coins(pay);
                         firm.book(crate::firms::FirmFlow::DirectSales, pay);
                         town.consumed_year.resize(town.stock.len(), 0.0);
                         town.consumed_year[f] += 1.0;
@@ -117,9 +117,9 @@ pub fn sense(
                     town.consumed_year.resize(town.stock.len(), 0.0);
                     town.consumed_year[f] += 1.0;
                     st[HUNGER] = (st[HUNGER] - value).max(0.0);
-                    let pay = town.price[f].min(store.wealth[i].max(0.0));
-                    store.wealth[i] -= pay;
-                    town.treasury += pay;
+                    let pay = town.price[f].min(store.wealth[i].coins().max(0.0));
+                    store.wealth[i] -= crate::coin::Coin::from_coins(pay);
+                    town.treasury += crate::coin::Coin::from_coins(pay);
                     town.ledger.add(crate::ledger::Flow::FoodSales, pay);
                     break;
                 }
@@ -148,8 +148,8 @@ pub fn sense(
             // The needs ladder sets happiness (below).
             continue;
         }
-        let mut target =
-            0.7 - 0.5 * st[HUNGER] - 0.3 * st[FATIGUE] + 0.2 * (store.wealth[i] / 50.0).tanh();
+        let mut target = 0.7 - 0.5 * st[HUNGER] - 0.3 * st[FATIGUE]
+            + 0.2 * (store.wealth[i].coins() / 50.0).tanh();
         // Household goods make a home comfortable (see `consumption`).
         if let crate::consumption::ConsumptionParams::Basket { comfort_weight, .. } =
             &params.market.consumption

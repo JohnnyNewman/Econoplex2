@@ -6,6 +6,7 @@
 //! headless: the CLI runs it directly, the game runs it from Bevy's `FixedUpdate`.
 
 pub mod battle;
+pub mod coin;
 pub mod components;
 pub mod config;
 pub mod db;
@@ -42,6 +43,7 @@ pub mod price_index;
 pub mod pricing;
 pub mod view;
 pub mod worldgen;
+pub use coin::Coin;
 pub use config::{ModelParams, Scenario};
 pub use db::Db;
 pub use store::AgentStore;

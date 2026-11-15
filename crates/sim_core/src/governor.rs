@@ -121,7 +121,7 @@ pub fn govern(
         let st = &mut governors.towns[t];
         let pop = town.residents.len().max(1) as f32;
         let food = town.food_stock(&db) / pop;
-        let treasury = town.treasury / pop;
+        let treasury = town.treasury.coins() / pop;
         let (mut adults, mut idle) = (0usize, 0usize);
         for &i in &town.residents {
             let i = i as usize;
@@ -528,9 +528,9 @@ pub fn govern(
         }
 
         // --- credit: lend to a firm in a short trade, while the treasury is flush
-        if params.market.firms.on() && town.treasury > high * town.residents.len() as f32 {
+        if params.market.firms.on() && town.treasury.coins() > high * town.residents.len() as f32 {
             let lent = crate::firms::outstanding(&town.firms);
-            if lent + gp.loan_amount <= gp.max_loan_share * town.treasury {
+            if lent + gp.loan_amount <= gp.max_loan_share * town.treasury.coins() {
                 let short = |k: usize| {
                     db.recipes
                         .iter()
@@ -543,7 +543,7 @@ pub fn govern(
                 let pick = (0..town.firms.len())
                     .filter(|&k| {
                         let f = &town.firms[k];
-                        f.loans.is_empty() && f.cash < gp.loan_amount
+                        f.loans.is_empty() && f.cash.coins() < gp.loan_amount
                     })
                     .map(|k| (k, short(k)))
                     .filter(|&(_, s)| s >= gp.shortage_ratio)

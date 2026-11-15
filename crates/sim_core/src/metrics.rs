@@ -451,7 +451,7 @@ pub fn record(
         let n = s.population.max(1) as f32;
         s.trust = trust_sum / s.adults.max(1) as f32;
         s.trade_ties = same_trade as f32 / ties.max(1) as f32;
-        s.treasury = town.treasury;
+        s.treasury = town.treasury.coins();
         s.era = town_era(&db, &town.produced_last_year);
         {
             use crate::ledger::Group;
@@ -474,7 +474,7 @@ pub fn record(
             s.price_vol[k] = (v.mean(), v.p95());
         }
         s.cpi = indices[ti];
-        s.firm_cash = town.firms.iter().map(|f| f.cash).sum();
+        s.firm_cash = town.firms.iter().map(|f| f.cash.coins()).sum();
         s.firm_flows = crate::firms::last_year_totals(&town.firms);
         s.loans_outstanding = crate::firms::outstanding(&town.firms);
         s.loan_defaults = town.loan_defaults;
@@ -485,11 +485,11 @@ pub fn record(
         s.purchasing_power = 100.0 / indices[ti].fisher.max(1e-6);
         s.real_exchange_rate =
             crate::price_index::real_exchange_rate(&year_prices[ti].price, &world_p, &world_q);
-        let money = town.treasury
+        let money = town.treasury.coins()
             + town
                 .residents
                 .iter()
-                .map(|&i| store.wealth[i as usize])
+                .map(|&i| store.wealth[i as usize].coins())
                 .sum::<f32>();
         s.money_stock = money;
         // With no money (residents in debt for tools), velocity is undefined: 0.
@@ -505,7 +505,7 @@ pub fn record(
         s.mean_wealth = town
             .residents
             .iter()
-            .map(|&i| store.wealth[i as usize])
+            .map(|&i| store.wealth[i as usize].coins())
             .sum::<f32>()
             / n;
         s.ideology = ideo_sum.map(|v| v / n);
