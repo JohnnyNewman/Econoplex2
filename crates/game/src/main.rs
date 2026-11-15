@@ -1,8 +1,9 @@
 //! Econoplex: a simple 2D view of the economic simulation.
 //!
-//! The simulation lives in the same ECS world as the view. It advances one day per
-//! `FixedUpdate` step; the view attaches sprites to simulation entities and animates
-//! agents toward where they work.
+//! The simulation lives in the same ECS world as the view. Each `FixedUpdate`
+//! runs the economy steps that are due at the game speed (five minutes of
+//! real time a simulated day is about a step a second); the view attaches
+//! sprites to simulation entities and animates agents toward where they work.
 //!
 //! Controls: Space pause · 1-5 speed · WASD/arrows pan · mouse wheel zoom ·
 //! left click select agent · Esc deselect · P product space overlay ·
@@ -23,13 +24,23 @@ mod view;
 use bevy::prelude::*;
 use sim_core::AssetPaths;
 
-/// Speed steps in simulated days per second.
-pub const SPEEDS: [f64; 5] = [1.0, 4.0, 12.0, 30.0, 60.0];
+/// Game speeds in simulated days per real second: 5 minutes a day (about an
+/// economy step a second at the default `time.steps_per_day`), 1 minute, 12
+/// seconds, then 1 and 4 days a second for letting the economy run. The
+/// fastest speeds run as many steps as a frame has time for.
+pub const SPEEDS: [f64; 5] = [1.0 / 300.0, 1.0 / 60.0, 1.0 / 12.0, 1.0, 4.0];
+
+/// `FixedUpdate` runs this often; each run takes the steps that are due.
+const FIXED_HZ: f64 = 60.0;
+/// Longest a fixed update may spend on steps before the frame goes on.
+const STEP_BUDGET: std::time::Duration = std::time::Duration::from_millis(30);
 
 #[derive(Resource)]
 pub struct SimControl {
     pub paused: bool,
     pub speed: usize,
+    /// Steps due and not yet run (fractions carry over).
+    pub due: f64,
 }
 
 #[derive(Resource, Default)]
@@ -98,7 +109,7 @@ fn main() {
     app.add_schedule(sim_core::build_schedule());
     app.add_schedule(sim_core::build_economy_schedule());
 
-    let speed = args.speed.unwrap_or(1);
+    let speed = args.speed.unwrap_or(0);
     let econ_town = args
         .town
         .as_ref()
@@ -115,10 +126,11 @@ fn main() {
             .0
             .map(|t| t as usize))
         .unwrap_or(0);
-    app.insert_resource(Time::<Fixed>::from_hz(SPEEDS[speed]))
+    app.insert_resource(Time::<Fixed>::from_hz(FIXED_HZ))
         .insert_resource(SimControl {
             paused: false,
             speed,
+            due: 0.0,
         })
         .insert_resource(args)
         .insert_resource(autorun::ShotState::default())
@@ -183,6 +195,7 @@ fn main() {
                 view::attach_nature_sprites,
                 view::animate_agents,
                 view::draw_world,
+                view::draw_batches,
                 view::update_skill_labels,
                 view::select_agent,
                 hud::update_hud,
@@ -197,18 +210,30 @@ fn main() {
     app.run();
 }
 
-/// Advance the simulation by one day.
+/// Run the economy steps due at the game speed since the last fixed update.
 fn run_sim_tick(world: &mut World) {
-    if world.resource::<SimControl>().paused {
+    let spd = world.resource::<sim_core::SimClock>().steps_per_day.max(1) as f64;
+    let mut control = world.resource_mut::<SimControl>();
+    if control.paused {
+        control.due = 0.0;
         return;
     }
-    sim_core::run_day(world);
+    control.due += SPEEDS[control.speed] * spd / FIXED_HZ;
+    let start = std::time::Instant::now();
+    while world.resource::<SimControl>().due >= 1.0 {
+        world.run_schedule(sim_core::SimTick);
+        world.resource_mut::<SimControl>().due -= 1.0;
+        if start.elapsed() > STEP_BUDGET {
+            // Too slow for this speed: drop what is left rather than fall behind.
+            world.resource_mut::<SimControl>().due = 0.0;
+            break;
+        }
+    }
 }
 
 fn controls(
     keys: Res<ButtonInput<KeyCode>>,
     mut control: ResMut<SimControl>,
-    mut fixed: ResMut<Time<Fixed>>,
     mut selection: ResMut<Selection>,
     mut overlay: ResMut<view::Overlay>,
 ) {
@@ -225,7 +250,6 @@ fn controls(
     for (i, k) in digits.iter().enumerate() {
         if keys.just_pressed(*k) {
             control.speed = i;
-            fixed.set_timestep_hz(SPEEDS[i]);
         }
     }
     if keys.just_pressed(KeyCode::Escape) {

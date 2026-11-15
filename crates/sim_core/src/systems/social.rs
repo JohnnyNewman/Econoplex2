@@ -13,8 +13,14 @@ use sim_data::dims::{mind, MIND_DIM};
 
 const AXES: usize = MIND_DIM - mind::IDEOLOGY_START;
 
-/// Each town's culture moves a month toward its residents' average outlook.
-fn follow_culture(store: &AgentStore, towns: &mut Towns, params: &Params) {
+/// Each town's culture moves the days of `cal` toward its residents' average
+/// outlook.
+fn follow_culture(
+    store: &AgentStore,
+    towns: &mut Towns,
+    params: &Params,
+    cal: crate::calendar::Calendar,
+) {
     for town in towns.0.iter_mut() {
         if town.residents.is_empty() {
             continue;
@@ -37,9 +43,7 @@ fn follow_culture(store: &AgentStore, towns: &mut Towns, params: &Params) {
         crate::decision::culture::follow(
             &mut town.culture,
             &mean,
-            params
-                .calendar()
-                .steps(params.decision.culture.memory_days),
+            cal.steps(params.decision.culture.memory_days),
         );
     }
 }
@@ -55,12 +59,14 @@ pub fn socialize(
 ) {
     let mut rng = seed.rng(clock.steps(), streams::SOCIAL);
     let store = &mut *store;
-    follow_culture(store, &mut towns, &params);
     let tp = &params.trust;
-    // Each step, its share of the days: ties fade, coworkers meet and
-    // people run into each other as they would day by day.
-    let cal = params.calendar();
-    store.fade_trust(cal.keep(1.0 - tp.fade));
+    // Coworkers meet when their batch is done; once a day of time ties fade,
+    // the town's culture follows its people and people run into each other.
+    let day = clock.day_of_time();
+    if let Some(cal) = day {
+        follow_culture(store, &mut towns, &params, cal);
+        store.fade_trust(cal.keep(1.0 - tp.fade));
+    }
     let mut noise = [0.0f32; 2 * AXES];
     let mut meet =
         |store: &mut AgentStore, a: usize, b: usize, rng: &mut rand_chacha::ChaCha8Rng| {
@@ -109,7 +115,10 @@ pub fn socialize(
         }
     }
 
-    // Random contacts within the town: the step's share of the daily chances.
+    // Random contacts within the town: a day's chances.
+    let Some(cal) = day else {
+        return;
+    };
     let p = cal.flow(models.social.daily_contacts());
     let (whole, part) = (p.floor() as usize, p.fract());
     for town in &towns.0 {

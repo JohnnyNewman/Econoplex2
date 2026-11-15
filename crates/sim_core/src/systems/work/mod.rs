@@ -17,7 +17,6 @@ use crate::store::{Activity, AgentStore};
 use crate::world::{Decisions, Params, SimClock, SimSeed, Towns, WorkEvent, WorkLog};
 use bevy_ecs::prelude::*;
 use rand::Rng;
-use rayon::prelude::*;
 use sim_data::dims::*;
 use sim_data::Category;
 use std::collections::BTreeMap;
@@ -181,7 +180,9 @@ pub fn produce(
             .workers
             .iter()
             .copied()
-            .filter(|&w| store.alive[w as usize] && store.activity[w as usize] == Activity::Working(e))
+            .filter(|&w| {
+                store.alive[w as usize] && store.activity[w as usize] == Activity::Working(e)
+            })
             .collect();
         if workers.is_empty() {
             commands.entity(e).despawn();
@@ -208,8 +209,14 @@ pub fn produce(
                 + params.needs.fatigue_per_work_day * (0.5 + m.phys_total) * worked)
                 .min(1.0);
         }
-        task.progress += (workers.len() as f32).powf(params.work.work_exponent) * worked;
+        let rate = (workers.len() as f32).powf(params.work.work_exponent);
+        task.progress += rate * worked;
         if task.progress >= task.required {
+            // The part of the step after the batch was done goes to the next.
+            let left = (task.progress - task.required) / rate;
+            for &w in &workers {
+                store.carry[w as usize] = left;
+            }
             done.push((e, r, workers));
         }
     }
@@ -219,33 +226,31 @@ pub fn produce(
     // working it out task by task.
     let effs: Vec<f32> = {
         let store = &*store;
-        done.par_iter()
-            .map(|(_, r, workers)| {
-                let m = &db.recipes[*r as usize];
-                let n = workers.len();
-                let caps: Vec<CapVec> = workers
-                    .iter()
-                    .map(|&w| store.effective_cap(w as usize))
-                    .collect();
-                let team = models.pooling.pool(&caps);
-                let mut sorted = workers.clone();
-                sorted.sort_unstable();
-                // People who trust each other coordinate better.
-                let prof = dot(&team, &m.skill) - models.pooling.coordination_penalty(n)
-                    + params.trust.team_bonus * store.cohesion(workers, &sorted);
-                let pb: f32 = workers
-                    .iter()
-                    .map(|&w| physique_bonus(&store.phys[w as usize], m, params.physique.weight))
-                    .sum::<f32>()
-                    / n as f32;
-                let sf: f32 = workers
-                    .iter()
-                    .map(|&w| state_factor(&store.state[w as usize], &params.needs))
-                    .sum::<f32>()
-                    / n as f32;
-                (prof + pb) * sf
-            })
-            .collect()
+        crate::systems::par_map(&done, |(_, r, workers)| {
+            let m = &db.recipes[*r as usize];
+            let n = workers.len();
+            let caps: Vec<CapVec> = workers
+                .iter()
+                .map(|&w| store.effective_cap(w as usize))
+                .collect();
+            let team = models.pooling.pool(&caps);
+            let mut sorted = workers.clone();
+            sorted.sort_unstable();
+            // People who trust each other coordinate better.
+            let prof = dot(&team, &m.skill) - models.pooling.coordination_penalty(n)
+                + params.trust.team_bonus * store.cohesion(workers, &sorted);
+            let pb: f32 = workers
+                .iter()
+                .map(|&w| physique_bonus(&store.phys[w as usize], m, params.physique.weight))
+                .sum::<f32>()
+                / n as f32;
+            let sf: f32 = workers
+                .iter()
+                .map(|&w| state_factor(&store.state[w as usize], &params.needs))
+                .sum::<f32>()
+                / n as f32;
+            (prof + pb) * sf
+        })
     };
 
     let mut claims: Vec<Claim> = Vec::new();

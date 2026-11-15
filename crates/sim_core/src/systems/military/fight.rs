@@ -212,9 +212,7 @@ pub(super) fn aftermath(
             .copied()
             .filter(|&i| {
                 let i = i as usize;
-                store.alive[i]
-                    && store.state[i][state::HEALTH] > 0.0
-                    && store.can_be_called(i)
+                store.alive[i] && store.state[i][state::HEALTH] > 0.0 && store.can_be_called(i)
             })
             .map(|i| (rng.random::<f32>(), i))
             .collect();

@@ -310,17 +310,47 @@ pub fn keepers(store: &AgentStore) -> Vec<usize> {
 
 impl Homes {
     pub fn of(store: &AgentStore, goods: &[LadderGood], lp: &LadderParams) -> Homes {
+        Self::build(store, goods, lp, None)
+    }
+
+    /// Like [`Homes::of`], with the clothes worked out only for the
+    /// households of `people` (the others' are left at zero).
+    pub fn for_people(
+        store: &AgentStore,
+        goods: &[LadderGood],
+        lp: &LadderParams,
+        people: &[usize],
+    ) -> Homes {
+        Self::build(store, goods, lp, Some(people))
+    }
+
+    fn build(
+        store: &AgentStore,
+        goods: &[LadderGood],
+        lp: &LadderParams,
+        people: Option<&[usize]>,
+    ) -> Homes {
         let n = store.len();
         let keeper = keepers(store);
+        let wanted: Option<Vec<bool>> = people.map(|people| {
+            let mut w = vec![false; n];
+            for &i in people {
+                w[keeper[i]] = true;
+            }
+            w
+        });
         let mut size = vec![0.0f32; n];
         let mut clothes = vec![0.0f32; n];
         for i in 0..n {
             if !store.alive[i] {
                 continue;
             }
+            size[keeper[i]] += 1.0;
+            if wanted.as_ref().is_some_and(|w| !w[keeper[i]]) {
+                continue;
+            }
             let mut h = Holdings::default();
             add_holdings(&mut h, &store.owned[i], goods, lp, false);
-            size[keeper[i]] += 1.0;
             clothes[keeper[i]] += h.clothes;
         }
         Homes {
@@ -599,10 +629,11 @@ fn assess(
     s
 }
 
-/// Each step, its share of the day: clothes and goods wear, each hearth burns
-/// the fuel the cold asks for, cold hurts, and happiness follows the ladder.
-/// With `count`, people left cold add a month of person-days to their town's
-/// `cold_days` (once a simulated day).
+/// Over the days of `cal` (a day of time): clothes and goods wear, each
+/// hearth burns the fuel the cold asks for, cold hurts, and happiness follows
+/// the ladder. With `count`, people left cold add a month of person-days to
+/// their town's `cold_days` (once a simulated day).
+#[allow(clippy::too_many_arguments)]
 pub fn daily(
     store: &mut AgentStore,
     towns: &mut Towns,
@@ -610,12 +641,12 @@ pub fn daily(
     params: &Params,
     env: &crate::env::Environment,
     lp: &LadderParams,
+    cal: crate::calendar::Calendar,
     count: bool,
 ) {
     use sim_data::dims::state::*;
     let goods = goods(db);
     let views = town_views(towns, db, params, env);
-    let cal = params.calendar();
     let rate = cal.share(params.needs.happiness_rate);
     // Wear and use-up over each good's life.
     for i in 0..store.len() {
@@ -716,7 +747,7 @@ pub fn of_people(
     }
     let goods = goods(db);
     let views = town_views(towns, db, params, env);
-    let homes = Homes::of(store, &goods, lp);
+    let homes = Homes::for_people(store, &goods, lp, people);
     for &i in people {
         if !store.alive[i] {
             continue;
@@ -768,11 +799,10 @@ pub fn spend(
         return;
     }
     let views = town_views(towns, db, params, env);
-    let homes = Homes::of(store, &goods, lp);
+    let homes = Homes::for_people(store, &goods, lp, &shoppers);
     // Units bought one by one on a trip: up to 16 for each week the trip
     // covers.
-    let max_units =
-        (16.0 * lp.interval.max(1) as f32 * cal.month_days() / 7.0).ceil() as usize;
+    let max_units = (16.0 * lp.interval.max(1) as f32 * cal.month_days() / 7.0).ceil() as usize;
     let firms_on = params.market.firms.on();
     for i in shoppers {
         let t = store.town[i] as usize;

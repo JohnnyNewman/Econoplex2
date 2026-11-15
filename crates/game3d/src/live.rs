@@ -49,20 +49,8 @@ pub const SPEEDS: [f32; 9] = [
 ];
 /// The speed the view starts at (5 minutes a day).
 pub const DEFAULT_SPEED: usize = 0;
-
-/// A speed as people read it: `5 min/day`, `12 s/day`, `30 days/s`.
-pub fn speed_label(days_per_sec: f32) -> String {
-    if days_per_sec >= 1.0 {
-        format!("{days_per_sec:.0} days/s")
-    } else {
-        let secs = 1.0 / days_per_sec;
-        if secs >= 60.0 {
-            format!("{:.0} min/day", secs / 60.0)
-        } else {
-            format!("{secs:.0} s/day")
-        }
-    }
-}
+/// A speed as people read it (shared with the 2D game).
+pub use sim_core::calendar::speed_label;
 
 pub struct LivePlugin;
 
@@ -110,7 +98,7 @@ struct Shared {
     env: Arc<sim_core::env::Environment>,
     env_at: Instant,
     tick_secs: f32,
-    ticks_per_day: u32,
+    steps_per_day: u32,
 }
 
 /// The view's handle on the running simulation.
@@ -183,10 +171,10 @@ impl LiveSim {
             env: Arc::new(sim.world.resource::<sim_core::env::Environment>().clone()),
             env_at: Instant::now(),
             tick_secs: 1.0,
-            ticks_per_day: sim
+            steps_per_day: sim
                 .world
                 .resource::<sim_core::SimClock>()
-                .ticks_per_day
+                .steps_per_day
                 .max(1),
         }));
         let thread_shared = shared.clone();
@@ -276,7 +264,7 @@ impl LiveSim {
         } else {
             1.0 / SPEEDS[s.speed]
         };
-        (s.env.clone(), frac, day_secs, s.ticks_per_day)
+        (s.env.clone(), frac, day_secs, s.steps_per_day)
     }
 
     pub fn speed_and_pause(&self) -> (usize, bool) {
@@ -297,6 +285,10 @@ fn run(sim: &mut Simulation, shared: &Mutex<Shared>, mut seen: sim_core::view::S
     let mut described: Option<(u32, u64)> = None;
     // When a waiting battle takes its next step.
     let mut next_battle = Instant::now();
+    // When the view last got a full snapshot: at the end of each day, and
+    // at least this often in between (a day can last minutes of real time).
+    let mut snap_at = Instant::now();
+    const SNAP_EVERY: Duration = Duration::from_millis(250);
     loop {
         // The inspector: describe the chosen person after every tick, and at
         // once when the choice changes (also while paused).
@@ -394,13 +386,14 @@ fn run(sim: &mut Simulation, shared: &Mutex<Shared>, mut seen: sim_core::view::S
             }
             continue;
         }
-        // Run the ticks that are due: a day has `ticks_per_day` of them, so at
-        // high speeds several run per pass. A full snapshot at the end of
-        // each day, the time of day and weather after every tick.
+        // Run the economy steps that are due: a day has `steps_per_day` of
+        // them, so at high speeds several run per pass. A full snapshot at
+        // the end of each day and every `SNAP_EVERY`, the time of day and
+        // weather after every step.
         let tpd = sim
             .world
             .resource::<sim_core::SimClock>()
-            .ticks_per_day
+            .steps_per_day
             .max(1);
         let interval = Duration::from_secs_f32(1.0 / (SPEEDS[speed] * tpd as f32));
         let mut ran = 0;
@@ -409,9 +402,12 @@ fn run(sim: &mut Simulation, shared: &Mutex<Shared>, mut seen: sim_core::view::S
             bevy::log::info_span!("sim tick").in_scope(|| sim.step_tick());
             ran += 1;
             next += interval;
-            if !sim.world.resource::<sim_core::SimClock>().day_done() {
+            if !sim.world.resource::<sim_core::SimClock>().day_done()
+                && snap_at.elapsed() < SNAP_EVERY
+            {
                 continue;
             }
+            snap_at = Instant::now();
             let _snap = bevy::log::info_span!("sim snapshot").entered();
             let mut snap = ViewSnapshot::capture(&sim.world, &mut seen);
             explained = why_town;
@@ -432,7 +428,7 @@ fn run(sim: &mut Simulation, shared: &Mutex<Shared>, mut seen: sim_core::view::S
         s.env = env;
         s.env_at = Instant::now();
         s.tick_secs = interval.as_secs_f32();
-        s.ticks_per_day = tpd;
+        s.steps_per_day = tpd;
     }
 }
 

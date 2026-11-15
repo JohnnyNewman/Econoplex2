@@ -30,8 +30,11 @@ pub fn body(
 ) {
     let p = &params.physique;
     let per_year = clock.months_per_year;
-    // A month of forgetting, training and disuse.
-    let cal = clock.calendar();
+    // A day's forgetting, training and disuse, once a day of time (the
+    // body changes slowly; whoever is on a task then trains for the day).
+    let Some(cal) = clock.day_of_time() else {
+        return;
+    };
     let days = cal.days();
     let store = &mut *store;
     // Each agent's update touches only its own vectors: run them in parallel.

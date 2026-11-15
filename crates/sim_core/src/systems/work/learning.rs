@@ -112,7 +112,7 @@ pub fn learn(
     if disjoint {
         let updates: Vec<Vec<(u32, Vec<f32>)>> = {
             let store = &*store;
-            log.events.par_iter().map(|ev| teach(store, ev)).collect()
+            crate::systems::par_map(&log.events, |ev| teach(store, ev))
         };
         for (a, cap) in updates.into_iter().flatten() {
             store.cap[a as usize] = cap;

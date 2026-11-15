@@ -14,6 +14,18 @@
 //! 12. `life::lifecycle`    aging, death, partnering, births with genetics
 //! 13. `metrics::record`    yearly statistics, economic complexity
 
+/// Maps `f` over `items`, in parallel when there are enough of them to pay
+/// for handing them to the thread pool (a step often has only a few). The
+/// result is the same either way.
+pub fn par_map<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync + Send) -> Vec<R> {
+    use rayon::prelude::*;
+    if items.len() < 128 {
+        items.iter().map(f).collect()
+    } else {
+        items.par_iter().map(f).collect()
+    }
+}
+
 pub mod body;
 pub mod decide;
 pub mod life;

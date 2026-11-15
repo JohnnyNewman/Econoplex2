@@ -190,6 +190,18 @@ pub fn sense(
             .clamp(0.0, 1.0);
     }
     if let Some(lp) = ladder {
-        crate::ladder::daily(store, &mut towns, &db, &params, &env, lp, count_starving);
+        // Wear, fuel and the ladder's happiness move once a day of time.
+        if let Some(day) = clock.day_of_time() {
+            crate::ladder::daily(
+                store,
+                &mut towns,
+                &db,
+                &params,
+                &env,
+                lp,
+                day,
+                count_starving,
+            );
+        }
     }
 }

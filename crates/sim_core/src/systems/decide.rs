@@ -13,7 +13,6 @@ use crate::store::{Activity, AgentStore};
 use crate::world::{Decisions, Params, SimClock, SimSeed, Towns};
 use bevy_ecs::prelude::*;
 use rand::Rng;
-use rayon::prelude::*;
 use sim_data::dims::*;
 use sim_data::Category;
 
@@ -139,8 +138,11 @@ pub fn job_capacity(
     sites: &Query<&NaturalResource>,
 ) -> Vec<f32> {
     let reserve = food_reserve(db, town, params);
-    // A worker uses a day's inputs and nature (a step's, if a step is longer).
-    let days = params.calendar().days().max(1.0);
+    // A worker uses a day's inputs and nature (a working step's, if a step
+    // does more than a day's work).
+    let days = params
+        .calendar()
+        .work_step_days(params.time.day_length.equinox_hours);
     let mut nature_total = vec![0.0f32; db.content.nature.len()];
     for &e in &town.nature_sites {
         if let Ok(n) = sites.get(e) {
@@ -429,6 +431,39 @@ pub fn decide(
     let cal = params.calendar();
     // A rest lasts a day.
     let rest_until = clock.steps() + cal.steps(1.0).round().max(1.0) as u64;
+    // The people choosing now: those free of a task and a rest.
+    let idle: Vec<usize> = (0..store.len())
+        .filter(|&i| store.alive[i] && store.activity[i] == Activity::Idle)
+        .collect();
+    if idle.is_empty() {
+        // Nobody chooses this step: only the buildings' load moves on.
+        let np = db.content.products.len();
+        for (t, town) in towns.0.iter_mut().enumerate() {
+            let mut used = vec![0.0f32; np];
+            for (task, parts) in tasks.iter() {
+                if task.town as usize == t {
+                    if let Some(b) = db.recipes[task.recipe as usize].building {
+                        used[b as usize] += parts.workers.len() as f32;
+                    }
+                }
+            }
+            for (p, u) in used.into_iter().enumerate() {
+                let slots = db.content.products[p].slots;
+                let today = if db.category(p as u32) == sim_data::Category::Building && slots > 0 {
+                    let total = (slots as usize * town.building_count(p as u32)) as f32;
+                    if total > 0.0 {
+                        u / total
+                    } else {
+                        0.0
+                    }
+                } else {
+                    0.0
+                };
+                town.building_load[p] += (today - town.building_load[p]) * cal.smoothing(30.0);
+            }
+        }
+        return;
+    }
 
     // Per-town context, computed once.
     let mut capacity: Vec<Vec<f32>> = towns
@@ -506,9 +541,6 @@ pub fn decide(
         }
     };
     // Only the people choosing now need their satisfaction.
-    let idle: Vec<usize> = (0..store.len())
-        .filter(|&i| store.alive[i] && store.activity[i] == Activity::Idle)
-        .collect();
     let sats = crate::ladder::of_people(&store, &towns, &db, &params, &env, ladder_params, &idle);
     let savings_costs = crate::ladder::savings_costs(&towns, &db, &params, &env);
     let ctx = Choice {
@@ -561,9 +593,9 @@ pub fn decide(
     let scores: Vec<(f32, Vec<f32>)> = {
         let store = &*store;
         let open_jobs = &open_jobs;
-        idle.par_iter()
-            .map(|&i| ctx.scores(store, i, &open_jobs[store.town[i] as usize], 1.0))
-            .collect()
+        super::par_map(&idle, |&i| {
+            ctx.scores(store, i, &open_jobs[store.town[i] as usize], 1.0)
+        })
     };
 
     // How many wanted each job today (for the wage factors).
@@ -602,32 +634,30 @@ pub fn decide(
         let lists: Vec<Vec<Opt>> = {
             let store = &*store;
             let (open_jobs, places) = (&open_jobs, &places);
-            idle.par_iter()
-                .zip(&scores)
-                .map(|(&i, (rest, job_scores))| {
-                    let t = store.town[i] as usize;
-                    let jobs = &open_jobs[t];
-                    let app_scores = ctx.scores(store, i, jobs, *apprentice_wage).1;
-                    let mut options = Vec::with_capacity(jobs.len() * 2);
-                    for (k, &v) in job_scores.iter().enumerate() {
-                        options.push((2 * k as u32, v));
-                        if places[t][k].apprentice > 0 {
-                            options.push((2 * k as u32 + 1, app_scores[k]));
-                        }
+            let pairs: Vec<(usize, &(f32, Vec<f32>))> = idle.iter().copied().zip(&scores).collect();
+            super::par_map(&pairs, |&(i, (rest, job_scores))| {
+                let t = store.town[i] as usize;
+                let jobs = &open_jobs[t];
+                let app_scores = ctx.scores(store, i, jobs, *apprentice_wage).1;
+                let mut options = Vec::with_capacity(jobs.len() * 2);
+                for (k, &v) in job_scores.iter().enumerate() {
+                    options.push((2 * k as u32, v));
+                    if places[t][k].apprentice > 0 {
+                        options.push((2 * k as u32 + 1, app_scores[k]));
                     }
-                    let mut rng = seed.agent_rng(clock.steps(), streams::DECIDE, i);
-                    let rng: &mut dyn rand::RngCore = &mut rng;
-                    decision
-                        .choice
-                        .rank(*rest, &options, &store.mind[i], rng)
-                        .into_iter()
-                        .map(|id| Opt {
-                            job: id / 2,
-                            apprentice: id % 2 == 1,
-                        })
-                        .collect()
-                })
-                .collect()
+                }
+                let mut rng = seed.agent_rng(clock.steps(), streams::DECIDE, i);
+                let rng: &mut dyn rand::RngCore = &mut rng;
+                decision
+                    .choice
+                    .rank(*rest, &options, &store.mind[i], rng)
+                    .into_iter()
+                    .map(|id| Opt {
+                        job: id / 2,
+                        apprentice: id % 2 == 1,
+                    })
+                    .collect()
+            })
         };
         // Stable matching per town: regular places go to the best hands, apprentice
         // places to those with the most to learn.

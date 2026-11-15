@@ -206,11 +206,12 @@ pub fn update_hud(
     let (scenario, state) = goal;
     let goal_amount = scenario.0.goal.as_ref().map(|g| g.amount);
     let mut s = format!(
-        "ECONOPLEX   year {}  {}   {}{} days/s\npopulation {}\n",
+        "ECONOPLEX   year {}  {} {:02}:00   {}{}\npopulation {}\n",
         clock.year(),
         sim_core::calendar::month_name(clock.day_of_year(), clock.months_per_year),
+        clock.hour().floor() as u32,
         if control.paused { "PAUSED  " } else { "" },
-        SPEEDS[control.speed],
+        sim_core::calendar::speed_label(SPEEDS[control.speed] as f32),
         store.alive_count()
     );
     let latest = metrics.latest();

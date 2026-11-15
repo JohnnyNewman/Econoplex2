@@ -64,13 +64,43 @@ pub fn assign(
     clock: Res<SimClock>,
     seed: Res<SimSeed>,
     mut sites: Query<(&mut NaturalResource, &Pos)>,
+    mut tasks: Query<(Entity, &Task, &mut Participants, &Pos)>,
     mut log: ResMut<WorkLog>,
 ) {
     let mut rng = seed.rng(clock.steps(), streams::ASSIGN);
     let store = &mut *store;
+    // Batches under way with room in their team, per (town, recipe), oldest
+    // first: people who take up that job join them before new batches start,
+    // so teams are as large as when everyone chose their work at once.
+    // Each: (serial, task, free places).
+    type Open = Vec<(u64, Entity, usize)>;
+    let mut open: BTreeMap<(u16, u32), Open> = BTreeMap::new();
+    for (e, task, parts, _) in tasks.iter() {
+        let working = parts
+            .workers
+            .iter()
+            .filter(|&&w| {
+                store.alive[w as usize] && store.activity[w as usize] == Activity::Working(e)
+            })
+            .count();
+        let room = db.recipes[task.recipe as usize]
+            .max_team
+            .saturating_sub(working);
+        if room > 0 && task.progress < task.required {
+            open.entry((task.town, task.recipe))
+                .or_default()
+                .push((task.serial, e, room));
+        }
+    }
+    for list in open.values_mut() {
+        list.sort_unstable();
+    }
     // A team's task is one batch: a day's runs of a short recipe, or one run
-    // of a long one (a step's runs when a step stands for more than a day).
-    let days = params.calendar().days().max(1.0);
+    // of a long one (a working step's runs when a step does more than a day's
+    // work).
+    let days = params
+        .calendar()
+        .work_step_days(params.time.day_length.equinox_hours);
 
     // Group choices by (town, recipe), keeping agent order for determinism.
     let mut groups: BTreeMap<(u16, u32), Vec<u32>> = BTreeMap::new();
@@ -122,6 +152,37 @@ pub fn assign(
     for ((t, r), agents) in groups {
         let m = &db.recipes[r as usize];
         let town = &mut towns.0[t as usize];
+        // Join the batches under way first.
+        let mut agents = agents;
+        if let Some(list) = open.get_mut(&(t, r)) {
+            let mut rest = Vec::new();
+            for a in agents {
+                match list.iter_mut().find(|x| x.2 > 0) {
+                    Some(slot) => {
+                        slot.2 -= 1;
+                        let e = slot.1;
+                        let Ok((_, _, mut parts, pos)) = tasks.get_mut(e) else {
+                            rest.push(a);
+                            continue;
+                        };
+                        // Whoever left the team earlier is no longer in it.
+                        parts.workers.retain(|&w| {
+                            store.alive[w as usize]
+                                && store.activity[w as usize] == Activity::Working(e)
+                        });
+                        parts.workers.push(a);
+                        if decisions.apprentices.binary_search(&a).is_ok() {
+                            parts.trainees.push(a);
+                        }
+                        store.activity[a as usize] = Activity::Working(e);
+                        store.target[a as usize] = jitter((pos.x, pos.y), 14.0, &mut rng);
+                        store.carry[a as usize] = 0.0;
+                    }
+                    None => rest.push(a),
+                }
+            }
+            agents = rest;
+        }
         for team in &trusted_teams(store, &agents, m.max_team, &mut place) {
             // A team's batch covers several runs of a short recipe.
             let rate = (team.len() as f32).powf(params.work.work_exponent) * days;
@@ -271,6 +332,16 @@ pub fn assign(
 
     for p in pending {
         let m = &db.recipes[p.recipe as usize];
+        // Work the team did past its last batch, in the last step, starts this one.
+        let carried = p
+            .workers
+            .iter()
+            .map(|&w| store.carry[w as usize])
+            .sum::<f32>()
+            / p.workers.len().max(1) as f32;
+        let required = m.duration * p.batches as f32;
+        let progress = ((p.workers.len() as f32).powf(params.work.work_exponent) * carried)
+            .min(0.999 * required);
         log.next_serial += 1;
         let e = commands
             .spawn((
@@ -278,8 +349,8 @@ pub fn assign(
                     serial: log.next_serial,
                     recipe: p.recipe,
                     town: p.town,
-                    progress: 0.0,
-                    required: m.duration * p.batches as f32,
+                    progress,
+                    required,
                     input_quality: p.input_quality,
                     batches: p.batches,
                 },
@@ -299,5 +370,9 @@ pub fn assign(
             apprentices: p.apprentices,
             trainees: p.trainees,
         });
+    }
+    // Carried work not taken up by a new batch now is gone (rest or idling).
+    for c in store.carry.iter_mut() {
+        *c = 0.0;
     }
 }

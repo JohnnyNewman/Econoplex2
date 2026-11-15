@@ -92,7 +92,11 @@ impl SimClock {
     }
     /// The calendar this clock runs on: how long a step is.
     pub fn calendar(&self) -> crate::calendar::Calendar {
-        crate::calendar::Calendar::of(self.days_per_month, self.months_per_year, self.steps_per_day)
+        crate::calendar::Calendar::of(
+            self.days_per_month,
+            self.months_per_year,
+            self.steps_per_day,
+        )
     }
     /// Whether this step is the first of its simulated day (the month's
     /// things happen then).
@@ -104,6 +108,20 @@ impl SimClock {
     /// Never for `months == 0`.
     pub fn every_months(&self, months: u32) -> bool {
         months > 0 && self.day_start() && self.tick.is_multiple_of(months as u64)
+    }
+    /// Steps in a day of time (at least one): the pace of the slow processes
+    /// (wear, fuel, body, forgetting, ties fading), which run once a day as
+    /// they did when a step was a day.
+    pub fn steps_per_day_of_time(&self) -> u32 {
+        self.calendar().steps(1.0).round().max(1.0) as u32
+    }
+    /// On the first step of each day of time, the calendar of that day (its
+    /// steps taken together); `None` on the other steps.
+    pub fn day_of_time(&self) -> Option<crate::calendar::Calendar> {
+        let k = self.steps_per_day_of_time();
+        self.steps()
+            .is_multiple_of(k as u64)
+            .then(|| self.calendar().every(k))
     }
     /// Whether this step is the last of its day (a whole day has run).
     pub fn day_done(&self) -> bool {

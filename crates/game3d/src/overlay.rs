@@ -28,7 +28,14 @@ impl Plugin for OverlayPlugin {
             .add_systems(Startup, configure_lines)
             .add_systems(
                 Update,
-                (overlay_keys, draw_trade, draw_why, tint_terrain).chain(),
+                (
+                    overlay_keys,
+                    draw_trade,
+                    draw_why,
+                    draw_progress,
+                    tint_terrain,
+                )
+                    .chain(),
             );
     }
 }
@@ -160,6 +167,27 @@ fn tint_terrain(
             u.towns[k] = Vec4::new(t.pos.0 / SCALE, -t.pos.1 / SCALE, 32.0, 0.0);
             let c = culture_colour(&t.culture);
             u.cultures[k] = Vec4::new(c[0], c[1], c[2], 1.0);
+        }
+    }
+}
+
+/// A progress bar over each building with a batch under way: grey for the
+/// whole batch, green for the part done (`BuildingView::progress`).
+fn draw_progress(mut gizmos: Gizmos, live: Res<LiveSim>, world: Res<World3d>) {
+    let t = &world.terrain;
+    for town in &live.snapshot.towns {
+        for b in &town.buildings {
+            let Some(p) = b.progress else { continue };
+            let at = Vec3::new(b.pos.0 / SCALE, height(t, b.pos) + 3.0, -b.pos.1 / SCALE);
+            let (half, left) = (1.2, Vec3::new(-1.2, 0.0, 0.0));
+            let start = at + left;
+            gizmos.line(start, at - left, Color::linear_rgb(0.25, 0.25, 0.25));
+            let done = start + Vec3::new(2.0 * half * p.clamp(0.0, 1.0), 0.05, 0.0);
+            gizmos.line(
+                start + Vec3::Y * 0.05,
+                done,
+                Color::linear_rgb(0.3, 2.0, 0.4),
+            );
         }
     }
 }

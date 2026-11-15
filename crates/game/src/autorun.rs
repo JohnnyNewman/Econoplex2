@@ -106,7 +106,7 @@ pub fn parse() -> GameArgs {
                      --load FILE      start from a saved game\n\
                      --speed N        start at speed N (1-5)\n\
                      --shot FILE      save a PNG screenshot once the game reaches --shot-day\n\
-                     --shot-day N     day of the screenshot (default: at once)\n\
+                     --shot-day N     simulated day (month) of the screenshot (default: at once)\n\
                      --exit           quit after the screenshot
                      --town NAME      town shown in the economy panel at start
                      --camera X Y     center the camera on a world position

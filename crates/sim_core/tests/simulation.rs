@@ -2304,24 +2304,29 @@ fn both_caravan_rules_trade_and_conserve_money() {
 }
 
 #[test]
-fn a_day_has_ticks_and_the_economy_runs_once_per_day() {
+fn a_day_has_steps_and_the_economy_runs_every_step() {
     let mut s = sim(5);
-    let tpd = s.world.resource::<sim_core::SimClock>().ticks_per_day;
-    assert!(tpd > 1, "models.ron cuts the day into ticks");
-    // The first tick starts day 1 and runs the economy.
+    let spd = s.world.resource::<sim_core::SimClock>().steps_per_day;
+    assert!(spd > 1, "models.ron cuts the day into steps");
+    // The first step starts day 1.
     s.step_tick();
     assert_eq!(s.tick(), 1);
-    let after_economy = economy_text(&s);
     let mut hours = vec![s.world.resource::<sim_core::env::Environment>().hour];
-    // The rest of the day only moves the hours and the weather on.
-    for _ in 1..tpd {
+    let mut changed = 0;
+    // The rest of the day moves the hours, the weather and the economy on.
+    for _ in 1..spd {
+        let before = economy_text(&s);
         s.step_tick();
         assert_eq!(s.tick(), 1);
         hours.push(s.world.resource::<sim_core::env::Environment>().hour);
+        changed += usize::from(economy_text(&s) != before);
     }
-    assert_eq!(economy_text(&s), after_economy);
     assert!(
-        hours.windows(2).all(|w| w[1] > w[0]) && hours[0] < 2.0 && hours[tpd as usize - 1] > 22.0
+        changed > spd as usize / 2,
+        "the economy moved in only {changed} of {spd} steps"
+    );
+    assert!(
+        hours.windows(2).all(|w| w[1] > w[0]) && hours[0] < 2.0 && hours[spd as usize - 1] > 22.0
     );
     let env = s.world.resource::<sim_core::env::Environment>();
     assert_eq!(

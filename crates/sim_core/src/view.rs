@@ -26,6 +26,12 @@ pub struct BuildingView {
     pub kind: String,
     /// Map position.
     pub pos: (f32, f32),
+    /// How far the batch under way in the building has got, 0..1 (the most
+    /// advanced one if several teams work there); `None` when it stands idle.
+    /// A batch takes its inputs when it starts and delivers its whole output
+    /// when it reaches 1.
+    #[serde(default)]
+    pub progress: Option<f32>,
 }
 
 /// A town's government levers, with the defaults from models.ron filled in.
@@ -143,6 +149,11 @@ pub struct Seen {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ViewSnapshot {
     pub tick: u64,
+    /// Economy step within the simulated day, and steps a day.
+    #[serde(default)]
+    pub step: u32,
+    #[serde(default)]
+    pub steps_per_day: u32,
     /// Simulated day of the year, which is its month (0 = the first).
     pub day_of_year: u32,
     /// Simulated days in a year: one per month.
@@ -270,6 +281,7 @@ impl ViewSnapshot {
         let towns = world.resource::<Towns>();
         let db = world.resource::<Db>();
         let store = world.resource::<crate::AgentStore>();
+        let progress = batch_progress(world);
         let mut people = PeopleView::default();
         let keepers = crate::ladder::keepers(store);
         for i in 0..store.len() {
@@ -318,6 +330,8 @@ impl ViewSnapshot {
             .unwrap_or_default();
         ViewSnapshot {
             tick: clock.tick,
+            step: clock.step,
+            steps_per_day: clock.steps_per_day,
             day_of_year: clock.day_of_year(),
             months_per_year: clock.months_per_year,
             towns: towns
@@ -358,6 +372,11 @@ impl ViewSnapshot {
                             id: e.to_bits(),
                             kind: db.content.products[def as usize].id.clone(),
                             pos,
+                            progress: progress
+                                .iter()
+                                .filter(|b| b.0 == ti as u16 && b.1 == def && b.2 == pos)
+                                .map(|b| b.3)
+                                .reduce(f32::max),
                         })
                         .collect(),
                     ruler: t.ruler,
@@ -587,6 +606,27 @@ fn needs_by_town(world: &World) -> Vec<Vec<f32>> {
 }
 
 /// Tools and weapons in each town's armory, by product.
+/// Every batch under way in a building: (town, building def, position,
+/// progress 0..1).
+fn batch_progress(world: &World) -> Vec<(u16, u32, (f32, f32), f32)> {
+    use crate::components::{Pos, Task};
+    let db = world.resource::<Db>();
+    let Some(mut q) = world.try_query::<(&Task, &Pos)>() else {
+        return Vec::new();
+    };
+    q.iter(world)
+        .filter_map(|(t, p)| {
+            let b = db.recipes.get(t.recipe as usize)?.building?;
+            Some((
+                t.town,
+                b,
+                (p.x, p.y),
+                (t.progress / t.required.max(1e-6)).clamp(0.0, 1.0),
+            ))
+        })
+        .collect()
+}
+
 fn armory_counts(world: &World) -> Vec<Vec<(u32, u32)>> {
     let towns = world.resource::<Towns>();
     towns

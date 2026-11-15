@@ -5,7 +5,7 @@ use crate::Selection;
 use bevy::input::mouse::AccumulatedMouseScroll;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
-use sim_core::components::{Agent, NaturalResource, Pos, Product, Structure};
+use sim_core::components::{Agent, NaturalResource, Pos, Product, Structure, Task};
 use sim_core::store::Activity;
 use sim_core::world::Params;
 use sim_core::{AgentStore, Db, Towns};
@@ -287,6 +287,42 @@ pub fn animate_agents(
         };
         sprite.custom_size = Some(Vec2::splat(size));
         tf.translation.z = if selected { 4.0 } else { 2.0 };
+    }
+}
+
+/// A progress bar over each building with a batch under way: grey for the
+/// whole batch, green for the part done. A batch takes its inputs when it
+/// starts and delivers its whole output when the bar is full.
+pub fn draw_batches(
+    mut gizmos: Gizmos,
+    db: Res<Db>,
+    overlay: Res<Overlay>,
+    tasks: Query<(&Task, &Pos)>,
+) {
+    if overlay.product_space {
+        return;
+    }
+    for (task, pos) in &tasks {
+        if db
+            .recipes
+            .get(task.recipe as usize)
+            .and_then(|r| r.building)
+            .is_none()
+        {
+            continue;
+        }
+        let p = (task.progress / task.required.max(1e-6)).clamp(0.0, 1.0);
+        let start = Vec2::new(pos.x - 13.0, pos.y + 18.0);
+        gizmos.line_2d(
+            start,
+            start + Vec2::X * 26.0,
+            Color::srgba(0.2, 0.2, 0.2, 0.8),
+        );
+        gizmos.line_2d(
+            start,
+            start + Vec2::X * 26.0 * p,
+            Color::srgb(0.35, 0.85, 0.4),
+        );
     }
 }
 

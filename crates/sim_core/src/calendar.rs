@@ -126,6 +126,23 @@ impl Calendar {
         per_day * self.share(rate) / rate.min(1.0)
     }
 
+    /// Days of work a worker does in a step inside the working hours (at
+    /// least one: a batch or a job place is never less than a day's work).
+    pub fn work_step_days(&self, equinox_hours: f32) -> f32 {
+        (self.month_days() * self.step_hours() / equinox_hours.max(1e-3)).max(1.0)
+    }
+
+    /// The calendar of `k` steps taken together (for slow processes that
+    /// run once every `k` steps).
+    pub fn every(&self, k: u32) -> Calendar {
+        let k = k.max(1);
+        Calendar {
+            days: self.days * k as f32,
+            per_year: (self.per_year / k).max(1),
+            steps: (self.steps / k).max(1),
+        }
+    }
+
     /// Steps in `days` days, unrounded.
     pub fn steps(&self, days: f32) -> f32 {
         days / self.days
@@ -142,6 +159,21 @@ impl Calendar {
         let (a, b) = (step as f32 * h, (step + 1) as f32 * h);
         let inside = (b.min(end) - a.max(start)).max(0.0);
         inside / equinox_hours.max(1e-3)
+    }
+}
+
+/// A game speed as people read it: `5 min/day`, `12 s/day`, `30 days/s`
+/// (`days_per_sec` simulated days a real second).
+pub fn speed_label(days_per_sec: f32) -> String {
+    if days_per_sec >= 1.0 {
+        format!("{days_per_sec:.0} days/s")
+    } else {
+        let secs = 1.0 / days_per_sec.max(1e-6);
+        if secs >= 60.0 {
+            format!("{:.0} min/day", secs / 60.0)
+        } else {
+            format!("{secs:.0} s/day")
+        }
     }
 }
 

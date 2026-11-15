@@ -93,10 +93,35 @@ pub fn settle(
     }
     // Public pay rates: yesterday's prices for jobs nobody has tried lately.
     super::work::post_pay(&mut towns, &db, &params);
+    // The recipes that make each good from inputs, and how much of it a run
+    // makes (for the cost floor below).
+    let mut makers: Vec<Vec<(usize, f32)>> = vec![Vec::new(); np];
+    for (r, m) in db.recipes.iter().enumerate() {
+        if m.inputs.is_empty() {
+            continue;
+        }
+        for &(o, q) in &m.outputs {
+            match makers[o as usize].iter_mut().find(|x| x.0 == r) {
+                Some(x) => x.1 += q,
+                None => makers[o as usize].push((r, q)),
+            }
+        }
+    }
 
     for (ti, town) in towns.0.iter_mut().enumerate() {
         let pop = town.residents.len().max(1) as f32;
         let mint_wanted = town.mint_wanted(mp);
+        // The pay of the town's poorer jobs (the lower quartile of those that
+        // pay), at the start of the step.
+        let poor_pay = {
+            let mut paid: Vec<f32> = town.pay_rate.iter().copied().filter(|&x| x > 0.0).collect();
+            if paid.is_empty() {
+                0.0
+            } else {
+                let q = paid.len() / 4;
+                *paid.select_nth_unstable_by(q, f32::total_cmp).1
+            }
+        };
         for p in 0..np {
             if db.coin[p] > 0.0 {
                 // Coin is worth its face value, while the town wants more of it.
@@ -144,15 +169,8 @@ pub fn settle(
                     max_factor,
                 } = mp.building_value;
                 // What the workers who would fill it earn now: the pay of
-                // the town's poorer jobs (the lower quartile of those that pay).
-                let mut paid: Vec<f32> =
-                    town.pay_rate.iter().copied().filter(|&x| x > 0.0).collect();
-                let typical = if paid.is_empty() {
-                    0.0
-                } else {
-                    let q = paid.len() / 4;
-                    *paid.select_nth_unstable_by(q, f32::total_cmp).1
-                };
+                // the town's poorer jobs.
+                let typical = poor_pay;
                 let best = db
                     .recipes
                     .iter()
@@ -223,35 +241,17 @@ pub fn settle(
             // at today's prices plus a day's pay of the town's poorer jobs for
             // the work, by its cheapest recipe. Without this flour fell below
             // grain in winter and milling paid nothing while bread ran short.
-            let poor_pay = {
-                let mut paid: Vec<f32> =
-                    town.pay_rate.iter().copied().filter(|&x| x > 0.0).collect();
-                if paid.is_empty() {
-                    0.0
-                } else {
-                    let q = paid.len() / 4;
-                    *paid.select_nth_unstable_by(q, f32::total_cmp).1
-                }
-            };
-            let cost = db
-                .recipes
+            let cost = makers[p]
                 .iter()
-                .filter(|m| !m.inputs.is_empty())
-                .filter_map(|m| {
-                    let out: f32 = m
-                        .outputs
+                .filter(|&&(_, out)| out > 0.0)
+                .map(|&(r, out)| {
+                    let m = &db.recipes[r];
+                    let inputs: f32 = m
+                        .inputs
                         .iter()
-                        .filter(|o| o.0 as usize == p)
-                        .map(|o| o.1)
+                        .map(|&(i, q)| town.price[i as usize] * q)
                         .sum();
-                    (out > 0.0).then(|| {
-                        let inputs: f32 = m
-                            .inputs
-                            .iter()
-                            .map(|&(i, q)| town.price[i as usize] * q)
-                            .sum();
-                        (inputs + poor_pay * m.duration) / out
-                    })
+                    (inputs + poor_pay * m.duration) / out
                 })
                 .fold(f32::INFINITY, f32::min);
             if cost.is_finite() {

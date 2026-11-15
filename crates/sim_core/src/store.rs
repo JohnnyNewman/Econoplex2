@@ -101,6 +101,10 @@ pub struct AgentStore {
     pub owned: Vec<Vec<(u32, f32)>>,
     /// The step (`SimClock::steps`) a rest ends on: a rest lasts a day.
     pub rest_until: Vec<u64>,
+    /// Days of work done past the end of the batch just finished this step;
+    /// the next batch starts with them (so a step's work is never lost when
+    /// a batch ends inside it).
+    pub carry: Vec<f32>,
 }
 
 /// Everything needed to create an agent.
@@ -173,6 +177,7 @@ impl AgentStore {
         self.lived_in.push(Vec::new());
         self.owned.push(Vec::new());
         self.rest_until.push(0);
+        self.carry.push(0.0);
         idx
     }
 
