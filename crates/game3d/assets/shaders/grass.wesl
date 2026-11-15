@@ -44,16 +44,22 @@ const VERTS_PER_BLADE: u32 = 5u;
 @vertex
 fn vertex(vertex_in: Vertex, @builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     let v = decompress_vertex(vertex_in, vertex_in.instance_index);
-    // Which blade? Bevy packs many meshes into one big vertex buffer, so the
-    // index starts at this mesh's first vertex; subtract it, then divide.
-    let first = mesh[vertex_in.instance_index].first_vertex_index;
-    let b = blades[(vertex_index - first) / VERTS_PER_BLADE];
+    // Which blade? Every chunk shares one blade buffer (and one material, so
+    // all chunks draw in one batch); each vertex carries its blade's index
+    // in uv.y (nature.rs, chunk_mesh).
+    var index = 0u;
+    @if(VERTEX_UVS_A) {
+        index = u32(vertex_in.uv.y + 0.5);
+    }
+    let b = blades[index];
     let h = v.position.y;                 // 0 at the root, 1 at the tip (mesh shape)
 
     // Fade out with distance: shrink far blades to nothing, so they cost
     // vertices but no pixels.
     let d = length(view.world_position - b.pos);
-    let keep = smoothstep(grass.params.y, grass.params.x, d);
+    // (smoothstep with its edges reversed is undefined in WGSL: some drivers
+    // return 0, which flattened every blade.)
+    let keep = 1.0 - smoothstep(grass.params.x, grass.params.y, d);
     // Step 11: deep snow buries the grass.
     let height = b.height * keep * (1.0 - 0.7 * env.fog.ground.x);
 
