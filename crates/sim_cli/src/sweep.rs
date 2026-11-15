@@ -62,7 +62,8 @@ struct Summary {
     ms_per_tick: f64,
 }
 
-const COLUMNS: [&str; 22] = [
+/// The table's column names; health bands name metrics by these.
+pub const COLUMNS: [&str; 22] = [
     "pop", "starve%", "food/cap", "div", "ECI rng", "spec", "masters", "swords", "wealth", "gini",
     "raids", "conq", "revolts", "ruled%", "moves", "glut%", "gwork%", "hh use", "in use", "happy",
     "capab", "ms/tick",
@@ -229,7 +230,15 @@ fn grid(sweeps: &[(String, Vec<String>)]) -> Vec<Vec<(String, String)>> {
     out
 }
 
-pub fn run(plan: &Plan, csv: Option<&std::path::Path>) -> Result<(), Box<dyn std::error::Error>> {
+/// Each setting's label with its means across seeds (one per entry of `COLUMNS`).
+pub type Means = Vec<(String, Vec<f64>)>;
+
+/// Run the batch, print the table and return each setting's label with its
+/// means across seeds (one per entry of `COLUMNS`).
+pub fn run(
+    plan: &Plan,
+    csv: Option<&std::path::Path>,
+) -> Result<Means, Box<dyn std::error::Error>> {
     let settings = grid(&plan.sweeps);
     // Fail on a bad path or value before starting any thread.
     for combo in &settings {
@@ -316,6 +325,7 @@ pub fn run(plan: &Plan, csv: Option<&std::path::Path>) -> Result<(), Box<dyn std
         print!(" {c:>8}");
     }
     println!();
+    let mut means = Vec::new();
     for c in 0..settings.len() {
         let rows: Vec<[f64; 22]> = (0..jobs.len())
             .filter(|&j| jobs[j].0 == c)
@@ -340,6 +350,10 @@ pub fn run(plan: &Plan, csv: Option<&std::path::Path>) -> Result<(), Box<dyn std
             }
             println!();
         }
+        let all = (0..COLUMNS.len())
+            .map(|k| rows.iter().map(|r| r[k]).sum::<f64>() / n)
+            .collect();
+        means.push((label(c), all));
     }
 
     if let Some(path) = csv {
@@ -392,7 +406,7 @@ pub fn run(plan: &Plan, csv: Option<&std::path::Path>) -> Result<(), Box<dyn std
         }
         println!("\nwrote {}", path.display());
     }
-    Ok(())
+    Ok(means)
 }
 
 fn fmt(v: f64) -> String {
