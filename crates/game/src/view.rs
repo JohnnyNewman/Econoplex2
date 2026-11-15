@@ -14,6 +14,17 @@ use sim_core::{AgentStore, Db, Towns};
 #[derive(Resource, Default)]
 pub struct Overlay {
     pub product_space: bool,
+    /// Culture overlay (`C`, as `V` in the 3D client): people in the colour of
+    /// their own culture, towns ringed in theirs.
+    pub culture: bool,
+}
+
+/// A culture (the first three ideological axes: tradition, faith, liberty,
+/// 0..1) as a colour: red tradition, green faith, blue liberty, stretched so
+/// small differences show (the same mapping as the 3D client's overlay).
+pub fn culture_color(c: &[f32]) -> Color {
+    let ch = |k: usize| (0.5 + (c.get(k).copied().unwrap_or(0.5) - 0.5) * 1.6).clamp(0.05, 0.95);
+    Color::srgb(ch(0), ch(1), ch(2))
 }
 
 /// View entities drawn from the world's state (town names, building labels,
@@ -237,6 +248,7 @@ pub fn animate_agents(
     selection: Res<Selection>,
     terrain: Res<sim_core::terrain::Terrain>,
     towns: Res<Towns>,
+    overlay: Res<Overlay>,
     mut agents: Query<(&Agent, &mut Transform, &mut Sprite), With<AgentSprite>>,
 ) {
     let dt = time.delta_secs();
@@ -259,6 +271,8 @@ pub fn animate_agents(
         let (d, strength) = dominant_domain(&db, &store.cap[i]);
         sprite.color = if selected {
             Color::WHITE
+        } else if overlay.culture {
+            culture_color(&store.mind[i][sim_data::dims::mind::IDEOLOGY_START..])
         } else if child {
             Color::srgb(0.75, 0.75, 0.75)
         } else {
@@ -305,6 +319,13 @@ pub fn draw_world(
             100.0,
             Color::srgba(0.9, 0.85, 0.7, 0.25),
         );
+        if overlay.culture {
+            // The town's culture as three thick rings.
+            let c = culture_color(&town.culture);
+            for r in [108.0, 111.0, 114.0] {
+                gizmos.circle_2d(Vec2::new(town.pos.0, town.pos.1), r, c);
+            }
+        }
     }
     // Resource level of each nature site as a ring.
     for (n, pos) in &nature {
