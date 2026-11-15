@@ -124,8 +124,31 @@ pub struct LifeParams {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrganizeParams {
     pub interval: u32,
+    /// Skill at which an adult with no trade joins the guild of their best
+    /// skill (someone who never apprenticed).
     pub guild_threshold: f32,
-    pub master_threshold: f32,
+    /// Apprentices one master may take at once (a hard limit).
+    #[serde(default = "apprentices_per_master")]
+    pub apprentices_per_master: u32,
+    /// Years in a trade after which an artisan is a master.
+    #[serde(default = "master_years")]
+    pub master_years: f32,
+    /// How much less each learner gets from a teacher for every other learner
+    /// beside them: a teacher's lesson is shared, 1 / (1 + crowding x (n - 1)).
+    #[serde(default = "teaching_crowding")]
+    pub teaching_crowding: f32,
+}
+
+fn apprentices_per_master() -> u32 {
+    3
+}
+
+fn master_years() -> f32 {
+    8.0
+}
+
+fn teaching_crowding() -> f32 {
+    0.3
 }
 
 /// Personal ties between agents (`trust.rs`).

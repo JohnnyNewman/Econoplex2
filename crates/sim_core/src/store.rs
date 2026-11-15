@@ -36,6 +36,9 @@ pub struct GuildLink {
     pub membership: Entity,
     pub domain: u32,
     pub role: Role,
+    /// Day the person entered this trade (rank rises with years in it).
+    #[serde(default)]
+    pub since: u64,
 }
 
 #[derive(Resource, Default, serde::Serialize, serde::Deserialize)]
