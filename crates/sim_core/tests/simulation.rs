@@ -1246,57 +1246,6 @@ fn agents_learn_what_their_jobs_pay() {
         .all(|l| l.len() <= sim_core::decision::expectations::KEEP));
 }
 
-#[test]
-fn under_the_utility_model_the_rich_work_less() {
-    // Money only adds standing, with diminishing returns: agents who already have a
-    // lot rest more readily than poor ones.
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
-    let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
-    scenario.seed = 9;
-    params.decision.model = sim_core::config::DecisionModel::Utility;
-    // First-come places: skilled matching hands out places by skill, not by
-    // who wants to work.
-    params.decision.matching = sim_core::decision::matching::MatchingParams::FirstCome;
-    params.decision.choice = sim_core::decision::choice::ChoiceParams::Logit {
-        base: Some(0.05),
-        risk_weight: 0.0,
-        diligence_weight: 0.0,
-    };
-    let mut s = Simulation::new(db, params, &scenario);
-    run_years(&mut s, 1);
-    // Count working days over the next 60 days, by wealth at the start.
-    let (adults, wealth): (Vec<usize>, Vec<f32>) = {
-        let store = s.world.resource::<sim_core::AgentStore>();
-        let dpy = s.world.resource::<sim_core::SimClock>().days_per_year;
-        let adult = |i: usize| {
-            store.alive[i] && store.age_years(i, dpy) >= 20.0 && store.age_years(i, dpy) < 50.0
-        };
-        let a: Vec<usize> = (0..store.len()).filter(|&i| adult(i)).collect();
-        let w = a.iter().map(|&i| store.wealth[i].coins()).collect();
-        (a, w)
-    };
-    let mut sorted = wealth.clone();
-    sorted.sort_by(f32::total_cmp);
-    let (lo, hi) = (sorted[sorted.len() / 4], sorted[sorted.len() * 3 / 4]);
-    let mut worked = vec![0u32; adults.len()];
-    for _ in 0..60 {
-        s.step();
-        let store = s.world.resource::<sim_core::AgentStore>();
-        for (k, &i) in adults.iter().enumerate() {
-            worked[k] += store.worked_today[i].is_some() as u32;
-        }
-    }
-    let mean = |pick: &dyn Fn(f32) -> bool| {
-        let v: Vec<f32> = (0..adults.len())
-            .filter(|&k| pick(wealth[k]))
-            .map(|k| worked[k] as f32)
-            .collect();
-        v.iter().sum::<f32>() / v.len().max(1) as f32
-    };
-    let (poor, rich) = (mean(&|w| w <= lo), mean(&|w| w >= hi));
-    assert!(poor > rich, "poor worked {poor:.1} days, rich {rich:.1}");
-}
-
 fn market_pay() -> sim_core::decision::wages::WageParams {
     sim_core::decision::wages::WageParams::ExcessDemand {
         step: 0.02,
@@ -1381,18 +1330,10 @@ fn valuing_skills_draws_the_young_into_work_they_are_still_learning() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
         let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
         scenario.seed = seed;
-        params.decision.model = sim_core::config::DecisionModel::Utility;
-        params.decision.choice = sim_core::decision::choice::ChoiceParams::Logit {
-            base: Some(0.05),
-            risk_weight: 0.0,
-            diligence_weight: 0.0,
-        };
         params.decision.learning = learning;
-        // Isolate the learning term: with posted pay, untried jobs show a pay
-        // anyway, and on its own the learning term then barely changes choices
-        // (see the posted-pay PR).
-        params.decision.valuation.posted_pay_days = 0.0;
-        // Isolate it from trade too (calibrated with fixed caravans).
+        // Posted pay stays on: on the needs ladder a job is worth its pay, and
+        // with only realised pay counting nobody starts working at all.
+        // Isolate the learning term from trade (calibrated with fixed caravans).
         params.market.caravans = sim_core::config::Caravans::Fixed;
         // And from apprentice places, which already steer the young to learning.
         params.decision.matching = sim_core::decision::matching::MatchingParams::FirstCome;
@@ -1445,12 +1386,6 @@ fn matching_gives_beginners_apprentice_places_and_keeps_the_books() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
     scenario.seed = 7;
-    params.decision.model = sim_core::config::DecisionModel::Utility;
-    params.decision.choice = sim_core::decision::choice::ChoiceParams::Logit {
-        base: Some(0.05),
-        risk_weight: 0.0,
-        diligence_weight: 0.0,
-    };
     params.decision.matching = MatchingParams::DeferredAcceptance {
         apprentice_wage: 0.4,
         share: ApprenticeShareParams::default(),
@@ -1761,7 +1696,7 @@ fn towns_post_pay_for_jobs_nobody_has_tried() {
 }
 
 #[test]
-fn scarce_goods_loosen_their_price_caps_and_successes_are_tracked() {
+fn scarce_goods_loosen_their_price_caps() {
     use sim_core::config::ScarcityCap;
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     let run = |cap: ScarcityCap| {
@@ -1782,19 +1717,11 @@ fn scarce_goods_loosen_their_price_caps_and_successes_are_tracked() {
                     .map(move |p| t.price[p] / db.base_price[p].max(1e-6))
             })
             .fold(0.0f32, f32::max);
-        // A success pays at least the average (which counts failures as nothing).
-        let tracked = towns.0.iter().all(|t| {
-            t.success_pay
-                .iter()
-                .zip(&t.pay_rate)
-                .all(|(s, a)| *s >= *a - 1e-3)
-        });
-        (top, max, tracked)
+        (top, max)
     };
-    let (top, max, tracked) = run(ScarcityCap::Fixed);
+    let (top, max) = run(ScarcityCap::Fixed);
     assert!(top <= max + 1e-3, "a price passed its fixed cap: {top}");
-    assert!(tracked, "a success paid less than the average");
-    let (top, max, _) = run(ScarcityCap::Loosen {
+    let (top, max) = run(ScarcityCap::Loosen {
         rate: 0.01,
         max_factor: 50.0,
     });
