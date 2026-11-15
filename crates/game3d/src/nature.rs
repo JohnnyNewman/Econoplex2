@@ -140,14 +140,19 @@ const BLADE_TRIS: [u32; 9] = [0, 1, 2, 1, 3, 2, 2, 3, 4];
 
 /// A chunk mesh: `n` copies of the blade shape. All copies sit at the origin;
 /// the shader moves each to its blade's position.
-fn chunk_mesh(n: usize) -> Mesh {
+/// The mesh of a chunk of `n` blades whose data starts at blade `first` of
+/// the shared blade buffer: each vertex carries its blade's index in `uv.y`,
+/// so every chunk can share one material (and one buffer) and Bevy draws
+/// them all in one batch.
+fn chunk_mesh(n: usize, first: usize) -> Mesh {
     let mut pos = Vec::with_capacity(n * 5);
     let mut uv = Vec::with_capacity(n * 5);
     let mut idx = Vec::with_capacity(n * 9);
     for b in 0..n {
         for v in BLADE {
             pos.push([v[0], v[1], 0.0]);
-            uv.push([v[1], 0.0]);
+            // f32 holds whole numbers exactly up to 16.7 million blades.
+            uv.push([v[1], (first + b) as f32]);
         }
         idx.extend(BLADE_TRIS.iter().map(|i| i + 5 * b as u32));
     }
@@ -197,39 +202,49 @@ pub fn spawn_grass(
             b.pos.x, b.pos.y, b.pos.z, b.height, b.lean, b.tint, 0.0, 0.0,
         ]);
     }
-    let n_chunks = chunks.len();
+    let n_chunks = chunks.len();
+    // One buffer of all blades, chunk after chunk, and one material for all
+    // chunks: they differ only in their meshes, so they batch into one draw
+    // (docs/design/graphics-ui.md, "Rules for many things").
+    let mut all: Vec<[f32; 8]> = Vec::with_capacity(blades.len());
+    let mut parts = Vec::with_capacity(n_chunks);
     for data in chunks.into_values() {
+        parts.push((all.len(), data.len()));
+        all.extend(data);
+    }
+    let material = materials.add(ExtendedMaterial {
+        base: StandardMaterial {
+            base_color: Color::WHITE,
+            perceptual_roughness: 1.0,
+            // Blades are seen from both sides.
+            cull_mode: None,
+            double_sided: true,
+            ..default()
+        },
+        extension: GrassExt {
+            grass: GrassUniform::default(),
+            blades: buffers.add(ShaderBuffer::from(all.clone())),
+            fog: FOG_BUFFER,
+        },
+    });
+    for (first, n) in parts {
+        let data = &all[first..first + n];
         // The chunk's bounds: its blades' roots, raised by the tallest blade
         // and widened by the wind's bend.
         let mut min = Vec3::splat(f32::MAX);
         let mut max = Vec3::splat(f32::MIN);
-        for b in &data {
+        for b in data {
             let p = Vec3::new(b[0], b[1], b[2]);
             min = min.min(p);
             max = max.max(p + Vec3::Y * b[3]);
         }
         min -= Vec3::splat(0.5);
         max += Vec3::splat(0.5);
-        let mesh = meshes.add(chunk_mesh(data.len()));
-        let material = materials.add(ExtendedMaterial {
-            base: StandardMaterial {
-                base_color: Color::WHITE,
-                perceptual_roughness: 1.0,
-                // Blades are seen from both sides.
-                cull_mode: None,
-                double_sided: true,
-                ..default()
-            },
-            extension: GrassExt {
-                grass: GrassUniform::default(),
-                blades: buffers.add(ShaderBuffer::from(data)),
-                fog: FOG_BUFFER,
-            },
-        });
+        let mesh = meshes.add(chunk_mesh(n, first));
         commands.spawn((
             GrassChunk { min, max },
             Mesh3d(mesh),
-            MeshMaterial3d(material),
+            MeshMaterial3d(material.clone()),
             Transform::default(),
             // The mesh's own bounds are a blade at the origin: give the real
             // ones, so frustum culling skips chunks outside the view.
@@ -346,11 +361,20 @@ fn update_nature(
 mod tests {
     use super::*;
 
-    /// The shader finds a blade's data at `(vertex_index - first) / 5`, so every
-    /// blade must own exactly 5 consecutive vertices and only index those.
+    /// Every blade owns exactly 5 consecutive vertices and only indexes
+    /// those, and each of them carries the blade's index in the shared
+    /// buffer (the chunk's first blade plus its own number) in `uv.y`.
     #[test]
     fn each_blade_owns_five_consecutive_vertices() {
-        let mesh = chunk_mesh(7);
+        let mesh = chunk_mesh(7, 100);
+        let Some(bevy::mesh::VertexAttributeValues::Float32x2(uv)) =
+            mesh.attribute(Mesh::ATTRIBUTE_UV_0)
+        else {
+            panic!("uv expected")
+        };
+        for (v, t) in uv.iter().enumerate() {
+            assert_eq!(t[1], (100 + v / 5) as f32);
+        }
         assert_eq!(mesh.count_vertices(), 35);
         let Some(Indices::U32(idx)) = mesh.indices() else {
             panic!("u32 indices expected")
