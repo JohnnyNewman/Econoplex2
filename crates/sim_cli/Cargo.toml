@@ -12,3 +12,4 @@ path = "src/main.rs"
 [dependencies]
 sim_core.workspace = true
 sim_data.workspace = true
+ron.workspace = true

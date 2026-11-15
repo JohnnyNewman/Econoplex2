@@ -16,6 +16,7 @@
 //! `--load` continues a saved game for `--years` more years; its parameters and
 //! scenario come from the save, so `--seed`, `--scale` and `--set` do not apply.
 
+mod bands;
 mod sweep;
 mod techtree;
 
@@ -40,6 +41,8 @@ struct Args {
     sets: Vec<(String, String)>,
     sweeps: Vec<(String, Vec<String>)>,
     seeds: u64,
+    /// Health bands to check the batch means against.
+    bands: Option<PathBuf>,
     /// Player orders, by the day they are given.
     orders: Vec<(u64, String)>,
     save: Option<PathBuf>,
@@ -73,6 +76,7 @@ fn parse_args() -> Args {
         sets: Vec::new(),
         sweeps: Vec::new(),
         seeds: 1,
+        bands: None,
         save: None,
         load: None,
         orders: Vec::new(),
@@ -140,6 +144,7 @@ fn parse_args() -> Args {
                     .parse()
                     .unwrap_or_else(|_| die("--seeds expects a number"))
             }
+            "--bands" => a.bands = Some(PathBuf::from(val())),
             "--order" => {
                 let v = val();
                 let (day, text) = v.split_once(':').unwrap_or_else(|| {
@@ -186,6 +191,8 @@ fn parse_args() -> Args {
                      --set P=V      override a parameter in models.ron, e.g. military.tribute_share=0.3\n\
                      --sweep P=A,B  run once per value (repeat for a grid); implies batch mode\n\
                      --seeds N      run N consecutive seeds from the scenario seed; implies batch mode\n\
+                     --bands FILE   after a batch, check each setting's means against the health bands in FILE;\n\
+                     exits with an error when one is outside (CI runs this)\n\
                      --embedding    print the skill embedding (product space) report and exit\n\
                      --tech-tree    print the technology tree as a Mermaid flowchart and exit\n\
                      --hash         print the final state hash (determinism check)\n\
@@ -312,6 +319,9 @@ fn main() {
         }
     }
 
+    if args.bands.is_some() && args.sweeps.is_empty() && args.seeds <= 1 {
+        die("--bands checks a batch: give --seeds N (or --sweep)");
+    }
     if !args.sweeps.is_empty() || args.seeds > 1 {
         let plan = sweep::Plan {
             paths,
@@ -322,7 +332,17 @@ fn main() {
             years: args.years,
             orders: args.orders,
         };
-        sweep::run(&plan, args.csv.as_deref()).unwrap_or_else(|e| die(&e.to_string()));
+        // Read the bands first: a bad file should not cost a whole batch.
+        let bands = args
+            .bands
+            .as_deref()
+            .map(|p| bands::read(p).unwrap_or_else(|e| die(&e)));
+        let means = sweep::run(&plan, args.csv.as_deref()).unwrap_or_else(|e| die(&e.to_string()));
+        if let Some(bands) = bands {
+            if !bands::report(&bands, &sweep::COLUMNS, &means).unwrap_or_else(|e| die(&e)) {
+                std::process::exit(1);
+            }
+        }
         return;
     }
 

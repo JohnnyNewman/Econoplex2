@@ -645,6 +645,15 @@ masters, swords, wealth and its Gini between towns, raids, conquests, revolts, t
 share of town-years under a ruler, migrants and milliseconds per tick. The table shows
 the mean and spread per setting; `--csv` writes every run.
 
+### Health bands
+
+`assets/config/health_bands.ron` gives the range that population, starvation, food
+per head and diversity are expected to stay in for a default run. With
+`--bands FILE` a batch checks each setting's means against it and exits with an
+error when one is outside. CI runs this on 8 seeds over 30 years, so a change that
+breaks the economy fails its checks. A change that is meant to move a result
+changes the band in the same pull request.
+
 ### Determinism
 
 The tick schedule runs single-threaded in a fixed order, every system draws from its
