@@ -24,22 +24,20 @@ pub fn settle(
 ) {
     let mp = &params.market;
     let np = db.content.products.len();
-    // With `item_stock: Held`, the market's count of tools and weapons is what
-    // its armory holds (weapons carried by soldiers are no longer counted).
-    if mp.item_stock == crate::config::ItemStock::Held {
-        for town in towns.0.iter_mut() {
-            let mut held = vec![0.0f32; np];
-            for &e in &town.armory {
-                if let Ok((pr, _, _)) = items.get(e) {
-                    held[pr.def as usize] += 1.0;
-                }
+    // The market's count of tools and weapons is what its armory holds
+    // (weapons carried by soldiers are no longer counted).
+    for town in towns.0.iter_mut() {
+        let mut held = vec![0.0f32; np];
+        for &e in &town.armory {
+            if let Ok((pr, _, _)) = items.get(e) {
+                held[pr.def as usize] += 1.0;
             }
-            for (p, &h) in held.iter().enumerate() {
-                if db.category(p as u32).is_item() && town.stock[p] != h {
-                    let gone = town.stock[p] - h;
-                    town.stock[p] = h;
-                    town.flows.add(crate::goods::Flow::Equipped, p, gone);
-                }
+        }
+        for (p, &h) in held.iter().enumerate() {
+            if db.category(p as u32).is_item() && town.stock[p] != h {
+                let gone = town.stock[p] - h;
+                town.stock[p] = h;
+                town.flows.add(crate::goods::Flow::Equipped, p, gone);
             }
         }
     }
@@ -136,7 +134,7 @@ pub fn settle(
                     town.price[p] = base * mp.new_building_appeal;
                     continue;
                 }
-                let crate::config::BuildingValue::Marginal {
+                let crate::config::BuildingValue {
                     payback_days,
                     max_factor,
                 } = mp.building_value;
@@ -176,7 +174,7 @@ pub fn settle(
             // Goods the government ordered raise the stock the market wants.
             // Inputs: what trades use; final goods: the per-resident target;
             // food both; plus what households buy.
-            let crate::config::Pricing::Demand { cover_days, .. } = mp.pricing;
+            let cover_days = mp.pricing.cover_days;
             let households = cover_days * town.goods_use.get(p).copied().unwrap_or(0.0);
             let wanted = households
                 + if db.is_input[p] {
@@ -286,11 +284,11 @@ pub fn settle(
 
     // Today's prices, for the year's average (price indices).
     for town in towns.0.iter_mut() {
-        town.price_sum.resize(np, 0.0);
+        town.index_year.price_sum.resize(np, 0.0);
         for p in 0..np {
-            town.price_sum[p] += town.price[p] as f64;
+            town.index_year.price_sum[p] += town.price[p] as f64;
         }
-        town.price_days += 1;
+        town.index_year.price_days += 1;
     }
 
     // Caravans: move bulk goods from cheap to expensive towns when the margin covers transport.
@@ -756,7 +754,7 @@ fn derived_targets(
     params: &Params,
     sites: &Query<&mut NaturalResource>,
 ) -> Vec<Vec<f32>> {
-    let crate::config::Pricing::Demand {
+    let crate::config::Pricing {
         cover_days,
         blocked_workers,
     } = params.market.pricing;

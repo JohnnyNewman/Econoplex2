@@ -184,7 +184,7 @@ pub fn score(sat: &Sat, lp: &LadderParams) -> f32 {
 /// How much the weighted satisfaction rises per unit of each need: the
 /// derivative of [`score`]. A need's own rung counts with its gate, and raising
 /// it also opens the rungs above a little, so their satisfaction counts too.
-/// This is what decides what is worth doing next (`decision.model: Ladder`).
+/// This is what decides what is worth doing next (job choice).
 pub fn gradient(sat: &Sat, lp: &LadderParams) -> Sat {
     let base = score(sat, lp);
     let h = 1e-3;
@@ -791,9 +791,9 @@ pub fn spend(
             town.flows.add(crate::goods::Flow::Bought, p, 1.0);
             let np = db.content.products.len();
             town.goods_today.resize(np, 0.0);
-            town.consumed_year.resize(np, 0.0);
+            town.index_year.consumed.resize(np, 0.0);
             town.goods_today[p] += 1.0;
-            town.consumed_year[p] += 1.0;
+            town.index_year.consumed[p] += 1.0;
             store.wealth[i] -= crate::coin::Coin::from_coins(price);
             match store.owned[i].iter_mut().find(|e| e.0 as usize == p) {
                 Some(e) => e.1 += 1.0,

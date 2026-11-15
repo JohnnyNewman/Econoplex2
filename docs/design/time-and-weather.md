@@ -18,8 +18,8 @@ Claude Doc: "Econoplex economy redesign: items, time, needs".
   For play, 12 game days a year: `days_per_month: 1`, `economy_days_per_day: 10`;
   each game day then stands for 10 days of making, eating and growing, and the
   economy's rates stay per day. The default stays 1 (120 game days a year).
-- `work_hours: Daylight` scales outdoor work (nature, buildings, new land) by
-  today's daylight against the equinox: 8/12 in midwinter, 16/12 in midsummer.
+- Outdoor work (nature, buildings, new land; then `work_hours: Daylight`, now
+  always) is scaled by today's daylight against the equinox: 8/12 in midwinter, 16/12 in midsummer.
   Against the full working day all year (`AllDay`, then the default, removed
   2026-11-15), over 6 seeds and 20 years: population 1918 to 1876, food per
   head 8.9 to 6.1 days, swords 1373 to 1046, no starvation either way.

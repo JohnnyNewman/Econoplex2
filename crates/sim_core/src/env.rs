@@ -40,23 +40,10 @@ pub struct TimeParams {
     /// 12 game days a year and 10 here, the economy still has 120 days a year.
     #[serde(default = "one")]
     pub economy_days_per_day: u32,
-    /// How long people work at outdoor jobs.
-    #[serde(default)]
-    pub work_hours: WorkHours,
 }
 
 fn one() -> u32 {
     1
-}
-
-/// Hours of outdoor work (fields, forests, mines, building, clearing land).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub enum WorkHours {
-    /// Outdoor work goes on while it is light: a day's work at the equinox,
-    /// two thirds of it in midwinter (8 hours against 12), a third more in
-    /// midsummer. Indoor work keeps a full day.
-    #[default]
-    Daylight,
 }
 
 fn spring() -> f32 {
@@ -72,7 +59,6 @@ impl Default for TimeParams {
             year_starts_at: spring(),
             day_length: DayLength::default(),
             economy_days_per_day: 1,
-            work_hours: WorkHours::Daylight,
         }
     }
 }
@@ -452,14 +438,13 @@ pub fn run_economy(world: &mut World) {
     }
 }
 
-/// How much of a full day's work an outdoor job gets done today (1 = a full
-/// day). Indoor jobs always get 1.
+/// How much of a full day's work an outdoor job (fields, forests, mines,
+/// building, clearing land) gets done today (1 = a full day). Outdoor work
+/// goes on while it is light: a day's work at the equinox, two thirds of it
+/// in midwinter (8 hours against 12), a third more in midsummer. Indoor jobs
+/// always get 1.
 pub fn outdoor_work_share(env: &Environment, time: &TimeParams) -> f32 {
-    match time.work_hours {
-        WorkHours::Daylight => {
-            ((env.sunset - env.sunrise) / time.day_length.equinox_hours.max(1.0)).max(0.0)
-        }
-    }
+    ((env.sunset - env.sunrise) / time.day_length.equinox_hours.max(1.0)).max(0.0)
 }
 
 /// Works out the hour, season and the weather at every town for this tick.

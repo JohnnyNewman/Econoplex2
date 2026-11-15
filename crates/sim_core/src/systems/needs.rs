@@ -101,8 +101,8 @@ pub fn sense(
                         store.wealth[i] -= crate::coin::Coin::from_coins(pay);
                         firm.cash += crate::coin::Coin::from_coins(pay);
                         firm.book(crate::firms::FirmFlow::DirectSales, pay);
-                        town.consumed_year.resize(town.stock.len(), 0.0);
-                        town.consumed_year[f] += 1.0;
+                        town.index_year.consumed.resize(town.stock.len(), 0.0);
+                        town.index_year.consumed[f] += 1.0;
                         break 'buy;
                     }
                 }
@@ -114,8 +114,8 @@ pub fn sense(
                 if town.stock[f] >= 1.0 + reserve[store.town[i] as usize][f] {
                     town.stock[f] -= 1.0;
                     town.flows.add(crate::goods::Flow::Eaten, f, 1.0);
-                    town.consumed_year.resize(town.stock.len(), 0.0);
-                    town.consumed_year[f] += 1.0;
+                    town.index_year.consumed.resize(town.stock.len(), 0.0);
+                    town.index_year.consumed[f] += 1.0;
                     st[HUNGER] = (st[HUNGER] - value).max(0.0);
                     let pay = town.price[f].min(store.wealth[i].coins().max(0.0));
                     store.wealth[i] -= crate::coin::Coin::from_coins(pay);

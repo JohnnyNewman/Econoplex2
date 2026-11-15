@@ -92,7 +92,7 @@ Each tick (day) runs the systems in this order:
   The optional household consumption (`market.consumption`) adds clothes, pots,
   ale and so on.
 
-## How prices are set (`pricing: Demand(cover_days, blocked_workers)`)
+## How prices are set (`pricing: (cover_days, blocked_workers)`)
 
 Each day, for every ordinary good:
 
@@ -110,7 +110,7 @@ Each day, for every ordinary good:
   bounds per class.
 
 Some goods have their own rules:
-- **Buildings** (`building_value: Marginal(payback_days, max_factor)`): while the
+- **Buildings** (`building_value: (payback_days, max_factor)`): while the
   town's buildings of a type are full (`build_threshold` 0.75), another is worth
   its slots times how much more its best job pays than the town's lower-quartile
   pay, over `payback_days` (10), at most `max_factor` (1) × base; a town's first
@@ -544,4 +544,6 @@ while nearly full and its goods sell above base) went with it, leaving
 (`item_stock: Counted`), leaving `Held`. The per-resident targets
 (`target_per_capita`, `food_target_per_capita`) stay: final goods and food use
 them. The sections above that mention `StockTarget` are the record of how it
-ran.
+ran. The one-variant switches left then are now plain parameters:
+`pricing: (cover_days, blocked_workers)`, `building_value: (payback_days,
+max_factor)`, and the armory count always applies.

@@ -622,8 +622,8 @@ The defaults keep the legacy rule, so the default state hash is unchanged.
 
 - **Targets** (`market.pricing`):
   - `StockTarget` (legacy): a fixed stock per resident. Removed 2026-11-15;
-    `Demand` is the only rule.
-  - `Demand(cover_days, blocked_workers)`: goods used as inputs aim for `cover_days`
+    `Demand` is the only rule, now plain parameters.
+  - `Demand`, `pricing: (cover_days, blocked_workers)`: goods used as inputs aim for `cover_days`
     of their trades' daily use, plus what profitable trades held up only by their
     shortage would use. Final goods keep the per-resident target; food gets both.
 - **Price classes:** each good has a class in the content (`price_class`; otherwise
@@ -695,8 +695,9 @@ are now gone: the weighted feature matrix (`Features`: `bias`, `mind_weights`,
 `state_weights`, `value_scale`, and `policy.charter_pull`, the guild pull it
 read) and expected utility over a few weeks (`Utility`: the valuation
 functions, `pay_basis` with the towns' `success_pay`, and `food_secure_days`).
-`Ladder` is the only variant left. What the ladder shares stays: expectations,
-the learning value, the choice rule, wage factors, matching with apprentice
+`Ladder` is the only rule left, so `decision.model` is gone. What the ladder
+shares stays: expectations, the learning value, the choice rule, wage factors,
+matching with apprentice
 places, subsistence, crowding, knowledge, and migration, whose `Utility` rule
 still values towns with the need utility above. `decision.valuation` keeps the
 horizon, `typical_success` and `posted_pay_days`. The sections above are the

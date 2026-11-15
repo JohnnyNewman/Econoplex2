@@ -1,8 +1,8 @@
 //! Seasons in farming (economy redesign, step 6).
 //!
 //! `farming` in models.ron. Nature sites that are not crops regrow the same
-//! amount every day. `Seasonal` makes crops (the nature kinds listed in
-//! `crops`: fields, flax, pasture) follow the weather:
+//! amount every day. Crops (the nature kinds listed in `crops`: fields, flax,
+//! pasture) follow the weather:
 //!
 //! - **Growth** follows the day's mean temperature: nothing below about 4 °C,
 //!   full growth from about 14 °C, less again in great heat. Growth is scaled so
@@ -25,24 +25,22 @@ use bevy_ecs::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum FarmingParams {
-    Seasonal {
-        /// Nature kinds (by id) that grow as crops.
-        crops: Vec<String>,
-        /// Standing crop a site can hold, as a multiple of its capacity.
-        crop_capacity: f32,
-        /// Share of a growing crop lost per day of frost.
-        frost_loss: f32,
-        /// Share of a standing crop that rots per day on soaked ground.
-        rot_wet: f32,
-        /// Share that rots per day in the cold (below 3 °C).
-        rot_cold: f32,
-    },
+pub struct FarmingParams {
+    /// Nature kinds (by id) that grow as crops.
+    pub crops: Vec<String>,
+    /// Standing crop a site can hold, as a multiple of its capacity.
+    pub crop_capacity: f32,
+    /// Share of a growing crop lost per day of frost.
+    pub frost_loss: f32,
+    /// Share of a standing crop that rots per day on soaked ground.
+    pub rot_wet: f32,
+    /// Share that rots per day in the cold (below 3 °C).
+    pub rot_cold: f32,
 }
 
 impl Default for FarmingParams {
     fn default() -> Self {
-        FarmingParams::Seasonal {
+        FarmingParams {
             crops: ["field", "flax_field", "pasture"]
                 .map(String::from)
                 .to_vec(),
@@ -78,7 +76,7 @@ pub fn regrow(
     env: &crate::env::Environment,
     sites: &mut Query<&mut NaturalResource>,
 ) {
-    let FarmingParams::Seasonal {
+    let FarmingParams {
         crops,
         crop_capacity,
         frost_loss,

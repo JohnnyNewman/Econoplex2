@@ -31,7 +31,10 @@ use std::path::Path;
 
 /// Bumped whenever the save layout changes incompatibly.
 /// 2: the ledger gained income tax (18 flows). 3: agents' pay expectations.
-pub const SAVE_VERSION: u32 = 9;
+/// 10: towns' price-index tallies (`index_year`) and seasonal flow profile
+/// (`flow_profile`) became sub-structs, and the model switches with one
+/// choice left were folded into plain parameters.
+pub const SAVE_VERSION: u32 = 10;
 
 /// One simulation entity and its components.
 #[derive(Serialize, Deserialize)]
