@@ -4,7 +4,6 @@
 // Vector layouts:
 //   mind     = [ambition, diligence, curiosity, sociability, risk, tradition, faith, liberty]
 //   state    = [hunger, fatigue, happiness, health]
-//   features = [value, skill, effort, novelty, social, need]
 (
     // Skill embedding. `dims` is the length of every capability vector; None sizes
     // it from the content (one per skill, rounded up to a multiple of 8), which
@@ -19,37 +18,16 @@
     capacity: NormBudget(budget: 2.0, forgetting: 0.0015),
 
     decision: (
+        // The choice rule's softmax temperature (see `choice` below).
         temperature: 0.25,
-        value_scale: 8.0,
+        // Jobs each agent weighs per decision with first-come places (sampled),
+        // plus resting and its last job.
         candidates: 6,
-        //       value  skill  effort novelty social need
-        bias: [  1.2,   0.4,   0.4,   0.0,    0.15,  1.0 ],
-        mind_weights: [
-            //  amb   dil   cur   soc   risk  trad  faith lib
-            [   1.0,  0.0,  0.0,  0.0,  0.2,  0.0,  0.0,  0.0 ],  // value
-            [   0.0,  0.6,  0.0,  0.0, -0.4,  0.3,  0.0,  0.0 ],  // skill
-            [   0.0, -0.3,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0 ],  // effort
-            [   0.0,  0.0,  1.2,  0.0,  0.0, -0.3,  0.0,  0.3 ],  // novelty
-            [   0.0,  0.0,  0.0,  0.4,  0.0,  0.2,  0.0,  0.0 ],  // social
-            [   0.0,  0.2,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0 ],  // need
-        ],
-        state_weights: [
-            //  hunger fatigue happy health
-            [   0.0,   0.0,    0.0,  0.0 ],  // value
-            [   0.0,   0.0,    0.0,  0.0 ],  // skill
-            [   0.0,   1.5,    0.0,  0.0 ],  // effort
-            [   0.0,  -0.5,    0.3,  0.0 ],  // novelty
-            [   0.0,   0.0,    0.2,  0.0 ],  // social
-            [   3.0,   0.0,    0.0,  0.0 ],  // need
-        ],
-        // Which model picks jobs. Features: the weights above. The utility-based
-        // components below are being built (docs/design/agent-decisions.md); each
-        // can be swapped on its own.
-        // Default since 2026-11-14 (Nils): choices by the needs ladder's derivative.
-        // Before: model: Features,
+        // Which model picks jobs. Ladder (the only one): choices by the needs
+        // ladder's derivative. The components below can each be swapped on their
+        // own (docs/design/agent-decisions.md).
         model: Ladder,
-        // With model: Ladder (choices by the needs ladder's derivative): how
-        // sharply people pick the option that raises their satisfaction most.
+        // How sharply people pick the option that raises their satisfaction most.
         ladder_scale: 200.0,
         // Component: price and pay expectations. Adaptive moves base_rate +
         // curiosity_rate x curiosity of the way toward each observation; Fixed
@@ -73,24 +51,17 @@
         // temperature base x (1 + risk_weight x risk - diligence_weight x diligence);
         // base None uses `temperature` above. Argmax: always the best option.
         choice: Logit(base: None, risk_weight: 0.0, diligence_weight: 0.0),
-        // The utility model's look ahead: horizon in days and daily discount.
+        // Look ahead (utility migration): horizon in days and daily discount.
+        // typical_success: the success chance pay per worker-day refers to.
         // posted_pay_days: each town's public pay rate for a job drifts toward what
         // it would pay at today's prices over this many days (realised pay pulls
         // harder), so jobs nobody has tried yet still show a pay.
-        // pay_basis: Average (a job's average pay here, failures included, scaled
-        // by the agent's success chance) or OwnSuccess (the agent's success chance
-        // times what a successful day pays here; beginners then see what a hard
-        // trade pays those who master it).
-        valuation: (horizon_days: 30.0, discount: 0.97, typical_success: 0.7, posted_pay_days: 90.0,
-            pay_basis: Average,
-            // Days of food the town must hold, and the agent afford, for food it
-            // can buy to count as meeting its food need when it weighs jobs (0: off).
-            food_secure_days: 0.0),
+        valuation: (horizon_days: 30.0, discount: 0.97, typical_success: 0.7, posted_pay_days: 90.0),
         // Component: each job's pay factor on the town's base wage share. Fixed: 1.
         // ExcessDemand: moves by step x (target_fill - takers / places) each day,
         // within min..max: crowded jobs pay less, empty ones more.
         wages: Fixed,
-        // Component: what the skill a job teaches is worth later (utility model).
+        // Component: what the skill a job teaches is worth later, added to its pay.
         // None, or Discounted: the extra pay a higher success chance brings over
         // horizon_days, discounted daily, ending at retire_age.
         learning: Discounted(horizon_days: 360.0, discount: 0.995, retire_age: 60.0),
@@ -121,15 +92,14 @@
         migration: Weighted,
         // Component: subsistence. None: all output goes to the town's stores.
         // Keep(share, larder_meals): food workers' households keep `share` of each
-        // edible output (up to `larder_meals` meals) and eat it before buying; the
-        // utility model counts that as covering the worker's own food need. Example:
+        // edible output (up to `larder_meals` meals) and eat it before buying. Example:
         // subsistence: Keep(share: 0.2, larder_meals: 10.0),
         subsistence: None,
         // Component: crowding. None: no rent. Rent(...): housing = base + per_plot x
         // land plots + per_building x buildings; each adult pays rate x (residents /
         // housing)^exponent a day to the treasury,
-        // following crowding over sticky_days. Job choice and utility migration
-        // see wealth after the coming weeks' rent. Example:
+        // following crowding over sticky_days. Utility migration sees wealth after
+        // the coming weeks' rent. Example:
         // crowding: Rent(base: 100.0, per_plot: 12.0, per_building: 8.0, rate: 0.3, exponent: 2.0, sticky_days: 60.0),
         crowding: None,
         // Town culture: each town's culture vector follows its residents' average
@@ -429,14 +399,13 @@
 
     // Player levers. Subsidies top up a product's value from the treasury; a school
     // teaches children one domain for a fee per pupil-day paid to the teacher; a
-    // guild charter draws people into a trade and speeds up its masters' teaching;
+    // guild charter speeds up its masters' teaching;
     // encouraged immigration makes the town more appealing and pays newcomers.
     policy: (
         max_subsidy: 1.0,
         school_age: 6.0,
         school_rate: 0.5,
         school_fee: 0.02,
-        charter_pull: 1.0,
         charter_teaching: 0.5,
         immigration_bonus: 0.5,
         settlement_grant: 2.0,

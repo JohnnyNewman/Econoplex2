@@ -522,8 +522,7 @@ town's policy:
   between `school_age` and the apprentice age practice the domain each day and learn
   from the town's best teacher in it. The teacher is paid `school_fee` per pupil and
   day from the treasury.
-- **Guild charter** (`charter TOWN DOMAIN on|off`): the domain's jobs draw people as
-  if they were already members of the guild (`charter_pull`), and its masters teach
+- **Guild charter** (`charter TOWN DOMAIN on|off`): the domain's masters teach
   `charter_teaching` faster.
 - **Immigration** (`immigration TOWN open|encouraged|closed`): closed borders turn
   migrants away. Encouraged immigration adds `immigration_bonus` to the town's appeal

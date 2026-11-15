@@ -328,3 +328,7 @@ quarter of its people at seed 42); `first_year_has_no_famine` now asks that no
 town lose a third and the world keep 90 %. Tests calibrated to the old models
 pin them with `legacy()`, which now also sets Features, StockTarget pricing and
 the Load building value.
+
+The `Features` and `Utility` decision models have since been removed
+(agent-decisions.md); `Ladder` is the only one. Under a consumption model
+other than `Needs` it reads the ladder's default parameters.

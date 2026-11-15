@@ -248,10 +248,6 @@ pub struct Town {
     /// moving average of realised pay, failures included).
     #[serde(default)]
     pub pay_rate: Vec<f32>,
-    /// What a successful worker-day at each recipe has paid here lately (failures
-    /// left out); see `decision.valuation.pay_basis`.
-    #[serde(default)]
-    pub success_pay: Vec<f32>,
     /// Each good's current price cap, as a factor of its base price (see
     /// `market.scarcity_cap`). Empty: `max_price_factor` for all.
     #[serde(default)]
@@ -706,7 +702,6 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
             flow_seen_day: 0,
             flows,
             pay_rate: vec![0.0; db.recipes.len()],
-            success_pay: vec![0.0; db.recipes.len()],
             price_cap: Vec::new(),
             input_today: Vec::new(),
             input_use: Vec::new(),

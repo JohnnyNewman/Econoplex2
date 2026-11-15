@@ -1,6 +1,7 @@
 # Agent decisions: how they work today, and a more principled replacement
 
-Status: **agreed direction** (2026-11-09). Nils's decisions are under "Decisions"
+Status: **agreed direction** (2026-11-09); the feature and utility models
+have since been removed (see the last section). Nils's decisions are under "Decisions"
 at the end; implementation follows the migration plan in (d).
 
 ## Summary
@@ -685,3 +686,18 @@ at 10 days).
 What would fix it is food work valued by what the town needs, not by the
 worker's own hunger. Today's Features model gets this from the per-town job
 places: food jobs have places while food is short.
+
+## The feature and utility models removed (2026-11-15)
+
+Job choice by the needs ladder's derivative (`decision.model: Ladder`,
+needs-ladder.md) became the default on 2026-11-14, and the two models before it
+are now gone: the weighted feature matrix (`Features`: `bias`, `mind_weights`,
+`state_weights`, `value_scale`, and `policy.charter_pull`, the guild pull it
+read) and expected utility over a few weeks (`Utility`: the valuation
+functions, `pay_basis` with the towns' `success_pay`, and `food_secure_days`).
+`Ladder` is the only variant left. What the ladder shares stays: expectations,
+the learning value, the choice rule, wage factors, matching with apprentice
+places, subsistence, crowding, knowledge, and migration, whose `Utility` rule
+still values towns with the need utility above. `decision.valuation` keeps the
+horizon, `typical_success` and `posted_pay_days`. The sections above are the
+record of how the old models ran.

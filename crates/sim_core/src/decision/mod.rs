@@ -14,8 +14,8 @@
 //! - [`crowding`]: the rent a town's crowding costs its residents.
 //! - [`culture`]: each town's culture vector and an agent's fit with it.
 //! - [`knowledge`]: which towns an agent knows about, and how well.
-//! - [`valuation`]: what working a job or resting is worth to an agent (the
-//!   utility model's wiring of expectations and utility).
+//! - [`valuation`]: the look-ahead, typical success chance and posted pay that
+//!   job choice, pay and migration share.
 //!
 //! Further components (learning value, choice rule, wage adjustment, job matching,
 //! migration) follow the same pattern. A component sees only its inputs; the systems

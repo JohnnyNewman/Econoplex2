@@ -13,8 +13,7 @@
 //!   best teacher, who is paid a fee per pupil and day from the treasury.
 //! - **Immigration**: closed borders turn migrants away; encouraged immigration
 //!   adds to the town's appeal and pays newcomers a settlement grant.
-//! - **Guild charter**: a chartered guild draws people into its trade and its
-//!   masters teach faster.
+//! - **Guild charter**: a chartered guild's masters teach faster.
 //! - **Army**: the share of adults kept under arms, and whether the squad raids on
 //!   its own judgment or only defends; a raid order sends it against a chosen town.
 //! - **Construction**: a commissioned building is paid for at full price whatever

@@ -78,6 +78,27 @@ fn plan_days() -> f32 {
     30.0
 }
 
+/// The ladder job choice reads when households do not buy by it (another
+/// `market.consumption`): the values models.ron sets.
+impl Default for LadderParams {
+    fn default() -> Self {
+        LadderParams {
+            interval: 7,
+            gate_at: 0.7,
+            gate_width: 0.15,
+            comfort_c: 16.0,
+            house_c: 6.0,
+            max_clothes: 2.0,
+            fire_per_c: 0.5,
+            fire_per_extra_person: 0.25,
+            savings_days: 60.0,
+            larder_days: 14.0,
+            cold_damage: 0.02,
+            plan_days: plan_days(),
+        }
+    }
+}
+
 /// One household good and the needs it serves.
 #[derive(Debug, Clone)]
 pub struct LadderGood {

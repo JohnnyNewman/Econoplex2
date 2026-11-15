@@ -3,8 +3,8 @@
 //! Interface: the agent's chance of success at the job now and after a day of
 //! practice, the job's expected pay per worker-day (for a typical worker), the
 //! agent's age, and the typical success chance the pay refers to. Output: the
-//! present value of the extra pay that practice unlocks, in money. The utility model
-//! adds it to the job's worth, so agents invest in skills they will use.
+//! present value of the extra pay that practice unlocks, in money. Job choice
+//! adds it to the job's pay, so agents invest in skills they will use.
 
 use serde::{Deserialize, Serialize};
 

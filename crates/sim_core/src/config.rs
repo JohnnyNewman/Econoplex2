@@ -4,13 +4,7 @@
 //! alternative shapes are enums: pick a variant in the RON file to swap the model.
 
 use serde::{Deserialize, Serialize};
-use sim_data::dims::{MIND_DIM, STATE_DIM};
 use std::path::Path;
-
-/// Number of decision features: value, skill, effort, novelty, social, need.
-pub const FEATURES: usize = 6;
-pub const FEATURE_NAMES: [&str; FEATURES] =
-    ["value", "skill", "effort", "novelty", "social", "need"];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelParams {
@@ -55,7 +49,7 @@ pub struct ModelParams {
 }
 
 impl ModelParams {
-    /// Check matrix shapes so a typo in the RON file fails loudly at load time.
+    /// Check the parameters so a typo in the RON file fails loudly at load time.
     pub fn validate(&self) -> Result<(), ConfigError> {
         let t = &self.time;
         if t.ticks_per_day == 0
@@ -77,22 +71,6 @@ impl ModelParams {
                 self.life.days_per_year
             )));
         }
-        let d = &self.decision;
-        let shape = |name: &str, rows: &[Vec<f32>], cols: usize| -> Result<(), ConfigError> {
-            if rows.len() != FEATURES || rows.iter().any(|r| r.len() != cols) {
-                return Err(ConfigError(format!(
-                    "decision.{name} must be {FEATURES} rows of {cols} values"
-                )));
-            }
-            Ok(())
-        };
-        if d.bias.len() != FEATURES {
-            return Err(ConfigError(format!(
-                "decision.bias must have {FEATURES} values"
-            )));
-        }
-        shape("mind_weights", &d.mind_weights, MIND_DIM)?;
-        shape("state_weights", &d.state_weights, STATE_DIM)?;
         Ok(())
     }
 }
@@ -167,20 +145,9 @@ pub enum CapacityParams {
 pub struct DecisionParams {
     /// Softmax temperature: higher = less rational choices.
     pub temperature: f32,
-    /// Preference weights per feature: w = bias + mind_weights · mind + state_weights · state.
-    /// One entry per feature.
-    pub bias: Vec<f32>,
-    /// One row per feature, one column per mind axis.
-    pub mind_weights: Vec<Vec<f32>>,
-    /// One row per feature, one column per state axis.
-    pub state_weights: Vec<Vec<f32>>,
-    /// Scale in `value = tanh(profit_per_day / value_scale)`.
-    pub value_scale: f32,
     /// How many candidate jobs each agent considers per decision (sampled), plus resting.
     pub candidates: usize,
-    /// Which decision model picks jobs: `Features` (the weighted feature matrix
-    /// above). More arrive with the utility-based components (see
-    /// docs/design/agent-decisions.md).
+    /// Which decision model picks jobs (`Ladder`, the only one).
     #[serde(default)]
     pub model: DecisionModel,
     /// With `model: Ladder`: scale from satisfaction per day to the choice
@@ -196,13 +163,13 @@ pub struct DecisionParams {
     /// Component: how option values become a choice.
     #[serde(default)]
     pub choice: crate::decision::choice::ChoiceParams,
-    /// The utility model's horizon and discounting.
+    /// Look-ahead and discounting, the typical success chance, and posted pay.
     #[serde(default)]
     pub valuation: crate::decision::valuation::ValuationParams,
     /// Component: how each job's pay moves with the balance of workers and places.
     #[serde(default)]
     pub wages: crate::decision::wages::WageParams,
-    /// Component: the value of the skill a job teaches (used by the utility model).
+    /// Component: the value of the skill a job teaches.
     #[serde(default)]
     pub learning: crate::decision::learning::LearningValueParams,
     /// Component: who gets which place, and apprentice places.
@@ -227,16 +194,12 @@ pub struct DecisionParams {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DecisionModel {
-    /// The weighted feature matrix (`bias`, `mind_weights`, `state_weights`).
-    #[default]
-    Features,
-    /// Expected utility of the agent's needs over a few weeks, from its own
-    /// expected pay and chance of success (`decision::valuation`).
-    Utility,
     /// The needs ladder's derivative: each option is worth the change it makes
     /// to the person's needs, weighted by how much each need raises their
-    /// weighted satisfaction (`ladder::gradient`). Needs
-    /// `market.consumption: Needs`.
+    /// weighted satisfaction (`ladder::gradient`). Reads the ladder's
+    /// parameters from `market.consumption: Needs`, or their defaults under
+    /// another consumption model.
+    #[default]
     Ladder,
 }
 
@@ -663,8 +626,6 @@ pub struct PolicyParams {
     pub school_rate: f32,
     /// Paid by the treasury to the teacher per pupil and day.
     pub school_fee: f32,
-    /// Pull of a chartered guild's trade in job choice (as being a member is 1).
-    pub charter_pull: f32,
     /// Extra teaching speed of a chartered guild's masters (1.0 doubles it).
     pub charter_teaching: f32,
     /// Appeal a town with encouraged immigration adds for migrants.
