@@ -1,15 +1,11 @@
 //! Food as the ruler's challenge (economy redesign, step 7).
 //!
-//! `market.food_rules` in models.ron:
-//!
-//! - `Town` (the default) keeps two town-wide rules that no single person
-//!   would keep: seed grain and flour for a few days of bread are held out of
-//!   reach of eating and of other trades (`food_reserve_days`), and people are
-//!   drawn to farm work by the town's food scarcity, not only by its pay.
-//! - `Ruler` drops both: people eat what the market holds and take the jobs
-//!   that pay. Bridging the hungry gap is then the ruler's job, with the
-//!   granary below, the seed reserve as an order (`reserve TOWN on`), and the
-//!   levers they already had (food subsidies, imports, new fields).
+//! `market.food_rules` in models.ron: `Ruler`, the only rule left. People eat
+//! what the market holds and take the jobs that pay. Bridging the hungry gap
+//! is the ruler's job, with the granary below, the seed reserve as an order
+//! (`reserve TOWN on`: seed grain and flour for `food_reserve_days` of bread
+//! are held out of reach of eating and of other trades), and the levers they
+//! already had (food subsidies, imports, new fields).
 //!
 //! **Stockpiles** (order `stockpile TOWN GOOD AMOUNT`) are the general form:
 //! any good the town keeps in its stores against a siege or bad times. A
@@ -37,22 +33,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FoodRules {
     #[default]
-    Town,
     Ruler,
-}
-
-impl FoodRules {
-    /// Whether the town-wide food rules (seed reserve, scarcity pull) apply.
-    pub fn town(self) -> bool {
-        self == FoodRules::Town
-    }
-}
-
-/// Whether `town` holds the inputs of its food chains (seed grain, flour)
-/// back from eating and other trades: always under `Town` rules, by the
-/// ruler's order (`reserve TOWN on`) under `Ruler` rules.
-pub fn keeps_reserve(town: &crate::world::Town, params: &Params) -> bool {
-    params.market.food_rules.town() || town.policy.food_reserve
 }
 
 /// Food value held in the granary.

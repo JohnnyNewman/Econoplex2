@@ -166,7 +166,7 @@ pub fn job_capacity(
                 cap = cap.min(nature_total[k as usize] / out * m.duration);
             }
             for &(p, q) in &m.inputs {
-                let held = if food || !crate::granary::keeps_reserve(town, params) {
+                let held = if food || !town.policy.food_reserve {
                     0.0
                 } else {
                     reserve[p as usize]

@@ -127,7 +127,7 @@ pub struct Policy {
     #[serde(default)]
     pub granary_days: f32,
     /// Hold the inputs of food chains (seed grain, flour) back from eating and
-    /// other trades (with `market.food_rules: Ruler`; always on under `Town`).
+    /// other trades.
     #[serde(default)]
     pub food_reserve: bool,
     /// Stock targets: (product, units) the town keeps in its stores, out of the

@@ -171,9 +171,9 @@ pub fn govern(
         }
     }
 
-    // Under the ruler's food rules a governor also takes stock on the first
-    // day: nothing else feeds the town while it waits a month.
-    let first_day = clock.tick == 1 && !params.market.food_rules.town();
+    // A governor also takes stock on the first day: nothing else feeds the
+    // town while it waits a month.
+    let first_day = clock.tick == 1;
     if gp.interval == 0
         || clock.tick == 0
         || !(clock.tick.is_multiple_of(gp.interval as u64) || first_day)
@@ -204,8 +204,8 @@ pub fn govern(
         // --- food: subsidize what feeds people while the town goes hungry
         let food_target = mp.food_target_per_capita;
         // The forecast: days the food in store lasts at the year's rate of
-        // making against eating. Under the ruler's rules a governor acts on it
-        // before the market runs dry.
+        // making against eating. A governor acts on it before the market runs
+        // dry.
         let store_food = town.food_stock(&db) + crate::granary::held(town, &db);
         let deficit = st.food_eaten - st.food_made;
         let days_left = if deficit > 1e-3 {
@@ -213,7 +213,7 @@ pub fn govern(
         } else {
             f32::INFINITY
         };
-        let foresee = !mp.food_rules.town() && days_left < gp.food_horizon_days;
+        let foresee = days_left < gp.food_horizon_days;
         let hungry = st.food < gp.food_low * food_target || foresee;
         let fed = st.food > gp.food_ok * food_target && !foresee;
         for &(f, _) in &db.foods {
@@ -250,9 +250,9 @@ pub fn govern(
             }
         }
 
-        // Without town-wide food rules, the governor holds the seed back and
-        // keeps a granary to bridge the hungry gap.
-        if !mp.food_rules.town() && !p.food_reserve {
+        // The governor holds the seed back and keeps a granary to bridge the
+        // hungry gap.
+        if !p.food_reserve {
             orders.push((
                 Order::Reserve {
                     town: tid,
@@ -261,7 +261,7 @@ pub fn govern(
                 "held the seed grain back: eating it starves next year".into(),
             ));
         }
-        if !mp.food_rules.town() && (p.granary_days - gp.granary_days).abs() > 0.5 {
+        if (p.granary_days - gp.granary_days).abs() > 0.5 {
             orders.push((
                 Order::Granary {
                     town: tid,

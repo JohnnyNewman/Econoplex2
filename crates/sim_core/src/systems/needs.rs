@@ -28,7 +28,7 @@ pub fn sense(
         .0
         .iter()
         .map(|town| {
-            if crate::granary::keeps_reserve(town, &params) {
+            if town.policy.food_reserve {
                 super::decide::food_reserve(&db, town, &params)
             } else {
                 vec![0.0; town.stock.len()]

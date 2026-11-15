@@ -1,15 +1,15 @@
 //! Seasons in farming (economy redesign, step 6).
 //!
-//! `farming` in models.ron. `AllYear` (the default) keeps the old rule: every
-//! nature site regrows the same amount every day. `Seasonal` makes crops
-//! (the nature kinds listed in `crops`: fields, flax, pasture) follow the
-//! weather:
+//! `farming` in models.ron. Nature sites that are not crops regrow the same
+//! amount every day. `Seasonal` makes crops (the nature kinds listed in
+//! `crops`: fields, flax, pasture) follow the weather:
 //!
 //! - **Growth** follows the day's mean temperature: nothing below about 4 °C,
 //!   full growth from about 14 °C, less again in great heat. Growth is scaled so
-//!   that a year of the town's climate grows as much as the old daily rule did,
-//!   so the yearly harvest stays the same while its timing changes.
-//! - **Standing crop**: a site can hold `crop_capacity` times its old capacity,
+//!   that a year of the town's climate grows as much as a year of the site's
+//!   daily `regrowth`, so the yearly harvest is set by the content while its
+//!   timing follows the seasons.
+//! - **Standing crop**: a site can hold `crop_capacity` times its capacity,
 //!   so a season's growth stands in the field until it is reaped.
 //! - **Losses**: frost (below 0 °C) damages a growing crop; standing crop rots
 //!   on wet ground and in the cold. A crop not reaped by late autumn is lost,
@@ -24,10 +24,8 @@ use crate::world::{Params, Towns};
 use bevy_ecs::prelude::*;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum FarmingParams {
-    #[default]
-    AllYear,
     Seasonal {
         /// Nature kinds (by id) that grow as crops.
         crops: Vec<String>,
@@ -42,13 +40,27 @@ pub enum FarmingParams {
     },
 }
 
+impl Default for FarmingParams {
+    fn default() -> Self {
+        FarmingParams::Seasonal {
+            crops: ["field", "flax_field", "pasture"]
+                .map(String::from)
+                .to_vec(),
+            crop_capacity: 15.0,
+            frost_loss: 0.05,
+            rot_wet: 0.02,
+            rot_cold: 0.01,
+        }
+    }
+}
+
 /// How fast crops grow at a day's mean temperature, 0..1.
 pub fn growth(mean_c: f32) -> f32 {
     crate::env::smooth(4.0, 14.0, mean_c) * (1.0 - crate::env::smooth(28.0, 36.0, mean_c))
 }
 
-/// The factor that makes a year of growth in this climate equal a year of the
-/// old daily regrowth (at most 6).
+/// The factor that makes a year of growth in this climate equal a year of
+/// daily regrowth (at most 6).
 pub fn year_scale(params: &Params) -> f32 {
     let n = 360;
     let mean: f32 = (0..n)
@@ -72,13 +84,7 @@ pub fn regrow(
         frost_loss,
         rot_wet,
         rot_cold,
-    } = &params.farming
-    else {
-        for mut n in sites.iter_mut() {
-            n.amount = (n.amount + n.regrowth).min(n.capacity);
-        }
-        return;
-    };
+    } = &params.farming;
     let is_crop: Vec<bool> = db
         .content
         .nature

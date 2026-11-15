@@ -368,7 +368,8 @@ Three rules keep towns from crashing into their ceiling:
   times its target stock. Mills stop turning edible grain into flour the bakeries
   can't use.
 - **Food comes first.** Grain, flour and wood for `food_reserve_days` of the town's
-  food need are held back. Hungry people don't eat the mills' grain, and charcoal
+  food need are held back while the ruler orders it (`reserve TOWN on`; AI
+  governors do). Hungry people don't eat the mills' grain, and charcoal
   burners and carpenters only get wood beyond what the bakeries need.
 - **Births look ahead.** Parents judge the food stock `food_foresight_days` ahead at
   its recent trend. Births slow while the stores are still full but shrinking, so the
