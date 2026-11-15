@@ -240,8 +240,11 @@ pub fn settle(
                         .map(|o| o.1)
                         .sum();
                     (out > 0.0).then(|| {
-                        let inputs: f32 =
-                            m.inputs.iter().map(|&(i, q)| town.price[i as usize] * q).sum();
+                        let inputs: f32 = m
+                            .inputs
+                            .iter()
+                            .map(|&(i, q)| town.price[i as usize] * q)
+                            .sum();
                         (inputs + poor_pay * m.duration) / out
                     })
                 })
