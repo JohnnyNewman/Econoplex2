@@ -24,6 +24,8 @@ struct Water {
 @group(constants::MATERIAL_BIND_GROUP) @binding(100) var<uniform> water: Water;
 @group(constants::MATERIAL_BIND_GROUP) @binding(101) var heights: texture_2d<f32>;
 @group(constants::MATERIAL_BIND_GROUP) @binding(102) var<storage, read> env: Env; // the shared fog and lamps (src/fog.rs, FOG_BUFFER)
+// Which way rivers flow: rg the 3D direction (x, z) in 0..1, b how much river (src/water.rs, flow_map).
+@group(constants::MATERIAL_BIND_GROUP) @binding(103) var flow_tex: texture_2d<f32>;
 
 // The ground under the water: the terrain's heights, bilinear by hand (the
 // float texture isn't filterable everywhere).
@@ -41,6 +43,25 @@ fn ground_at(xz: vec2<f32>) -> f32 {
     let c = textureLoad(heights, clamp(t0 + vec2(0, 1), vec2<i32>(0), last), 0).r;
     let d = textureLoad(heights, clamp(t0 + vec2(1, 1), vec2<i32>(0), last), 0).r;
     return mix(mix(a, b, f.x), mix(c, d, f.x), f.y) * water.grid.w;
+}
+
+// The flow at a point: xy direction (3D x, z), z how much river (0 = still
+// water), bilinear by hand like the heights.
+fn flow_at(xz: vec2<f32>) -> vec3<f32> {
+    let t = vec2<f32>(xz.x - water.grid.x, water.grid.y - xz.y) / water.grid.z;
+    let last = vec2<i32>(water.dims.xy) - 1;
+    if any(t < vec2<f32>(0.0)) || any(t > vec2<f32>(last)) {
+        return vec3<f32>(0.0);
+    }
+    let t0 = vec2<i32>(floor(t));
+    let f = fract(t);
+    let a = textureLoad(flow_tex, clamp(t0, vec2<i32>(0), last), 0).rgb;
+    let b = textureLoad(flow_tex, clamp(t0 + vec2(1, 0), vec2<i32>(0), last), 0).rgb;
+    let c = textureLoad(flow_tex, clamp(t0 + vec2(0, 1), vec2<i32>(0), last), 0).rgb;
+    let d = textureLoad(flow_tex, clamp(t0 + vec2(1, 1), vec2<i32>(0), last), 0).rgb;
+    let v = mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+    let dir = v.xy * 2.0 - 1.0;
+    return vec3<f32>(dir / max(length(dir), 1e-3), v.z);
 }
 
 fn hash2(p: vec2<f32>) -> f32 {
@@ -74,6 +95,35 @@ fn ripples(xz: vec2<f32>, t: f32, dir: vec2<f32>, strength: f32) -> vec2<f32> {
     return (g + n * 0.12) * strength;
 }
 
+// The slope of a smooth ripple pattern for the river's surface: a few sine
+// waves in fixed, unrelated directions (smooth everywhere, unlike value
+// noise, whose slope shows its grid).
+fn noise_slope(xz: vec2<f32>) -> vec2<f32> {
+    let k = array<vec2<f32>, 4>(vec2<f32>(3.4, 1.1), vec2<f32>(-2.1, 3.8), vec2<f32>(5.9, -3.5), vec2<f32>(-1.4, -7.4));
+    let c = array<f32, 4>(0.0, 1.7, 4.1, 2.6);
+    let a = array<f32, 4>(0.034, 0.026, 0.014, 0.009);
+    var g = vec2<f32>(0.0);
+    for (var i = 0; i < 4; i++) {
+        g += k[i] * cos(dot(xz, k[i]) + c[i]) * a[i];
+    }
+    return g;
+}
+
+// Rivers: the ripple pattern drifts downstream. A pattern pushed along by a
+// direction that changes from place to place would tear at the bends over
+// time, so two copies take turns: each drifts for a while and fades out as
+// the other, starting fresh, fades in (the "flow map" technique).
+fn river_slope(xz: vec2<f32>, dir: vec2<f32>, t: f32) -> vec2<f32> {
+    let speed = 1.4;                       // units per second
+    let cycle = 3.0;                       // seconds per turn
+    let ph0 = fract(t / cycle);
+    let ph1 = fract(t / cycle + 0.5);
+    let s0 = noise_slope(xz - dir * speed * cycle * ph0);
+    let s1 = noise_slope(xz - dir * speed * cycle * ph1 + vec2<f32>(7.3, 2.1));
+    let w0 = 1.0 - abs(2.0 * ph0 - 1.0);   // 0 at the turn, 1 halfway
+    return s0 * w0 + s1 * (1.0 - w0);
+}
+
 @fragment
 fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> FragmentOutput {
     var pbr = pbr_input_from_standard_material(in, is_front);
@@ -94,6 +144,10 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let near = 1.0 - smoothstep(15.0, 90.0, dist);
     let strength = (0.35 + 1.3 * fog.wind.z) * (1.0 - ice) * near;
     var slope = ripples(p.xz, t, wind_dir, strength);
+    // In the rivers the surface drifts downstream instead.
+    let flow = flow_at(p.xz);
+    let river = flow.z * (1.0 - ice);
+    slope = mix(slope, river_slope(p.xz, flow.xy, t) * (0.6 + near * 0.6), river);
     // Rain: little rings popping up on a grid of cells.
     let wet = fog.ground.y * (1.0 - ice) * near;
     if wet > 0.05 {
@@ -134,7 +188,9 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
 
     // Foam where the water is shallow, broken up and drifting.
     let foam_band = 1.0 - smoothstep(0.02, 0.14, depth);
-    let foam = foam_band * smoothstep(0.55, 0.8, noise(p.xz * 5.0 + vec2<f32>(t * 0.3, -t * 0.2))) * (1.0 - ice);
+    // Foam drifts with the river (or idles with the wind on still water).
+    let drift = select(vec2<f32>(t * 0.3, -t * 0.2), -flow.xy * t * 1.4, river > 0.3);
+    let foam = foam_band * smoothstep(0.55, 0.8, noise((p.xz + drift) * 5.0)) * (1.0 - ice);
     col = mix(col, vec3<f32>(0.92, 0.95, 0.95) * (tt.light * 0.9 + 0.05 + lamps), foam * 0.6);
 
     let fogged = apply_fog(col, p, fog);
