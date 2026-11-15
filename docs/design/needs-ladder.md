@@ -41,7 +41,7 @@ On by default since 2026-11-13: `market.consumption: Needs(...)` and `decision.m
 
 | | pop | food/head | swords | capability | happiness |
 | --- | --- | --- | --- | --- | --- |
-| Basket (default) | 1918 | 8.9 | 1373 | 36.8 | 0.70 |
+| Basket (then the default, since removed) | 1918 | 8.9 | 1373 | 36.8 | 0.70 |
 | Needs | 1906 | 8.0 | 1035 | 35.0 | 0.42 |
 | Needs + daylight work | 1819 | 5.5 | 962 | 35.9 | 0.41 |
 | Needs with households | 1884 | 8.9 | 911 | 35.5 | 0.43 |
