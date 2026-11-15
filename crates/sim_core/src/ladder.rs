@@ -280,6 +280,13 @@ pub struct Homes {
 /// Per person: who keeps their home. A couple keeps one home (kept by the
 /// partner with the lower index); children live with a parent in their town;
 /// everyone else keeps their own. Views use it to put families in one house.
+impl Homes {
+    /// People at the hearth person `i` keeps (1 if they keep none).
+    pub fn size_of(&self, i: usize) -> f32 {
+        self.size.get(i).copied().unwrap_or(1.0).max(1.0)
+    }
+}
+
 pub fn keepers(store: &AgentStore) -> Vec<usize> {
     let n = store.len();
     let alive = |k: usize| k < n && store.alive[k];

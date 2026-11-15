@@ -577,6 +577,11 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
                 .unwrap_or_else(|| panic!("scenario: unknown product `{p}`"));
             stock[i as usize] = *q;
         }
+        // A steady-state start: stocks and pipelines as if running.
+        let steady = crate::start::market_stock(&db, &params, spec.population as f32);
+        for (s, &q) in stock.iter_mut().zip(&steady) {
+            *s = s.max(q);
+        }
         let flows = crate::goods::GoodsFlows::seeded(&stock);
         // Buildings on a ring around the town center.
         let mut buildings = Vec::new();
@@ -816,6 +821,7 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
     for (i, &t) in store.town.iter().enumerate() {
         towns.0[t as usize].residents.push(i as u32);
     }
+    crate::start::households(&mut towns, &mut store, &db, &params);
 
     let goal = crate::goal::MatchState::new(scenario.goal.as_ref(), &db, scenario.towns.len())
         .unwrap_or_else(|e| panic!("{e}"));
