@@ -32,7 +32,7 @@ pub mod world;
 
 use bevy_ecs::prelude::*;
 use bevy_ecs::schedule::{ScheduleLabel, SingleThreadedExecutor};
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
 use std::path::{Path, PathBuf};
 
 pub mod consumption;
@@ -305,28 +305,8 @@ impl Simulation {
     }
 }
 
-/// Hash of the full simulation state that matters for determinism checks.
+/// Hash of the full simulation state: everything a save file holds, so that
+/// whatever is worth saving also counts for determinism checks.
 pub fn state_hash(world: &World) -> u64 {
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    world.resource::<SimClock>().tick.hash(&mut h);
-    let s = world.resource::<AgentStore>();
-    let mut f = |x: f32| x.to_bits().hash(&mut h);
-    for i in 0..s.len() {
-        s.cap[i].iter().for_each(|x| f(*x));
-        s.mind[i].iter().for_each(|x| f(*x));
-        s.phys[i].iter().for_each(|x| f(*x));
-        s.state[i].iter().for_each(|x| f(*x));
-        f(s.wealth[i]);
-        s.ties[i].iter().for_each(|t| {
-            f(t.value);
-            f(f32::from_bits(t.other));
-        });
-    }
-    for t in &world.resource::<Towns>().0 {
-        t.stock.iter().for_each(|x| f(*x));
-        t.price.iter().for_each(|x| f(*x));
-    }
-    s.alive.hash(&mut h);
-    s.age_days.hash(&mut h);
-    h.finish()
+    save::state_hash(world)
 }

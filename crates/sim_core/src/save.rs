@@ -102,8 +102,9 @@ impl SavedEntity {
         any.then_some(s)
     }
 
-    fn spawn(self, world: &mut World, new: Entity, map: &EntityMap) {
-        let mut e = world.entity_mut(new);
+    /// Insert the components on the entity `self.id` (already mapped to this world).
+    fn spawn(self, world: &mut World) {
+        let mut e = world.entity_mut(self.id);
         if let Some(c) = self.agent {
             e.insert(c);
         }
@@ -149,8 +150,7 @@ impl SavedEntity {
         if let Some(c) = self.organization {
             e.insert(c);
         }
-        if let Some(mut c) = self.membership {
-            c.org = map.get(c.org);
+        if let Some(c) = self.membership {
             e.insert(c);
         }
         if let Some(c) = self.task {
@@ -163,7 +163,7 @@ impl SavedEntity {
 }
 
 /// The save layout. [`SaveRef`] writes the same fields by reference.
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct SaveFile {
     pub version: u32,
     pub content_hash: u64,
@@ -195,6 +195,44 @@ pub struct SaveFile {
 }
 
 impl SaveFile {
+    /// Rewrite every entity reference in the save through `map`.
+    fn remap(&mut self, map: &EntityMap) {
+        for s in &mut self.entities {
+            s.id = map.get(s.id);
+            if let Some(c) = &mut s.membership {
+                c.org = map.get(c.org);
+            }
+        }
+        let store = &mut self.store;
+        map.all(&mut store.entity);
+        let opt = |v: &mut Vec<Option<Entity>>| v.iter_mut().for_each(|e| *e = map.opt(*e));
+        opt(&mut store.equipped);
+        opt(&mut store.weapon);
+        opt(&mut store.armour);
+        opt(&mut store.shield);
+        opt(&mut store.mount);
+        for a in &mut store.activity {
+            if let Activity::Working(e) = a {
+                *e = map.get(*e);
+            }
+        }
+        for g in store.guild.iter_mut().flatten() {
+            g.org = map.get(g.org);
+            g.membership = map.get(g.membership);
+        }
+        for t in &mut self.towns {
+            t.org = map.get(t.org);
+            t.squad_org = map.get(t.squad_org);
+            t.buildings.iter_mut().for_each(|b| b.1 = map.get(b.1));
+            map.all(&mut t.nature_sites);
+            map.all(&mut t.armory);
+            map.all(&mut t.guilds);
+        }
+        for s in &mut self.squads.list {
+            map.all(&mut s.items);
+        }
+    }
+
     /// Whether this save can be restored with `content`: same content, valid parameters.
     pub fn check(&self, content: &sim_data::Content) -> Result<(), String> {
         if content_hash(content) != self.content_hash {
@@ -298,6 +336,116 @@ fn save_ref(world: &World) -> SaveRef<'_> {
     }
 }
 
+/// FNV-1a over the bytes written to it (stable across builds and platforms).
+struct Fnv(u64);
+
+impl std::io::Write for Fnv {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        for &b in buf {
+            self.0 = (self.0 ^ b as u64).wrapping_mul(0x0100_0000_01b3);
+        }
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// The saved state of `world` with entities in an order that depends on the
+/// state alone and their ids replaced by their position in that order, so that
+/// a loaded game gives the same as the game it was saved from.
+fn canonical(world: &World) -> SaveFile {
+    let raw = rmp_serde::to_vec_named(&save_ref(world)).expect("the saved state serializes");
+    let mut save: SaveFile = rmp_serde::from_slice(&raw).expect("the saved state reads back");
+    // The order entities are saved in follows the world's internal tables, which
+    // a loaded world builds in another order. Sort by what each entity holds
+    // (leaving out ids), so the order depends on the state alone. Entities
+    // that hold exactly the same keep their saved order.
+    let blank = EntityMap(HashMap::new());
+    let mut keyed: Vec<(Vec<u8>, SavedEntity)> = std::mem::take(&mut save.entities)
+        .into_iter()
+        .map(|mut s| {
+            let (id, org) = (s.id, s.membership.as_ref().map(|m| m.org));
+            s.id = Entity::PLACEHOLDER;
+            if let Some(m) = &mut s.membership {
+                m.org = blank.get(m.org);
+            }
+            let key = rmp_serde::to_vec_named(&s).expect("the saved state serializes");
+            s.id = id;
+            if let (Some(m), Some(org)) = (&mut s.membership, org) {
+                m.org = org;
+            }
+            (key, s)
+        })
+        .collect();
+    keyed.sort_by(|a, b| a.0.cmp(&b.0));
+    save.entities = keyed.into_iter().map(|(_, s)| s).collect();
+    let map = EntityMap(
+        save.entities
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (s.id, Entity::from_bits(i as u64 + 1)))
+            .collect(),
+    );
+    save.remap(&map);
+    save
+}
+
+/// The state that [`state_hash`] hashes, as text. Comparing the text of two
+/// worlds line by line shows where they differ when their hashes do.
+pub fn state_text(world: &World) -> String {
+    let config = ron::ser::PrettyConfig::new().depth_limit(3);
+    ron::ser::to_string_pretty(&canonical(world), config).expect("the saved state serializes")
+}
+
+/// Hash of the simulation state: everything a save holds except what the
+/// game was set up with (parameters, scenario, content), in the form
+/// [`canonical`] gives it, so a loaded game hashes like the game it was saved
+/// from. A field added to the save is hashed without further work.
+pub fn state_hash(world: &World) -> u64 {
+    let save = canonical(world);
+    let SaveFile {
+        clock,
+        seed,
+        entities,
+        store,
+        towns,
+        orders,
+        work_log,
+        decisions,
+        metrics,
+        match_state,
+        governors,
+        history,
+        env,
+        squads,
+        version: _,
+        content_hash: _,
+        cap_dim: _,
+        params: _,
+        scenario: _,
+    } = &save;
+    let mut h = Fnv(0xcbf2_9ce4_8422_2325);
+    rmp_serde::encode::write(
+        &mut h,
+        &(
+            (clock, seed, entities, store, towns, orders, work_log),
+            (
+                decisions,
+                metrics,
+                match_state,
+                governors,
+                history,
+                env,
+                squads,
+            ),
+        ),
+    )
+    .expect("the saved state serializes");
+    h.0
+}
+
 /// Serialize the simulation state of `world` to RON.
 pub fn to_string(world: &World) -> Result<String, String> {
     let save = save_ref(world);
@@ -397,10 +545,17 @@ impl EntityMap {
 /// simulation entities yet (a fresh world, or a Bevy app before setup).
 pub fn restore(
     world: &mut World,
-    save: SaveFile,
+    mut save: SaveFile,
     content: sim_data::Content,
 ) -> Result<(), String> {
     save.check(&content)?;
+    let map = EntityMap(
+        save.entities
+            .iter()
+            .map(|s| (s.id, world.spawn_empty().id()))
+            .collect(),
+    );
+    save.remap(&map);
     let SaveFile {
         params,
         scenario,
@@ -408,7 +563,7 @@ pub fn restore(
         seed,
         entities,
         mut store,
-        mut towns,
+        towns,
         orders,
         work_log,
         decisions,
@@ -417,7 +572,7 @@ pub fn restore(
         governors,
         history,
         env,
-        mut squads,
+        squads,
         ..
     } = save;
     let mut db = Db::build(
@@ -428,18 +583,10 @@ pub fn restore(
     );
     db.group_firms(params.market.firms.grouping());
 
-    let map = EntityMap(
-        entities
-            .iter()
-            .map(|s| (s.id, world.spawn_empty().id()))
-            .collect(),
-    );
     for s in entities {
-        let new = map.get(s.id);
-        s.spawn(world, new, &map);
+        s.spawn(world);
     }
 
-    map.all(&mut store.entity);
     // Saves from before larders existed.
     store.larder.resize(store.len(), Vec::new());
     store.lived_in.resize(store.len(), Vec::new());
@@ -448,29 +595,6 @@ pub fn restore(
     store.armour.resize(store.len(), None);
     store.shield.resize(store.len(), None);
     store.mount.resize(store.len(), None);
-    for i in 0..store.len() {
-        store.equipped[i] = map.opt(store.equipped[i]);
-        store.weapon[i] = map.opt(store.weapon[i]);
-        store.armour[i] = map.opt(store.armour[i]);
-        store.shield[i] = map.opt(store.shield[i]);
-        store.mount[i] = map.opt(store.mount[i]);
-        if let Activity::Working(e) = store.activity[i] {
-            store.activity[i] = Activity::Working(map.get(e));
-        }
-        if let Some(g) = &mut store.guild[i] {
-            g.org = map.get(g.org);
-            g.membership = map.get(g.membership);
-        }
-    }
-    for t in &mut towns {
-        t.org = map.get(t.org);
-        t.squad_org = map.get(t.squad_org);
-        t.buildings.iter_mut().for_each(|b| b.1 = map.get(b.1));
-        map.all(&mut t.nature_sites);
-        map.all(&mut t.armory);
-        map.all(&mut t.guilds);
-    }
-
     let time = params.time.clone();
     world.insert_resource(store);
     world.insert_resource(Towns(towns));
@@ -498,9 +622,6 @@ pub fn restore(
     clock.economy_days_per_day = time.economy_days_per_day.max(1);
     world.insert_resource(clock);
     world.insert_resource(env);
-    for s in &mut squads.list {
-        map.all(&mut s.items);
-    }
     world.insert_resource(squads);
     world.insert_resource(seed);
     world.insert_resource(decisions);

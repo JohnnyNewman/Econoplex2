@@ -22,6 +22,26 @@ fn same_seed_same_state() {
 }
 
 #[test]
+fn the_state_hash_covers_everything_a_save_holds() {
+    let mut s = sim(1);
+    for _ in 0..20 {
+        s.step();
+    }
+    let before = s.state_hash();
+    assert_eq!(before, s.state_hash(), "hashing leaves the state alone");
+
+    // A town's treasury, the weather and the order queue are all state.
+    s.world.resource_mut::<sim_core::Towns>().0[0].treasury += 1.0;
+    let treasury = s.state_hash();
+    assert_ne!(before, treasury);
+    s.world.resource_mut::<sim_core::env::Environment>().hour += 0.5;
+    let hour = s.state_hash();
+    assert_ne!(treasury, hour);
+    s.order("immigration Greenvale closed").unwrap();
+    assert_ne!(hour, s.state_hash());
+}
+
+#[test]
 fn different_seed_different_state() {
     let (mut a, mut b) = (sim(1), sim(2));
     for _ in 0..50 {
@@ -892,11 +912,11 @@ fn eras_are_only_a_label_and_never_change_the_simulation() {
             .iter()
             .map(|t| t.era)
             .collect();
-        (s.state_hash(), eras)
+        (state_without_eras(&s), eras)
     };
     let (a, eras_a) = run(false);
     let (b, eras_b) = run(true);
-    assert_eq!(a, b, "relabelling eras changed the simulation");
+    assert!(a == b, "relabelling eras changed the simulation");
     // The labels themselves did change.
     assert_ne!(eras_a, eras_b);
 }
@@ -2446,7 +2466,7 @@ fn a_day_has_ticks_and_the_economy_runs_once_per_day() {
     // The first tick starts day 1 and runs the economy.
     s.step_tick();
     assert_eq!(s.tick(), 1);
-    let after_economy = s.state_hash();
+    let after_economy = economy_text(&s);
     let mut hours = vec![s.world.resource::<sim_core::env::Environment>().hour];
     // The rest of the day only moves the hours and the weather on.
     for _ in 1..tpd {
@@ -2454,7 +2474,7 @@ fn a_day_has_ticks_and_the_economy_runs_once_per_day() {
         assert_eq!(s.tick(), 1);
         hours.push(s.world.resource::<sim_core::env::Environment>().hour);
     }
-    assert_eq!(s.state_hash(), after_economy);
+    assert_eq!(economy_text(&s), after_economy);
     assert!(
         hours.windows(2).all(|w| w[1] > w[0]) && hours[0] < 2.0 && hours[tpd as usize - 1] > 22.0
     );
@@ -2550,7 +2570,7 @@ fn a_compressed_calendar_runs_ten_days_of_economy_per_game_day() {
         plain.step();
     }
     assert_eq!(s.tick(), 10);
-    assert_eq!(s.state_hash(), plain.state_hash());
+    assert!(economy_text(&s) == economy_text(&plain));
     // A year is 12 game days: the season comes round.
     let season0 = s.world.resource::<sim_core::env::Environment>().season;
     for _ in 0..12 {
@@ -3098,4 +3118,31 @@ fn a_live_battle_waits_for_the_player_then_settles() {
             .is_none(),
         "the battle is still pending"
     );
+}
+
+/// Towns and people as text: what the daily economy changes.
+fn economy_text(s: &Simulation) -> String {
+    ron::to_string(&(
+        &s.world.resource::<sim_core::Towns>().0,
+        s.world.resource::<sim_core::store::AgentStore>(),
+    ))
+    .unwrap()
+}
+
+/// The full state as text, without the era labels in the yearly figures
+/// (and without the fingerprint of the content, which holds the labels too).
+fn state_without_eras(s: &Simulation) -> String {
+    let text: String = sim_core::save::state_text(&s.world)
+        .lines()
+        .filter(|l| !l.contains("content_hash:"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text.as_str();
+    while let Some(i) = rest.find(" era: ") {
+        out.push_str(&rest[..i]);
+        rest = rest[i + 6..].trim_start_matches(|c: char| c.is_ascii_digit());
+    }
+    out.push_str(rest);
+    out
 }
