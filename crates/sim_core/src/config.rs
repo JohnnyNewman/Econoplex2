@@ -321,12 +321,8 @@ fn default_mint_below() -> f32 {
 
 /// `market.pricing` in models.ron: the stock of each good the market aims for. A
 /// good's price rises while its stock is below that target and falls above it.
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum Pricing {
-    /// Every good: a fixed stock per resident (`target_per_capita`, or
-    /// `food_target_per_capita` for food).
-    #[default]
-    StockTarget,
     /// Goods that trades use as inputs: `cover_days` of what the town's trades use
     /// a day, plus what profitable trades held up only by this input's shortage
     /// would use (`blocked_workers` workers each). Final goods keep the per-resident
@@ -336,6 +332,15 @@ pub enum Pricing {
         cover_days: f32,
         blocked_workers: f32,
     },
+}
+
+impl Default for Pricing {
+    fn default() -> Self {
+        Pricing::Demand {
+            cover_days: 10.0,
+            blocked_workers: 2.0,
+        }
+    }
 }
 
 /// `market.imports` in models.ron: emergency food imports.
@@ -381,12 +386,8 @@ pub enum ScarcityCap {
 }
 
 /// What another building of a type a town already has is worth to it.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum BuildingValue {
-    /// Base price while the buildings are nearly full (`build_threshold`) and
-    /// their goods sell above base price (the old rule).
-    #[default]
-    Load,
     /// What its places would earn: while the town's buildings of the type are
     /// full (`build_threshold`), its slots times how much more its best job
     /// pays than the town's typical job, over `payback_days`, at most
@@ -394,14 +395,20 @@ pub enum BuildingValue {
     Marginal { payback_days: f32, max_factor: f32 },
 }
 
+impl Default for BuildingValue {
+    fn default() -> Self {
+        BuildingValue::Marginal {
+            payback_days: 10.0,
+            max_factor: 1.0,
+        }
+    }
+}
+
 /// How a market counts its tools and weapons.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ItemStock {
-    /// A count kept beside the items: up when made, down when a tool is taken
-    /// (weapons soldiers carry stay counted). The old rule.
-    #[default]
-    Counted,
     /// What the town's armory holds, recounted daily.
+    #[default]
     Held,
 }
 

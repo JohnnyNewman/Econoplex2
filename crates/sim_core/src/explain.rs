@@ -102,7 +102,8 @@ impl Ctx<'_> {
         &self.db.content.products[p as usize].name
     }
 
-    /// The stock the market aims for (the default `StockTarget` rule).
+    /// The per-resident stock the market aims for (what `Demand` pricing uses
+    /// for final goods; inputs also count what their trades use).
     fn target(&self, p: u32) -> f32 {
         let mp = &self.params.market;
         let per_capita = if self.db.is_food[p as usize] {

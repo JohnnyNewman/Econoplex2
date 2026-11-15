@@ -8,8 +8,10 @@ from a run with seed 42 at the end of year 10.
 **Status (2026-11-14):** the defaults have moved on since this was written. Prices
 now follow demand (`pricing: Demand`), households consume by the needs ladder
 (`consumption: Needs`), caravans use `Balance` and building value is `Marginal`.
-The town market is still the only firm (`firms: Treasury`). Read the sections on
-stock-target pricing and "no household consumption" as history.
+The town market is still the only firm (`firms: Treasury`). Read "no household
+consumption" as history. The stock-target pricing rule and the load-based
+building value are gone (2026-11-15); the price section below describes the
+rules that remain.
 
 ## Who holds what
 
@@ -90,30 +92,32 @@ Each tick (day) runs the systems in this order:
   The optional household consumption (`market.consumption`) adds clothes, pots,
   ale and so on.
 
-## How prices are set (default: `pricing: StockTarget`)
+## How prices are set (`pricing: Demand(cover_days, blocked_workers)`)
 
 Each day, for every ordinary good:
 
-- **Target stock** = `target_per_capita` (0.3) × residents, or
-  `food_target_per_capita` (3) × residents for food, plus open government orders.
+- **Target stock:**
+  - Goods used as inputs aim for `cover_days` (10) of what the town's trades use
+    a day, plus what profitable trades blocked only by their shortage would use
+    (`blocked_workers` (2) workers each).
+  - Final goods aim for `target_per_capita` (0.3) × residents; food gets both,
+    with `food_target_per_capita` (3) × residents.
+  - Plus `cover_days` of what households buy, plus open government orders.
 - **Pressure** = (target − stock) / target, clamped to −1..1.
 - **Price** × exp(`price_adjust` (0.05) × pressure): at most about 5 % a day,
   within `min_price_factor` (0.2) and `max_price_factor` (5) × base price.
+  Price classes (`price_classes`) can instead add inertia, daily caps and wider
+  bounds per class.
 
 Some goods have their own rules:
-- **Buildings:** priced by how full the town's existing ones are, and how scarce
-  their goods are (`build_threshold` 0.75); a town's first of a kind sells at
-  `new_building_appeal` (0.3) × base.
+- **Buildings** (`building_value: Marginal(payback_days, max_factor)`): while the
+  town's buildings of a type are full (`build_threshold` 0.75), another is worth
+  its slots times how much more its best job pays than the town's lower-quartile
+  pay, over `payback_days` (10), at most `max_factor` (1) × base; a town's first
+  of a kind sells at `new_building_appeal` (0.3) × base.
 - **Land:** priced by how worn the town's sites are (`land_threshold` 0.7), until
   `free_land` (6) plots are used.
 - **Coin:** worth its face value while the town wants coin, otherwise nothing.
-
-**Optional, demand-driven** (`pricing: Demand(cover_days, blocked_workers)`):
-- Goods used as inputs aim for `cover_days` of what the town's trades use a day,
-  plus what profitable trades blocked only by their shortage would use.
-- Final goods keep the per-resident target.
-- Price classes (`price_classes`) can add inertia, daily caps and wider bounds per
-  class.
 
 ## Taxes, spending and where they go
 
@@ -529,3 +533,15 @@ day, and the basket model is now gone: `market.consumption` is `Needs(...)` or
 serves. The `want`, `taste`, `elasticity` and `min_wealth` fields above, and
 the comfort term in happiness, went with it. The sections above are the record
 of how it ran.
+
+### Stock-target pricing removed (2026-11-15)
+
+Demand pricing has been the default since 2026-11-14, and the old rule is now
+gone: `market.pricing` is `Demand(...)` only, so every good used as an input
+aims for what its trades use. The load-based building value (`Load`: base price
+while nearly full and its goods sell above base) went with it, leaving
+`building_value: Marginal(...)`, and so did the counted tool and weapon stock
+(`item_stock: Counted`), leaving `Held`. The per-resident targets
+(`target_per_capita`, `food_target_per_capita`) stay: final goods and food use
+them. The sections above that mention `StockTarget` are the record of how it
+ran.
