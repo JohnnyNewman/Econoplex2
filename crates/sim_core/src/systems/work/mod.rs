@@ -43,7 +43,6 @@ struct PendingTask {
     trainees: Vec<u32>,
     input_quality: f32,
     pos: (f32, f32),
-    batches: u32,
 }
 
 fn jitter(p: (f32, f32), r: f32, rng: &mut impl Rng) -> (f32, f32) {
@@ -155,9 +154,14 @@ pub fn produce(
     mut items: Query<&mut Item>,
     mut log: ResMut<WorkLog>,
     env: Res<crate::env::Environment>,
+    mut sites: Query<&mut NaturalResource>,
 ) {
     let mut rng = seed.rng(clock.steps(), streams::PRODUCE);
     let cal = params.calendar();
+    // The day's last step: work under way is settled and the teams break up
+    // for the next day's choices.
+    let day_end = clock.day_done();
+    let firms_on = params.market.firms.on();
     // A worker's work this step, in days: the step's slice of the working
     // hours on each day of the month. Outdoor jobs (nature, buildings, new
     // land) only work while it is light.
@@ -199,26 +203,122 @@ pub fn produce(
         for &w in &workers {
             store.worked_today[w as usize] = Some(r);
         }
-        if worked <= 0.0 {
-            // Outside the working hours the team waits for the morning.
-            continue;
-        }
-        for &w in &workers {
-            let st = &mut store.state[w as usize];
-            st[state::FATIGUE] = (st[state::FATIGUE]
-                + params.needs.fatigue_per_work_day * (0.5 + m.phys_total) * worked
-                    / cal.month_days())
-            .min(1.0);
-        }
         let rate = (workers.len() as f32).powf(params.work.work_exponent);
-        task.progress += rate * worked;
-        if task.progress >= task.required {
-            // The part of the step after the batch was done goes to the next.
-            let left = (task.progress - task.required) / rate;
+        if worked > 0.0 {
             for &w in &workers {
-                store.carry[w as usize] = left;
+                let st = &mut store.state[w as usize];
+                st[state::FATIGUE] = (st[state::FATIGUE]
+                    + params.needs.fatigue_per_work_day * (0.5 + m.phys_total) * worked
+                        / cal.month_days())
+                .min(1.0);
             }
+            // Runs this step's work does, as a flow: inputs and nature go in
+            // at the same rate (fractional amounts), at a fraction of the
+            // rate when they run short.
+            let full = rate * worked / m.duration.max(1e-6);
+            let town = &mut towns.0[task.town as usize];
+            let buyer =
+                (firms_on && !crate::firms::is_public(&db, m)).then(|| db.recipe_firm[r as usize]);
+            let mut f = if buyer.is_some_and(|k| town.firms[k].closed) {
+                0.0f32
+            } else {
+                1.0f32
+            };
+            for &(p, q) in &m.inputs {
+                let pi = p as usize;
+                let mut have = town.stock[pi].max(0.0);
+                if firms_on {
+                    have += town.firm_stock(pi);
+                    if let Some(k) = buyer {
+                        have += town.firms[k].inputs.get(pi).copied().unwrap_or(0.0);
+                    }
+                }
+                f = f.min(have / (q * full).max(1e-9));
+            }
+            let out: f32 = m.outputs.iter().map(|o| o.1).sum();
+            if let Some(kind) = m.nature {
+                let have: f32 = town
+                    .nature_sites
+                    .iter()
+                    .filter_map(|&s| sites.get(s).ok())
+                    .filter(|n| n.kind == kind)
+                    .map(|n| n.amount.max(0.0))
+                    .sum();
+                f = f.min(have / (out * full).max(1e-9));
+            }
+            if firms_on {
+                let per_run: f32 = m
+                    .inputs
+                    .iter()
+                    .map(|&(p, q)| town.price[p as usize] * q)
+                    .sum();
+                if per_run > 0.0 {
+                    let cash = match buyer {
+                        Some(k) => {
+                            town.firms[k].cash.coins().max(0.0)
+                                + params.market.firms.credit_room(&town.firms[k])
+                        }
+                        None => town.treasury.coins().max(0.0),
+                    };
+                    f = f.min(cash / (per_run * full).max(1e-9));
+                }
+            }
+            let runs = full * f.clamp(0.0, 1.0);
+            if runs > 0.0 {
+                town.input_today.resize(town.stock.len(), 0.0);
+                town.index_year.inputs.resize(town.stock.len(), 0.0);
+                for &(p, q) in &m.inputs {
+                    let pi = p as usize;
+                    let need = q * runs;
+                    if firms_on {
+                        take_input(town, pi, need, buyer);
+                    } else {
+                        town.stock[pi] -= need;
+                        town.flows.add(crate::goods::Flow::Input, pi, need);
+                    }
+                    town.input_today[pi] += need;
+                    town.index_year.inputs[pi] += need;
+                    task.input_quality = task.input_quality.min(town.quality[pi]);
+                }
+                if let Some(kind) = m.nature {
+                    let mut need = out * runs;
+                    for &s in &town.nature_sites {
+                        if need <= 0.0 {
+                            break;
+                        }
+                        let Ok(mut n) = sites.get_mut(s) else {
+                            continue;
+                        };
+                        if n.kind != kind || n.amount <= 0.0 {
+                            continue;
+                        }
+                        let q = n.amount.min(need);
+                        n.amount -= q;
+                        need -= q;
+                    }
+                }
+                task.progress += runs;
+            }
+        }
+        // Whole runs are delivered as they are done; at the day's end the run
+        // under way counts if it is at least half done (so nothing is lost or
+        // made on average when the teams break up).
+        let whole = if day_end {
+            task.progress.round()
+        } else {
+            task.progress.floor()
+        };
+        let whole = if m.builds.is_some() {
+            whole.min(1.0)
+        } else {
+            whole
+        };
+        if whole >= 1.0 {
+            task.batches = whole as u32;
+            task.progress = (task.progress - whole).max(0.0);
             done.push((e, r, workers));
+        } else {
+            task.batches = 0;
         }
     }
 
@@ -265,17 +365,20 @@ pub fn produce(
         let n = workers.len();
         // Days the team worked on it (a run's success or failure cheers or
         // annoys once, as a day's work did).
-        let uses = (task.required / (n as f32).powf(params.work.work_exponent))
-            .round()
-            .max(1.0) as u32;
         let rate_day = (n as f32).powf(params.work.work_exponent);
-        let practice_days = (uses as f32 / (m.duration / rate_day).max(1.0)).max(1.0);
-        let mood = if cal.days() <= 1.0 {
-            0.03
-        } else {
-            // Coarse steps: a step's runs cheer as its days of runs would.
-            cal.kick(0.03, params.needs.happiness_rate) * (practice_days / cal.days()).min(1.0)
+        // Days each member worked for these runs.
+        let team_days = task.batches as f32 * m.duration / rate_day;
+        let uses = {
+            let whole = team_days.floor();
+            (whole + f32::from(rng.random::<f32>() < team_days - whole)) as u32
         };
+        let practice_days = (team_days / (m.duration / rate_day).max(1.0)).max(1e-3);
+        // A day's work cheers (or annoys) as it did when a simulated day was
+        // one step: by the month's kick, for the share of the month worked.
+        let mood = cal
+            .every(clock.steps_per_day.max(1))
+            .kick(0.03, params.needs.happiness_rate)
+            * (team_days / cal.month_days()).min(1.0);
         {
             // Diagnostics: labour spent, and labour spent on goods already
             // glutted (over target, at their floor price).
@@ -485,7 +588,7 @@ pub fn produce(
             let base = town.policy.wage_share.unwrap_or(params.work.wage_share);
             let factor = town.wage_factor.get(r as usize).copied().unwrap_or(1.0);
             let share = (base * factor).min(1.0);
-            let days = (task.required / (n as f32).powf(params.work.work_exponent)).max(1.0);
+            let days = team_days.max(1e-3);
             // Apprentices on the team cost the market less.
             let aw = params.decision.matching.apprentice_wage();
             let trainees: Vec<u32> = workers
@@ -515,7 +618,7 @@ pub fn produce(
                 st[state::HAPPINESS] = (st[state::HAPPINESS] - mood).max(0.0);
             }
             // A failed step earns nothing.
-            let days = (task.required / (n as f32).powf(params.work.work_exponent)).max(1.0);
+            let days = team_days.max(1e-3);
             claims.push(Claim {
                 town: t,
                 recipe: r,
@@ -543,7 +646,6 @@ pub fn produce(
                     }
                 }
             }
-            store.activity[wi] = Activity::Idle;
             store.last_recipe[wi] = Some(r);
         }
 
@@ -556,7 +658,26 @@ pub fn produce(
             quality,
             days: practice_days,
         });
-        commands.entity(e).despawn();
+        if m.builds.is_some() {
+            // A building site is done once it stands.
+            for &w in &parts.workers {
+                if store.activity[w as usize] == Activity::Working(e) {
+                    store.activity[w as usize] = Activity::Idle;
+                }
+            }
+            commands.entity(e).despawn();
+        }
+    }
+    // The day is over: the teams break up, and everyone chooses again.
+    if day_end {
+        for (e, _, parts) in tasks.iter() {
+            for &w in &parts.workers {
+                if store.activity[w as usize] == Activity::Working(e) {
+                    store.activity[w as usize] = Activity::Idle;
+                }
+            }
+            commands.entity(e).despawn();
+        }
     }
 
     settle_wages(

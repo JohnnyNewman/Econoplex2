@@ -251,8 +251,8 @@ and growth happens in one simulated day and generations show in short runs. A da
 is cut into `time.steps_per_day` economy steps (300 by default, any value from 1
 with `--set time.steps_per_day=N`), and the whole economy runs every step; each
 step stands for 1/30 of a day of time and does the work that falls in its hours.
-Workplaces run batches with a progress bar: inputs go in when a batch starts and
-the whole output comes out when it is done. At the clients' default speed of 5
+Production is a flow: inputs go in as a team works, and each whole run's output
+goes to market when its progress bar fills. At the clients' default speed of 5
 minutes a simulated day, a step comes about once a real second. See
 `docs/design/time-and-weather.md`. Each step runs these systems in order:
 

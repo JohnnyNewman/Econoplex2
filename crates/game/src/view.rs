@@ -290,9 +290,9 @@ pub fn animate_agents(
     }
 }
 
-/// A progress bar over each building with a batch under way: grey for the
-/// whole batch, green for the part done. A batch takes its inputs when it
-/// starts and delivers its whole output when the bar is full.
+/// A progress bar over each building with a team at work: grey for a whole
+/// run, green for the part of the run under way that is done. Inputs flow in
+/// as the team works; each whole run's output goes to market when it fills.
 pub fn draw_batches(
     mut gizmos: Gizmos,
     db: Res<Db>,

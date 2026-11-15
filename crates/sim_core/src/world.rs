@@ -845,6 +845,14 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
         towns.0[t as usize].residents.push(i as u32);
     }
     crate::start::households(&mut towns, &mut store, &db, &params);
+    // Every job shows what it would pay at the starting prices, so the first
+    // day's choices see pay (the rate otherwise starts at nothing and only
+    // drifts up after the first day has been chosen, idle, at no pay).
+    for town in towns.0.iter_mut() {
+        town.pay_rate = (0..db.recipes.len())
+            .map(|r| crate::systems::work::posted_pay(town, &db, &params, r))
+            .collect();
+    }
 
     let goal = crate::goal::MatchState::new(scenario.goal.as_ref(), &db, scenario.towns.len())
         .unwrap_or_else(|e| panic!("{e}"));

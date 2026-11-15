@@ -102,12 +102,9 @@ pub struct AgentStore {
     /// The step (`SimClock::steps`) a rest ends on: the next simulated day.
     pub rest_until: Vec<u64>,
     /// The job (recipe, as an apprentice) chosen for today: people choose once
-    /// a simulated day and go back to it when a batch of theirs ends.
+    /// a simulated day (teams break up at the day's end) and go back to it
+    /// if their team broke up during the day.
     pub job_today: Vec<Option<(u32, bool)>>,
-    /// Days of work done past the end of the batch just finished this step;
-    /// the next batch starts with them (so a step's work is never lost when
-    /// a batch ends inside it).
-    pub carry: Vec<f32>,
 }
 
 /// Everything needed to create an agent.
@@ -181,7 +178,6 @@ impl AgentStore {
         self.owned.push(Vec::new());
         self.rest_until.push(0);
         self.job_today.push(None);
-        self.carry.push(0.0);
         idx
     }
 

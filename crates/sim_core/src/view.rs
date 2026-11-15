@@ -26,10 +26,10 @@ pub struct BuildingView {
     pub kind: String,
     /// Map position.
     pub pos: (f32, f32),
-    /// How far the batch under way in the building has got, 0..1 (the most
+    /// How far the run under way in the building has got, 0..1 (the most
     /// advanced one if several teams work there); `None` when it stands idle.
-    /// A batch takes its inputs when it starts and delivers its whole output
-    /// when it reaches 1.
+    /// Inputs flow in as the team works; each whole run's output goes to
+    /// market when the bar fills, and the rest carries on.
     #[serde(default)]
     pub progress: Option<f32>,
 }

@@ -8,7 +8,12 @@ const PAY_RATE_SMOOTHING: f32 = 0.05;
 /// What a worker-day at recipe `r` would pay in this town at today's prices: the
 /// workers' share of the value added (plus subsidy) of one run, over the days one
 /// worker needs for it, at a typical worker's success rate.
-pub fn posted_pay(town: &crate::world::Town, db: &Db, params: &Params, r: usize) -> f32 {
+pub fn posted_pay(
+    town: &crate::world::Town,
+    db: &Db,
+    params: &crate::config::ModelParams,
+    r: usize,
+) -> f32 {
     let m = &db.recipes[r];
     let out: f32 = m
         .outputs

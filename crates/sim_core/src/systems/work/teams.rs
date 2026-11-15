@@ -63,7 +63,7 @@ pub fn assign(
     decisions: Res<Decisions>,
     clock: Res<SimClock>,
     seed: Res<SimSeed>,
-    mut sites: Query<(&mut NaturalResource, &Pos)>,
+    sites: Query<(&mut NaturalResource, &Pos)>,
     mut tasks: Query<(Entity, &Task, &mut Participants, &Pos)>,
     mut log: ResMut<WorkLog>,
 ) {
@@ -176,7 +176,6 @@ pub fn assign(
                         }
                         store.activity[a as usize] = Activity::Working(e);
                         store.target[a as usize] = jitter((pos.x, pos.y), 14.0, &mut rng);
-                        store.carry[a as usize] = 0.0;
                     }
                     None => rest.push(a),
                 }
@@ -259,21 +258,10 @@ pub fn assign(
                         continue;
                     }
                 }
-                for &(p, q) in &m.inputs {
-                    take_input(town, p as usize, q * batches as f32, buyer);
-                }
             }
+            // Inputs and nature flow in as the team works (work::produce).
             let mut input_quality: f32 = 1.0;
-            town.input_today.resize(town.stock.len(), 0.0);
-            for &(p, q) in &m.inputs {
-                if !firms_on {
-                    town.stock[p as usize] -= q * batches as f32;
-                    town.flows
-                        .add(crate::goods::Flow::Input, p as usize, q * batches as f32);
-                }
-                town.input_today[p as usize] += q * batches as f32;
-                town.index_year.inputs.resize(town.stock.len(), 0.0);
-                town.index_year.inputs[p as usize] += q * batches as f32;
+            for &(p, _) in &m.inputs {
                 input_quality = input_quality.min(town.quality[p as usize]);
             }
             pending.push(PendingTask {
@@ -288,17 +276,7 @@ pub fn assign(
                     .collect(),
                 input_quality,
                 pos,
-                batches,
             });
-        }
-    }
-
-    // Write the harvested amounts back.
-    for (e, amount, _) in nature.into_iter().flatten().flatten() {
-        if let Ok((mut n, _)) = sites.get_mut(e) {
-            if n.amount != amount {
-                n.amount = amount;
-            }
         }
     }
 
@@ -331,17 +309,6 @@ pub fn assign(
     }
 
     for p in pending {
-        let m = &db.recipes[p.recipe as usize];
-        // Work the team did past its last batch, in the last step, starts this one.
-        let carried = p
-            .workers
-            .iter()
-            .map(|&w| store.carry[w as usize])
-            .sum::<f32>()
-            / p.workers.len().max(1) as f32;
-        let required = m.duration * p.batches as f32;
-        let progress = ((p.workers.len() as f32).powf(params.work.work_exponent) * carried)
-            .min(0.999 * required);
         log.next_serial += 1;
         let e = commands
             .spawn((
@@ -349,10 +316,11 @@ pub fn assign(
                     serial: log.next_serial,
                     recipe: p.recipe,
                     town: p.town,
-                    progress,
-                    required,
+                    // Runs done towards the next whole one (the progress bar).
+                    progress: 0.0,
+                    required: 1.0,
                     input_quality: p.input_quality,
-                    batches: p.batches,
+                    batches: 0,
                 },
                 TownId(p.town),
                 Pos {
@@ -370,9 +338,5 @@ pub fn assign(
             apprentices: p.apprentices,
             trainees: p.trainees,
         });
-    }
-    // Carried work not taken up by a new batch now is gone (rest or idling).
-    for c in store.carry.iter_mut() {
-        *c = 0.0;
     }
 }

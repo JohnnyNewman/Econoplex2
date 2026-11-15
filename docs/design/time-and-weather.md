@@ -51,41 +51,41 @@ third of a step's time and changed nothing measurable.
 
 ### Rates scaled to the step
 
-- Work and batch progress: the working days that fall in the step's hours
-  (`work_days_this_step`), so a day of steps does the same work at any
-  `steps_per_day`.
+- Work and production: the working days that fall in the step's hours
+  (`work_days_this_step`), and inputs, nature and output flowing with them,
+  so a day of steps does the same work at any `steps_per_day`.
 - Tiredness: a state within the representative day (`Calendar::day_part`):
   a day's work raises it by `fatigue_per_work_day`, a day's rest or idling
   takes the recovery once, however many steps the day has.
 - Job choice, places and pay: once a simulated day, at its first step, with
   the day's calendar (`Calendar::every(steps_per_day)`); places count a day's
-  inputs per worker, as before steps. After a batch people go back to the
-  job they chose, unless what it makes has become a glut; a rest lasts until
-  the next day's choices.
+  inputs per worker, as before steps. Every job starts out showing what it
+  would pay at the starting prices (a rate that starts at nothing kept
+  everyone idle on the first day). A rest lasts until the next day's
+  choices.
 - Flows per day (hunger, health, rent, wages, regrowth): `flow`, times the
   step's days. Shares, decay and smoothing: `share`, `keep`, `smoothing`
   (compounded, `1 - (1 - r)^days`). Memories and spans in days: `steps(d)`.
-- Probabilities per batch (success) and per event (contacts, fights) are
+- Probabilities per whole run delivered (success) and per event (contacts, fights) are
   per piece of work or meeting, not per step; contacts per step are
   `flow(daily_contacts)`.
 - Ageing, births, hazards, governors, metrics: on the first step of the
   simulated day; intervals in months: `every_months`.
 
-### Batches and the progress bar
+### Production as a flow, and the progress bar
 
-Every workplace runs discrete batches (`Task`, saved and hashed). A batch
-takes its inputs in whole units when it starts, gains progress every step
-from the work done (`team_size^0.85 * work days`), and delivers its whole
-output in whole units when progress reaches `required`; then the next batch
-starts. `required` is the recipe's duration times the runs in the batch, and
-the runs are as many as the team does in one working day of the step
-(`floor(n^0.85 * work_step_days / duration)`, at least one), so yearly output
-is that of the content's recipes. Work past the end of a batch carries over
-into the next one (`AgentStore::carry`), so no work is lost at any step size.
-People who take up a job join a batch under way with room in its team before a
-new one starts. The view snapshot gives each building's progress
-(`BuildingView::progress`, 0..1) and both clients draw it as a bar over the
-building.
+Every step, each team at work turns its work into runs of its recipe as a
+flow: `n^0.85 * work days / duration` runs, with the inputs (and the nature
+harvested) taken at the same rate in fractional amounts, and firms paying for
+them as they flow. When inputs, nature or the buyer's money run short, the
+team works at that fraction of its rate. Runs accumulate in `Task::progress`;
+each whole run's output goes to market (in whole units) when it is done,
+with its pay, its success roll and its practice, and the fraction carries
+on. That fraction is the progress bar (`BuildingView::progress`, 0..1), drawn
+over the building in both clients. Teams break up at the day's last step
+(the run under way counts if at least half done, so nothing is gained or
+lost on average) and everyone chooses again the next day. The sum over a day
+is the same at any step size.
 
 ### Real time in the clients
 
