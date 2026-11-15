@@ -71,7 +71,8 @@ impl Calendar {
 
     /// Days a simulated day (a month) stands for.
     pub fn month_days(&self) -> f32 {
-        self.days * self.steps as f32
+        // Whole days (`days_per_month` is a whole number): no rounding error.
+        (self.days * self.steps as f32).round()
     }
 
     /// Steps in a year.
@@ -86,7 +87,7 @@ impl Calendar {
 
     /// Days in a year.
     pub fn days_per_year(&self) -> f32 {
-        self.days * self.per_year as f32
+        self.month_days() * self.months_per_year() as f32
     }
 
     /// Hours of the representative day one step covers.

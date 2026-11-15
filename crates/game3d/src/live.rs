@@ -289,6 +289,7 @@ fn run(sim: &mut Simulation, shared: &Mutex<Shared>, mut seen: sim_core::view::S
     // at least this often in between (a day can last minutes of real time).
     let mut snap_at = Instant::now();
     const SNAP_EVERY: Duration = Duration::from_millis(250);
+    const PASS_BUDGET: Duration = Duration::from_millis(100);
     loop {
         // The inspector: describe the chosen person after every tick, and at
         // once when the choice changes (also while paused).
@@ -397,7 +398,10 @@ fn run(sim: &mut Simulation, shared: &Mutex<Shared>, mut seen: sim_core::view::S
             .max(1);
         let interval = Duration::from_secs_f32(1.0 / (SPEEDS[speed] * tpd as f32));
         let mut ran = 0;
-        while Instant::now() >= next && ran < 4 * tpd {
+        // A pass stops after `PASS_BUDGET` so orders, pauses and questions from
+        // the view are answered soon at any speed.
+        let pass = Instant::now();
+        while Instant::now() >= next && ran < 4 * tpd && pass.elapsed() < PASS_BUDGET {
             // Named spans for the profiler (`--features profile`).
             bevy::log::info_span!("sim tick").in_scope(|| sim.step_tick());
             ran += 1;
