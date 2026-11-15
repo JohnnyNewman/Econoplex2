@@ -158,9 +158,9 @@ pub fn produce(
 ) {
     let mut rng = seed.rng(clock.steps(), streams::PRODUCE);
     let cal = params.calendar();
-    // The day's last step: work under way is settled and the teams break up
-    // for the next day's choices.
-    let day_end = clock.day_done();
+    // The working day's last step: work under way is settled and the teams
+    // break up for the next day's choices.
+    let day_end = clock.work_day_end();
     let firms_on = params.market.firms.on();
     // A worker's work this step, in days: the step's slice of the working
     // hours on each day of the month. Outdoor jobs (nature, buildings, new
@@ -208,9 +208,8 @@ pub fn produce(
             for &w in &workers {
                 let st = &mut store.state[w as usize];
                 st[state::FATIGUE] = (st[state::FATIGUE]
-                    + params.needs.fatigue_per_work_day * (0.5 + m.phys_total) * worked
-                        / cal.month_days())
-                .min(1.0);
+                    + params.needs.fatigue_per_work_day * (0.5 + m.phys_total) * worked)
+                    .min(1.0);
             }
             // Runs this step's work does, as a flow: inputs and nature go in
             // at the same rate (fractional amounts), at a fraction of the
@@ -300,14 +299,9 @@ pub fn produce(
                 task.progress += runs;
             }
         }
-        // Whole runs are delivered as they are done; at the day's end the run
-        // under way counts if it is at least half done (so nothing is lost or
-        // made on average when the teams break up).
-        let whole = if day_end {
-            task.progress.round()
-        } else {
-            task.progress.floor()
-        };
+        // Whole runs are delivered as they are done; the run under way goes on
+        // with the next team on the recipe (`Town::wip`).
+        let whole = task.progress.floor();
         let whole = if m.builds.is_some() {
             whole.min(1.0)
         } else {
@@ -668,9 +662,16 @@ pub fn produce(
             commands.entity(e).despawn();
         }
     }
-    // The day is over: the teams break up, and everyone chooses again.
+    // The day is over: the teams break up, and everyone chooses again; the
+    // runs under way wait for the next team on the recipe.
     if day_end {
-        for (e, _, parts) in tasks.iter() {
+        for (e, task, parts) in tasks.iter() {
+            if db.recipes[task.recipe as usize].builds.is_some() && task.batches > 0 {
+                continue; // just built, and gone
+            }
+            let town = &mut towns.0[task.town as usize];
+            town.wip.resize(db.recipes.len(), 0.0);
+            town.wip[task.recipe as usize] += task.progress;
             for &w in &parts.workers {
                 if store.activity[w as usize] == Activity::Working(e) {
                     store.activity[w as usize] = Activity::Idle;

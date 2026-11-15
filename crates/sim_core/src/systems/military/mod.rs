@@ -230,7 +230,7 @@ pub fn military(
                     .learning
                     .practice(&mut store.cap[i], &fight, mult, true, cal.days());
                 let st = &mut store.state[i];
-                st[state::FATIGUE] = (st[state::FATIGUE] + cal.day_part(0.05)).min(1.0);
+                st[state::FATIGUE] = (st[state::FATIGUE] + cal.flow(0.05)).min(1.0);
                 store.target[i] = (
                     town.pos.0 - 30.0 + rng.random_range(-12.0..12.0f32),
                     town.pos.1 - 30.0 + rng.random_range(-12.0..12.0f32),

@@ -166,18 +166,18 @@ pub fn sense(
             st[HEALTH] = (st[HEALTH] + cal.flow(p.health_regen)).min(1.0);
         }
 
-        // Rest restores, idling a little; work tires (work::produce). Tiredness
-        // lives within the representative day: a day's rest restores the
-        // recovery once, however many steps the day has.
+        // Rest restores, idling a little; work tires (work::produce), per day
+        // of time: teams break up after each working day, so people rest
+        // between days as they did when a step was a day.
         match store.activity[i] {
             Activity::Resting => {
-                st[FATIGUE] = (st[FATIGUE] - cal.day_part(p.fatigue_rest_recovery)).max(0.0);
+                st[FATIGUE] = (st[FATIGUE] - cal.flow(p.fatigue_rest_recovery)).max(0.0);
                 if now >= store.rest_until[i] {
                     store.activity[i] = Activity::Idle;
                 }
             }
             Activity::Idle | Activity::Child | Activity::Soldier | Activity::Captive => {
-                st[FATIGUE] = (st[FATIGUE] - cal.day_part(p.fatigue_idle_recovery)).max(0.0)
+                st[FATIGUE] = (st[FATIGUE] - cal.flow(p.fatigue_idle_recovery)).max(0.0)
             }
             Activity::Working(_) => {}
         }

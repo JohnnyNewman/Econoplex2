@@ -427,13 +427,13 @@ pub fn decide(
     decisions.jobs.clear();
     decisions.apprentices.clear();
     let mastery = params.mastery();
-    // People choose their work once a simulated day, at its first step
-    // (before the work window opens): capacity, pay and places are judged
-    // for the day's work, as by the day's calendar. In the other steps the
-    // idle who chose a job today go back to it (a batch of theirs ended), and
-    // whoever chose to rest rests until the next day.
+    // People choose their work once a day of time, at its first step, as
+    // when a step was a day: capacity, pay and places are judged for the
+    // day's work, by the day's calendar. In its other steps the idle who
+    // chose a job today go back to it, and whoever chose to rest rests until
+    // the next day's choices.
     let step_cal = params.calendar();
-    if !clock.day_start() {
+    if !clock.work_day_start() {
         for i in 0..store.len() {
             if store.alive[i] && store.activity[i] == Activity::Idle {
                 if let Some((r, apprentice)) = store.job_today[i] {
@@ -460,9 +460,10 @@ pub fn decide(
         }
         return;
     }
-    let cal = step_cal.every(clock.steps_per_day.max(1));
+    let k = clock.steps_per_day_of_time();
+    let cal = step_cal.every(k);
     // A rest lasts until the next day's choices.
-    let rest_until = clock.steps() + clock.steps_per_day.max(1) as u64;
+    let rest_until = clock.steps() + k as u64;
     // The people choosing now: those free of a rest, and those at work, who
     // finish the batch under way and then go to what they chose.
     store.job_today.iter_mut().for_each(|j| *j = None);
@@ -750,7 +751,7 @@ pub fn decide(
 
         // Every 30 days every workplace reconsiders its share of apprentice places.
         let every = step_cal.steps(30.0).round().max(1.0) as u64;
-        if clock.steps().is_multiple_of(every) {
+        if (clock.steps() - 1).is_multiple_of(every) {
             for town in towns.0.iter_mut() {
                 town.apprentice_share
                     .resize(db.recipes.len(), share_params.min);

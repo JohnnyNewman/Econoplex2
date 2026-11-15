@@ -123,6 +123,16 @@ impl SimClock {
             .is_multiple_of(k as u64)
             .then(|| self.calendar().every(k))
     }
+    /// Whether this step starts a working day: a day of time within the
+    /// simulated day (its steps counted from the day's first). People choose
+    /// their work then, once a day of time, as when a step was a day.
+    pub fn work_day_start(&self) -> bool {
+        self.step.is_multiple_of(self.steps_per_day_of_time())
+    }
+    /// Whether this step ends a working day (the teams break up after it).
+    pub fn work_day_end(&self) -> bool {
+        (self.step + 1).is_multiple_of(self.steps_per_day_of_time()) || self.day_done()
+    }
     /// Whether this step is the last of its day (a whole day has run).
     pub fn day_done(&self) -> bool {
         self.step + 1 >= self.steps_per_day.max(1)
@@ -268,6 +278,11 @@ pub struct Town {
     /// moving average of realised pay, failures included).
     #[serde(default)]
     pub pay_rate: Vec<f32>,
+    /// Runs under way per recipe when the teams broke up at the end of the
+    /// last working day (inputs already in): the next team on that recipe
+    /// carries them on, so work longer than a day is not lost.
+    #[serde(default)]
+    pub wip: Vec<f32>,
     /// Each good's current price cap, as a factor of its base price (see
     /// `market.scarcity_cap`). Empty: `max_price_factor` for all.
     #[serde(default)]
@@ -734,6 +749,7 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
             flow_profile: FlowProfile::default(),
             flows,
             pay_rate: vec![0.0; db.recipes.len()],
+            wip: vec![0.0; db.recipes.len()],
             price_cap: Vec::new(),
             input_today: Vec::new(),
             input_use: Vec::new(),

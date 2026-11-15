@@ -309,6 +309,10 @@ pub fn assign(
     }
 
     for p in pending {
+        // The first team on a recipe takes up the runs left under way.
+        let town = &mut towns.0[p.town as usize];
+        town.wip.resize(db.recipes.len(), 0.0);
+        let progress = std::mem::take(&mut town.wip[p.recipe as usize]);
         log.next_serial += 1;
         let e = commands
             .spawn((
@@ -317,7 +321,7 @@ pub fn assign(
                     recipe: p.recipe,
                     town: p.town,
                     // Runs done towards the next whole one (the progress bar).
-                    progress: 0.0,
+                    progress,
                     required: 1.0,
                     input_quality: p.input_quality,
                     batches: 0,
