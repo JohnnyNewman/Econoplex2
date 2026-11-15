@@ -5,9 +5,9 @@
 //! with crowding (residents per place to live). Rent is money paid to the treasury
 //! (a tax by right in the ledger), so it changes nothing about the money total.
 //!
-//! Decisions see it through the normal modules: job choice values wealth after the
-//! rent of the coming weeks, and utility migration counts a town's rent against its
-//! pay, so a big town is a real trade-off and not just a magnet.
+//! Decisions see it through the normal modules: rent comes out of people's
+//! savings, and utility migration counts a town's rent against its pay, so a big
+//! town is a real trade-off and not just a magnet.
 
 use serde::{Deserialize, Serialize};
 
