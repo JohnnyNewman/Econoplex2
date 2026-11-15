@@ -520,3 +520,12 @@ charcoal burners and potters), or let prices ration households before trades.
 Three calibrated tests now run without the basket: the food-subsidy and
 cloth-subsidy scenarios, and governor stability. The state hash changes (seed
 42, 10 years: `6655d3c6232d19a3`).
+
+### The basket removed (2026-11-15)
+
+The needs ladder (needs-ladder.md) replaced the basket as the default the same
+day, and the basket model is now gone: `market.consumption` is `Needs(...)` or
+`None`, and a product's `household` declares only `life_days` and the needs it
+serves. The `want`, `taste`, `elasticity` and `min_wealth` fields above, and
+the comfort term in happiness, went with it. The sections above are the record
+of how it ran.

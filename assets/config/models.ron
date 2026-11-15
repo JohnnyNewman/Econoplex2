@@ -230,25 +230,6 @@
         // Guild (one firm per guild domain, pooling the cash of all its work).
         // firms: Workshops(start_cash: 100.0, reserve_days: 10.0, payout_rate: 0.05, profit_tax: 0.2, close_days: 30, credit_days: 10.0, grouping: Guild),
         firms: Treasury,
-        // What households buy for their own use. None: food and tools only.
-        // Basket(...): each adult keeps a household stock of the listed goods
-        // (each lasts life_days; it wants `want` x taste (0.5 + the named mind
-        // dimension) x (wealth / town median)^elasticity); every `interval` days it
-        // spends up to spend_share of its wealth on what it lacks most, from firms
-        // or the market. Owning what it wants raises happiness by comfort_weight.
-        // Example:
-        // With goods: [] the basket is every good whose content declares
-        // household use (clothes, pots, ale, cloth, charcoal, silver):
-        // consumption: Basket(spend_share: 0.3, interval: 7, elasticity: 0.5, comfort_weight: 0.2, goods: []),
-        // Or list the goods here:
-        // consumption: Basket(spend_share: 0.3, interval: 7, elasticity: 0.5, comfort_weight: 0.2, goods: [
-        //     (good: "clothes", want: 2.0, life_days: 240.0, taste: Some("ambition")),
-        //     (good: "pot", want: 3.0, life_days: 360.0, taste: Some("tradition")),
-        //     (good: "ale", want: 2.0, life_days: 7.0, taste: Some("sociability")),
-        // ]),
-        // Default since 2026-11-13 (Nils's choice; costs in town-market.md).
-        // Before the needs ladder (default until 2026-11-13):
-        // consumption: Basket(spend_share: 0.15, interval: 7, elasticity: 0.5, comfort_weight: 0.2, goods: []),
         // Who keeps the town fed (granary.rs): Town keeps the town-wide rules
         // (seed held back, farming drawn by scarcity); Ruler leaves it to the
         // ruler's levers and the granary (order `granary TOWN DAYS`).
@@ -262,6 +243,7 @@
         // from house, clothes and fuel against the day's temperature; households
         // share a hearth and keep two weeks of food at home. Default since
         // 2026-11-13 (Nils: the principled mechanism first, tune later).
+        // None: households buy food and tools only.
         consumption: Needs((interval: 7, gate_at: 0.7, gate_width: 0.15, comfort_c: 16.0, house_c: 6.0, max_clothes: 2.0, fire_per_c: 0.5, fire_per_extra_person: 0.25, savings_days: 60.0, larder_days: 14.0, cold_damage: 0.02, plan_days: 30.0)),
         // Price dynamics per price class (each good's class is in the content:
         // price_class, else food is Essential and the rest Commodity; Labour is the

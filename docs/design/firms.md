@@ -174,7 +174,8 @@ demand-driven price, now with money behind it.
 Six seeds (42–47), 40 years, mean ± sd. The workshop setup is
 `Workshops(start_cash: 50, reserve_days: 5, payout_rate: 0.2, profit_tax: 0.2, close_days: 30, credit_days: 30)`
 with `pricing: Demand(cover_days: 10, blocked_workers: 2)`. Consumption is the
-example basket in models.ron (clothes, pots, ale).
+household basket of clothes, pots and ale (a consumption model since removed;
+see town-market.md).
 
 | | A Features, treasury (default) | B A + consumption | C Features, workshops + consumption | D Utility, treasury + consumption | E Utility, workshops + consumption |
 | --- | --- | --- | --- | --- | --- |

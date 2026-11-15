@@ -92,11 +92,9 @@ pub struct AgentStore {
     /// (see `decision::knowledge`).
     #[serde(default)]
     pub lived_in: Vec<Vec<(u16, f32)>>,
-    /// Household goods held (good, units) and comfort, 0..1 (see `consumption`).
+    /// Household goods held (good, units); see `ladder`.
     #[serde(default)]
     pub owned: Vec<Vec<(u32, f32)>>,
-    #[serde(default)]
-    pub comfort: Vec<f32>,
 }
 
 /// Everything needed to create an agent.
@@ -168,7 +166,6 @@ impl AgentStore {
         self.larder.push(Vec::new());
         self.lived_in.push(Vec::new());
         self.owned.push(Vec::new());
-        self.comfort.push(0.0);
         idx
     }
 
