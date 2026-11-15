@@ -49,14 +49,12 @@ impl Default for StartParams {
     }
 }
 
-/// Food a person eats per day, in food value: they eat when hunger passes the
-/// threshold (on average half a day's hunger above it) and a loaf of value
-/// `value` brings hunger to `max(0, h - value)`.
-pub fn food_per_day(hunger_per_day: f32, eat_threshold: f32, value: f32) -> f32 {
-    let at_eating = eat_threshold + 0.5 * hunger_per_day;
-    let relief = value.min(at_eating).max(1e-3);
-    // One loaf every `relief / hunger_per_day` days.
-    value * hunger_per_day / relief
+/// Food a person eats per day, in food value. A meal takes a portion that
+/// stills the hunger (`subsistence::portion`), so nothing is wasted: what
+/// hunger grows by in a day. (The threshold and the food's value only set how
+/// often people eat, not how much.)
+pub fn food_per_day(hunger_per_day: f32, _eat_threshold: f32, _value: f32) -> f32 {
+    hunger_per_day
 }
 
 /// Stock of each good a town of `pop` people starts with (market and workplaces).
@@ -203,10 +201,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_whole_loaf_at_the_threshold_eats_a_little_more_than_hunger() {
-        let f = food_per_day(0.12, 0.5, 1.0);
-        assert!(f > 0.12 && f < 0.25, "{f}");
-        // Small portions are eaten without waste.
+    fn people_eat_what_hunger_grows_by() {
+        assert!((food_per_day(0.12, 0.5, 1.0) - 0.12).abs() < 1e-6);
         assert!((food_per_day(0.12, 0.5, 0.3) - 0.12).abs() < 1e-6);
     }
 
@@ -220,7 +216,7 @@ mod tests {
         let (bread, flour, grain) = (p("bread"), p("flour"), p("grain"));
         // 25 days of bread, flour for 10 days of baking, grain for 90 of milling.
         let per_day = s[bread] / 25.0;
-        assert!(per_day > 300.0 * 0.12, "{per_day}");
+        assert!((per_day - 300.0 * 0.12).abs() < 1e-2, "{per_day}");
         assert!(
             (s[flour] - per_day * 0.5 * 10.0).abs() < 1e-2,
             "{}",

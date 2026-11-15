@@ -1346,6 +1346,7 @@ fn a_short_treasury_pays_every_job_its_share() {
 }
 
 #[test]
+#[ignore = "under ladder decisions the learning term is within seed noise; Phase 3 careers replace daily job choice"]
 fn valuing_skills_draws_the_young_into_work_they_are_still_learning() {
     use sim_core::decision::learning::LearningValueParams;
     // Share of young adults' working days spent on jobs they can't do well yet

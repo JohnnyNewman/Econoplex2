@@ -380,3 +380,14 @@ keep their numbers; `decision.model`, `market.food_rules`, `market.item_stock`,
 `time.work_hours`, `military.kit_demand`, `military.battles`,
 `military.march` and `military.decision` are gone. The names in the sections
 above are the record of the switches as they were.
+
+## Meals are portions (plan Phase 2.2, first step)
+
+Food is a stack, so a meal now takes the portion that stills the hunger
+(`subsistence::portion`: hunger / food value, at most one unit) instead of a
+whole loaf at the threshold. People eat what their hunger grows by (14.4 food a
+year at 0.12 a day; the food audit measured 19 to 21 before). The steady-state
+start sizes food by the same rule.
+
+8 seeds x 20 years: population 1331 -> 1713, starving 0.92 % -> 0.43 %, food
+per head 3.0 -> 4.7.
