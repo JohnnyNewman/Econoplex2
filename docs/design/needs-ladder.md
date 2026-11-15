@@ -391,3 +391,14 @@ start sizes food by the same rule.
 
 8 seeds x 20 years: population 1331 -> 1713, starving 0.92 % -> 0.43 %, food
 per head 3.0 -> 4.7.
+
+## Nobody sells below cost (plan Phase 2.2, second step)
+
+The jobs audit showed flour at 0.66 times its base price while grain, in winter,
+sat at five times: milling a sack lost money, so it paid nothing, and the
+bakeries ran short of flour. Now a made good's price never falls below its cost
+by its cheapest recipe: its inputs at today's prices plus a day's pay of the
+town's poorer jobs (the lower quartile) for the work.
+
+8 seeds x 20 years: population 1713 -> 1724, starving 0.43 % -> 0.32 %, food
+per head 4.7 -> 5.3. Over 30 years food per head is 5.37 (health band raised).
