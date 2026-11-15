@@ -413,3 +413,19 @@ need is still food at home. Work is valued by the same slope (what one more
 coin adds to the months). `savings_days` is gone.
 
 8 seeds x 30 years: population 2376, starving 0.28 %, food per head 6.1.
+
+## Trades (plan Phase 3, step 1)
+
+A trade is now kept for life. The young enter one at `life.apprentice_age` (14)
+as apprentices. They take the parent's trade if it has an open place, and
+otherwise the open trade that pays best in town. Places are a hard limit: each
+master takes at most `organize.apprentices_per_master` (3). Adulthood is at 16.
+Rank follows years in the trade: an apprentice until adult, then a member, and
+a master after `organize.master_years` (8). An adult who never apprenticed
+joins the guild of their best skill once it reaches `guild_threshold`. A
+teacher's lesson is shared: with n learners each gets
+1 / (1 + `teaching_crowding` x (n - 2)) of it (crowding 0.3), so fewer
+apprentices learn faster each.
+
+8 seeds x 20 years: population 1583, starving 0.66 %. 8 seeds x 30 years:
+population 2076, starving 0.47 %, food per head 5.6, diversity 24.9.

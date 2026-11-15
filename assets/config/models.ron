@@ -140,8 +140,8 @@
     life: (
         // Prototype setting: 120 days per year keeps generations visible in short runs.
         days_per_year: 120,
-        adult_age: 14.0,
-        apprentice_age: 10.0,
+        adult_age: 16.0,
+        apprentice_age: 14.0,
         min_birth_age: 17.0,
         max_birth_age: 42.0,
         births_per_year: 0.3,
@@ -259,7 +259,11 @@
         land_threshold: 0.7,
     ),
 
-    organize: (interval: 20, guild_threshold: 0.55, master_threshold: 1.05),
+    // Trades (plan Phase 3): the young apprentice at life.apprentice_age into an
+    // open place (a hard limit of apprentices_per_master per master), keep their
+    // trade, and become masters after master_years in it. A teacher's lesson is
+    // shared: each learner gets 1 / (1 + teaching_crowding x (learners - 1)).
+    organize: (interval: 20, guild_threshold: 0.55, apprentices_per_master: 3, master_years: 8.0, teaching_crowding: 0.3),
 
     work: (work_exponent: 0.85, wage_share: 0.5),
 

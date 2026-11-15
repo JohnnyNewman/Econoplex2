@@ -44,10 +44,15 @@ fn team_learning(
     let master = caps[mk].0;
     let master_cap = caps[mk].1.clone();
     let mut gain = 0.0;
+    // A lesson is shared: the more learners beside a teacher, the less each gets.
+    let learners = ev.workers.len() + ev.apprentices.len();
+    let shared =
+        1.0 / (1.0 + params.organize.teaching_crowding * (learners.saturating_sub(2)) as f32);
     for &o in ev.workers.iter().chain(ev.apprentices.iter()) {
         if o != master && store.alive[o as usize] {
             // A trusted master teaches more.
-            let boost = charter
+            let boost = shared
+                * charter
                 * (1.0
                     + params.trust.teaching_bonus
                         * store.trust(o as usize, master as usize).max(0.0));

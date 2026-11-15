@@ -48,6 +48,36 @@ pub fn organize(
         })
         .collect();
 
+    // Apprentice places per town and trade: each master may take
+    // `apprentices_per_master` (a hard limit), less those already taken.
+    let mut places = vec![vec![0i64; nd]; towns.0.len()];
+    for i in 0..store.len() {
+        if let (true, Some(g)) = (store.alive[i], store.guild[i]) {
+            let t = store.town[i] as usize;
+            places[t][g.domain as usize] += match g.role {
+                Role::Master => op.apprentices_per_master as i64,
+                Role::Apprentice => -1,
+                Role::Member => 0,
+            };
+        }
+    }
+    // What each trade pays in each town (mean over its jobs that pay).
+    let domain_pay: Vec<Vec<f32>> = towns
+        .0
+        .iter()
+        .map(|town| {
+            let mut sum = vec![0.0f32; nd];
+            let mut n = vec![0.0f32; nd];
+            for (r, m) in db.recipes.iter().enumerate() {
+                let p = town.pay_rate.get(r).copied().unwrap_or(0.0);
+                if p > 0.0 {
+                    sum[m.domain as usize] += p;
+                    n[m.domain as usize] += 1.0;
+                }
+            }
+            sum.iter().zip(&n).map(|(s, n)| s / n.max(1.0)).collect()
+        })
+        .collect();
     for i in 0..store.len() {
         if !store.alive[i] {
             continue;
@@ -55,39 +85,71 @@ pub fn organize(
         let t = store.town[i] as usize;
         let age = store.age_years(i, dpy);
 
-        // --- desired guild and role
-        let desired: Option<(u32, Role)> = if age < params.life.adult_age {
-            // Apprentices join a parent's guild.
-            store.parents[i]
-                .and_then(|(a, b)| store.guild[a as usize].or(store.guild[b as usize]))
-                .filter(|_| age >= params.life.apprentice_age)
-                .map(|g| (g.domain, Role::Apprentice))
-        } else {
-            let (best, prof) = (0..nd)
-                .map(|d| (d as u32, db.domain_proficiency(&store.cap[i], d)))
-                .fold((0, f32::MIN), |acc, x| if x.1 > acc.1 { x } else { acc });
-            if prof >= op.master_threshold {
-                Some((best, Role::Master))
-            } else if prof >= op.guild_threshold {
-                Some((best, Role::Member))
+        // --- trade and rank: a trade is kept; the young enter it as apprentices
+        // into an open place; rank rises with years in it.
+        let years_in = |since: u64| (clock.tick.saturating_sub(since)) as f32 / dpy.max(1) as f32;
+        let rank = |since: u64| {
+            if age < params.life.adult_age {
+                Role::Apprentice
+            } else if years_in(since) >= op.master_years {
+                Role::Master
             } else {
-                None
+                Role::Member
             }
         };
-
-        let current = store.guild[i].map(|g| (g.domain, g.role));
+        let desired: Option<(u32, Role, u64)> = match store.guild[i] {
+            Some(g) => Some((g.domain, rank(g.since), g.since)),
+            None if age >= params.life.apprentice_age && age < params.life.adult_age => {
+                // Open places in town: the parent's trade first, then the trade
+                // that pays best.
+                let parent = store.parents[i]
+                    .and_then(|(a, b)| store.guild[a as usize].or(store.guild[b as usize]))
+                    .map(|g| g.domain);
+                let open = |d: usize| places[t][d] > 0;
+                let pick = parent.filter(|&d| open(d as usize)).or_else(|| {
+                    (0..nd)
+                        .filter(|&d| open(d))
+                        .max_by(|&a, &b| domain_pay[t][a].total_cmp(&domain_pay[t][b]))
+                        .map(|d| d as u32)
+                });
+                pick.map(|d| {
+                    places[t][d as usize] -= 1;
+                    (d, Role::Apprentice, clock.tick)
+                })
+            }
+            None if age >= params.life.adult_age => {
+                // An adult who never apprenticed joins the guild of their best
+                // skill once good enough. At the start of the game the grown
+                // population has been in its trade since it came of age.
+                let (best, prof) = (0..nd)
+                    .map(|d| (d as u32, db.domain_proficiency(&store.cap[i], d)))
+                    .fold((0, f32::MIN), |acc, x| if x.1 > acc.1 { x } else { acc });
+                (prof >= op.guild_threshold).then(|| {
+                    let since = if clock.tick < dpy as u64 {
+                        let adult_days =
+                            ((age - params.life.adult_age).max(0.0) * dpy as f32) as u64;
+                        clock.tick.saturating_sub(adult_days)
+                    } else {
+                        clock.tick
+                    };
+                    (best, rank(since), since)
+                })
+            }
+            None => None,
+        };
+        let current = store.guild[i].map(|g| (g.domain, g.role, g.since));
         if current != desired {
             if let Some(old) = store.guild[i].take() {
                 commands.entity(old.membership).despawn();
             }
-            if let Some((domain, role)) = desired {
+            if let Some((domain, role, since)) = desired {
                 let org = towns.0[t].guilds[domain as usize];
                 let membership = commands
                     .spawn(Membership {
                         agent: i as u32,
                         org,
                         role,
-                        since_day: clock.tick,
+                        since_day: since,
                     })
                     .id();
                 store.guild[i] = Some(GuildLink {
@@ -95,6 +157,7 @@ pub fn organize(
                     membership,
                     domain,
                     role,
+                    since,
                 });
             }
         }
