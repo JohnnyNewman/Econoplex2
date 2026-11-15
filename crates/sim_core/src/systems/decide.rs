@@ -257,6 +257,8 @@ struct Choice<'a> {
     days_per_year: u32,
     /// Everyone's satisfaction per need, and the ladder's parameters.
     sats: &'a [Option<crate::ladder::Sat>],
+    /// Per town: food, month and hunger costs for the savings slope.
+    savings_costs: &'a [[f32; 3]],
     ladder: &'a crate::ladder::LadderParams,
 }
 
@@ -302,10 +304,14 @@ impl Choice<'_> {
         } else {
             1.0
         };
-        let day_cost = (per_hunger * params.needs.hunger_per_day).max(1e-3);
-        let money_share = if lp.larder_days > 0.0 { 0.5 } else { 1.0 };
         let coin_food = g[at(Need::Food)] / per_hunger.max(1e-3);
-        let coin_save = g[at(Need::Savings)] * money_share / (day_cost * lp.savings_days.max(1.0));
+        let costs = self
+            .savings_costs
+            .get(t)
+            .copied()
+            .unwrap_or([1.0, 30.0, 0.12]);
+        let coin_save =
+            g[at(Need::Savings)] * crate::ladder::savings_slope(store, i, costs, db, lp);
         let coin = coin_food.max(coin_save).max(0.0);
         let rest_slope = g[at(Need::Rest)].max(0.0);
         let rest = rest_slope * params.needs.fatigue_rest_recovery.min(st[state::FATIGUE]);
@@ -490,6 +496,7 @@ pub fn decide(
         }
     };
     let sats = crate::ladder::all(&store, &towns, &db, &params, &env, ladder_params);
+    let savings_costs = crate::ladder::savings_costs(&towns, &db, &params, &env);
     let ctx = Choice {
         db: &db,
         params: &params,
@@ -499,6 +506,7 @@ pub fn decide(
         towns: &towns,
         days_per_year: clock.days_per_year,
         sats: &sats,
+        savings_costs: &savings_costs,
         ladder: ladder_params,
     };
 

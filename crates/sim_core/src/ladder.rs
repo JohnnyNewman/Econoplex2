@@ -59,8 +59,6 @@ pub struct LadderParams {
     /// How much more fuel each further person at the hearth takes (0.25: a
     /// family of four burns 1.75 times what one person alone does).
     pub fire_per_extra_person: f32,
-    /// Days of food a household wants covered by its money and larder.
-    pub savings_days: f32,
     /// Stock target for food at home: days of food a household keeps in its
     /// larder against bad times, bought ahead when it can (0: none; food is
     /// then bought day by day). Half of savings is then food in the larder.
@@ -96,7 +94,6 @@ impl Default for LadderParams {
             max_clothes: 2.0,
             fire_per_c: 0.5,
             fire_per_extra_person: 0.25,
-            savings_days: 60.0,
             larder_days: 14.0,
             cold_damage: 0.02,
             plan_days: plan_days(),
@@ -392,6 +389,13 @@ fn coverage(fuel: f32, need_per_day: f32, days: f32) -> f32 {
 struct TownView {
     housed: f32,
     day_food_cost: f32,
+    /// What a person's lower needs cost a day at today's prices: food, their
+    /// share of the fire, the wear of their clothes, rent.
+    day_cost: f32,
+    /// Price of a degree-day of heat in the cheapest fuel.
+    heat_price: f32,
+    /// Days in a month.
+    month_days: f32,
     mean_c: f32,
     hunger_per_day: f32,
     /// Expected mean temperature over the planning days, °C.
@@ -413,6 +417,84 @@ fn expected_temps(params: &Params, env: &crate::env::Environment, today: f32) ->
             crate::env::climate_c(&params.climate, env.season + d / dpy) + spell * (-d / 5.0).exp()
         })
         .collect()
+}
+
+/// Savings as months of security: ln(1 + months) / ln(1 + 12), so one month
+/// scores 0.27, three 0.54, six 0.76 and twelve 1.
+pub fn months_score(months: f32) -> f32 {
+    ((1.0 + months.max(0.0)).ln() / 13f32.ln()).min(1.0)
+}
+
+/// How much savings satisfaction one more coin buys at `months` of security
+/// costing `month_cost` a month (the slope of [`months_score`]).
+pub fn months_slope(months: f32, month_cost: f32) -> f32 {
+    if months >= 12.0 {
+        return 0.0;
+    }
+    1.0 / (13f32.ln() * (1.0 + months.max(0.0)) * month_cost.max(1e-3))
+}
+
+fn lp_of(params: &Params) -> Option<&LadderParams> {
+    match &params.market.consumption {
+        crate::consumption::ConsumptionParams::Needs(lp) => Some(lp),
+        _ => None,
+    }
+}
+
+/// Price of a degree-day of heat in the town's cheapest fuel, and the daily
+/// wear of the clothes a person wears, at today's prices.
+fn upkeep_prices(town: &crate::world::Town, db: &Db, lp: Option<&LadderParams>) -> (f32, f32) {
+    let goods = goods(db);
+    let heat = goods
+        .iter()
+        .filter_map(|g| {
+            g.serves
+                .iter()
+                .find(|s| s.by == Use::Burn && s.need == Need::Warmth)
+                .map(|s| town.price[g.good] / s.amount.max(1e-3))
+        })
+        .fold(f32::INFINITY, f32::min);
+    let clothes = goods
+        .iter()
+        .find(|g| g.serves.iter().any(|s| s.by == Use::Wear))
+        .map_or(0.0, |g| {
+            lp.map_or(0.0, |lp| lp.max_clothes) * town.price[g.good] / g.life_days
+        });
+    (if heat.is_finite() { heat } else { 0.0 }, clothes)
+}
+
+/// Per town: (cost of a day's food, cost of a month of the lower needs, hunger
+/// per day), for [`savings_slope`].
+pub fn savings_costs(
+    towns: &Towns,
+    db: &Db,
+    params: &Params,
+    env: &crate::env::Environment,
+) -> Vec<[f32; 3]> {
+    town_views(towns, db, params, env)
+        .iter()
+        .map(|v| [v.day_food_cost, v.day_cost * v.month_days, v.hunger_per_day])
+        .collect()
+}
+
+/// The savings slope per coin for person `i` (for choosing work by the
+/// ladder's derivative): what one more coin adds to their months of security.
+pub fn savings_slope(
+    store: &AgentStore,
+    i: usize,
+    costs: [f32; 3],
+    db: &Db,
+    lp: &LadderParams,
+) -> f32 {
+    let [day_food_cost, month_cost, hunger] = costs;
+    let larder: f32 = store.larder[i]
+        .iter()
+        .map(|&(f, q)| q * db.foods.iter().find(|x| x.0 == f).map_or(0.0, |x| x.1))
+        .sum();
+    let stores = larder / hunger.max(1e-3) * day_food_cost;
+    let months = (store.wealth[i].coins().max(0.0) + stores) / month_cost.max(1e-3);
+    let share = if lp.larder_days > 0.0 { 0.5 } else { 1.0 };
+    share * months_slope(months, month_cost)
 }
 
 fn town_views(
@@ -442,9 +524,18 @@ fn town_views(
             } else {
                 1.0
             };
+            let (heat_price, clothes_day) = upkeep_prices(town, db, lp_of(params));
+            let lp = lp_of(params);
+            let fire = lp.map_or(0.0, |lp| {
+                fire_need(env.at(t).day_mean_c, lp.max_clothes * 3.0, 3.0, lp) / 3.0
+            });
+            let day_cost = day_food_cost.max(1e-3) + fire * heat_price + clothes_day + town.rent;
             TownView {
                 housed,
                 day_food_cost: day_food_cost.max(1e-3),
+                day_cost,
+                heat_price,
+                month_days: (params.life.days_per_year as f32 / 12.0).max(1.0),
                 mean_c: env.at(t).day_mean_c,
                 hunger_per_day: params.needs.hunger_per_day.max(1e-3),
                 ahead: expected_temps(params, env, env.at(t).day_mean_c),
@@ -492,8 +583,11 @@ fn assess(
         .map(|&(f, q)| q * db.foods.iter().find(|x| x.0 == f).map_or(0.0, |x| x.1))
         .sum();
     let larder_days = (larder + h.extra_food) / view.hunger_per_day;
-    let money_days = wealth.max(0.0) / view.day_food_cost;
-    let reserve = ((larder_days + money_days) / lp.savings_days.max(1.0)).min(1.0);
+    // Months of the lower needs the household could pay for from its coin and
+    // stores, scored so the first month counts most (plan 2.3).
+    let stores = larder_days * view.day_food_cost + h.fuel * view.heat_price;
+    let months = (wealth.max(0.0) + stores) / (view.day_cost * view.month_days).max(1e-3);
+    let reserve = months_score(months);
     s[idx(Need::Savings)] = if lp.larder_days > 0.0 {
         // Food at home is safer than coin when prices spike or the market is bare.
         0.5 * (larder_days / lp.larder_days).min(1.0) + 0.5 * reserve
@@ -833,12 +927,23 @@ mod tests {
             max_clothes: 2.0,
             fire_per_c: 0.5,
             fire_per_extra_person: 0.25,
-            savings_days: 60.0,
             larder_days: 0.0,
             cold_damage: 0.02,
             plan_days: 30.0,
             fixed_needs: Vec::new(),
         }
+    }
+
+    #[test]
+    fn savings_count_months_and_the_first_counts_most() {
+        let near = |a: f32, b: f32| (a - b).abs() < 0.01;
+        assert!(near(months_score(1.0), 0.27));
+        assert!(near(months_score(3.0), 0.54));
+        assert!(near(months_score(6.0), 0.76));
+        assert!(near(months_score(12.0), 1.0) && months_score(24.0) == 1.0);
+        // A coin is worth more to someone with one month than with six.
+        assert!(months_slope(1.0, 10.0) > 2.0 * months_slope(6.0, 10.0));
+        assert_eq!(months_slope(12.0, 10.0), 0.0);
     }
 
     #[test]

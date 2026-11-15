@@ -381,6 +381,39 @@ keep their numbers; `decision.model`, `market.food_rules`, `market.item_stock`,
 `military.march` and `military.decision` are gone. The names in the sections
 above are the record of the switches as they were.
 
+## Meals are portions (plan Phase 2.2, first step)
+
+Food is a stack, so a meal now takes the portion that stills the hunger
+(`subsistence::portion`: hunger / food value, at most one unit) instead of a
+whole loaf at the threshold. People eat what their hunger grows by (14.4 food a
+year at 0.12 a day; the food audit measured 19 to 21 before). The steady-state
+start sizes food by the same rule.
+
+8 seeds x 20 years: population 1331 -> 1713, starving 0.92 % -> 0.43 %, food
+per head 3.0 -> 4.7.
+
+## Nobody sells below cost (plan Phase 2.2, second step)
+
+The jobs audit showed flour at 0.66 times its base price while grain, in winter,
+sat at five times: milling a sack lost money, so it paid nothing, and the
+bakeries ran short of flour. Now a made good's price never falls below its cost
+by its cheapest recipe: its inputs at today's prices plus a day's pay of the
+town's poorer jobs (the lower quartile) for the work.
+
+8 seeds x 20 years: population 1713 -> 1724, starving 0.43 % -> 0.32 %, food
+per head 4.7 -> 5.3. Over 30 years food per head is 5.37 (health band raised).
+
+## Savings as months of security (plan Phase 2.3)
+
+The savings need is now: how many months of the lower needs (food, a share of
+the fire, clothes wearing out, rent) the household could pay for at today's
+prices from its coin and stores, scored ln(1 + months) / ln(13): 0.27 at one
+month, 0.54 at three, 0.76 at six, 1 at twelve. With a larder target, half the
+need is still food at home. Work is valued by the same slope (what one more
+coin adds to the months). `savings_days` is gone.
+
+8 seeds x 30 years: population 2376, starving 0.28 %, food per head 6.1.
+
 ## Belonging and esteem pinned at 0.5 (2026-11-15)
 
 Little in the content serves belonging or esteem yet, so households spent
@@ -389,12 +422,13 @@ savings chasing two rungs the economy could not supply. `fixed_needs` in
 was. Goods earn nothing for serving a pinned need. Unpin a need once the
 content serves it.
 
-Default run, 8 seeds, 30 years (mean ± spread between seeds):
+Default run, 8 seeds, 30 years (mean ± spread between seeds), measured on main
+after meals as portions, the cost floor and savings as months:
 
-| | pop | starve% | food/cap | div | happy | capab |
-| --- | --- | --- | --- | --- | --- | --- |
-| before | 1583 ± 155 | 1.10 ± 0.33 | 2.14 ± 0.55 | 25.4 ± 1.45 | 0.414 | 29.6 |
-| pinned | 2076 ± 215 | 0.33 ± 0.19 | 3.20 ± 0.63 | 27.2 ± 1.37 | 0.416 | 32.4 |
+| | pop | starve% | food/cap | div |
+| --- | --- | --- | --- | --- |
+| before | 2302 ± 188 | 0.32 ± 0.14 | 6.75 ± 1.60 | 24.1 ± 1.92 |
+| pinned | 2488 ± 134 | 0.13 ± 0.09 | 9.56 ± 1.43 | 29.7 ± 2.69 |
 
-Starving is lower on every seed. The population band in health_bands.ron was
-raised from 2000 to 2600 to match (Nils, 2026-11-15).
+The upper food-per-head band in health_bands.ron went from 9 to 14 to match
+(Nils accepted the pin with wider bands, 2026-11-15).

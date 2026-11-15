@@ -642,11 +642,16 @@ pub fn move_stack(
     q
 }
 
-/// A meal from a squad's packs for someone marching with it: the most
-/// filling food first. Returns (good, food value) eaten.
-pub fn squad_meal(squads: &mut Squads, id: SquadId, foods: &[(u32, f32)]) -> Option<(u32, f32)> {
+/// A meal from a squad's packs for someone marching with it: a portion of
+/// the most filling food. Returns (good, food value, quantity) eaten.
+pub fn squad_meal(
+    squads: &mut Squads,
+    id: SquadId,
+    foods: &[(u32, f32)],
+    hunger: f32,
+) -> Option<(u32, f32, f32)> {
     let s = squads.list.get_mut(id as usize)?;
-    crate::decision::subsistence::take_meal(&mut s.stacks, foods)
+    crate::decision::subsistence::take_portion(&mut s.stacks, foods, hunger)
 }
 
 #[cfg(test)]

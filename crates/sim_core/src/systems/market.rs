@@ -214,6 +214,44 @@ pub fn settle(
                         .clamp(base * mp.min_price_factor, base * cap);
                 }
             }
+            // Nobody sells below cost: a made good is worth at least its inputs
+            // at today's prices plus a day's pay of the town's poorer jobs for
+            // the work, by its cheapest recipe. Without this flour fell below
+            // grain in winter and milling paid nothing while bread ran short.
+            let poor_pay = {
+                let mut paid: Vec<f32> =
+                    town.pay_rate.iter().copied().filter(|&x| x > 0.0).collect();
+                if paid.is_empty() {
+                    0.0
+                } else {
+                    let q = paid.len() / 4;
+                    *paid.select_nth_unstable_by(q, f32::total_cmp).1
+                }
+            };
+            let cost = db
+                .recipes
+                .iter()
+                .filter(|m| !m.inputs.is_empty())
+                .filter_map(|m| {
+                    let out: f32 = m
+                        .outputs
+                        .iter()
+                        .filter(|o| o.0 as usize == p)
+                        .map(|o| o.1)
+                        .sum();
+                    (out > 0.0).then(|| {
+                        let inputs: f32 = m
+                            .inputs
+                            .iter()
+                            .map(|&(i, q)| town.price[i as usize] * q)
+                            .sum();
+                        (inputs + poor_pay * m.duration) / out
+                    })
+                })
+                .fold(f32::INFINITY, f32::min);
+            if cost.is_finite() {
+                town.price[p] = town.price[p].max(cost.min(base * cap));
+            }
             if old > 0.0 && town.price[p] > 0.0 {
                 town.price_vol.resize(3, Default::default());
                 let k = class_index(db.content.products[p].price_class());

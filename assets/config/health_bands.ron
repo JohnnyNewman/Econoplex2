@@ -7,17 +7,19 @@
 // The bands are wide on purpose: about three times the spread between seeds
 // around the values measured on 2026-11-15 (population 1489 +- 186, starving
 // 1.06 +- 0.27 %, food per head 2.66 +- 0.53 days, diversity 23.7 +- 2.0).
-// They catch a broken economy, not a small shift.
-//
-// 2026-11-15: pop raised from 2000 to 2600 when belonging and esteem were
-// pinned at 0.5 (steady population about 2100, starving down to about 0.3 %).
+// They catch a broken economy, not a small shift. Population moved with meals
+// as portions (2026-11-15: 2328 over 8 seeds and 30 years, starving 0.32 %,
+// food per head 4.15). Food per head moved with the cost floor on prices
+// (2026-11-15: 5.37, starving 0.22 %). Pinning belonging and esteem at 0.5
+// raised it again (2026-11-15: 9.56, starving 0.13 %, population 2488), so its
+// upper bound went from 9 to 14.
 //
 // A change that is meant to move a result outside its band (for example the
 // food work, which should raise food per head well above 5 days) changes the
 // band in the same pull request, and says so in its description.
 {
-    "pop": (900, 2600),
+    "pop": (1500, 3200),
     "starve%": (0, 2.5),
-    "food/cap": (0.8, 5.0),
+    "food/cap": (2.0, 14.0),
     "div": (18, 32),
 }

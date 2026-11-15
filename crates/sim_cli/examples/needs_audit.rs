@@ -24,7 +24,6 @@ fn main() {
             max_clothes: 2.0,
             fire_per_c: 0.5,
             fire_per_extra_person: 0.25,
-            savings_days: 60.0,
             larder_days: 0.0,
             cold_damage: 0.02,
             plan_days: 30.0,
