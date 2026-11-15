@@ -3,6 +3,7 @@
 //! ```text
 //! econoplex [--load FILE] [--speed 1-5] [--shot FILE [--shot-day N] [--exit]]
 //!           [--town NAME] [--camera X Y] [--zoom F] [--no-economy] [--product-space]
+//!           [--report why|town|history|log|person] [--select ID]
 //! ```
 //!
 //! `--shot` runs until day N (default: right away), pauses, lets the view settle,
@@ -32,6 +33,9 @@ pub struct GameArgs {
     pub player: Option<String>,
     /// Orders given on day 0, as typed in the CLI (e.g. "tax Greenvale income 0.1").
     pub orders: Vec<String>,
+    /// The report open at start (reports.rs), and a person selected at start.
+    pub report: Option<crate::reports::Report>,
+    pub select: Option<u32>,
 }
 
 pub fn parse() -> GameArgs {
@@ -77,6 +81,19 @@ pub fn parse() -> GameArgs {
                 )
             }
             "--no-economy" => a.no_economy = true,
+            "--report" => {
+                a.report =
+                    Some(crate::reports::Report::named(&val()).unwrap_or_else(|| {
+                        die("--report expects why, town, history, log or person")
+                    }))
+            }
+            "--select" => {
+                a.select = Some(
+                    val()
+                        .parse()
+                        .unwrap_or_else(|_| die("--select expects an agent id")),
+                )
+            }
             "--product-space" => a.product_space = true,
             "--player" => a.player = Some(val()),
             "--order" => a.orders.push(val()),

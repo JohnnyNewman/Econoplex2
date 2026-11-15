@@ -106,7 +106,8 @@ pub fn spawn_hud(mut commands: Commands, db: Res<Db>) {
     commands.spawn((panel(None, Some(8.0), None, Some(8.0)), BackgroundColor(PANEL))).with_children(|p| {
         p.spawn((
             Text::new("Space pause | 1-5 speed | WASD pan | wheel zoom\nclick select | Esc deselect | P product space
-E economy | Tab next town | F5 save | F9 load"),
+E economy | Tab next town | F5 save | F9 load
+Y why | T town | H history | L log | I person"),
             font(12.0),
             TextColor(Color::srgb(0.8, 0.8, 0.8)),
         ));

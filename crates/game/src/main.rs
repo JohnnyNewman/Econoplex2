@@ -7,11 +7,13 @@
 //! Controls: Space pause · 1-5 speed · WASD/arrows pan · mouse wheel zoom ·
 //! left click select agent · Esc deselect · P product space overlay ·
 //! E economy panel · Tab next town · F5 quicksave · F9 quickload · policy panel (bottom right) for the player's town
+//! · Y why · T town · H history · L event log · I person (reports.rs)
 
 mod autorun;
 mod economy_ui;
 mod hud;
 mod policy_ui;
+mod reports;
 mod saving;
 mod terrain_view;
 mod ui_compat;
@@ -124,6 +126,7 @@ fn main() {
         .insert_resource(policy_ui::PolicyCursor::default())
         .insert_resource(policy_ui::Placing::default())
         .insert_resource(saving::Toast::default())
+        .insert_resource(reports::Reports::default())
         .insert_resource(economy_ui::EconomyView::new(econ_town))
         .insert_resource(ClearColor(Color::srgb(0.08, 0.09, 0.08)))
         .add_systems(
@@ -137,11 +140,16 @@ fn main() {
                 hud::spawn_hud,
                 policy_ui::spawn_policy_panel,
                 economy_ui::spawn_economy_panel.after(hud::spawn_hud),
+                reports::spawn_reports,
             ),
         )
         .add_systems(
             PostStartup,
-            (autorun::apply_view_args, autorun::load_at_start),
+            (
+                autorun::apply_view_args,
+                autorun::load_at_start,
+                reports::apply_args,
+            ),
         )
         .add_systems(FixedUpdate, run_sim_tick)
         .add_systems(
@@ -155,6 +163,7 @@ fn main() {
                 view::update_overlay_shade,
             ),
         )
+        .add_systems(Update, reports::update_reports.after(view::select_agent))
         .add_systems(
             Update,
             (
