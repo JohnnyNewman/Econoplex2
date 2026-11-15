@@ -55,3 +55,18 @@ jobs:
             echo "  cargo run -p sim_cli -- --tech-tree > docs/tech-tree.mmd"
             exit 1
           }
+
+  health:
+    name: health bands (8 seeds, 30 years)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release
+      - name: Default run stays inside its health bands
+        run: >
+          cargo run --release --locked -p sim_cli --
+          --years 30 --seeds 8 --quiet
+          --bands assets/config/health_bands.ron

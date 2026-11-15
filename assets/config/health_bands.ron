@@ -1,0 +1,20 @@
+// Health bands: the range each result of a default run is expected to stay in.
+//
+// CI runs `econoplex-sim --years 30 --seeds 8 --quiet --bands <this file>` and
+// fails when the mean over the 8 seeds of any metric below leaves its band. The
+// names are the columns of the batch table.
+//
+// The bands are wide on purpose: about three times the spread between seeds
+// around the values measured on 2026-11-15 (population 1489 +- 186, starving
+// 1.06 +- 0.27 %, food per head 2.66 +- 0.53 days, diversity 23.7 +- 2.0).
+// They catch a broken economy, not a small shift.
+//
+// A change that is meant to move a result outside its band (for example the
+// food work, which should raise food per head well above 5 days) changes the
+// band in the same pull request, and says so in its description.
+{
+    "pop": (900, 2000),
+    "starve%": (0, 2.5),
+    "food/cap": (0.8, 5.0),
+    "div": (18, 32),
+}
