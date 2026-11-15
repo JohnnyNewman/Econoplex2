@@ -3077,3 +3077,39 @@ fn two_step_sizes_give_close_results() {
         b.1
     );
 }
+
+#[test]
+fn goods_made_per_day_do_not_depend_on_the_step_size() {
+    // The same seed at 24 and 120 steps a day makes about as much of each
+    // main good over two years: every rate is scaled to the step.
+    let made = |spd: u32| {
+        let mut s = sim_steps(3, spd);
+        run_years(&mut s, 2);
+        let n = s.world.resource::<sim_core::Db>().content.products.len();
+        let towns = s.world.resource::<sim_core::Towns>();
+        (0..n)
+            .map(|p| {
+                towns
+                    .0
+                    .iter()
+                    .map(|t| t.flows.get(sim_core::goods::Flow::Made, p))
+                    .sum::<f64>()
+            })
+            .collect::<Vec<f64>>()
+    };
+    let (a, b) = (made(24), made(120));
+    let total: f64 = a.iter().sum();
+    let db = sim_steps(3, 24);
+    let db = db.world.resource::<sim_core::Db>();
+    for (p, (&x, &y)) in a.iter().zip(&b).enumerate() {
+        // The goods that make up the bulk of output.
+        if x.max(y) < 0.02 * total {
+            continue;
+        }
+        assert!(
+            (x - y).abs() <= 0.25 * x.max(y),
+            "{}: {x:.0} made at 24 steps a day, {y:.0} at 120",
+            db.content.products[p].id
+        );
+    }
+}

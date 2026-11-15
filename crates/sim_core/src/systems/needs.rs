@@ -2,8 +2,8 @@
 //!
 //! Every economy step people get the step's hunger (`calendar.rs`) and eat
 //! a meal when they are hungry, from the first source that has food; health,
-//! fatigue and happiness move by the step's share of a day. A rest lasts a day
-//! of time (`rest_until`), then the person is free to choose again.
+//! fatigue and happiness move by the step's share of a day. A rest lasts
+//! until the next simulated day (`rest_until`), then the person chooses again.
 
 use crate::db::Db;
 use crate::store::{Activity, AgentStore};
@@ -166,16 +166,18 @@ pub fn sense(
             st[HEALTH] = (st[HEALTH] + cal.flow(p.health_regen)).min(1.0);
         }
 
-        // Rest restores, idling a little; work tires (work::produce).
+        // Rest restores, idling a little; work tires (work::produce). Tiredness
+        // lives within the representative day: a day's rest restores the
+        // recovery once, however many steps the day has.
         match store.activity[i] {
             Activity::Resting => {
-                st[FATIGUE] = (st[FATIGUE] - cal.flow(p.fatigue_rest_recovery)).max(0.0);
+                st[FATIGUE] = (st[FATIGUE] - cal.day_part(p.fatigue_rest_recovery)).max(0.0);
                 if now >= store.rest_until[i] {
                     store.activity[i] = Activity::Idle;
                 }
             }
             Activity::Idle | Activity::Child | Activity::Soldier | Activity::Captive => {
-                st[FATIGUE] = (st[FATIGUE] - cal.flow(p.fatigue_idle_recovery)).max(0.0)
+                st[FATIGUE] = (st[FATIGUE] - cal.day_part(p.fatigue_idle_recovery)).max(0.0)
             }
             Activity::Working(_) => {}
         }

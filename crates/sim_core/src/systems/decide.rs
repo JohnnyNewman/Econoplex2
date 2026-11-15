@@ -138,11 +138,10 @@ pub fn job_capacity(
     sites: &Query<&NaturalResource>,
 ) -> Vec<f32> {
     let reserve = food_reserve(db, town, params);
-    // A worker uses a day's inputs and nature (a working step's, if a step
-    // does more than a day's work).
-    let days = params
-        .calendar()
-        .work_step_days(params.time.day_length.equinox_hours);
+    // Places count a day's inputs and nature per worker, as when the
+    // economy ran once a simulated day: whoever takes the job draws on the
+    // stock as the day's batches start, and the stock refills as others make
+    // and sell (people choose once a simulated day).
     let mut nature_total = vec![0.0f32; db.content.nature.len()];
     for &e in &town.nature_sites {
         if let Ok(n) = sites.get(e) {
@@ -205,7 +204,7 @@ pub fn job_capacity(
                     cap = cap.min(funds / per_batch * m.duration);
                 }
             }
-            cap / days
+            cap
         })
         .collect()
 }
@@ -428,42 +427,50 @@ pub fn decide(
     decisions.jobs.clear();
     decisions.apprentices.clear();
     let mastery = params.mastery();
-    let cal = params.calendar();
-    // A rest lasts a day.
-    let rest_until = clock.steps() + cal.steps(1.0).round().max(1.0) as u64;
-    // The people choosing now: those free of a task and a rest.
-    let idle: Vec<usize> = (0..store.len())
-        .filter(|&i| store.alive[i] && store.activity[i] == Activity::Idle)
-        .collect();
-    if idle.is_empty() {
-        // Nobody chooses this step: only the buildings' load moves on.
-        let np = db.content.products.len();
-        for (t, town) in towns.0.iter_mut().enumerate() {
-            let mut used = vec![0.0f32; np];
-            for (task, parts) in tasks.iter() {
-                if task.town as usize == t {
-                    if let Some(b) = db.recipes[task.recipe as usize].building {
-                        used[b as usize] += parts.workers.len() as f32;
+    // People choose their work once a simulated day, at its first step
+    // (before the work window opens): capacity, pay and places are judged
+    // for the day's work, as by the day's calendar. In the other steps the
+    // idle who chose a job today go back to it (a batch of theirs ended), and
+    // whoever chose to rest rests until the next day.
+    let step_cal = params.calendar();
+    if !clock.day_start() {
+        for i in 0..store.len() {
+            if store.alive[i] && store.activity[i] == Activity::Idle {
+                if let Some((r, apprentice)) = store.job_today[i] {
+                    // Not into a glut: once what the job makes piles up,
+                    // the rest of the day is off.
+                    let town = &towns.0[store.town[i] as usize];
+                    let mut goods = db.recipes[r as usize]
+                        .outputs
+                        .iter()
+                        .filter(|o| db.category(o.0) != Category::Building)
+                        .peekable();
+                    if goods.peek().is_some()
+                        && goods.all(|o| glutted(&db, town, &params, o.0 as usize))
+                    {
+                        store.job_today[i] = None;
+                        continue;
+                    }
+                    decisions.jobs.push((i as u32, r));
+                    if apprentice {
+                        decisions.apprentices.push(i as u32);
                     }
                 }
-            }
-            for (p, u) in used.into_iter().enumerate() {
-                let slots = db.content.products[p].slots;
-                let today = if db.category(p as u32) == sim_data::Category::Building && slots > 0 {
-                    let total = (slots as usize * town.building_count(p as u32)) as f32;
-                    if total > 0.0 {
-                        u / total
-                    } else {
-                        0.0
-                    }
-                } else {
-                    0.0
-                };
-                town.building_load[p] += (today - town.building_load[p]) * cal.smoothing(30.0);
             }
         }
         return;
     }
+    let cal = step_cal.every(clock.steps_per_day.max(1));
+    // A rest lasts until the next day's choices.
+    let rest_until = clock.steps() + clock.steps_per_day.max(1) as u64;
+    // The people choosing now: those free of a rest, and those at work, who
+    // finish the batch under way and then go to what they chose.
+    store.job_today.iter_mut().for_each(|j| *j = None);
+    let idle: Vec<usize> = (0..store.len())
+        .filter(|&i| {
+            store.alive[i] && matches!(store.activity[i], Activity::Idle | Activity::Working(_))
+        })
+        .collect();
 
     // Per-town context, computed once.
     let mut capacity: Vec<Vec<f32>> = towns
@@ -483,13 +490,12 @@ pub fn decide(
             }
         }
     }
+    // Every place is open: the people at work choose today too (they take
+    // their place back by choosing it again).
     let mut slots_left = slots_total.clone();
-    for (task, parts) in tasks.iter() {
+    for (task, _) in tasks.iter() {
         let m = &db.recipes[task.recipe as usize];
         let t = task.town as usize;
-        if let Some(b) = m.building {
-            slots_left[t][b as usize] -= parts.workers.len() as f32;
-        }
         if m.builds.is_some() {
             capacity[t][task.recipe as usize] = 0.0;
         }
@@ -719,11 +725,15 @@ pub fn decide(
                         slots_left[t][b as usize] -= 1.0;
                     }
                     log.chosen[r as usize] += 1;
-                    decisions.jobs.push((i as u32, r));
-                    if opt.apprentice {
-                        decisions.apprentices.push(i as u32);
+                    store.job_today[i] = Some((r, opt.apprentice));
+                    if store.activity[i] == Activity::Idle {
+                        decisions.jobs.push((i as u32, r));
+                        if opt.apprentice {
+                            decisions.apprentices.push(i as u32);
+                        }
                     }
                 }
+                None if store.activity[i] != Activity::Idle => {}
                 None => {
                     let mut rng = seed.agent_rng(clock.steps(), streams::DECIDE + 100, i);
                     store.activity[i] = Activity::Resting;
@@ -739,7 +749,7 @@ pub fn decide(
         decisions.apprentices.sort_unstable();
 
         // Every 30 days every workplace reconsiders its share of apprentice places.
-        let every = cal.steps(30.0).round().max(1.0) as u64;
+        let every = step_cal.steps(30.0).round().max(1.0) as u64;
         if clock.steps().is_multiple_of(every) {
             for town in towns.0.iter_mut() {
                 town.apprentice_share
@@ -774,6 +784,7 @@ pub fn decide(
                 &mut rng,
             );
             match choice {
+                None if store.activity[i] != Activity::Idle => {}
                 None => {
                     store.activity[i] = Activity::Resting;
                     store.rest_until[i] = rest_until;
@@ -795,12 +806,17 @@ pub fn decide(
                         open_jobs[t].retain(|&q| open(&slots_left, &capacity, t, q));
                     }
                     log.chosen[r as usize] += 1;
-                    decisions.jobs.push((i as u32, r));
+                    store.job_today[i] = Some((r, false));
+                    if store.activity[i] == Activity::Idle {
+                        decisions.jobs.push((i as u32, r));
+                    }
                 }
             }
         }
-        for &(i, r) in &decisions.jobs {
-            demand[store.town[i as usize] as usize][r as usize] += 1.0;
+        for &i in &idle {
+            if let Some((r, _)) = store.job_today[i] {
+                demand[store.town[i] as usize][r as usize] += 1.0;
+            }
         }
     }
 

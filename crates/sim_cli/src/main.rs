@@ -428,6 +428,7 @@ fn main() {
         agents
     );
     print_final(&sim);
+    print_made(&sim, args.years);
     print_match(&sim);
     print_eras(&sim);
     print_governors(&sim);
@@ -685,6 +686,24 @@ fn print_year(y: &sim_core::metrics::YearStats) {
             t.trade_ties * 100.0,
             t.ruler.map_or("-", |r| y.towns[r as usize].name.as_str())
         );
+    }
+}
+
+/// Goods made per year over the run, all towns together (for comparing step
+/// sizes and versions).
+fn print_made(sim: &Simulation, years: u64) {
+    let db = sim.world.resource::<sim_core::Db>();
+    let towns = sim.world.resource::<sim_core::Towns>();
+    println!("\nMade per year (all towns):");
+    for (p, def) in db.content.products.iter().enumerate() {
+        let made: f64 = towns
+            .0
+            .iter()
+            .map(|t| t.flows.get(sim_core::goods::Flow::Made, p))
+            .sum();
+        if made > 0.0 {
+            println!("  {:<14} {:>10.1}", def.id, made / years.max(1) as f64);
+        }
     }
 }
 

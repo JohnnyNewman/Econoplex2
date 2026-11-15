@@ -99,8 +99,11 @@ pub struct AgentStore {
     /// Household goods held (good, units); see `ladder`.
     #[serde(default)]
     pub owned: Vec<Vec<(u32, f32)>>,
-    /// The step (`SimClock::steps`) a rest ends on: a rest lasts a day.
+    /// The step (`SimClock::steps`) a rest ends on: the next simulated day.
     pub rest_until: Vec<u64>,
+    /// The job (recipe, as an apprentice) chosen for today: people choose once
+    /// a simulated day and go back to it when a batch of theirs ends.
+    pub job_today: Vec<Option<(u32, bool)>>,
     /// Days of work done past the end of the batch just finished this step;
     /// the next batch starts with them (so a step's work is never lost when
     /// a batch ends inside it).
@@ -177,6 +180,7 @@ impl AgentStore {
         self.lived_in.push(Vec::new());
         self.owned.push(Vec::new());
         self.rest_until.push(0);
+        self.job_today.push(None);
         self.carry.push(0.0);
         idx
     }

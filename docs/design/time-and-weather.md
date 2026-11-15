@@ -40,14 +40,36 @@ Claude Doc: "Econoplex economy redesign: items, time, needs".
 
 | Cadence | What |
 | --- | --- |
-| every step | needs and eating, choices of the idle, team assignment, work and batches, pay, market, prices, caravans, loans, the military's march and fights, deaths of the sick, the residents' list |
+| every step | needs and eating, going back to the day's job after a batch, team assignment, work and batches, pay, market, prices, caravans, loans, the military's march and fights, deaths of the sick, the residents' list |
 | once per day of time (`SimClock::day_of_time()`, every `steps(1)` steps) | body (capacity, training, disuse), the household ladder's wear, fuel, cold and happiness, social ties fading, culture following neighbours, random contacts |
-| first step of the simulated day (`env::day_start`) | ageing, births, partnering, hazards, starving counts, governors, metrics, history samples, goals, the ledger's year end |
+| first step of the simulated day (`env::day_start`) | job choice (capacity, scoring, matching, pay), ageing, births, partnering, hazards, starving counts, governors, metrics, history samples, goals, the ledger's year end |
 | every N months, on the first step (`SimClock::every_months(n)`) | trade rounds, organize, muster, raid plans, tribute, migration |
 
 The slow processes moved to once per day of time are those whose state
 changes only by a few hundredths a day: running them every step cost about a
 third of a step's time and changed nothing measurable.
+
+### Rates scaled to the step
+
+- Work and batch progress: the working days that fall in the step's hours
+  (`work_days_this_step`), so a day of steps does the same work at any
+  `steps_per_day`.
+- Tiredness: a state within the representative day (`Calendar::day_part`):
+  a day's work raises it by `fatigue_per_work_day`, a day's rest or idling
+  takes the recovery once, however many steps the day has.
+- Job choice, places and pay: once a simulated day, at its first step, with
+  the day's calendar (`Calendar::every(steps_per_day)`); places count a day's
+  inputs per worker, as before steps. After a batch people go back to the
+  job they chose, unless what it makes has become a glut; a rest lasts until
+  the next day's choices.
+- Flows per day (hunger, health, rent, wages, regrowth): `flow`, times the
+  step's days. Shares, decay and smoothing: `share`, `keep`, `smoothing`
+  (compounded, `1 - (1 - r)^days`). Memories and spans in days: `steps(d)`.
+- Probabilities per batch (success) and per event (contacts, fights) are
+  per piece of work or meeting, not per step; contacts per step are
+  `flow(daily_contacts)`.
+- Ageing, births, hazards, governors, metrics: on the first step of the
+  simulated day; intervals in months: `every_months`.
 
 ### Batches and the progress bar
 

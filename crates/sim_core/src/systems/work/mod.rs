@@ -206,8 +206,9 @@ pub fn produce(
         for &w in &workers {
             let st = &mut store.state[w as usize];
             st[state::FATIGUE] = (st[state::FATIGUE]
-                + params.needs.fatigue_per_work_day * (0.5 + m.phys_total) * worked)
-                .min(1.0);
+                + params.needs.fatigue_per_work_day * (0.5 + m.phys_total) * worked
+                    / cal.month_days())
+            .min(1.0);
         }
         let rate = (workers.len() as f32).powf(params.work.work_exponent);
         task.progress += rate * worked;

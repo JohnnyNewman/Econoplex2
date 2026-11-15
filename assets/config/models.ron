@@ -445,11 +445,11 @@
     // the Calendar (calendar.rs). Indoor work runs 6:00-18:00 by the equinox
     // hours, outdoor work from sunrise to sunset (8 hours in midwinter, 16 in
     // midsummer). The slow processes of a body and a household (ageing, wear,
-    // fuel, happiness, fading ties) move once per day of time; events counted
-    // in months come at the first step of the simulated day. At the clients'
-    // default speed (5 minutes of real time a simulated day) 300 steps come
-    // about once a real second. Results stay about the same from 24 steps a
-    // day up; `--set time.steps_per_day=N` changes it.
+    // fuel, happiness, fading ties) move once per day of time; job choice and
+    // events counted in months come at the first step of the simulated day.
+    // At the clients' default speed (5 minutes of real time a simulated day)
+    // 300 steps come about once a real second. `--set time.steps_per_day=N`
+    // changes it.
     time: (
         steps_per_day: 300,
         days_per_month: 10,
