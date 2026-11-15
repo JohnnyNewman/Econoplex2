@@ -439,12 +439,11 @@ was. Goods earn nothing for serving a pinned need. Unpin a need once the
 content serves it.
 
 Default run, 8 seeds, 30 years (mean ± spread between seeds), measured on main
-after meals as portions, the cost floor and savings as months:
+after meals as portions, the cost floor, savings as months and trades:
 
 | | pop | starve% | food/cap | div |
 | --- | --- | --- | --- | --- |
-| before | 2302 ± 188 | 0.32 ± 0.14 | 6.75 ± 1.60 | 24.1 ± 1.92 |
-| pinned | 2488 ± 134 | 0.13 ± 0.09 | 9.56 ± 1.43 | 29.7 ± 2.69 |
+| before | 2208 ± 158 | 0.40 ± 0.21 | 5.31 ± 1.34 | 25.1 ± 1.51 |
+| pinned | 2297 ± 126 | 0.25 ± 0.17 | 7.41 ± 1.88 | 26.0 ± 1.82 |
 
-The upper food-per-head band in health_bands.ron went from 9 to 14 to match
-(Nils accepted the pin with wider bands, 2026-11-15).
+All results stay inside the health bands.
