@@ -289,11 +289,8 @@
         militia_power: 0.03,
         march_speed: 100.0,
         raid_cooldown: 120,
-        raid_margin: 1.3,
-        raid_appetite: 0.02,
         min_raid_squad: 5,
-        battle_steepness: 2.0,
-        casualty_rate: 0.3,
+        casualty_rate: 0.3,        // a tenth of it: chance each civilian is hurt when the defense breaks
         loot_share: 0.3,
         captive_share: 0.05,
         captives_per_soldier: 0.5,
@@ -309,18 +306,18 @@
         independence_rate: 0.05,
         battle_hours: 4.0,         // hours of use a battle puts on every fighter's kit
         // Kit in store: one per soldier the town means to keep, shared among the
-        // goods for the same slot (Soldiers), or per resident like any good (PerCapita).
+        // goods for the same slot (Soldiers).
         kit_demand: Soldiers,
         // With Soldiers: kit for this share of residents beyond the soldiers, to
         // arm a levy, unless the government sets its own stockpile for the good.
         levy_reserve: 0.05,
-        // Raids fight as squads on a field (battle.rs) or by one roll (Roll),
-        // and march by daylight carrying rations (Weather) or in fixed ticks (Fixed).
+        // Raids fight as squads on a field (battle.rs, Field) and march by
+        // daylight carrying rations (Weather).
         battles: Field,
         march: Weather,
         ration_margin: 1.25,       // rations for 1.25 times the expected trip
         // Planner: raid when a simulated fight says the haul beats wages, rations
-        // and the expected dead; Appetite: the old random draw.
+        // and the expected dead.
         decision: Planner,
     ),
     // Squad battles on a field (battle.rs, war redesign): every number has a unit.

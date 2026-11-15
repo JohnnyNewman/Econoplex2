@@ -404,10 +404,14 @@ treasury can pay for a month. Recruits are the most ambitious, risk-loving and
 physically strong idle adults. Soldiers stop working, are paid `soldier_pay` a day,
 take the best weapons and armour in the armory, and learn the Fighting skill by drilling.
 
-A town whose squad is `raid_margin` times stronger than a neighbor's defense (its
-soldiers at home plus a small militia strength per adult) may raid it, more often
-when its soldiers are ambitious and risk-loving. The squad marches along the road,
-slower in rain and snow, and fights on arrival.
+Once a muster, a town that raids on its own weighs each neighbor a road leads to: it
+simulates the fight a few times against the soldiers at home and the militia, and
+sets the chance of winning times the haul (what the survivors could carry, a share
+of the treasury, a first tribute if the win would conquer) against wages and rations
+for the trip and a year's pay for each soldier expected to die. It marches on the
+best neighbor worth it, unless deep snow or a storm says wait. The squad marches
+along the road in daylight, slower in rain and snow, carrying its rations, and
+fights on arrival.
 
 A battle is fought between squads on a field (`battle.rs`). Each squad has a kit
 (spearmen, swordsmen, archers, cavalry, levy, heavy infantry, horse archers), a
@@ -466,8 +470,8 @@ number of people share one field instead of each searching for a path. The same
 fields give the road between every pair of towns, and the simulation uses those
 roads instead of straight lines:
 
-- a raid marches `road / march_speed` days, along the road, and no squad sets out
-  for a town no road reaches;
+- a raid marches about `road / march_speed` days each way in fair weather, along
+  the road, and no squad sets out for a town no road reaches;
 - migrants weigh the road, not the crow's flight;
 - caravans lose `transport_cost` of the price per 1000 units of road, so goods flow
   easily between towns on the same bank and less across the river;

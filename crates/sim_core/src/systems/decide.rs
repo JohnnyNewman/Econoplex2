@@ -33,9 +33,7 @@ pub fn glutted(db: &Db, town: &crate::world::Town, params: &Params, p: usize) ->
 pub fn target_stock(db: &Db, town: &crate::world::Town, params: &Params, p: usize) -> f32 {
     let mp = &params.market;
     let def = &db.content.products[p];
-    if def.category == sim_data::Category::Weapon
-        && params.military.kit_demand == crate::config::KitDemand::Soldiers
-    {
+    if def.category == sim_data::Category::Weapon {
         // Kit is what the government keeps in reserve: its stockpile target if
         // it set one, else enough for its soldiers and the levy it could call.
         let keep = match town.stockpile_target(p) {

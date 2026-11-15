@@ -344,15 +344,12 @@ pub struct Town {
 pub struct Raid {
     pub target: u16,
     pub soldiers: Vec<u32>,
-    pub depart: u64,
-    pub arrive: u64,
-    pub home: u64,
     pub fought: bool,
     /// People taken in battle, marched home with the squad.
     pub captives: Vec<u32>,
     /// Goods carried home (indexed by product).
     pub loot: Vec<f32>,
-    /// The squad the soldiers march as (`goods::Squads`), with `march: Weather`.
+    /// The squad the soldiers march as (`goods::Squads`).
     #[serde(default)]
     pub squad: Option<u32>,
     /// Share of the road behind it, 0 at home .. 1 at the target.

@@ -498,14 +498,9 @@ pub struct MilitaryParams {
     pub march_speed: f32,
     /// Days a town waits after a raid before the next one.
     pub raid_cooldown: u32,
-    /// A town raids only when its squad is this many times stronger than the defense.
-    pub raid_margin: f32,
-    /// Daily chance that a town able to raid decides to, scaled by its soldiers' ambition and risk.
-    pub raid_appetite: f32,
     pub min_raid_squad: usize,
-    /// Win chance = A^k / (A^k + D^k).
-    pub battle_steepness: f32,
-    /// Base chance a fighter falls in battle (scaled by the enemy's share of strength).
+    /// A tenth of it is the chance each civilian of a town whose defense
+    /// breaks is hurt.
     pub casualty_rate: f32,
     /// Share of the defender's treasury and stores a winning raid carries off.
     pub loot_share: f32,
@@ -540,11 +535,11 @@ pub struct MilitaryParams {
     /// Also how many civilians take up arms when the town is attacked.
     #[serde(default)]
     pub levy_reserve: f32,
-    /// How a raid's fight is decided: squads on a field, or one dice roll.
+    /// How a raid's fight is decided: squads on a field.
     #[serde(default)]
     pub battles: BattleModel,
     /// How a raid marches: by daylight, slowed by mud and snow and carrying its
-    /// rations, or a fixed number of days.
+    /// rations.
     #[serde(default)]
     pub march: MarchModel,
     /// Rations a squad takes along, as a multiple of what the trip there and
@@ -565,9 +560,6 @@ pub enum WarDecision {
     /// each). March on the best one worth it, unless snow or a storm says wait.
     #[default]
     Planner,
-    /// A daily draw on `raid_appetite` x the soldiers' temper, at the richest
-    /// neighbour beaten by `raid_margin`. The old rule.
-    Appetite,
 }
 
 fn default_ration_margin() -> f32 {
@@ -581,9 +573,6 @@ pub enum BattleModel {
     /// defenders' soldiers at home and a militia of townsfolk.
     #[default]
     Field,
-    /// One roll on the squads' strength (`battle_steepness`, `casualty_rate`).
-    /// The old rule.
-    Roll,
 }
 
 /// How a raid marches.
@@ -593,8 +582,6 @@ pub enum MarchModel {
     /// snow, stopped by storms; the squad carries and eats its own rations.
     #[default]
     Weather,
-    /// `road / march_speed` ticks each way, eating at home. The old rule.
-    Fixed,
 }
 
 /// How many pieces of kit a town wants in store.
@@ -606,9 +593,6 @@ pub enum KitDemand {
     /// spear, mail or a padded coat). See `military::kit_reserve`.
     #[default]
     Soldiers,
-    /// Like any other good: `market.target_per_capita` per resident, for every
-    /// kind of weapon. The old rule.
-    PerCapita,
 }
 
 fn default_battle_hours() -> f32 {
