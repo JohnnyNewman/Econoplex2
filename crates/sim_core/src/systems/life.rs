@@ -99,7 +99,9 @@ pub fn lifecycle(
 ) {
     let mut rng = seed.rng(clock.tick, streams::LIFE);
     let lp = &params.life;
-    let dpy = lp.days_per_year;
+    // Simulated days (months) a year: ages, yearly hazards and birth rates.
+    let dpy = clock.months_per_year.max(1);
+    let cal = clock.calendar();
     let store = &mut *store;
     let n = store.len();
 
@@ -109,7 +111,7 @@ pub fn lifecycle(
         if !store.alive[i] {
             continue;
         }
-        store.age_days[i] += 1;
+        store.age_months[i] += 1;
         let age = store.age_years(i, dpy);
         if store.activity[i] == Activity::Child && age >= lp.adult_age {
             store.activity[i] = Activity::Idle;
@@ -198,7 +200,9 @@ pub fn lifecycle(
         .iter_mut()
         .map(|t| {
             let stock = t.food_stock(&db);
-            t.food_trend += (stock - t.food_last - t.food_trend) / 60.0;
+            // Change per day, smoothed over about 60 days.
+            t.food_trend +=
+                ((stock - t.food_last) / cal.days() - t.food_trend) * cal.smoothing(60.0);
             t.food_last = stock;
             // A shrinking stock can at most halve what parents count on, so a one-off
             // loss (a raid's plunder, spoilage of a huge pile) doesn't stop all births.
@@ -262,7 +266,7 @@ pub fn lifecycle(
                 entity,
                 town: t as u16,
                 female: rng.random_bool(0.5),
-                age_days: 0,
+                age_months: 0,
                 cap,
                 mind: mind_v,
                 phys,

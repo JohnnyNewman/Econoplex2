@@ -206,9 +206,9 @@ pub fn update_hud(
     let (scenario, state) = goal;
     let goal_amount = scenario.0.goal.as_ref().map(|g| g.amount);
     let mut s = format!(
-        "ECONOPLEX   year {}  day {:>3}   {}{} days/s\npopulation {}\n",
+        "ECONOPLEX   year {}  {}   {}{} days/s\npopulation {}\n",
         clock.year(),
-        clock.day_of_year(),
+        sim_core::calendar::month_name(clock.day_of_year(), clock.months_per_year),
         if control.paused { "PAUSED  " } else { "" },
         SPEEDS[control.speed],
         store.alive_count()
@@ -306,9 +306,8 @@ pub fn update_hud(
         .recent(5)
         .map(|e| {
             format!(
-                "  y{} d{:>3}  {}",
-                e.tick / clock.days_per_year as u64,
-                e.tick % clock.days_per_year as u64,
+                "  {:<7}  {}",
+                sim_core::calendar::date(e.tick, clock.months_per_year),
                 e.text
             )
         })
@@ -353,7 +352,7 @@ pub fn update_inspector(
         text.0 = format!("Agent #{idx} has died.");
         return;
     }
-    let age = store.age_years(i, clock.days_per_year);
+    let age = store.age_years(i, clock.months_per_year);
     let mut s = format!(
         "Agent #{idx}  {}  age {:.0}\n{}  wealth {:.0}\n{}\n",
         if store.female[i] { "female" } else { "male" },

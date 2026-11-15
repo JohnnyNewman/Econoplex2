@@ -13,7 +13,7 @@ use sim_data::dims::{mind, MIND_DIM};
 
 const AXES: usize = MIND_DIM - mind::IDEOLOGY_START;
 
-/// Each town's culture moves a day toward its residents' average outlook.
+/// Each town's culture moves a month toward its residents' average outlook.
 fn follow_culture(store: &AgentStore, towns: &mut Towns, params: &Params) {
     for town in towns.0.iter_mut() {
         if town.residents.is_empty() {
@@ -37,7 +37,9 @@ fn follow_culture(store: &AgentStore, towns: &mut Towns, params: &Params) {
         crate::decision::culture::follow(
             &mut town.culture,
             &mean,
-            params.decision.culture.memory_days,
+            params
+                .calendar()
+                .months(params.decision.culture.memory_days),
         );
     }
 }
@@ -55,7 +57,10 @@ pub fn socialize(
     let store = &mut *store;
     follow_culture(store, &mut towns, &params);
     let tp = &params.trust;
-    store.fade_trust(1.0 - tp.fade);
+    // A simulated day is a month of days: ties fade, coworkers meet and
+    // people run into each other as they would day by day.
+    let cal = params.calendar();
+    store.fade_trust(cal.keep(1.0 - tp.fade));
     let mut noise = [0.0f32; 2 * AXES];
     let mut meet =
         |store: &mut AgentStore, a: usize, b: usize, rng: &mut rand_chacha::ChaCha8Rng| {
@@ -88,10 +93,13 @@ pub fn socialize(
             .chain(ev.apprentices.iter())
             .copied()
             .collect();
-        for pair in members.windows(2) {
-            meet(store, pair[0] as usize, pair[1] as usize, &mut rng);
+        let days = ev.days.round().max(1.0) as usize;
+        for _ in 0..days {
+            for pair in members.windows(2) {
+                meet(store, pair[0] as usize, pair[1] as usize, &mut rng);
+            }
         }
-        let gain = tp.cowork_gain * if ev.success { 1.0 } else { tp.failure_factor };
+        let gain = tp.cowork_gain * ev.days * if ev.success { 1.0 } else { tp.failure_factor };
         for (k, &a) in members.iter().enumerate() {
             for &b in &members[k + 1..] {
                 if store.alive[a as usize] && store.alive[b as usize] {
@@ -101,15 +109,17 @@ pub fn socialize(
         }
     }
 
-    // Random contacts within the town.
-    let p = models.social.daily_contacts();
+    // Random contacts within the town: a month of daily chances.
+    let p = cal.flow(models.social.daily_contacts());
+    let (whole, part) = (p.floor() as usize, p.fract());
     for town in &towns.0 {
         let n = town.residents.len();
         if n < 2 {
             continue;
         }
         for &a in &town.residents {
-            if rng.random::<f32>() < p {
+            let meetings = whole + (rng.random::<f32>() < part) as usize;
+            for _ in 0..meetings {
                 let b = town.residents[rng.random_range(0..n)];
                 let (a, b) = (a as usize, b as usize);
                 meet(store, a, b, &mut rng);

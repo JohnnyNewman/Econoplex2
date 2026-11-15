@@ -14,13 +14,13 @@
 //! A rung counts only as the rungs below it are met: its weight is the product
 //! of a smooth gate (from `gate_at - gate_width` to `gate_at + gate_width`) over
 //! the satisfaction of every rung below. Goods declare in the content which
-//! needs they serve (`household.serves`). Every `interval` days a household
+//! needs they serve (`household.serves`). Every `interval` months a household
 //! buys, one unit at a time, the good that raises its weighted satisfaction
 //! most per coin, and stops when nothing is worth more than the money it would
 //! keep: money serves savings, so the budget comes out of the same rule
 //! instead of a spending share.
 //!
-//! Warmth is physical. Each day a person loses heat by the degrees the day's
+//! Warmth is physical. Each day (a simulated day burns a month of them) a person loses heat by the degrees the day's
 //! mean temperature falls short of `comfort_c`, after the house (`house_c`)
 //! and the clothes worn (their insulation, up to `max_clothes` pieces). The
 //! rest has to come from fuel burned at the household's hearth. Without it
@@ -43,7 +43,8 @@ use sim_data::{Need, Serves, Use};
 /// `market.consumption: Needs(...)`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LadderParams {
-    /// Days between a household's shopping trips (staggered by person).
+    /// Simulated days (months) between a household's shopping trips
+    /// (staggered by person).
     pub interval: u32,
     /// A rung opens as the rungs below pass `gate_at`, over ± `gate_width`.
     pub gate_at: f32,
@@ -81,7 +82,7 @@ fn plan_days() -> f32 {
 impl Default for LadderParams {
     fn default() -> Self {
         LadderParams {
-            interval: 7,
+            interval: 1,
             gate_at: 0.7,
             gate_width: 0.15,
             comfort_c: 16.0,
@@ -403,7 +404,7 @@ fn expected_temps(params: &Params, env: &crate::env::Environment, today: f32) ->
         crate::consumption::ConsumptionParams::Needs(lp) => lp.plan_days,
         _ => 30.0,
     };
-    let dpy = params.life.days_per_year.max(1) as f32;
+    let dpy = params.calendar().days_per_year();
     let spell = today - crate::env::climate_c(&params.climate, env.season);
     (0..lp_days.max(1.0) as usize)
         .map(|d| {
@@ -529,7 +530,7 @@ fn town_views(
                 day_food_cost: day_food_cost.max(1e-3),
                 day_cost,
                 heat_price,
-                month_days: (params.life.days_per_year as f32 / 12.0).max(1.0),
+                month_days: params.calendar().days(),
                 mean_c: env.at(t).day_mean_c,
                 hunger_per_day: params.needs.hunger_per_day.max(1e-3),
                 ahead: expected_temps(params, env, env.at(t).day_mean_c),
@@ -598,7 +599,7 @@ fn assess(
     s
 }
 
-/// Daily: clothes and goods wear, each hearth burns the fuel the cold asks
+/// Each simulated day, a month of it: clothes and goods wear, each hearth burns the fuel the cold asks
 /// for, cold hurts, and happiness follows the ladder.
 pub fn daily(
     store: &mut AgentStore,
@@ -611,7 +612,8 @@ pub fn daily(
     use sim_data::dims::state::*;
     let goods = goods(db);
     let views = town_views(towns, db, params, env);
-    let rate = params.needs.happiness_rate;
+    let cal = params.calendar();
+    let rate = cal.share(params.needs.happiness_rate);
     // Wear and use-up over each good's life.
     for i in 0..store.len() {
         if !store.alive[i] {
@@ -620,13 +622,13 @@ pub fn daily(
         for e in store.owned[i].iter_mut() {
             if let Some(g) = goods.iter().find(|g| g.good == e.0 as usize) {
                 if g.serves.iter().any(|s| s.by != Use::Burn) {
-                    e.1 *= 1.0 - 1.0 / g.life_days;
+                    e.1 *= cal.keep(1.0 - 1.0 / g.life_days);
                 }
             }
         }
     }
     let homes = Homes::of(store, &goods, lp);
-    // Each hearth burns what the day needs, fuel by fuel.
+    // Each hearth burns what the month's days need, fuel by fuel.
     let mut warm = vec![1.0f32; store.len()];
     for k in 0..store.len() {
         if !store.alive[k] || homes.keeper[k] != k {
@@ -634,7 +636,7 @@ pub fn daily(
         }
         let view = &views[store.town[k] as usize];
         let size = homes.size[k].max(1.0);
-        let need = fire_need(view.mean_c, homes.clothes[k] / size, size, lp);
+        let need = cal.flow(fire_need(view.mean_c, homes.clothes[k] / size, size, lp));
         let mut left = need;
         for e in store.owned[k].iter_mut() {
             if left <= 0.0 {
@@ -668,7 +670,7 @@ pub fn daily(
         let view = &views[store.town[i] as usize];
         let w = warm[homes.keeper[i]];
         if w < 0.5 {
-            towns.0[store.town[i] as usize].cold_days += 1;
+            towns.0[store.town[i] as usize].cold_days += cal.whole_days();
         }
         let h = homes.holdings(store, i, &goods, lp);
         let short_c = (lp.comfort_c - (view.mean_c + lp.house_c + h.clothes)).max(0.0);
@@ -676,7 +678,7 @@ pub fn daily(
         sat[idx(Need::Warmth)] = w;
         let target = happiness(&sat, lp);
         let st = &mut store.state[i];
-        st[HEALTH] -= lp.cold_damage * (1.0 - w) * (short_c / 10.0).min(1.5);
+        st[HEALTH] -= cal.flow(lp.cold_damage) * (1.0 - w) * (short_c / 10.0).min(1.5);
         st[HAPPINESS] = (st[HAPPINESS] + rate * (target - st[HAPPINESS])).clamp(0.0, 1.0);
     }
 }
@@ -712,7 +714,7 @@ pub fn all(
         .collect()
 }
 
-/// Every `interval` days (staggered), each adult buys what raises its weighted
+/// Every `interval` months (staggered), each adult buys what raises its weighted
 /// satisfaction most per coin, while that beats keeping the money: clothes and
 /// other personal goods for themself, and, if they keep the home, fuel and home
 /// goods for the household (worth as much as it does for everyone at the
@@ -733,6 +735,9 @@ pub fn spend(
     let views = town_views(towns, db, params, env);
     let homes = Homes::of(store, &goods, lp);
     let iv = lp.interval.max(1) as u64;
+    // Units bought one by one on a trip: up to 16 for each week the trip
+    // covers.
+    let max_units = (16.0 * iv as f32 * params.calendar().days() / 7.0).ceil() as usize;
     let firms_on = params.market.firms.on();
     for i in 0..store.len() {
         if !store.alive[i]
@@ -745,7 +750,7 @@ pub fn spend(
         let view = &views[t];
         let keeps_home = homes.keeper[i] == i;
         let size = homes.size[i].max(1.0);
-        for _ in 0..16 {
+        for _ in 0..max_units {
             let h = homes.holdings(store, i, &goods, lp);
             let now = score(
                 &assess(store, i, &h, store.wealth[i].coins(), view, lp, db, true),
@@ -910,7 +915,7 @@ mod tests {
 
     fn lp() -> LadderParams {
         LadderParams {
-            interval: 7,
+            interval: 1,
             gate_at: 0.7,
             gate_width: 0.15,
             comfort_c: 16.0,

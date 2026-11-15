@@ -69,7 +69,8 @@ pub struct AgentStore {
     pub alive: Vec<bool>,
     pub entity: Vec<Entity>,
     pub town: Vec<u16>,
-    pub age_days: Vec<u32>,
+    /// Age in simulated days, one per month.
+    pub age_months: Vec<u32>,
     pub female: Vec<bool>,
     pub partner: Vec<Option<u32>>,
     pub parents: Vec<Option<(u32, u32)>>,
@@ -105,7 +106,7 @@ pub struct NewAgent {
     pub entity: Entity,
     pub town: u16,
     pub female: bool,
-    pub age_days: u32,
+    pub age_months: u32,
     pub cap: CapVec,
     pub mind: MindVec,
     pub phys: PhysVec,
@@ -149,7 +150,7 @@ impl AgentStore {
         self.alive.push(true);
         self.entity.push(a.entity);
         self.town.push(a.town);
-        self.age_days.push(a.age_days);
+        self.age_months.push(a.age_months);
         self.female.push(a.female);
         self.partner.push(None);
         self.parents.push(a.parents);
@@ -194,8 +195,9 @@ impl AgentStore {
         v
     }
 
-    pub fn age_years(&self, i: usize, days_per_year: u32) -> f32 {
-        self.age_days[i] as f32 / days_per_year as f32
+    /// Age in years, with `per_year` simulated days (months) a year.
+    pub fn age_years(&self, i: usize, per_year: u32) -> f32 {
+        self.age_months[i] as f32 / per_year.max(1) as f32
     }
 
     pub fn alive_count(&self) -> usize {

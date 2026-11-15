@@ -114,9 +114,10 @@ pub fn govern(
     governors
         .towns
         .resize(towns.0.len(), GovernorState::default());
-    let a = 1.0 / gp.smoothing_days.max(1.0);
+    let cal = params.calendar();
+    let a = cal.smoothing(gp.smoothing_days);
 
-    // Daily observation, smoothed.
+    // An observation each simulated day (a month), smoothed over the days.
     for (t, town) in towns.0.iter().enumerate() {
         let st = &mut governors.towns[t];
         let pop = town.residents.len().max(1) as f32;
@@ -154,9 +155,11 @@ pub fn govern(
             )
         });
         if let Some((m0, e0)) = st.flows_seen {
-            let y = 1.0 / gp.forecast_days.max(1.0);
-            st.food_made += y * ((made - m0) as f32 - st.food_made);
-            st.food_eaten += y * ((eaten - e0) as f32 - st.food_eaten);
+            // Per day, over a month of days.
+            let y = cal.smoothing(gp.forecast_days);
+            let d = cal.days() as f64;
+            st.food_made += y * (((made - m0) / d) as f32 - st.food_made);
+            st.food_eaten += y * (((eaten - e0) / d) as f32 - st.food_eaten);
         } else {
             // First look: assume the town makes what it eats.
             st.food_eaten = pop * params.needs.hunger_per_day;

@@ -5,19 +5,26 @@ Claude Doc: "Econoplex economy redesign: items, time, needs".
 
 ## Clock
 
-- `time.ticks_per_day` (12 by default) cuts each day into ticks; `SimClock.tick`
-  still counts days and `SimClock.sub` is the tick within the day.
-- The economy runs on the day's first tick. The other ticks only move the
-  hours and the weather on, so the state hash is the same at any number of
-  ticks per day.
-- `Simulation::step()` runs a whole day; `Simulation::step_tick()` runs one tick.
-- `days_per_month * months_per_year * economy_days_per_day` must equal
-  `life.days_per_year`.
-- Time compression: `economy_days_per_day` runs that many days of economy on
-  each game day's first tick (`EconomyDay` schedule, run by `env::run_economy`).
-  For play, 12 game days a year: `days_per_month: 1`, `economy_days_per_day: 10`;
-  each game day then stands for 10 days of making, eating and growing, and the
-  economy's rates stay per day. The default stays 1 (120 game days a year).
+- A year is `time.months_per_year` simulated days (12). Each simulated day is
+  the representative day of a month and stands for `time.days_per_month` days
+  (10, so a year is still 120 days of economy and yearly totals stay put). The
+  economy runs once on it; there is no inner loop over the days of a month.
+- `SimClock.tick` counts simulated days (months): `year()` is
+  `tick / months_per_year`, `day_of_year()` is the month. Agents' ages are in
+  months (`AgentStore::age_months`).
+- `time.ticks_per_day` (12 by default) still cuts the simulated day into ticks,
+  and `SimClock.sub` is the tick within it. They are kept because the clients
+  show hours, daylight, dawn and dusk on the representative day; outdoor work
+  is scaled by its daylight. The economy runs on the day's first tick. The
+  other ticks only move the hours and the weather on, so the state hash is the
+  same at any number of ticks per day.
+- Season and weather are those of the middle of the month: the continuous day
+  is `(tick - 1) * days_per_month + (days_per_month - 1) / 2 + hour / 24`. The
+  ground (snow, wet soil) steps `days_per_month / ticks_per_day` days a tick,
+  so it melts and dries over the month.
+- `Simulation::step()` runs a whole simulated day; `Simulation::step_tick()`
+  runs one tick.
+- The clients show dates as year and month (`calendar::date`, "y3 Mar").
 - Outdoor work (nature, buildings, new land; then `work_hours: Daylight`, now
   always) is scaled by today's daylight against the equinox: 8/12 in midwinter, 16/12 in midsummer.
   Against the full working day all year (`AllDay`, then the default, removed
@@ -28,6 +35,67 @@ Claude Doc: "Econoplex economy redesign: items, time, needs".
 - The calendar year starts at the spring equinox (`year_starts_at: 0.25`).
 - Daylight is 12 hours at the equinoxes, 8 in midwinter and 16 in midsummer,
   with 2 hours each of dawn and dusk (`day_length`).
+
+## Converting daily rates to the month
+
+All conversions go through `sim_core::calendar::Calendar` (built from `time`,
+`ModelParams::calendar()`, `SimClock::calendar()`):
+
+| Kind | Helper | Rule |
+| --- | --- | --- |
+| a daily flow | `flow(x)` | `x * days` |
+| a daily share (0..1) | `share(r)` | `1 - (1 - r)^days` |
+| what a daily keep leaves | `keep(k)` | `k^days` |
+| a moving average with a memory in days | `smoothing(m)` | `share(1 / m)` |
+| a kick against relaxation | `kick(x, r)` | `x * share(r) / r` (same balance) |
+| a time constant in days | `months(d)` | `d / days` steps |
+| a yearly rate | `per_year()` | divide by 12 simulated days |
+
+What converts how (config units stay as written unless named):
+
+| Quantity | Where | Conversion |
+| --- | --- | --- |
+| hunger per day, eating | needs.rs | `flow`; then meals until back at `eat_threshold` (at most 64) |
+| fatigue | needs.rs | unchanged: the representative day's |
+| starvation damage, health regrowth | needs.rs | `flow` |
+| rent; rent stickiness | needs.rs | `flow`; `smoothing` |
+| happiness relaxation | needs.rs, ladder.rs | `share` |
+| ladder wear, fuel, cold damage, cold days | ladder.rs | `keep`, `flow`, `flow`, `whole_days` |
+| ladder `interval`, shopping size | ladder.rs, models.ron | months (7 days became 1); units bought scale with the days |
+| expected temperatures over the year | ladder.rs | `days_per_year()` |
+| adaptive expectations | decision/expectations.rs | rate `share` |
+| excess-demand wage step | decision/wages.rs | step times days |
+| culture memory | decision/culture.rs, social.rs | `months(memory_days)` steps |
+| price classes: speeds, max daily move, memory | pricing.rs | times days; `months` |
+| legacy price adjust | market.rs | `flow` |
+| scarcity cap | market.rs | `(1 + r)^days` up, `keep` down |
+| input and goods use | market.rs | per day (divided by days), `smoothing(30)` |
+| firm input stocks, short days | market.rs | per day; `whole_days` |
+| loans: interest, instalments | firms.rs | yearly rate / 12; left over `ceil(months(days_left))` |
+| firm payout, import repayment | market.rs | `share` |
+| bills, ledger figures | firms.rs, ledger.rs | kept as daily averages of the month |
+| food reserve | decide.rs, models.ron | `food_reserve_months` (was `food_reserve_days`) times a month of hunger |
+| job places | decide.rs | stock-limited places divided by days (a worker uses a month of inputs) |
+| apprentice share reconsidered | decide.rs | every `months(30)` steps |
+| labour max daily, building load | decide.rs | `flow`; `smoothing(30)` |
+| team output rate | work/teams.rs | times days; harvests can draw on several sites |
+| work progress, tool wear | work/mod.rs | times days; `uses` = days on the task |
+| work mood | work/mod.rs | `kick` |
+| practice, diffusion, forgetting | models.rs, learning.rs | compounded over the days of practice |
+| posted pay, pay rate smoothing | work/pay.rs | `smoothing`, `share` |
+| school fees and practice | learning.rs | `flow`; over `days()` |
+| body capacity, training, disuse | body.rs | over days; `share` |
+| soldiers' pay, drill, march speed | military | `flow`; over `days()`; `flow` |
+| war planner's year | military/planner.rs | `days_per_year()` |
+| migration knowledge fade | migrate.rs | interval times days |
+| food trend | life.rs | per day, `smoothing(60)` |
+| governor flows and memories | governor.rs | per day; `smoothing` |
+| granary profile | granary.rs | `share` |
+| regrowth, frost, rot | farming.rs | times days; `keep` |
+| history samples, quiet spell | history.rs | `SAMPLE_MONTHS = 1`, `QUIET_MONTHS = 3` |
+| starving share | metrics.rs | per person-month |
+| ages, birth and death rates per year | store.rs, life.rs | `months_per_year` |
+| intervals and cooldowns (partner, trade, organize, muster, raid, tribute, migration, governor) | models.ron | counted in months: 1, 1, 2, 1, 12, 3, 3, 3 |
 
 ## Weather
 

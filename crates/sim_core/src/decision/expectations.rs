@@ -30,6 +30,22 @@ impl Default for ExpectationsParams {
     }
 }
 
+/// The rule for a simulated day of `cal`: a month of daily observations of
+/// the same value moves the expectation as far as they would one by one.
+pub fn build_for(p: &ExpectationsParams, cal: crate::calendar::Calendar) -> Box<dyn Expectations> {
+    match *p {
+        ExpectationsParams::Fixed => Box::new(Fixed),
+        ExpectationsParams::Adaptive {
+            base_rate,
+            curiosity_rate,
+        } => Box::new(Adaptive {
+            base_rate,
+            curiosity_rate,
+            days: cal.days(),
+        }),
+    }
+}
+
 pub fn build(p: &ExpectationsParams) -> Box<dyn Expectations> {
     match *p {
         ExpectationsParams::Fixed => Box::new(Fixed),
@@ -39,6 +55,7 @@ pub fn build(p: &ExpectationsParams) -> Box<dyn Expectations> {
         } => Box::new(Adaptive {
             base_rate,
             curiosity_rate,
+            days: 1.0,
         }),
     }
 }
@@ -54,6 +71,8 @@ impl Expectations for Fixed {
 pub struct Adaptive {
     pub base_rate: f32,
     pub curiosity_rate: f32,
+    /// Days each observation stands for.
+    pub days: f32,
 }
 
 impl Expectations for Adaptive {
@@ -61,7 +80,8 @@ impl Expectations for Adaptive {
         match previous {
             None => observed,
             Some(e) => {
-                let rate = (self.base_rate + self.curiosity_rate * curiosity).clamp(0.0, 1.0);
+                let daily = (self.base_rate + self.curiosity_rate * curiosity).clamp(0.0, 1.0);
+                let rate = 1.0 - (1.0 - daily).powf(self.days.max(1.0));
                 e + rate * (observed - e)
             }
         }
@@ -108,6 +128,7 @@ mod tests {
         let rule = Adaptive {
             base_rate: 0.05,
             curiosity_rate: 0.2,
+            days: 1.0,
         };
         let mut e = rule.update(None, 1.0, 0.5);
         for _ in 0..200 {
@@ -121,10 +142,22 @@ mod tests {
         let rule = Adaptive {
             base_rate: 0.05,
             curiosity_rate: 0.2,
+            days: 1.0,
         };
         let slow = rule.update(Some(0.0), 10.0, 0.0);
         let fast = rule.update(Some(0.0), 10.0, 1.0);
         assert!(fast > slow && slow > 0.0);
+        // A month's observation moves it as far as ten daily ones.
+        let month = Adaptive {
+            base_rate: 0.05,
+            curiosity_rate: 0.2,
+            days: 10.0,
+        };
+        let mut daily = 0.0;
+        for _ in 0..10 {
+            daily = rule.update(Some(daily), 10.0, 0.0);
+        }
+        assert!((month.update(Some(0.0), 10.0, 0.0) - daily).abs() < 1e-4);
     }
 
     #[test]

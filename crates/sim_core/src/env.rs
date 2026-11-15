@@ -2,10 +2,9 @@
 //!
 //! The clock ([`SimClock`]) cuts each day into `time.ticks_per_day` ticks. The
 //! economy runs on the first tick of each day; the other ticks only move the
-//! hours and the weather on (see `build_schedule`). With time compression
-//! (`time.economy_days_per_day` above 1) one game day runs that many days of
-//! economy, so a short calendar (12 game days a year) keeps the economy's
-//! rates per day.
+//! hours and the weather on (see `build_schedule`). Each simulated day is the
+//! representative day of a month (`calendar.rs`): its date is the middle of
+//! its month, so twelve of them walk through the seasons once a year.
 //!
 //! The weather is a pure function of the world seed, the time and the place:
 //! seeded value noise drifting across the map makes weather fronts, so towns
@@ -23,12 +22,18 @@ use std::f32::consts::TAU;
 
 // ---------------------------------------------------------------- parameters
 
-/// `time` in models.ron: how finely a day is cut, and how long months and years are.
+/// `time` in models.ron: the calendar (one simulated day per month) and how
+/// finely a day is cut.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TimeParams {
     /// Ticks per day (6, 8, 12 or 24 are sensible; 1 = the old daily clock).
+    /// The economy runs on the first; the others move the hours and the
+    /// weather on, for daylight and the views.
     pub ticks_per_day: u32,
+    /// Days each simulated day stands for: the representative day of its
+    /// month (see `calendar.rs`). Daily rates come out per month through it.
     pub days_per_month: u32,
+    /// Months a year, each one simulated day.
     pub months_per_year: u32,
     /// Where in the seasons the calendar year starts (0 = midwinter,
     /// 0.25 = spring equinox).
@@ -36,14 +41,6 @@ pub struct TimeParams {
     pub year_starts_at: f32,
     #[serde(default)]
     pub day_length: DayLength,
-    /// Days of economy that one game day stands for (time compression). With
-    /// 12 game days a year and 10 here, the economy still has 120 days a year.
-    #[serde(default = "one")]
-    pub economy_days_per_day: u32,
-}
-
-fn one() -> u32 {
-    1
 }
 
 fn spring() -> f32 {
@@ -58,20 +55,7 @@ impl Default for TimeParams {
             months_per_year: 12,
             year_starts_at: spring(),
             day_length: DayLength::default(),
-            economy_days_per_day: 1,
         }
-    }
-}
-
-impl TimeParams {
-    /// Game days per year.
-    pub fn game_days_per_year(&self) -> u32 {
-        self.days_per_month * self.months_per_year
-    }
-
-    /// Days of economy per year (what `life.days_per_year` must be).
-    pub fn days_per_year(&self) -> u32 {
-        self.game_days_per_year() * self.economy_days_per_day.max(1)
     }
 }
 
@@ -256,14 +240,17 @@ pub fn hour(clock: &SimClock) -> f32 {
     (clock.sub as f32 + 0.5) * 24.0 / tpd
 }
 
-/// Game days since the start, continuous: game day 1 starts at 0.
+/// Days since the start, continuous. Each simulated day is the middle day of
+/// its month: month 1 runs from day 0 to day `days_per_month`, and its
+/// representative day is centred on the month's middle.
 pub fn continuous_day(clock: &SimClock) -> f64 {
-    (clock.game_day.max(1) - 1) as f64 + hour(clock) as f64 / 24.0
+    let dpm = clock.days_per_month.max(1) as f64;
+    (clock.tick.max(1) - 1) as f64 * dpm + (dpm - 1.0) / 2.0 + hour(clock) as f64 / 24.0
 }
 
 /// Fraction of the year, 0 = midwinter, 0.5 = midsummer.
 pub fn season(clock: &SimClock, time: &TimeParams) -> f32 {
-    let dpy = (clock.days_per_year / clock.economy_days_per_day.max(1)).max(1) as f64;
+    let dpy = (clock.days_per_month.max(1) * clock.months_per_year.max(1)) as f64;
     let f = continuous_day(clock) / dpy + time.year_starts_at as f64;
     (f - f.floor()) as f32
 }
@@ -409,33 +396,25 @@ pub fn ground_step(ground: Ground, w: &Weather, days: f32) -> Ground {
     }
 }
 
-/// Moves the clock on by one tick. A new game day starts when the last tick
-/// of the old one has run; the economy runs on that first tick.
+/// Moves the clock on by one tick. A new simulated day starts when the last
+/// tick of the old one has run; the economy runs on that first tick.
 pub fn advance(mut clock: ResMut<SimClock>) {
     let tpd = clock.ticks_per_day.max(1);
     if clock.sub + 1 >= tpd {
         clock.sub = 0;
-        clock.game_day += 1;
+        clock.tick += 1;
     } else {
         clock.sub += 1;
     }
 }
 
-/// Starts a day of economy (the first system of the economy schedule).
-pub fn new_economy_day(mut clock: ResMut<SimClock>) {
-    clock.tick += 1;
-}
-
-/// On the first tick of a game day, runs `time.economy_days_per_day` days of
-/// economy (the `EconomyDay` schedule).
+/// On the first tick of a simulated day, runs the day's economy once (the
+/// `EconomyDay` schedule): one representative day for the whole month.
 pub fn run_economy(world: &mut World) {
-    let clock = *world.resource::<SimClock>();
-    if clock.sub != 0 {
+    if world.resource::<SimClock>().sub != 0 {
         return;
     }
-    for _ in 0..clock.economy_days_per_day.max(1) {
-        world.run_schedule(crate::EconomyDay);
-    }
+    world.run_schedule(crate::EconomyDay);
 }
 
 /// How much of a full day's work an outdoor job (fields, forests, mines,
@@ -466,7 +445,9 @@ pub fn update(
     env.sunrise = sunrise;
     env.sunset = sunset;
     env.phase = phase(h, sunrise, sunset, time.day_length.twilight_hours);
-    let dt = 1.0 / clock.ticks_per_day.max(1) as f32;
+    // Each tick of the representative day stands for that tick of every day
+    // of the month, so the ground follows the month's weather.
+    let dt = clock.days_per_month.max(1) as f32 / clock.ticks_per_day.max(1) as f32;
     let n = towns.0.len();
     env.towns.resize(n, LocalEnv::default());
     for (i, town) in towns.0.iter().enumerate() {

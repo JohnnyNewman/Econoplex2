@@ -1,7 +1,7 @@
 //! Seasons in farming (economy redesign, step 6).
 //!
 //! `farming` in models.ron. Nature sites that are not crops regrow the same
-//! amount every day. Crops (the nature kinds listed in `crops`: fields, flax,
+//! amount every day (a simulated day regrows a month of days). Crops (the nature kinds listed in `crops`: fields, flax,
 //! pasture) follow the weather:
 //!
 //! - **Growth** follows the day's mean temperature: nothing below about 4 °C,
@@ -68,7 +68,8 @@ pub fn year_scale(params: &Params) -> f32 {
     (1.0 / mean.max(1e-3)).min(6.0)
 }
 
-/// Regrows every town's nature sites for a day.
+/// Regrows every town's nature sites for a simulated day: a month of days at
+/// that day's weather.
 pub fn regrow(
     towns: &Towns,
     db: &Db,
@@ -90,6 +91,9 @@ pub fn regrow(
         .map(|k| crops.contains(&k.id))
         .collect();
     let scale = year_scale(params);
+    let cal = params.calendar();
+    let days = cal.days();
+    let frost = cal.keep(1.0 - frost_loss);
     for (t, town) in towns.0.iter().enumerate() {
         let local = env.at(t);
         let mean = local.day_mean_c;
@@ -98,18 +102,18 @@ pub fn regrow(
                 continue;
             };
             if !is_crop.get(n.kind as usize).copied().unwrap_or(false) {
-                n.amount = (n.amount + n.regrowth).min(n.capacity);
+                n.amount = (n.amount + n.regrowth * days).min(n.capacity);
                 continue;
             }
             let g = growth(mean);
             let cap = n.capacity * crop_capacity;
-            let mut amount = n.amount + n.regrowth * g * scale;
+            let mut amount = n.amount + n.regrowth * g * scale * days;
             if mean < 0.0 {
-                // A frost on a crop still in the field.
-                amount *= 1.0 - frost_loss;
+                // A month of frost on a crop still in the field.
+                amount *= frost;
             }
             let rot = rot_wet * local.ground.wet + rot_cold * (mean < 3.0) as u8 as f32;
-            amount *= 1.0 - rot.clamp(0.0, 1.0);
+            amount *= cal.keep(1.0 - rot.clamp(0.0, 1.0));
             n.amount = amount.clamp(0.0, cap);
         }
     }

@@ -68,6 +68,8 @@ pub fn assign(
 ) {
     let mut rng = seed.rng(clock.tick, streams::ASSIGN);
     let store = &mut *store;
+    // A team works the whole month: a month of a day's runs.
+    let days = params.calendar().days();
 
     // Group choices by (town, recipe), keeping agent order for determinism.
     let mut groups: BTreeMap<(u16, u32), Vec<u32>> = BTreeMap::new();
@@ -120,8 +122,8 @@ pub fn assign(
         let m = &db.recipes[r as usize];
         let town = &mut towns.0[t as usize];
         for team in &trusted_teams(store, &agents, m.max_team, &mut place) {
-            // A team's daily work covers several runs of a short recipe.
-            let rate = (team.len() as f32).powf(params.work.work_exponent);
+            // A team's month of work covers several runs of a short recipe.
+            let rate = (team.len() as f32).powf(params.work.work_exponent) * days;
             let mut batches = ((rate / m.duration).floor() as u32).max(1);
             let firms_on = params.market.firms.on();
             for &(p, q) in &m.inputs {
@@ -139,21 +141,27 @@ pub fn assign(
             let out: f32 = m.outputs.iter().map(|o| o.1).sum();
             let mut pos = town.pos;
             if let Some(kind) = m.nature {
+                // A month's runs may take several sites in turn.
                 let mut found = None;
+                let mut runs = 0u32;
                 let list = &mut nature[t as usize][kind as usize];
                 let c = &mut cursor[t as usize][kind as usize];
                 while let Some(site) = list.get_mut(*c) {
                     if site.1 >= out {
-                        batches = batches.min((site.1 / out).floor() as u32);
-                        site.1 -= out * batches as f32;
-                        found = Some(site.2);
-                        break;
+                        let here = (batches - runs).min((site.1 / out).floor() as u32);
+                        site.1 -= out * here as f32;
+                        runs += here;
+                        found.get_or_insert(site.2);
+                        if runs >= batches {
+                            break;
+                        }
                     }
                     *c += 1;
                 }
+                batches = runs;
                 match found {
-                    Some(p) => pos = p,
-                    None => continue,
+                    Some(p) if runs > 0 => pos = p,
+                    _ => continue,
                 }
             }
             if let Some(b) = m.building {
@@ -239,12 +247,12 @@ pub fn assign(
             task_of[w as usize] = k;
         }
     }
-    let dpy = params.life.days_per_year;
+    let per_year = params.time.months_per_year.max(1);
     for i in 0..store.len() {
         if !store.alive[i] || store.activity[i] != Activity::Child {
             continue;
         }
-        if store.age_years(i, dpy) < params.life.apprentice_age {
+        if store.age_years(i, per_year) < params.life.apprentice_age {
             continue;
         }
         if let Some((a, b)) = store.parents[i] {

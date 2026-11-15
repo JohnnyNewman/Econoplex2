@@ -19,7 +19,7 @@ pub fn organize(
     if op.interval == 0 || !clock.tick.is_multiple_of(op.interval as u64) {
         return;
     }
-    let dpy = clock.days_per_year;
+    let dpy = clock.months_per_year;
     let store = &mut *store;
     let nd = db.domain_dirs.len();
 

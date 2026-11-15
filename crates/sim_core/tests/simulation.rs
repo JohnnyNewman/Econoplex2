@@ -58,7 +58,7 @@ fn economy_produces_and_people_learn() {
         let st = s.world.resource::<sim_core::AgentStore>();
         st.cap.iter().map(|c| c.iter().sum::<f32>()).sum::<f32>() / st.len() as f32
     };
-    for _ in 0..240 {
+    for _ in 0..24 {
         s.step();
     }
     let log = s.world.resource::<sim_core::world::WorkLog>();
@@ -115,7 +115,7 @@ fn first_year_has_no_famine() {
         .map(|t| t.residents.len())
         .collect();
     let total = s.world.resource::<sim_core::AgentStore>().alive_count();
-    let dpy = s.world.resource::<sim_core::SimClock>().days_per_year;
+    let dpy = s.world.resource::<sim_core::SimClock>().months_per_year;
     for _ in 0..dpy {
         s.step();
     }
@@ -139,7 +139,7 @@ fn first_year_has_no_famine() {
 fn towns_construct_buildings() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     let mut s = Simulation::from_paths(&AssetPaths::from_root(&root)).unwrap();
-    let dpy = s.world.resource::<sim_core::SimClock>().days_per_year;
+    let dpy = s.world.resource::<sim_core::SimClock>().months_per_year;
     for _ in 0..10 * dpy {
         s.step();
     }
@@ -160,7 +160,7 @@ fn towns_construct_buildings() {
 fn sword_towns_raise_squads_and_raid() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     let mut s = Simulation::from_paths(&AssetPaths::from_root(&root)).unwrap();
-    let dpy = s.world.resource::<sim_core::SimClock>().days_per_year;
+    let dpy = s.world.resource::<sim_core::SimClock>().months_per_year;
     let mut raids = 0;
     let mut soldiers = 0;
     let mut conquered = false;
@@ -233,7 +233,7 @@ fn households_migrate_and_carry_their_skills() {
 #[test]
 fn food_comes_first_and_gluts_stop_production() {
     let mut s = sim_bare(3);
-    let dpy = s.world.resource::<sim_core::SimClock>().days_per_year;
+    let dpy = s.world.resource::<sim_core::SimClock>().months_per_year;
     for _ in 0..dpy {
         s.step();
     }
@@ -251,11 +251,11 @@ fn food_comes_first_and_gluts_stop_production() {
             r("saw_planks"),
         )
     };
-    // Mountains of flour and a little wood, no bread: bakers get the wood, and
-    // nobody mills more flour.
+    // Mountains of flour and a little wood (two a day, so 20 for a month), no
+    // bread: bakers get the wood, and nobody mills more flour.
     for t in &mut s.world.resource_mut::<sim_core::Towns>().0 {
         t.stock[flour] = 1e6;
-        t.stock[wood] = 2.0;
+        t.stock[wood] = 20.0;
         t.stock[bread] = 0.0;
     }
     // Under the ruler's food rules the seed reserve is a lever: hold it.
@@ -272,13 +272,13 @@ fn food_comes_first_and_gluts_stop_production() {
     s.step();
     for t in &mut s.world.resource_mut::<sim_core::Towns>().0 {
         t.stock[flour] = 1e6;
-        t.stock[wood] = 2.0;
+        t.stock[wood] = 20.0;
         t.stock[bread] = 0.0;
     }
     let before = s.world.resource::<sim_core::world::WorkLog>().runs.clone();
     for _ in 0..5 {
         for t in &mut s.world.resource_mut::<sim_core::Towns>().0 {
-            t.stock[wood] = t.stock[wood].min(2.0);
+            t.stock[wood] = t.stock[wood].min(20.0);
         }
         s.step();
     }
@@ -296,7 +296,7 @@ fn food_comes_first_and_gluts_stop_production() {
 #[test]
 fn towns_clear_new_land_up_to_their_limit() {
     let mut s = sim(5);
-    let dpy = s.world.resource::<sim_core::SimClock>().days_per_year;
+    let dpy = s.world.resource::<sim_core::SimClock>().months_per_year;
     let free = s
         .world
         .resource::<sim_core::world::Params>()
@@ -374,8 +374,8 @@ fn coworkers_come_to_trust_each_other() {
     let days = s
         .world
         .resource::<sim_core::world::Params>()
-        .life
-        .days_per_year;
+        .time
+        .months_per_year;
     for _ in 0..days {
         s.step();
     }
@@ -448,8 +448,8 @@ fn run_years(s: &mut Simulation, years: u32) {
     let days = s
         .world
         .resource::<sim_core::world::Params>()
-        .life
-        .days_per_year;
+        .time
+        .months_per_year;
     for _ in 0..years * days {
         s.step();
     }
@@ -588,7 +588,7 @@ fn a_defending_town_marches_only_when_ordered() {
     // The ordered raid waits until the squad is big enough, then marches.
     s.order("raid Ironhold Brassmoor").unwrap();
     let mut marched = None;
-    for _ in 0..3 * 120 {
+    for _ in 0..3 * 12 {
         s.step();
         if let Some(r) = &s.world.resource::<sim_core::Towns>().0[0].raid {
             marched = Some(r.target);
@@ -608,7 +608,7 @@ fn an_ordered_building_goes_up_where_it_was_placed() {
     s.order("build Timberwick bakery -300 -100").unwrap();
     assert!(s.order("build Timberwick bread").is_err());
     let mut placed = false;
-    for _ in 0..240 {
+    for _ in 0..24 {
         s.step();
         let t = &s.world.resource::<sim_core::Towns>().0[2];
         if t.buildings.iter().any(|b| b.2 == (-300.0, -100.0)) {
@@ -929,7 +929,7 @@ fn skill_dimensions_follow_the_content_or_the_config() {
     assert_eq!(db.cap_dim, 64);
     assert!(db.skill_vecs.iter().all(|v| v.len() == 64));
     let mut s = Simulation::new(db, params, &scenario);
-    for _ in 0..30 {
+    for _ in 0..3 {
         s.step();
     }
     let store = s.world.resource::<sim_core::AgentStore>();
@@ -992,7 +992,7 @@ fn a_higher_wage_share_pays_makers_more() {
                 if let Some(o) = order {
                     s.order(o).unwrap();
                 }
-                for _ in 0..30 {
+                for _ in 0..3 {
                     s.step();
                 }
                 flow_total(&s, 1, Flow::Wages)
@@ -1078,7 +1078,7 @@ fn an_order_that_eats_into_food_is_flagged_but_not_capped() {
     s.order("procure Greenvale bread 30000").unwrap();
     s.order("procure Greenvale cloth 50").unwrap();
     let mut flagged = false;
-    for _ in 0..240 {
+    for _ in 0..24 {
         s.step();
         let db = s.world.resource::<sim_core::Db>();
         let params = s.world.resource::<sim_core::world::Params>();
@@ -1185,7 +1185,7 @@ fn a_broke_town_raises_taxes_and_mints() {
     params.start = sim_core::start::StartParams::Scenario;
     params.market.starting_coins = 0.0;
     let mut s = Simulation::new(db, params, &scenario);
-    for _ in 0..150 {
+    for _ in 0..15 {
         s.step();
     }
     let broke: Vec<usize> = (0..4)
@@ -1356,7 +1356,7 @@ fn a_short_treasury_pays_every_job_its_share() {
     params.market.starting_coins = 0.0;
     params.governor.enabled = false;
     let mut s = Simulation::new(db, params, &scenario);
-    for _ in 0..60 {
+    for _ in 0..6 {
         s.step();
     }
     let towns = s.world.resource::<sim_core::Towns>();
@@ -1389,11 +1389,11 @@ fn valuing_skills_draws_the_young_into_work_they_are_still_learning() {
         let mut s = Simulation::new(db, params, &scenario);
         run_years(&mut s, 1);
         let (mut learning_days, mut days) = (0u32, 0u32);
-        for _ in 0..90 {
+        for _ in 0..9 {
             s.step();
             let store = s.world.resource::<sim_core::AgentStore>();
             let db = s.world.resource::<sim_core::Db>();
-            let dpy = s.world.resource::<sim_core::SimClock>().days_per_year;
+            let dpy = s.world.resource::<sim_core::SimClock>().months_per_year;
             for i in 0..store.len() {
                 let age = store.age_years(i, dpy);
                 if !store.alive[i] || !(16.0..30.0).contains(&age) {
@@ -1449,7 +1449,7 @@ fn matching_gives_beginners_apprentice_places_and_keeps_the_books() {
         .map(|t| t.treasury.coins())
         .collect();
     let (mut apprentices, mut beginners) = (0usize, 0usize);
-    for _ in 0..120 {
+    for _ in 0..12 {
         s.step();
         let d = s.world.resource::<sim_core::world::Decisions>();
         let store = s.world.resource::<sim_core::AgentStore>();
@@ -1724,7 +1724,7 @@ fn towns_post_pay_for_jobs_nobody_has_tried() {
         let (db, mut params, scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
         params.decision.valuation.posted_pay_days = days;
         let mut s = Simulation::new(db, params, &scenario);
-        for _ in 0..30 {
+        for _ in 0..3 {
             s.step();
         }
         let db = s.world.resource::<sim_core::Db>();
@@ -1947,7 +1947,7 @@ fn towns_lend_to_workshops_and_get_repaid_with_interest() {
     let before = money(&s);
     s.order("loan Ironhold field 60 0.2 60").unwrap();
     assert!(s.order("loan Ironhold nowhere 60 0.2 60").is_err());
-    for _ in 0..100 {
+    for _ in 0..10 {
         s.step();
     }
     let towns = s.world.resource::<sim_core::Towns>();
@@ -2039,7 +2039,7 @@ fn workshops_buy_on_account_and_pay_from_their_sales() {
     };
     let before = money(&s);
     let mut seen_debt = false;
-    for _ in 0..240 {
+    for _ in 0..24 {
         s.step();
         let towns = s.world.resource::<sim_core::Towns>();
         seen_debt |= towns
@@ -2127,7 +2127,7 @@ fn a_hungry_broke_town_imports_food_on_credit_and_recovers() {
             sim_core::world::total_money(s.world.resource::<sim_core::AgentStore>(), towns) - minted
         };
         let before = money(&s);
-        let dpy = s.world.resource::<sim_core::SimClock>().days_per_year;
+        let dpy = s.world.resource::<sim_core::SimClock>().months_per_year;
         let mut owed_once = false;
         for _ in 0..2 * dpy {
             s.step();
@@ -2206,7 +2206,7 @@ fn a_world_generated_from_the_seed_runs_and_is_reproducible() {
 
 #[test]
 fn history_logs_events_and_monthly_samples_and_saves_keep_them() {
-    use sim_core::history::{EventKind, History, SAMPLE_DAYS};
+    use sim_core::history::{EventKind, History, SAMPLE_MONTHS};
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     let paths = AssetPaths::from_root(&root);
     let mut a = full(11);
@@ -2215,7 +2215,7 @@ fn history_logs_events_and_monthly_samples_and_saves_keep_them() {
     let h = a.world.resource::<History>();
     let towns = a.world.resource::<sim_core::Towns>().0.len();
     // One sample per town and month.
-    let months = a.tick() / SAMPLE_DAYS;
+    let months = a.tick() / SAMPLE_MONTHS;
     assert_eq!(h.samples.len() as u64, months * towns as u64);
     // The player's order and the towns' building are in the log.
     assert!(h
@@ -2278,7 +2278,7 @@ fn both_caravan_rules_trade_and_conserve_money() {
             sim_core::world::total_money(s.world.resource::<sim_core::AgentStore>(), towns) - minted
         };
         let before = money(&s);
-        for _ in 0..360 {
+        for _ in 0..36 {
             s.step();
         }
         let after = money(&s);
@@ -2391,56 +2391,61 @@ fn check_goods(s: &Simulation) {
 }
 
 #[test]
-fn a_compressed_calendar_runs_ten_days_of_economy_per_game_day() {
-    // 12 game days a year, each standing for 10 days of economy.
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
-    let sets = [
-        ("time.days_per_month".to_string(), "1".to_string()),
-        ("time.economy_days_per_day".to_string(), "10".to_string()),
-    ];
-    let (db, params, mut scenario) =
-        sim_core::load_with(&AssetPaths::from_root(&root), &sets).unwrap();
-    scenario.seed = 9;
-    let mut plain = sim(9);
-    let mut s = {
-        for t in &mut scenario.towns {
-            t.population = 60;
-        }
-        Simulation::new(db, params, &scenario)
-    };
-    // One game day of the compressed run is ten days of the plain one: everyone
-    // ages ten days. (The two economies are not identical: the compressed day
-    // keeps one hour, season and weather for all ten days.)
+fn a_year_is_twelve_simulated_days_and_each_stands_for_a_month() {
+    let mut s = sim(9);
+    let clock = *s.world.resource::<sim_core::SimClock>();
+    assert_eq!(clock.months_per_year, 12, "models.ron has twelve months");
+    assert_eq!(clock.calendar().days_per_year(), 120.0);
     let ages = |s: &Simulation| {
         let store = s.world.resource::<sim_core::AgentStore>();
         (0..store.len())
-            .map(|i| store.alive[i].then_some(store.age_days[i]))
+            .map(|i| store.alive[i].then_some(store.age_months[i]))
             .collect::<Vec<_>>()
     };
     let start = ages(&s);
-    assert_eq!(start, ages(&plain));
-    s.step();
-    for _ in 0..10 {
-        plain.step();
+    let season0 = s.world.resource::<sim_core::env::Environment>().season;
+    // Seasons move on through the year and come round after twelve days.
+    let mut seasons = vec![season0];
+    for _ in 0..12 {
+        s.step();
+        seasons.push(s.world.resource::<sim_core::env::Environment>().season);
     }
-    assert_eq!(s.tick(), 10);
-    let (now, plain_now) = (ages(&s), ages(&plain));
+    assert_eq!(s.tick(), 12);
+    assert_eq!(s.world.resource::<sim_core::SimClock>().year(), 1);
+    assert_eq!(s.world.resource::<sim_core::SimClock>().day_of_year(), 0);
+    let first = seasons[1];
+    let last = seasons[12];
+    let span = seasons[1..]
+        .iter()
+        .fold((f32::MAX, f32::MIN), |(lo, hi), &x| (lo.min(x), hi.max(x)));
+    assert!(
+        span.1 - span.0 > 0.8,
+        "the season spans the year: {seasons:?}"
+    );
+    // Day 13 is the first month of the next year: the same point of the
+    // season as day 1, which the twelfth day was not.
+    s.step();
+    let next = s.world.resource::<sim_core::env::Environment>().season;
+    assert!((next - first).abs() < 1e-4, "{next} vs {first}");
+    assert!((last - first).abs() > 1e-3);
+    // Everyone alive ages a month a day: a year in twelve days. (A slot a
+    // newborn took over is younger than its old owner and is left out.)
+    let now = ages(&s);
     let mut aged = 0;
     for i in 0..start.len() {
-        if let (Some(a), Some(b), Some(c)) = (start[i], now[i], plain_now[i]) {
-            assert_eq!((b, c), (a + 10, a + 10), "agent {i}");
+        if let (Some(a), Some(b)) = (start[i], now[i]) {
+            if b < a {
+                continue;
+            }
+            assert_eq!(b, a + 13, "agent {i}");
             aged += 1;
         }
     }
-    assert!(aged > 200, "only {aged} agents lived through both runs");
-    // A year is 12 game days: the season comes round.
-    let season0 = s.world.resource::<sim_core::env::Environment>().season;
-    for _ in 0..12 {
-        s.step();
-    }
-    let season1 = s.world.resource::<sim_core::env::Environment>().season;
-    assert!((season0 - season1).abs() < 1e-4, "{season0} vs {season1}");
-    assert_eq!(s.tick(), 130);
+    assert!(aged > 200, "only {aged} agents lived through the year");
+    let store = s.world.resource::<sim_core::AgentStore>();
+    let i = (0..store.len()).find(|&i| now[i].is_some()).unwrap();
+    let years = store.age_years(i, 12);
+    assert!((years - store.age_months[i] as f32 / 12.0).abs() < 1e-4);
 }
 
 #[test]
@@ -2450,7 +2455,7 @@ fn with_the_needs_ladder_winter_asks_for_fuel() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     let sets = [(
         "market.consumption".to_string(),
-        "Needs((interval: 7, gate_at: 0.7, gate_width: 0.15, comfort_c: 16.0, house_c: 6.0, max_clothes: 2.0, fire_per_c: 0.5, fire_per_extra_person: 0.25, cold_damage: 0.02, plan_days: 30.0))".to_string(),
+        "Needs((interval: 1, gate_at: 0.7, gate_width: 0.15, comfort_c: 16.0, house_c: 6.0, max_clothes: 2.0, fire_per_c: 0.5, fire_per_extra_person: 0.25, cold_damage: 0.02, plan_days: 30.0))".to_string(),
     )];
     let (db, params, mut scenario) =
         sim_core::load_with(&AssetPaths::from_root(&root), &sets).unwrap();
@@ -2491,13 +2496,13 @@ fn seasonal_crops_stand_in_summer_and_not_in_winter() {
             .map(|n| n.amount)
             .sum()
     };
-    // The year starts at the spring equinox: day 60 is late summer, day 100
+    // The year starts at the spring equinox: month 6 is late summer, month 10
     // late winter.
-    for _ in 0..60 {
+    for _ in 0..6 {
         s.step();
     }
     let summer = standing(&mut s);
-    for _ in 0..40 {
+    for _ in 0..4 {
         s.step();
     }
     let winter = standing(&mut s);
@@ -2519,7 +2524,7 @@ fn a_granary_fills_from_a_full_market_and_feeds_a_hungry_one() {
     let mut s = Simulation::new(db, params, &scenario);
     s.order("granary Greenvale 30").unwrap();
     s.order("reserve Greenvale on").unwrap();
-    for _ in 0..60 {
+    for _ in 0..6 {
         s.step();
     }
     let towns = s.world.resource::<sim_core::Towns>();
@@ -2639,7 +2644,7 @@ fn a_squad_carries_rations_eats_them_and_keeps_the_books() {
     let cap = 4.0 * sim_core::goods::KG_PER_MEMBER
         / s.world.resource::<sim_core::Db>().content.products[bread].kg;
     assert!((moved - cap).abs() < 1e-3, "moved {moved}, cap {cap}");
-    for _ in 0..20 {
+    for _ in 0..2 {
         s.step();
     }
     let left: f32 = s.world.resource::<Squads>().list[0]
@@ -2658,13 +2663,13 @@ fn the_view_shows_needs_stores_and_the_armory() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     let sets = [(
         "market.consumption".to_string(),
-        "Needs((interval: 7, gate_at: 0.7, gate_width: 0.15, comfort_c: 16.0, house_c: 6.0, max_clothes: 2.0, fire_per_c: 0.5, fire_per_extra_person: 0.25, cold_damage: 0.02, plan_days: 30.0))".to_string(),
+        "Needs((interval: 1, gate_at: 0.7, gate_width: 0.15, comfort_c: 16.0, house_c: 6.0, max_clothes: 2.0, fire_per_c: 0.5, fire_per_extra_person: 0.25, cold_damage: 0.02, plan_days: 30.0))".to_string(),
     )];
     let (db, params, mut scenario) =
         sim_core::load_with(&AssetPaths::from_root(&root), &sets).unwrap();
     scenario.seed = 2;
     let mut s = Simulation::new(db, params, &scenario);
-    for _ in 0..60 {
+    for _ in 0..6 {
         s.step();
     }
     let snap = sim_core::view::ViewSnapshot::capture(&s.world, &mut Default::default());
@@ -2701,7 +2706,7 @@ fn a_stockpile_fills_the_town_store_and_draws_production() {
             grain,
         )
     };
-    for _ in 0..60 {
+    for _ in 0..6 {
         s.step();
     }
     let towns = s.world.resource::<sim_core::Towns>();
@@ -2739,7 +2744,7 @@ fn households_and_workshops_keep_their_own_stocks() {
     let sets = [
         (
             "market.consumption".to_string(),
-            "Needs((interval: 7, gate_at: 0.7, gate_width: 0.15, comfort_c: 16.0, house_c: 6.0, max_clothes: 2.0, fire_per_c: 0.5, fire_per_extra_person: 0.25, larder_days: 14.0, cold_damage: 0.02, plan_days: 30.0))".to_string(),
+            "Needs((interval: 1, gate_at: 0.7, gate_width: 0.15, comfort_c: 16.0, house_c: 6.0, max_clothes: 2.0, fire_per_c: 0.5, fire_per_extra_person: 0.25, larder_days: 14.0, cold_damage: 0.02, plan_days: 30.0))".to_string(),
         ),
         (
             "market.firms".to_string(),
@@ -2813,7 +2818,7 @@ fn the_new_economy_preset_loads_and_runs() {
         t.population = 60;
     }
     let mut s = Simulation::new(db, params, &scenario);
-    for _ in 0..30 {
+    for _ in 0..3 {
         s.step();
     }
     check_goods(&s);
@@ -2864,11 +2869,11 @@ fn an_army_marches_eats_its_rations_fights_and_comes_home() {
         (towns.0[0].name.clone(), towns.0[1].name.clone())
     };
     s.order(&format!("army {a} 0.15")).unwrap();
-    for _ in 0..40 {
+    for _ in 0..4 {
         s.step();
     }
     // Let a raid the town's ruler started on its own come home first.
-    for _ in 0..200 {
+    for _ in 0..20 {
         if s.world.resource::<sim_core::Towns>().0[0].raid.is_none() {
             break;
         }
@@ -2878,7 +2883,7 @@ fn an_army_marches_eats_its_rations_fights_and_comes_home() {
     let (mut packed, mut least, mut fought, mut progress) = (0.0f32, f32::MAX, false, 0.0f32);
     let mut done = false;
     let mut ours = None;
-    for _ in 0..200 {
+    for _ in 0..20 {
         s.step();
         let towns = s.world.resource::<sim_core::Towns>();
         let squads = s.world.resource::<sim_core::goods::Squads>();
@@ -2932,12 +2937,12 @@ fn a_live_battle_waits_for_the_player_then_settles() {
         (towns.0[player].name.clone(), towns.0[other].name.clone())
     };
     s.order(&format!("army {me} 0.15")).unwrap();
-    for _ in 0..40 {
+    for _ in 0..4 {
         s.step();
     }
     s.order(&format!("raid {me} {them}")).unwrap();
     let mut waited = false;
-    for _ in 0..200 {
+    for _ in 0..20 {
         s.step();
         if live_battle_waiting(&s.world) {
             waited = true;

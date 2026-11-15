@@ -20,7 +20,7 @@ fn main() {
     if let Some(s) = seed {
         scenario.seed = s;
     }
-    let dpy = params.life.days_per_year as u64;
+    let dpy = params.time.months_per_year as u64;
     let days = match span.strip_suffix('d') {
         Some(d) => d.parse().unwrap_or(40),
         None => span.parse::<u64>().unwrap_or(3) * dpy,

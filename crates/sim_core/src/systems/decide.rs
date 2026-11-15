@@ -98,14 +98,17 @@ pub fn makes_food(db: &Db, r: usize) -> bool {
     m.food_out > in_food
 }
 
-/// Inputs held back for `food_reserve_days` of the food the town needs, made along each food
+/// Inputs held back for `food_reserve_months` simulated days (each a month) of
+/// the food the town needs, made along each food
 /// chain (grain for the mills, flour and wood for the bakeries). Hungry people don't
 /// eat the grain the mills need, and other trades don't take the wood the bakeries
 /// need, but anything beyond that is free for other work. A recipe whose
 /// output is already piling up reserves nothing.
 pub fn food_reserve(db: &Db, town: &crate::world::Town, params: &Params) -> Vec<f32> {
-    let need =
-        town.residents.len() as f32 * params.needs.hunger_per_day * params.market.food_reserve_days;
+    let need = town.residents.len() as f32
+        * params
+            .calendar()
+            .flow(params.needs.hunger_per_day * params.market.food_reserve_months);
     let mut r = vec![0.0; db.content.products.len()];
     for (k, m) in db.recipes.iter().enumerate() {
         if !makes_food(db, k)
@@ -123,7 +126,8 @@ pub fn food_reserve(db: &Db, town: &crate::world::Town, params: &Params) -> Vec<
     r
 }
 
-/// How many more workers each recipe can absorb in `town` today, limited by the
+/// How many more workers each recipe can absorb in `town` this simulated day
+/// (each working the whole month), limited by the
 /// nature left to harvest and the inputs in stock. Jobs fill up as agents choose
 /// them, so the rest of the town spreads to other work instead of queueing.
 /// Nobody makes a good the town is glutted with, and trades that don't feed
@@ -135,6 +139,8 @@ pub fn job_capacity(
     sites: &Query<&NaturalResource>,
 ) -> Vec<f32> {
     let reserve = food_reserve(db, town, params);
+    // A worker uses a month of a day's inputs and nature.
+    let days = params.calendar().days();
     let mut nature_total = vec![0.0f32; db.content.nature.len()];
     for &e in &town.nature_sites {
         if let Ok(n) = sites.get(e) {
@@ -197,7 +203,7 @@ pub fn job_capacity(
                     cap = cap.min(funds / per_batch * m.duration);
                 }
             }
-            cap
+            cap / days
         })
         .collect()
 }
@@ -254,7 +260,8 @@ struct Choice<'a> {
     decision: &'a crate::decision::DecisionModels,
     models: &'a crate::models::Models,
     towns: &'a Towns,
-    days_per_year: u32,
+    /// Simulated days (months) a year, for ages.
+    per_year: u32,
     /// Everyone's satisfaction per need, and the ladder's parameters.
     sats: &'a [Option<crate::ladder::Sat>],
     /// Per town: food, month and hunger costs for the savings slope.
@@ -349,7 +356,7 @@ impl Choice<'_> {
                             success_after: after,
                             pay_per_day: pay,
                             typical_success: d.valuation.typical_success,
-                            age_years: store.age_years(i, self.days_per_year),
+                            age_years: store.age_years(i, self.per_year),
                         });
                 let tired = params.needs.fatigue_per_work_day * (0.5 + m.phys_total);
                 d.ladder_scale * (coin * (pay + learned) - rest_slope * tired)
@@ -504,7 +511,7 @@ pub fn decide(
         decision: &decision,
         models: &models,
         towns: &towns,
-        days_per_year: clock.days_per_year,
+        per_year: clock.months_per_year,
         sats: &sats,
         savings_costs: &savings_costs,
         ladder: ladder_params,
@@ -696,8 +703,9 @@ pub fn decide(
         }
         decisions.apprentices.sort_unstable();
 
-        // Each month every workplace reconsiders its share of apprentice places.
-        if clock.tick.is_multiple_of(30) {
+        // Every 30 days every workplace reconsiders its share of apprentice places.
+        let every = params.calendar().months(30.0).round().max(1.0) as u64;
+        if clock.tick.is_multiple_of(every) {
             for town in towns.0.iter_mut() {
                 town.apprentice_share
                     .resize(db.recipes.len(), share_params.min);
@@ -762,6 +770,7 @@ pub fn decide(
 
     // Each job's pay moves with how many took it against its places.
     let takers = demand;
+    let cal = params.calendar();
     for (t, town) in towns.0.iter_mut().enumerate() {
         town.wage_factor.resize(db.recipes.len(), 1.0);
         for r in 0..db.recipes.len() {
@@ -781,13 +790,13 @@ pub fn decide(
                                 d *= down / up;
                             }
                         }
-                        let m = c.max_daily.max(0.0);
+                        let m = cal.flow(c.max_daily).max(0.0);
                         new = (old * d.clamp(-m, m).exp()).clamp(c.floor, c.ceiling.max(c.floor));
                     }
                 }
                 if old > 0.0 && new > 0.0 && new != old {
                     town.price_vol.resize(3, Default::default());
-                    town.price_vol[2].add((new / old).ln().abs());
+                    town.price_vol[2].add((new / old).ln().abs() / cal.days());
                 }
                 town.wage_factor[r] = new;
             }
@@ -804,7 +813,7 @@ pub fn decide(
             } else {
                 0.0
             };
-            town.building_load[p] += (today - town.building_load[p]) / 30.0;
+            town.building_load[p] += (today - town.building_load[p]) * cal.smoothing(30.0);
         }
     }
 }

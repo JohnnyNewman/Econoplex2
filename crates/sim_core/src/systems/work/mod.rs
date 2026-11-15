@@ -158,13 +158,15 @@ pub fn produce(
     env: Res<crate::env::Environment>,
 ) {
     let mut rng = seed.rng(clock.tick, streams::PRODUCE);
+    let cal = params.calendar();
     // Outdoor jobs (nature, buildings, new land) only work while it is light.
     let outdoor_share = crate::env::outdoor_work_share(&env, &params.time);
     let mut order: Vec<(u64, Entity)> = tasks.iter().map(|(e, t, _)| (t.serial, e)).collect();
     order.sort_unstable();
     let store = &mut *store;
 
-    // Phase A: a day's work on every task; collect the ones that finish today.
+    // Phase A: a month's work on every task (fatigue is the representative
+    // day's); collect the ones that finish this simulated day.
     let mut done: Vec<(Entity, u32, Vec<u32>)> = Vec::new();
     for (_, e) in order {
         let Ok((_, mut task, parts)) = tasks.get_mut(e) else {
@@ -189,7 +191,7 @@ pub fn produce(
                 .min(1.0);
             store.worked_today[w as usize] = Some(r);
         }
-        let day = (workers.len() as f32).powf(params.work.work_exponent);
+        let day = (workers.len() as f32).powf(params.work.work_exponent) * cal.days();
         task.progress += if db.outdoor[task.recipe as usize] {
             day * outdoor_share
         } else {
@@ -243,6 +245,15 @@ pub fn produce(
         };
         let m = &db.recipes[r as usize];
         let n = workers.len();
+        // Days the team worked on it, and the share of a month that is (a
+        // run's success or failure cheers or annoys by its days).
+        let uses = (task.required / (n as f32).powf(params.work.work_exponent))
+            .round()
+            .max(1.0) as u32;
+        let rate_day = (n as f32).powf(params.work.work_exponent);
+        let practice_days = (uses as f32 / (m.duration / rate_day).max(1.0)).max(1.0);
+        let mood =
+            cal.kick(0.03, params.needs.happiness_rate) * (practice_days / cal.days()).min(1.0);
         {
             // Diagnostics: labour spent, and labour spent on goods already
             // glutted (over target, at their floor price).
@@ -473,12 +484,12 @@ pub fn produce(
             });
             for &w in &workers {
                 let st = &mut store.state[w as usize];
-                st[state::HAPPINESS] = (st[state::HAPPINESS] + 0.03).min(1.0);
+                st[state::HAPPINESS] = (st[state::HAPPINESS] + mood).min(1.0);
             }
         } else {
             for &w in &workers {
                 let st = &mut store.state[w as usize];
-                st[state::HAPPINESS] = (st[state::HAPPINESS] - 0.03).max(0.0);
+                st[state::HAPPINESS] = (st[state::HAPPINESS] - mood).max(0.0);
             }
             // A failed step earns nothing.
             let days = (task.required / (n as f32).powf(params.work.work_exponent)).max(1.0);
@@ -495,12 +506,12 @@ pub fn produce(
             });
         }
 
-        // Tool wear.
+        // Tool wear: a use for every day of the run.
         for &w in &workers {
             let wi = w as usize;
             if let Some(tool) = store.equipped[wi] {
                 if let Ok(mut it) = items.get_mut(tool) {
-                    it.durability = it.durability.saturating_sub(1);
+                    it.durability = it.durability.saturating_sub(uses);
                     if it.durability == 0 {
                         commands.entity(tool).despawn();
                         store.equipped[wi] = None;
@@ -519,6 +530,7 @@ pub fn produce(
             apprentices: parts.apprentices.clone(),
             success,
             quality,
+            days: practice_days,
         });
         commands.entity(e).despawn();
     }
@@ -530,6 +542,7 @@ pub fn produce(
         &decision,
         params.decision.matching.apprentice_wage(),
         params.market.firms,
+        cal,
     );
 }
 

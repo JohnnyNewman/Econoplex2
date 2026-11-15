@@ -15,6 +15,8 @@ fn team_learning(
     params: &Params,
 ) -> Vec<(u32, Vec<f32>)> {
     let s = &db.recipes[ev.recipe as usize].skill;
+    // The run's days of practice and lessons (a month for a month's work).
+    let days = ev.days;
     // Masters of a chartered guild teach faster.
     let charter = if towns.0[ev.town as usize].policy.charters
         [db.recipes[ev.recipe as usize].domain as usize]
@@ -30,7 +32,9 @@ fn team_learning(
             let i = w as usize;
             let mut cap = store.cap[i].clone();
             let mult = store.aptitude[i] * (0.5 + store.state[i][state::HAPPINESS]);
-            models.learning.practice(&mut cap, s, mult, ev.success);
+            models
+                .learning
+                .practice(&mut cap, s, mult, ev.success, days);
             (w, cap)
         })
         .collect();
@@ -64,7 +68,9 @@ fn team_learning(
                 }
             };
             let before = caps[k].1.clone();
-            let g = models.diffusion.diffuse(&mut caps[k].1, &master_cap, s);
+            let g = models
+                .diffusion
+                .diffuse(&mut caps[k].1, &master_cap, s, days);
             for (c, b) in caps[k].1.iter_mut().zip(before) {
                 *c = b + (*c - b) * boost;
             }
@@ -122,7 +128,8 @@ pub fn learn(
     // --- schools: children of school age practice the town's chosen domain and learn
     // from its best teacher, who is paid per pupil and day out of the treasury.
     let pp = &params.policy;
-    let dpy = clock.days_per_year;
+    let per_year = clock.months_per_year;
+    let cal = clock.calendar();
     for town in towns.0.iter_mut() {
         let Some(school) = town.policy.school else {
             continue;
@@ -141,14 +148,15 @@ pub fn learn(
         else {
             continue;
         };
-        let affordable = (town.treasury.coins().max(0.0) / pp.school_fee.max(1e-6)) as u32;
+        let affordable =
+            (town.treasury.coins().max(0.0) / cal.flow(pp.school_fee).max(1e-6)) as u32;
         let seats = school.seats.min(affordable) as usize;
         let pupils: Vec<usize> = town
             .residents
             .iter()
             .map(|&i| i as usize)
             .filter(|&i| {
-                let age = store.age_years(i, dpy);
+                let age = store.age_years(i, per_year);
                 store.alive[i]
                     && store.activity[i] == Activity::Child
                     && age >= pp.school_age
@@ -161,16 +169,18 @@ pub fn learn(
             // Lessons are practice at a share of the pace of real work, plus what
             // the teacher passes on.
             let mult = store.aptitude[c] * pp.school_rate;
-            models.learning.practice(&mut store.cap[c], dir, mult, true);
+            models
+                .learning
+                .practice(&mut store.cap[c], dir, mult, true, cal.days());
             let before = store.cap[c].clone();
             models
                 .diffusion
-                .diffuse(&mut store.cap[c], &teacher_cap, dir);
+                .diffuse(&mut store.cap[c], &teacher_cap, dir, cal.days());
             for (x, b) in store.cap[c].iter_mut().zip(before) {
                 *x = b + (*x - b) * pp.school_rate;
             }
         }
-        let fee = pupils.len() as f32 * pp.school_fee;
+        let fee = cal.flow(pupils.len() as f32 * pp.school_fee);
         town.treasury -= crate::coin::Coin::from_coins(fee);
         town.ledger.add(crate::ledger::Flow::SchoolFees, fee);
         store.wealth[teacher] += crate::coin::Coin::from_coins(fee);

@@ -34,7 +34,7 @@ use std::path::Path;
 /// 10: towns' price-index tallies (`index_year`) and seasonal flow profile
 /// (`flow_profile`) became sub-structs, and the model switches with one
 /// choice left were folded into plain parameters.
-pub const SAVE_VERSION: u32 = 10;
+pub const SAVE_VERSION: u32 = 11;
 
 /// One simulation entity and its components.
 #[derive(Serialize, Deserialize)]
@@ -597,7 +597,6 @@ pub fn restore(
     store.armour.resize(store.len(), None);
     store.shield.resize(store.len(), None);
     store.mount.resize(store.len(), None);
-    let time = params.time.clone();
     world.insert_resource(store);
     world.insert_resource(Towns(towns));
     world.insert_resource(Models::from_params(&params));
@@ -609,19 +608,6 @@ pub fn restore(
     world.insert_resource(db);
     world.insert_resource(crate::profile::Profile::default());
     world.insert_resource(orders);
-    // Saves from before sub-day ticks ran whole days: they end on a day's last tick.
-    let mut clock = clock;
-    let tpd = time.ticks_per_day.max(1);
-    if clock.ticks_per_day != tpd {
-        clock.ticks_per_day = tpd;
-        clock.sub = tpd - 1;
-    }
-    clock.months_per_year = time.months_per_year.max(1);
-    // Saves from before time compression: one game day per day of economy.
-    if clock.game_day == 0 && clock.tick > 0 {
-        clock.game_day = clock.tick / time.economy_days_per_day.max(1) as u64;
-    }
-    clock.economy_days_per_day = time.economy_days_per_day.max(1);
     world.insert_resource(clock);
     world.insert_resource(env);
     world.insert_resource(squads);

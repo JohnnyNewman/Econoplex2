@@ -53,9 +53,11 @@ pub fn fit(agent: &[f32], town: &[f32]) -> f32 {
     }
 }
 
-/// Moves a town's culture a day toward its residents' average.
-pub fn follow(culture: &mut [f32], residents_mean: &[f32], memory_days: f32) {
-    let a = 1.0 / memory_days.max(1.0);
+/// Moves a town's culture a step toward its residents' average, with a
+/// memory of `memory_steps` steps (simulated days: `memory_days` over the
+/// days a simulated day stands for).
+pub fn follow(culture: &mut [f32], residents_mean: &[f32], memory_steps: f32) {
+    let a = 1.0 / memory_steps.max(1.0);
     for (c, &m) in culture.iter_mut().zip(residents_mean) {
         *c += a * (m - *c);
     }

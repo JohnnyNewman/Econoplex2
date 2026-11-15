@@ -266,7 +266,7 @@ pub fn animate_agents(
         tf.translation.x = next.x;
         tf.translation.y = next.y;
 
-        let child = store.age_years(i, clock.days_per_year) < params.life.adult_age;
+        let child = store.age_years(i, clock.months_per_year) < params.life.adult_age;
         let selected = selection.0 == Some(a.idx);
         let (d, strength) = dominant_domain(&db, &store.cap[i]);
         sprite.color = if selected {

@@ -2,7 +2,7 @@
 
 use super::*;
 
-/// Share of the way the public pay rate moves toward each realised step.
+/// Share of the way the public pay rate moves toward each realised day of work.
 const PAY_RATE_SMOOTHING: f32 = 0.05;
 
 /// What a worker-day at recipe `r` would pay in this town at today's prices: the
@@ -30,7 +30,7 @@ pub fn posted_pay(town: &crate::world::Town, db: &Db, params: &Params, r: usize)
         / m.duration.max(1.0)
 }
 
-/// Every day each town's public pay rate drifts toward the posted pay at today's
+/// Every simulated day (a month of days) each town's public pay rate drifts toward the posted pay at today's
 /// prices, over `decision.valuation.posted_pay_days`. Realised pay pulls much
 /// harder (each finished step), so for jobs people do the rate is what they
 /// earn; a job nobody has tried yet still shows what it would pay, instead of
@@ -40,11 +40,12 @@ pub fn post_pay(towns: &mut crate::world::Towns, db: &Db, params: &Params) {
     if days <= 0.0 {
         return;
     }
+    let a = params.calendar().smoothing(days);
     for town in towns.0.iter_mut() {
         town.pay_rate.resize(db.recipes.len(), 0.0);
         for r in 0..db.recipes.len() {
             let posted = posted_pay(town, db, params, r);
-            town.pay_rate[r] += (posted - town.pay_rate[r]) / days.max(1.0);
+            town.pay_rate[r] += (posted - town.pay_rate[r]) * a;
         }
     }
 }
@@ -60,7 +61,10 @@ pub(super) fn settle_wages(
     decision: &crate::decision::DecisionModels,
     apprentice_wage: f32,
     firms: crate::firms::FirmsParams,
+    cal: crate::calendar::Calendar,
 ) {
+    // A month of a run's days moves the public rate as far as they would one by one.
+    let smoothing = cal.share(PAY_RATE_SMOOTHING);
     let n_towns = towns.0.len();
     let reserve_days = match firms {
         crate::firms::FirmsParams::Workshops { reserve_days, .. } => reserve_days,
@@ -148,7 +152,7 @@ pub(super) fn settle_wages(
         let per_day = each / c.days;
         town.index_year.worker_days += shares * c.days;
         let rate = &mut town.pay_rate[c.recipe as usize];
-        *rate += PAY_RATE_SMOOTHING * (per_day - *rate);
+        *rate += smoothing * (per_day - *rate);
         for &w in &c.workers {
             let wi = w as usize;
             let own = if c.trainees.contains(&w) {

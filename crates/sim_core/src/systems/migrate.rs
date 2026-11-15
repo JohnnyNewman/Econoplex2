@@ -57,7 +57,7 @@ pub fn migrate(
     }
     let mut rng = seed.rng(clock.tick, streams::MIGRATE);
     let store = &mut *store;
-    let dpy = clock.days_per_year;
+    let dpy = clock.months_per_year;
     let n_towns = towns.0.len();
 
     // --- what each town offers everyone
@@ -129,7 +129,10 @@ pub fn migrate(
         }
     }
     // Memories of past homes fade.
-    let fade = params.decision.knowledge.fade(mp.interval as f32);
+    let fade = params
+        .decision
+        .knowledge
+        .fade(mp.interval as f32 * clock.calendar().days());
     for mem in store.lived_in.iter_mut() {
         mem.iter_mut().for_each(|e| e.1 *= fade);
         mem.retain(|e| e.1 > 0.01);

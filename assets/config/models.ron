@@ -137,9 +137,9 @@
 
     genetics: (heritability: 0.6, mutation: 0.05),
 
+    // Ages and rates per year count years of `time.months_per_year` simulated
+    // days (one per month).
     life: (
-        // Prototype setting: 120 days per year keeps generations visible in short runs.
-        days_per_year: 120,
         adult_age: 16.0,
         apprentice_age: 14.0,
         min_birth_age: 17.0,
@@ -148,7 +148,7 @@
         mortality_a: 0.002,
         mortality_b: 0.075,
         partner_min_score: 0.6,
-        partner_interval: 10,
+        partner_interval: 1,       // months between rounds of partnering
         food_for_births: 2.0,
         food_foresight_days: 365.0,
         starting_food_bias: 1.0,
@@ -162,7 +162,7 @@
         // true: also stop offering work on a good once the town holds more than its
         // target and its price is at the floor.
         stop_at_floor: false,
-        food_reserve_days: 1.0,
+        food_reserve_months: 1.0,
         min_price_factor: 0.2,
         max_price_factor: 5.0,
         // Fixed: prices stay within max_price_factor x base. Loosen(rate, max_factor):
@@ -197,8 +197,9 @@
         // Needs: the needs ladder (ladder.rs): households buy what serves their
         // needs (content `household.serves`), warmth comes from house, clothes
         // and fuel against the day's temperature; households share a hearth and
-        // keep two weeks of food at home. None: households buy food and tools only.
-        consumption: Needs((interval: 7, gate_at: 0.7, gate_width: 0.15, comfort_c: 16.0, house_c: 6.0, max_clothes: 2.0, fire_per_c: 0.5, fire_per_extra_person: 0.25, larder_days: 14.0, cold_damage: 0.02, plan_days: 30.0)),
+        // keep two weeks of food at home; they shop every `interval` months.
+        // None: households buy food and tools only.
+        consumption: Needs((interval: 1, gate_at: 0.7, gate_width: 0.15, comfort_c: 16.0, house_c: 6.0, max_clothes: 2.0, fire_per_c: 0.5, fire_per_extra_person: 0.25, larder_days: 14.0, cold_damage: 0.02, plan_days: 30.0)),
         // Price dynamics per price class (each good's class is in the content:
         // price_class, else food is Essential and the rest Commodity; Labour is the
         // jobs' wage factors). Inertia: Partial(speed) moves the log price speed x
@@ -215,7 +216,7 @@
         // price_overrides: [("iron", (inertia: Partial(speed: 0.04), max_daily: 0.04, floor: 0.2, ceiling: 20.0))],
         price_classes: None,
         price_overrides: [],
-        trade_interval: 10,
+        trade_interval: 1,         // months between caravan rounds
         trade_amount: 6.0,
         // Fixed: up to trade_amount, at most half the seller's stock.
         // Balance(max_load): the seller's surplus over its target, up to what the
@@ -263,7 +264,8 @@
     // open place (a hard limit of apprentices_per_master per master), keep their
     // trade, and become masters after master_years in it. A teacher's lesson is
     // shared: each learner gets 1 / (1 + teaching_crowding x (learners - 1)).
-    organize: (interval: 20, guild_threshold: 0.55, apprentices_per_master: 3, master_years: 8.0, teaching_crowding: 0.3),
+    // Rounds every `interval` months.
+    organize: (interval: 2, guild_threshold: 0.55, apprentices_per_master: 3, master_years: 8.0, teaching_crowding: 0.3),
 
     work: (work_exponent: 0.85, wage_share: 0.5),
 
@@ -271,7 +273,7 @@
     // the armory, and learn Fighting by drilling. A town raids a weaker neighbor to
     // carry off part of its treasury and stores.
     military: (
-        muster_interval: 10,
+        muster_interval: 1,        // months between musters (and raid plans)
         soldier_share: 0.06,
         soldier_pay: 0.8,
         max_recruit_age: 45.0,
@@ -279,8 +281,8 @@
         battle_learning: 3.0,
         weapon_power: 0.5,
         militia_power: 0.03,
-        march_speed: 100.0,
-        raid_cooldown: 120,
+        march_speed: 100.0,        // map units a day; a simulated day marches a month of days
+        raid_cooldown: 12,         // months
         min_raid_squad: 5,
         casualty_rate: 0.3,        // a tenth of it: chance each civilian is hurt when the defense breaks
         loot_share: 0.3,
@@ -290,7 +292,7 @@
         // It pays tribute, keeps a smaller squad, is defended by its ruler, and
         // regains its freedom by beating its ruler in battle or, slowly, in peace.
         conquest_margin: 3.0,
-        tribute_interval: 30,
+        tribute_interval: 3,       // months
         tribute_share: 0.2,
         vassal_soldier_share: 0.02,
         ruler_aid: 0.5,
@@ -343,7 +345,7 @@
     // Households move to towns where their trade sells better, food is plentiful,
     // people think alike and no raids come, so skills follow demand between towns.
     migration: (
-        interval: 30,
+        interval: 3,               // months between migration rounds
         consider: 0.05,
         min_gain: 0.6,
         max_age: 50.0,
@@ -399,7 +401,7 @@
     // player's levers by the same orders, from its own smoothed numbers.
     governor: (
         enabled: true,
-        interval: 30,            // days between decisions
+        interval: 3,             // months between decisions
         smoothing_days: 30.0,
         govern_player_town: false,
         food_low: 0.5,           // food per resident vs the market's food target
@@ -427,19 +429,21 @@
         ],
     ),
 
-    // Time, seasons and weather (env.rs). Each day is cut into ticks; the
-    // economy runs on its first tick. The calendar must match
-    // life.days_per_year (days_per_month * months_per_year * economy_days_per_day).
+    // The calendar, seasons and weather (calendar.rs, env.rs). A year is
+    // months_per_year simulated days, one per month: each is the representative
+    // day of its month and stands for days_per_month days, so every rate above
+    // written per day comes out per month (a month of meals, work, wages,
+    // growth, wear), rates per year divide by the 12 simulated days, and counts
+    // of events (intervals, cooldowns) are in months. Time constants written in
+    // days (horizons, memories, cover days) stay in days. Each day is cut into
+    // ticks for the hours and daylight; the economy runs on its first tick.
+    // Outdoor work follows the daylight (8 hours in midwinter, 16 in midsummer).
     time: (
         ticks_per_day: 12,
         days_per_month: 10,
         months_per_year: 12,
         year_starts_at: 0.25, // spring equinox (0 = midwinter)
         day_length: (equinox_hours: 12.0, swing_hours: 4.0, twilight_hours: 2.0),
-        // Days of economy per game day. For play: days_per_month: 1 and 10
-        // here give 12 game days a year with the economy's 120. Outdoor work
-        // follows the daylight (8 hours in midwinter, 16 in midsummer).
-        economy_days_per_day: 1,
     ),
     // A temperate climate: frosty winters, warm summers, wettest in autumn.
     // `Constant(temperature: 15.0)` for no seasons.

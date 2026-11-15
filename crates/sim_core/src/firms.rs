@@ -214,7 +214,7 @@ pub struct Firm {
 /// The creditor index of the town market (the treasury) in `Firm::payables`.
 pub const TREASURY: u32 = u32::MAX;
 
-/// A loan from the treasury to a firm, repaid in daily instalments with interest.
+/// A loan from the treasury to a firm, repaid in monthly instalments with interest.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct Loan {
     /// Principal still owed.
@@ -225,10 +225,12 @@ pub struct Loan {
 }
 
 impl Loan {
-    /// Today's instalment: (interest, principal), for a year of `days_per_year`.
-    pub fn due(&self, days_per_year: f32) -> (f32, f32) {
-        let interest = self.left * self.rate.max(0.0) / days_per_year.max(1.0);
-        let principal = self.left / self.days_left.max(1) as f32;
+    /// This simulated day's instalment: (interest, principal), a month of
+    /// them.
+    pub fn due(&self, cal: crate::calendar::Calendar) -> (f32, f32) {
+        let interest = self.left * self.rate.max(0.0) / cal.per_year() as f32;
+        let months_left = cal.months(self.days_left as f32).ceil().max(1.0);
+        let principal = self.left / months_left;
         (interest, principal)
     }
 }
@@ -285,13 +287,16 @@ impl Firm {
         (self.cash.coins() - reserve_days * self.input_bill).max(0.0)
     }
 
-    /// Close the day's books.
-    pub fn end_day(&mut self) {
-        self.wage_bill += (self.wages_today - self.wage_bill) / 30.0;
+    /// Close the simulated day's books: its flows are a month of daily ones,
+    /// and the bills are daily averages over about a month of days.
+    pub fn end_day(&mut self, cal: crate::calendar::Calendar) {
+        let a = cal.smoothing(30.0);
+        let d = cal.days();
+        self.wage_bill += (self.wages_today / d - self.wage_bill) * a;
         self.wages_today = 0.0;
-        self.input_bill += (self.inputs_today - self.input_bill) / 30.0;
+        self.input_bill += (self.inputs_today / d - self.input_bill) * a;
         self.inputs_today = 0.0;
-        self.sales_bill += (self.sales_today - self.sales_bill) / 30.0;
+        self.sales_bill += (self.sales_today / d - self.sales_bill) * a;
         self.sales_today = 0.0;
     }
 
@@ -373,9 +378,12 @@ mod tests {
         assert_eq!(f.wage_budget(5.0), 80.0);
         f.cash = crate::coin::Coin::from_coins(40.0);
         assert_eq!(f.payout(5.0, 0.5), 0.0);
-        f.book(FirmFlow::Wages, 20.0);
-        f.end_day();
-        assert!((f.wage_bill - (10.0 + (20.0 - 10.0) / 30.0)).abs() < 1e-5);
+        // A month of 20 a day in wages (200), against a bill of 10 a day.
+        f.book(FirmFlow::Wages, 200.0);
+        let cal = crate::calendar::Calendar::default();
+        f.end_day(cal);
+        let a = 1.0 - (1.0 - 1.0f32 / 30.0).powi(10);
+        assert!((f.wage_bill - (10.0 + (20.0 - 10.0) * a)).abs() < 1e-4);
     }
 
     #[test]
@@ -399,14 +407,16 @@ mod tests {
             rate: 0.1,
             days_left: 120,
         };
-        let (i, p) = l.due(120.0);
-        assert!((i - 0.1).abs() < 1e-6 && (p - 1.0).abs() < 1e-6);
+        // A year of 12 months of 10 days: 120 days are 12 instalments.
+        let cal = crate::calendar::Calendar::default();
+        let (i, p) = l.due(cal);
+        assert!((i - 1.0).abs() < 1e-6 && (p - 10.0).abs() < 1e-6);
         let mut paid = 0.0;
         while l.days_left > 0 {
-            let (i, p) = l.due(120.0);
+            let (i, p) = l.due(cal);
             paid += i + p;
             l.left -= p;
-            l.days_left -= 1;
+            l.days_left = l.days_left.saturating_sub(cal.whole_days());
         }
         assert!(l.left.abs() < 1e-3);
         assert!(paid > 120.0 && paid < 120.0 * 1.1);

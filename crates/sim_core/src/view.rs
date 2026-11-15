@@ -143,8 +143,10 @@ pub struct Seen {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ViewSnapshot {
     pub tick: u64,
+    /// Simulated day of the year, which is its month (0 = the first).
     pub day_of_year: u32,
-    pub days_per_year: u32,
+    /// Simulated days in a year: one per month.
+    pub months_per_year: u32,
     pub towns: Vec<TownView>,
     pub people: PeopleView,
     /// Number of skill domains (for colouring `Doing::Working`).
@@ -317,7 +319,7 @@ impl ViewSnapshot {
         ViewSnapshot {
             tick: clock.tick,
             day_of_year: clock.day_of_year(),
-            days_per_year: clock.days_per_year,
+            months_per_year: clock.months_per_year,
             towns: towns
                 .0
                 .iter()
@@ -412,9 +414,10 @@ impl ViewSnapshot {
         }
     }
 
-    /// Fraction of the year gone, 0..1 (for seasons).
+    /// Fraction of the year gone at the middle of this month, 0..1 (for
+    /// seasons).
     pub fn season(&self) -> f32 {
-        self.day_of_year as f32 / self.days_per_year.max(1) as f32
+        (self.day_of_year as f32 + 0.5) / self.months_per_year.max(1) as f32
     }
 }
 
@@ -501,8 +504,8 @@ pub fn person(world: &World, id: u32) -> Option<PersonInfo> {
     Some(PersonInfo {
         id,
         town: store.town[i],
-        age_years: store.age_days[i] as f32
-            / world.resource::<SimClock>().days_per_year.max(1) as f32,
+        age_years: store.age_months[i] as f32
+            / world.resource::<SimClock>().months_per_year.max(1) as f32,
         female: store.female[i],
         activity: activity.to_string(),
         job,

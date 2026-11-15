@@ -107,9 +107,10 @@ pub struct MarketParams {
     /// signals it has enough. Off by default (only `glut_factor` applies).
     #[serde(default)]
     pub stop_at_floor: bool,
-    /// Days of the town's food need whose inputs (grain, flour, wood) are kept for
-    /// the mills and bakeries, out of reach of eating and of other trades.
-    pub food_reserve_days: f32,
+    /// Months (simulated days) of the town's food need whose inputs (grain,
+    /// flour, wood) are kept for the mills and bakeries, out of reach of eating
+    /// and of other trades.
+    pub food_reserve_months: f32,
     pub min_price_factor: f32,
     pub max_price_factor: f32,
     /// Whether a good's price cap loosens while it stays scarce.
@@ -131,6 +132,7 @@ pub struct MarketParams {
     /// Per-good dynamics that replace their class's: (product id, params).
     #[serde(default)]
     pub price_overrides: Vec<(String, crate::pricing::ClassParams)>,
+    /// Months (simulated days) between caravan rounds (and import rounds).
     pub trade_interval: u32,
     pub trade_amount: f32,
     /// How much a caravan carries. `Fixed` (default): up to `trade_amount`

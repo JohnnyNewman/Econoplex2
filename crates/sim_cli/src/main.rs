@@ -363,10 +363,10 @@ fn main() {
     let dpy = sim
         .world
         .resource::<sim_core::world::Params>()
-        .life
-        .days_per_year as u64;
+        .time
+        .months_per_year as u64;
     println!(
-        "Econoplex: {} towns, {} agents, seed {}, {} days per year",
+        "Econoplex: {} towns, {} agents, seed {}, {} simulated days (months) per year",
         scenario.towns.len(),
         sim.world.resource::<sim_core::AgentStore>().alive_count(),
         scenario.seed,
@@ -475,7 +475,7 @@ fn main() {
 fn write_events(path: &std::path::Path, sim: &Simulation) -> std::io::Result<()> {
     let h = sim.world.resource::<sim_core::history::History>();
     let towns = sim.world.resource::<sim_core::Towns>();
-    let dpy = sim.world.resource::<sim_core::SimClock>().days_per_year as u64;
+    let dpy = sim.world.resource::<sim_core::SimClock>().months_per_year as u64;
     let mut f = std::fs::File::create(path)?;
     writeln!(f, "day,year,day_of_year,town,kind,text")?;
     for e in &h.events {
@@ -535,7 +535,7 @@ fn print_governors(sim: &Simulation) {
     if queue.log.is_empty() {
         return;
     }
-    let dpy = sim.world.resource::<sim_core::SimClock>().days_per_year as u64;
+    let dpy = sim.world.resource::<sim_core::SimClock>().months_per_year as u64;
     println!(
         "
 Government orders (all towns, player's and AI):"
@@ -684,7 +684,7 @@ fn print_final(sim: &Simulation) {
     let store = sim.world.resource::<sim_core::AgentStore>();
     let towns = sim.world.resource::<sim_core::Towns>();
     let params = sim.world.resource::<sim_core::world::Params>();
-    let dpy = params.life.days_per_year;
+    let dpy = params.time.months_per_year;
 
     println!("\nWhat each town's adults are best at (share of adults by top skill):");
     for town in &towns.0 {

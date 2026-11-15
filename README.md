@@ -245,10 +245,12 @@ themselves be made. `econoplex-sim --tech-tree` prints the tree as a Mermaid cha
 
 ### A day in the simulation
 
-A day is cut into `time.ticks_per_day` ticks (12 by default). The economy runs on
-the first tick of the day; the other ticks move the hours and the weather on. A year
-is 120 days by default, so generations show in short runs. Each day runs these steps
-in order:
+A year is 12 simulated days, one per month: each is the month's representative
+day and counts for its 10 days (`time.days_per_month`), so a month of meals, work
+and growth happens in one step and generations show in short runs. A day is cut
+into `time.ticks_per_day` ticks (12 by default) for the hours and daylight. The
+economy runs once, on the first tick of the day; the other ticks move the hours and
+the weather on. Each day runs these steps in order:
 
 | Step | What happens |
 | --- | --- |
@@ -716,4 +718,5 @@ food to spare.
 - Terrain is fixed: roads are not built or improved, and rivers cannot be bridged.
 - Each town's land is a fixed budget of plots that it uses up early.
 - The 2D client does not yet show everything the 3D client does.
-- A year is 120 days so generations are visible in short runs.
+- A year is 12 representative days, one per month, so generations are visible in
+  short runs; within a month nothing happens in order.

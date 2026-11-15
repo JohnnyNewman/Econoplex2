@@ -1,11 +1,13 @@
 //! Econoplex simulation core.
 //!
 //! Every unit is an economic agent whose skills, mind, physique and state are
-//! vectors in [`store::AgentStore`]. One simulation tick is one in-game day and
-//! runs the [`SimTick`] schedule (see [`systems`] for the pipeline). The core is
+//! vectors in [`store::AgentStore`]. A year is twelve simulated days, one per
+//! month ([`calendar`]); each is cut into ticks, and one tick runs the
+//! [`SimTick`] schedule (see [`systems`] for the pipeline). The core is
 //! headless: the CLI runs it directly, the game runs it from Bevy's `FixedUpdate`.
 
 pub mod battle;
+pub mod calendar;
 pub mod coin;
 pub mod components;
 pub mod config;
@@ -54,8 +56,8 @@ pub use world::{SimClock, Towns};
 #[derive(ScheduleLabel, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SimTick;
 
-/// One day of economy; [`SimTick`] runs it `time.economy_days_per_day` times
-/// on the first tick of each game day.
+/// One simulated day of economy, standing for a month; [`SimTick`] runs it
+/// once, on the first tick of each simulated day.
 #[derive(ScheduleLabel, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EconomyDay;
 
@@ -100,46 +102,42 @@ pub fn build_economy_schedule() -> Schedule {
     schedule.set_executor(SingleThreadedExecutor::new());
     schedule.add_systems(
         (
-            crate::env::new_economy_day,
             (
-                (
-                    profile::start,
-                    policy::apply_orders,
-                    needs::sense,
-                    profile::mark::<0>,
-                    decide::decide,
-                    profile::mark::<1>,
-                    work::assign,
-                    profile::mark::<2>,
-                    work::produce,
-                    profile::mark::<3>,
-                    work::learn,
-                    profile::mark::<4>,
-                    social::socialize,
-                    profile::mark::<5>,
-                    body::body,
-                    profile::mark::<6>,
-                )
-                    .chain(),
-                (
-                    market::settle,
-                    profile::mark::<7>,
-                    organize::organize,
-                    profile::mark::<8>,
-                    military::military,
-                    profile::mark::<9>,
-                    migrate::migrate,
-                    profile::mark::<10>,
-                    life::lifecycle,
-                    profile::mark::<11>,
-                    ledger::close_day,
-                    metrics::record,
-                    history::record,
-                    goal::evaluate,
-                    governor::govern,
-                    profile::mark::<12>,
-                )
-                    .chain(),
+                profile::start,
+                policy::apply_orders,
+                needs::sense,
+                profile::mark::<0>,
+                decide::decide,
+                profile::mark::<1>,
+                work::assign,
+                profile::mark::<2>,
+                work::produce,
+                profile::mark::<3>,
+                work::learn,
+                profile::mark::<4>,
+                social::socialize,
+                profile::mark::<5>,
+                body::body,
+                profile::mark::<6>,
+            )
+                .chain(),
+            (
+                market::settle,
+                profile::mark::<7>,
+                organize::organize,
+                profile::mark::<8>,
+                military::military,
+                profile::mark::<9>,
+                migrate::migrate,
+                profile::mark::<10>,
+                life::lifecycle,
+                profile::mark::<11>,
+                ledger::close_day,
+                metrics::record,
+                history::record,
+                goal::evaluate,
+                governor::govern,
+                profile::mark::<12>,
             )
                 .chain(),
         )

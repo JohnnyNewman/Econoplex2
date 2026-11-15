@@ -23,6 +23,7 @@ pub fn settle(
     env: Res<crate::env::Environment>,
 ) {
     let mp = &params.market;
+    let cal = clock.calendar();
     let np = db.content.products.len();
     // The market's count of tools and weapons is what its armory holds
     // (weapons carried by soldiers are no longer counted).
@@ -69,21 +70,25 @@ pub fn settle(
                         .find(|o| o.0 == p.id)
                         .map(|o| o.1)
                         .unwrap_or(*classes.get(p.price_class()))
+                        .over(cal)
                 })
                 .collect()
         });
+    // Daily use, averaged over about a month of days: this simulated day's use
+    // is a month of it.
+    let month = cal.smoothing(crate::ledger::MONTH_DAYS);
     for town in towns.0.iter_mut() {
         town.input_use.resize(np, 0.0);
         town.input_today.resize(np, 0.0);
         for p in 0..np {
-            let today = std::mem::take(&mut town.input_today[p]);
-            town.input_use[p] += (today - town.input_use[p]) / crate::ledger::MONTH_DAYS;
+            let today = std::mem::take(&mut town.input_today[p]) / cal.days();
+            town.input_use[p] += (today - town.input_use[p]) * month;
         }
         town.goods_use.resize(np, 0.0);
         town.goods_today.resize(np, 0.0);
         for p in 0..np {
-            let today = std::mem::take(&mut town.goods_today[p]);
-            town.goods_use[p] += (today - town.goods_use[p]) / crate::ledger::MONTH_DAYS;
+            let today = std::mem::take(&mut town.goods_today[p]) / cal.days();
+            town.goods_use[p] += (today - town.goods_use[p]) * month;
         }
     }
     // Public pay rates: yesterday's prices for jobs nobody has tried lately.
@@ -210,7 +215,7 @@ pub fn settle(
                     town.price[p] = c.step(old, base, pressure, &mut town.pressure[p]);
                 }
                 None => {
-                    town.price[p] = (old * (mp.price_adjust * pressure).exp())
+                    town.price[p] = (old * (cal.flow(mp.price_adjust) * pressure).exp())
                         .clamp(base * mp.min_price_factor, base * cap);
                 }
             }
@@ -255,21 +260,24 @@ pub fn settle(
             if old > 0.0 && town.price[p] > 0.0 {
                 town.price_vol.resize(3, Default::default());
                 let k = class_index(db.content.products[p].price_class());
-                town.price_vol[k].add((town.price[p] / old).ln().abs());
+                // Recorded as a move per day, the month's spread evenly.
+                town.price_vol[k].add((town.price[p] / old).ln().abs() / cal.days());
             }
             if let crate::config::ScarcityCap::Loosen { rate, max_factor } = mp.scarcity_cap {
                 town.price_cap.resize(np, mp.max_price_factor);
                 let c = &mut town.price_cap[p];
                 if pressure > 0.0 && town.price[p] >= base * *c * 0.999 {
-                    *c = (*c * (1.0 + rate)).min(max_factor.max(mp.max_price_factor));
+                    *c = (*c * (1.0 + rate).powf(cal.days()))
+                        .min(max_factor.max(mp.max_price_factor));
                 } else {
-                    *c = (*c * (1.0 - rate)).max(mp.max_price_factor);
+                    *c = (*c * cal.keep(1.0 - rate)).max(mp.max_price_factor);
                 }
             }
         }
     }
 
-    let dpy = clock.days_per_year as f32;
+    // Yearly rates over the simulated days of a year.
+    let dpy = cal.per_year() as f32;
     for town in towns.0.iter_mut() {
         for &(food, _) in &db.foods {
             let f = food as usize;
@@ -458,15 +466,22 @@ fn buy_from_firms(town: &mut crate::world::Town, p: usize, target: f32) {
 /// Workshops' stock targets: each firm keeps `input_days` of the inputs it has
 /// been using in its own store, bought ahead from the market with the cash
 /// above its wage reserve.
-fn firm_input_stocks(towns: &mut crate::world::Towns, db: &Db, reserve_days: f32, input_days: f32) {
+fn firm_input_stocks(
+    towns: &mut crate::world::Towns,
+    db: &Db,
+    cal: crate::calendar::Calendar,
+    reserve_days: f32,
+    input_days: f32,
+) {
     let np = db.content.products.len();
+    let month = cal.smoothing(30.0);
     for town in towns.0.iter_mut() {
         for k in 0..town.firms.len() {
             let f = &mut town.firms[k];
             f.input_rate.resize(np, 0.0);
             f.input_used.resize(np, 0.0);
             for p in 0..np {
-                f.input_rate[p] += (f.input_used[p] - f.input_rate[p]) / 30.0;
+                f.input_rate[p] += (f.input_used[p] / cal.days() - f.input_rate[p]) * month;
                 f.input_used[p] = 0.0;
             }
             if input_days <= 0.0 || f.closed {
@@ -517,7 +532,8 @@ pub fn firm_finances(
     else {
         return;
     };
-    firm_input_stocks(towns, db, reserve_days, input_days);
+    let cal = params.calendar();
+    firm_input_stocks(towns, db, cal, reserve_days, input_days);
     // Each firm's domain: its guild, or the domain of its first recipe.
     let domain: Vec<u32> = (0..db.firm_keys.len())
         .map(|k| match db.firm_keys[k] {
@@ -548,7 +564,7 @@ pub fn firm_finances(
         let n = town.firms.len().max(1) as f32;
         for (k, f) in town.firms.iter_mut().enumerate() {
             if f.cash.coins() < 0.2 * start_cash {
-                f.short_days += 1;
+                f.short_days += cal.whole_days();
             } else {
                 f.short_days = 0;
                 f.closed = false;
@@ -603,14 +619,13 @@ pub fn firm_finances(
             owed.retain(|o| o.1 > 1e-4);
             town.firms[k].payables = owed;
         }
-        // Loans: each day's instalment, interest first, out of the firm's cash. A
-        // closed firm's overdue loans default: the rest is written off.
-        let dpy = params.life.days_per_year as f32;
+        // Loans: each month's instalment, interest first, out of the firm's cash.
+        // A closed firm's overdue loans default: the rest is written off.
         for f in town.firms.iter_mut() {
             let closed = f.closed;
             let mut loans = std::mem::take(&mut f.loans);
             for l in loans.iter_mut() {
-                let (interest, principal) = l.due(dpy);
+                let (interest, principal) = l.due(cal);
                 let paid_i = interest.min(f.cash.coins().max(0.0));
                 let paid_p = principal.min((f.cash.coins() - paid_i).max(0.0));
                 f.cash -= crate::coin::Coin::from_coins(paid_i + paid_p);
@@ -620,7 +635,7 @@ pub fn firm_finances(
                 town.ledger.add(Flow::LoanInterest, paid_i);
                 town.ledger.add(Flow::LoanRepayments, paid_p);
                 l.left -= paid_p;
-                l.days_left = l.days_left.saturating_sub(1);
+                l.days_left = l.days_left.saturating_sub(cal.whole_days());
                 if l.days_left == 0 && l.left > 1e-3 {
                     if closed {
                         town.loan_defaults += l.left;
@@ -639,7 +654,7 @@ pub fn firm_finances(
             if !f.loans.is_empty() || !f.payables.is_empty() {
                 continue;
             }
-            let out = f.payout(reserve_days, payout_rate);
+            let out = f.payout(reserve_days, cal.share(payout_rate));
             if out <= 0.0 {
                 continue;
             }
@@ -677,14 +692,15 @@ pub fn firm_finances(
 /// Emergency food imports. Every trade round, a town importing (policy on, or
 /// auto while short of food) buys food from neighbours with stock to spare, at
 /// the seller's price plus transport, paying from its treasury and owing the
-/// rest. Each day a town with debts pays a share of its treasury above its
+/// rest. Each simulated day a town with debts pays a month's a share of its treasury above its
 /// reserve toward them; debts grow with interest.
 fn food_imports(towns: &mut Towns, db: &Db, params: &Params, terrain: &Terrain, tick: u64) {
     use crate::policy::Imports;
     let mp = &params.market;
     let ip = &mp.imports;
     let n = towns.0.len();
-    let dpy = params.life.days_per_year as f32;
+    let cal = params.calendar();
+    let dpy = cal.per_year() as f32;
     for t in towns.0.iter_mut() {
         t.debts.resize(n, 0.0);
     }
@@ -698,9 +714,8 @@ fn food_imports(towns: &mut Towns, db: &Db, params: &Params, terrain: &Terrain, 
         }
         let reserve = mp.treasury_reserve_per_capita * towns.0[b].residents.len() as f32;
         let owed: f32 = towns.0[b].debts.iter().sum();
-        let pay = ((towns.0[b].treasury.coins() - reserve).max(0.0)
-            * ip.repay_share.clamp(0.0, 1.0))
-        .min(owed);
+        let pay = ((towns.0[b].treasury.coins() - reserve).max(0.0) * cal.share(ip.repay_share))
+            .min(owed);
         if pay <= 0.0 {
             continue;
         }

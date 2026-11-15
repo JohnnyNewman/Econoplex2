@@ -1,10 +1,19 @@
 //! State dynamics: hunger, eating, health, fatigue recovery, happiness.
+//!
+//! One simulated day stands for a month (`calendar.rs`): people get a month's
+//! hunger and eat meals until they are no longer hungry, so hunger after the
+//! meals is a day's, as before; health and happiness move by a month's worth.
+//! Fatigue is the representative day's: a month of work tires as a day did,
+//! and a month of rest restores as a day did.
 
 use crate::db::Db;
 use crate::store::{Activity, AgentStore};
 use crate::world::{Params, Towns};
 use bevy_ecs::prelude::*;
 use sim_data::dims::state::*;
+
+/// Most meals one person eats in a simulated day (a month of meals).
+const MAX_MEALS: usize = 64;
 
 pub fn sense(
     mut store: ResMut<AgentStore>,
@@ -15,6 +24,7 @@ pub fn sense(
     mut squads: ResMut<crate::goods::Squads>,
 ) {
     let p = &params.needs;
+    let cal = params.calendar();
     let ladder = match &params.market.consumption {
         crate::consumption::ConsumptionParams::Needs(lp) => Some(lp),
         _ => None,
@@ -46,7 +56,7 @@ pub fn sense(
             town.buildings.len(),
         );
         let target = crowding.rent(town.residents.len(), housing);
-        town.rent += (target - town.rent) / crowding.stickiness_days();
+        town.rent += (target - town.rent) * cal.smoothing(crowding.stickiness_days());
     }
 
     for i in 0..store.len() {
@@ -56,7 +66,7 @@ pub fn sense(
         store.worked_today[i] = None;
         if !matches!(store.activity[i], Activity::Child | Activity::Captive) {
             let town = &mut towns.0[store.town[i] as usize];
-            let pay = town.rent.min(store.wealth[i].coins().max(0.0));
+            let pay = cal.flow(town.rent).min(store.wealth[i].coins().max(0.0));
             if pay > 0.0 {
                 store.wealth[i] -= crate::coin::Coin::from_coins(pay);
                 town.treasury += crate::coin::Coin::from_coins(pay);
@@ -66,75 +76,88 @@ pub fn sense(
         let town = &mut towns.0[store.town[i] as usize];
         let st = &mut store.state[i];
 
-        st[HUNGER] += p.hunger_per_day;
-        // On the march, people eat from their squad's packs first.
-        if st[HUNGER] > p.eat_threshold && !squads.list.is_empty() {
-            if let Some(id) = squads.squad_of(i) {
-                if let Some((food, value, q)) =
-                    crate::goods::squad_meal(&mut squads, id, &db.foods, st[HUNGER])
-                {
+        st[HUNGER] += cal.flow(p.hunger_per_day);
+        // Meals until the month's hunger is stilled: each meal is a portion
+        // from the first source that has food (squad packs, larder, firms,
+        // the market).
+        for _ in 0..MAX_MEALS {
+            if st[HUNGER] <= p.eat_threshold {
+                break;
+            }
+            let before = st[HUNGER];
+            // On the march, people eat from their squad's packs first.
+            if st[HUNGER] > p.eat_threshold && !squads.list.is_empty() {
+                if let Some(id) = squads.squad_of(i) {
+                    if let Some((food, value, q)) =
+                        crate::goods::squad_meal(&mut squads, id, &db.foods, st[HUNGER])
+                    {
+                        town.flows.add(crate::goods::Flow::Eaten, food as usize, q);
+                        st[HUNGER] = (st[HUNGER] - q * value).max(0.0);
+                    }
+                }
+            }
+            if st[HUNGER] > p.eat_threshold {
+                // The household's own food first.
+                if let Some((food, value, q)) = crate::decision::subsistence::take_portion(
+                    &mut store.larder[i],
+                    &db.foods,
+                    st[HUNGER],
+                ) {
                     town.flows.add(crate::goods::Flow::Eaten, food as usize, q);
                     st[HUNGER] = (st[HUNGER] - q * value).max(0.0);
                 }
             }
-        }
-        if st[HUNGER] > p.eat_threshold {
-            // The household's own food first.
-            if let Some((food, value, q)) = crate::decision::subsistence::take_portion(
-                &mut store.larder[i],
-                &db.foods,
-                st[HUNGER],
-            ) {
-                town.flows.add(crate::goods::Flow::Eaten, food as usize, q);
-                st[HUNGER] = (st[HUNGER] - q * value).max(0.0);
-            }
-        }
-        // With firms, residents buy food straight from the firms that hold it
-        // first, then from the market.
-        if st[HUNGER] > p.eat_threshold && params.market.firms.on() {
-            'buy: for &(food, value) in &db.foods {
-                let f = food as usize;
-                let q = crate::decision::subsistence::portion(st[HUNGER], value);
-                for firm in town.firms.iter_mut() {
-                    if firm.stock.get(f).is_some_and(|&s| s >= q) {
-                        firm.stock[f] -= q;
-                        town.flows.add(crate::goods::Flow::Eaten, f, q);
-                        st[HUNGER] = (st[HUNGER] - q * value).max(0.0);
-                        let pay = (q * town.price[f]).min(store.wealth[i].coins().max(0.0));
-                        store.wealth[i] -= crate::coin::Coin::from_coins(pay);
-                        firm.cash += crate::coin::Coin::from_coins(pay);
-                        firm.book(crate::firms::FirmFlow::DirectSales, pay);
-                        town.index_year.consumed.resize(town.stock.len(), 0.0);
-                        town.index_year.consumed[f] += q;
-                        break 'buy;
+            // With firms, residents buy food straight from the firms that hold it
+            // first, then from the market.
+            if st[HUNGER] > p.eat_threshold && params.market.firms.on() {
+                'buy: for &(food, value) in &db.foods {
+                    let f = food as usize;
+                    let q = crate::decision::subsistence::portion(st[HUNGER], value);
+                    for firm in town.firms.iter_mut() {
+                        if firm.stock.get(f).is_some_and(|&s| s >= q) {
+                            firm.stock[f] -= q;
+                            town.flows.add(crate::goods::Flow::Eaten, f, q);
+                            st[HUNGER] = (st[HUNGER] - q * value).max(0.0);
+                            let pay = (q * town.price[f]).min(store.wealth[i].coins().max(0.0));
+                            store.wealth[i] -= crate::coin::Coin::from_coins(pay);
+                            firm.cash += crate::coin::Coin::from_coins(pay);
+                            firm.book(crate::firms::FirmFlow::DirectSales, pay);
+                            town.index_year.consumed.resize(town.stock.len(), 0.0);
+                            town.index_year.consumed[f] += q;
+                            break 'buy;
+                        }
                     }
                 }
             }
-        }
-        if st[HUNGER] > p.eat_threshold {
-            for &(food, value) in &db.foods {
-                let f = food as usize;
-                let q = crate::decision::subsistence::portion(st[HUNGER], value);
-                if q > 0.0 && town.stock[f] >= q + reserve[store.town[i] as usize][f] {
-                    town.stock[f] -= q;
-                    town.flows.add(crate::goods::Flow::Eaten, f, q);
-                    town.index_year.consumed.resize(town.stock.len(), 0.0);
-                    town.index_year.consumed[f] += q;
-                    st[HUNGER] = (st[HUNGER] - q * value).max(0.0);
-                    let pay = (q * town.price[f]).min(store.wealth[i].coins().max(0.0));
-                    store.wealth[i] -= crate::coin::Coin::from_coins(pay);
-                    town.treasury += crate::coin::Coin::from_coins(pay);
-                    town.ledger.add(crate::ledger::Flow::FoodSales, pay);
-                    break;
+            if st[HUNGER] > p.eat_threshold {
+                for &(food, value) in &db.foods {
+                    let f = food as usize;
+                    let q = crate::decision::subsistence::portion(st[HUNGER], value);
+                    if q > 0.0 && town.stock[f] >= q + reserve[store.town[i] as usize][f] {
+                        town.stock[f] -= q;
+                        town.flows.add(crate::goods::Flow::Eaten, f, q);
+                        town.index_year.consumed.resize(town.stock.len(), 0.0);
+                        town.index_year.consumed[f] += q;
+                        st[HUNGER] = (st[HUNGER] - q * value).max(0.0);
+                        let pay = (q * town.price[f]).min(store.wealth[i].coins().max(0.0));
+                        store.wealth[i] -= crate::coin::Coin::from_coins(pay);
+                        town.treasury += crate::coin::Coin::from_coins(pay);
+                        town.ledger.add(crate::ledger::Flow::FoodSales, pay);
+                        break;
+                    }
                 }
             }
+            if st[HUNGER] >= before {
+                break;
+            }
         }
+
         if st[HUNGER] > 1.0 {
             towns.0[store.town[i] as usize].starving += 1;
             st[HUNGER] = st[HUNGER].min(1.5);
-            st[HEALTH] -= p.starvation_damage;
+            st[HEALTH] -= cal.flow(p.starvation_damage);
         } else if st[HUNGER] < 0.6 {
-            st[HEALTH] = (st[HEALTH] + p.health_regen).min(1.0);
+            st[HEALTH] = (st[HEALTH] + cal.flow(p.health_regen)).min(1.0);
         }
 
         match store.activity[i] {
@@ -154,8 +177,8 @@ pub fn sense(
         }
         let target = 0.7 - 0.5 * st[HUNGER] - 0.3 * st[FATIGUE]
             + 0.2 * (store.wealth[i].coins() / 50.0).tanh();
-        st[HAPPINESS] =
-            (st[HAPPINESS] + p.happiness_rate * (target - st[HAPPINESS])).clamp(0.0, 1.0);
+        st[HAPPINESS] = (st[HAPPINESS] + cal.share(p.happiness_rate) * (target - st[HAPPINESS]))
+            .clamp(0.0, 1.0);
     }
     if let Some(lp) = ladder {
         crate::ladder::daily(store, &mut towns, &db, &params, &env, lp);

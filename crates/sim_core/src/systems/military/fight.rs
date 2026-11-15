@@ -184,7 +184,7 @@ pub(super) fn aftermath(
             let side_won = won == raid.soldiers.contains(&s);
             models
                 .learning
-                .practice(&mut store.cap[i], fight, mult, side_won);
+                .practice(&mut store.cap[i], fight, mult, side_won, 1.0);
         }
     }
 

@@ -765,7 +765,7 @@ fn spawn_status(mut commands: Commands) {
 fn update_status(live: Res<LiveSim>, mut text: Query<&mut Text, With<Status>>) {
     let s = &live.snapshot;
     let (speed, paused) = live.speed_and_pause();
-    let year = s.tick / s.days_per_year.max(1) as u64 + 1;
+    let year = s.tick / s.months_per_year.max(1) as u64 + 1;
     let season = ["winter", "spring", "summer", "autumn"][((s.season() * 4.0 + 0.5) as usize) % 4];
     let pop: u32 = s.towns.iter().map(|t| t.population).sum();
     let towns: Vec<String> = s
@@ -774,15 +774,19 @@ fn update_status(live: Res<LiveSim>, mut text: Query<&mut Text, With<Status>>) {
         .map(|t| format!("{} {}", t.name, t.population))
         .collect();
     let mut line = format!(
-        "Year {year}, day {} ({season})   {}   {}   Space pause, , . speed\n\
+        "Year {year}, {} ({season})   {}   {}   Space pause, , . speed\n\
          {pop} people: {}",
-        s.day_of_year + 1,
+        sim_core::calendar::month_name(s.day_of_year, s.months_per_year),
         if paused { "PAUSED" } else { "running" },
         speed_label(SPEEDS[speed]),
         towns.join(", "),
     );
     for e in live.recent.iter().take(4) {
-        line.push_str(&format!("\n  day {}: {}", e.tick, e.text));
+        line.push_str(&format!(
+            "\n  {}: {}",
+            sim_core::calendar::date(e.tick, s.months_per_year),
+            e.text
+        ));
     }
     // Only a changed text is measured and laid out again (each costs about
     // 0.3 ms of CPU per frame; docs/profiling.md).

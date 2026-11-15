@@ -23,16 +23,20 @@ pub trait QualityModel: Send + Sync {
 }
 
 pub trait LearningRule: Send + Sync {
-    fn practice(&self, cap: &mut CapVec, skill: &CapVec, aptitude: f32, success: bool);
+    /// `days` days of practice of `skill` (a simulated day's work is a month
+    /// of them): the same as practising day by day.
+    fn practice(&self, cap: &mut CapVec, skill: &CapVec, aptitude: f32, success: bool, days: f32);
 }
 
 pub trait DiffusionRule: Send + Sync {
-    /// Move `apprentice` toward `master` along `skill`. Returns the master's gain factor.
-    fn diffuse(&self, apprentice: &mut CapVec, master: &CapVec, skill: &CapVec) -> f32;
+    /// Move `apprentice` toward `master` along `skill` over `days` days of
+    /// lessons. Returns the master's gain factor.
+    fn diffuse(&self, apprentice: &mut CapVec, master: &CapVec, skill: &CapVec, days: f32) -> f32;
 }
 
 pub trait CapacityRule: Send + Sync {
-    fn apply(&self, cap: &mut CapVec);
+    /// Forgetting over `days` days, then the budget.
+    fn apply(&self, cap: &mut CapVec, days: f32);
 }
 
 pub trait SocialInfluence: Send + Sync {
@@ -124,9 +128,18 @@ pub struct DiminishingPractice {
     pub failure_factor: f32,
 }
 impl LearningRule for DiminishingPractice {
-    fn practice(&self, cap: &mut CapVec, skill: &CapVec, aptitude: f32, success: bool) {
+    fn practice(&self, cap: &mut CapVec, skill: &CapVec, aptitude: f32, success: bool, days: f32) {
         let room = (1.0 - dot(cap, skill) / self.mastery).max(0.0);
-        let k = self.rate * aptitude * room * if success { 1.0 } else { self.failure_factor };
+        let daily = self.rate * aptitude * room * if success { 1.0 } else { self.failure_factor };
+        // Day by day the room shrinks by `a` of itself: over `days` days the
+        // skill gains (1 - (1 - a)^days) / a times a day's practice.
+        let s2 = dot(skill, skill);
+        let a = (daily / room.max(1e-9) * s2 / self.mastery).clamp(0.0, 1.0);
+        let k = if a > 1e-9 && room > 0.0 {
+            daily * (1.0 - (1.0 - a).powf(days)) / a
+        } else {
+            daily * days
+        };
         for (c, s) in cap.iter_mut().zip(skill) {
             *c += k * s;
         }
@@ -138,13 +151,21 @@ pub struct AlongSkillDiffusion {
     pub teacher_gain: f32,
 }
 impl DiffusionRule for AlongSkillDiffusion {
-    fn diffuse(&self, apprentice: &mut CapVec, master: &CapVec, skill: &CapVec) -> f32 {
+    fn diffuse(&self, apprentice: &mut CapVec, master: &CapVec, skill: &CapVec, days: f32) -> f32 {
         // The gap along the skill is linear: no difference vector needed.
         let gap = (dot(master, skill) - dot(apprentice, skill)).max(0.0);
+        // Each day closes `b` of the gap: over `days` days the lessons add up
+        // to (1 - (1 - b)^days) / b days of the first day's lesson.
+        let b = (self.rate * dot(skill, skill)).clamp(0.0, 1.0);
+        let lessons = if b > 1e-9 {
+            (1.0 - (1.0 - b).powf(days)) / b
+        } else {
+            days
+        };
         for (a, s) in apprentice.iter_mut().zip(skill) {
-            *a += self.rate * gap * s;
+            *a += self.rate * gap * s * lessons;
         }
-        self.teacher_gain * gap
+        self.teacher_gain * gap * lessons
     }
 }
 
@@ -153,8 +174,8 @@ pub struct NormBudget {
     pub forgetting: f32,
 }
 impl CapacityRule for NormBudget {
-    fn apply(&self, cap: &mut CapVec) {
-        let keep = 1.0 - self.forgetting;
+    fn apply(&self, cap: &mut CapVec, days: f32) {
+        let keep = (1.0 - self.forgetting).max(0.0).powf(days);
         for x in cap.iter_mut() {
             *x = (*x * keep).max(0.0);
         }
@@ -305,10 +326,17 @@ mod tests {
         let s = unit(3);
         let mut a = vec![0.0; DIM];
         for _ in 0..2000 {
-            rule.practice(&mut a, &s, 1.0, true);
+            rule.practice(&mut a, &s, 1.0, true, 1.0);
         }
         let p = dot(&a, &s);
         assert!(p > 1.45 && p <= 1.5 + 1e-4, "{p}");
+        // A month of practice at once is ten days of it one by one.
+        let (mut day, mut month) = (vec![0.0; DIM], vec![0.0; DIM]);
+        for _ in 0..10 {
+            rule.practice(&mut day, &s, 1.0, true, 1.0);
+        }
+        rule.practice(&mut month, &s, 1.0, true, 10.0);
+        assert!((dot(&day, &s) - dot(&month, &s)).abs() < 1e-5);
     }
 
     #[test]
@@ -321,7 +349,7 @@ mod tests {
         let mut master = vec![0.0; DIM];
         master[1] = 1.0;
         master[2] = 1.0;
-        rule.diffuse(&mut app, &master, &unit(1));
+        rule.diffuse(&mut app, &master, &unit(1), 1.0);
         assert!(app[1] > 0.0 && app[2] == 0.0);
     }
 
@@ -342,7 +370,7 @@ mod tests {
             forgetting: 0.0,
         };
         let mut a = vec![1.0; DIM];
-        rule.apply(&mut a);
+        rule.apply(&mut a, 1.0);
         assert!((norm(&a) - 1.0).abs() < 1e-4);
     }
 

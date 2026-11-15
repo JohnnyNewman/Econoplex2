@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MilitaryParams {
-    /// Days between musters (recruiting, releasing, arming soldiers).
+    /// Months (simulated days) between musters (recruiting, releasing, arming
+    /// soldiers).
     pub muster_interval: u32,
     /// Share of a town's adults it keeps under arms when it can pay them.
     pub soldier_share: f32,
@@ -21,7 +22,7 @@ pub struct MilitaryParams {
     pub militia_power: f32,
     /// Map units a squad marches per day.
     pub march_speed: f32,
-    /// Days a town waits after a raid before the next one.
+    /// Months (simulated days) a town waits after a raid before the next one.
     pub raid_cooldown: u32,
     pub min_raid_squad: usize,
     /// A tenth of it is the chance each civilian of a town whose defense
@@ -36,7 +37,7 @@ pub struct MilitaryParams {
     /// A winning raid conquers the defender when the attackers were this many
     /// times stronger than the defense.
     pub conquest_margin: f32,
-    /// Days between tribute payments, and the share of its treasury a conquered
+    /// Months (simulated days) between tribute payments, and the share of its treasury a conquered
     /// town pays its ruler each time.
     pub tribute_interval: u32,
     pub tribute_share: f32,
