@@ -44,6 +44,7 @@ mod sky;
 mod terrain;
 mod toon;
 mod ui;
+mod water;
 
 #[derive(Resource, Clone)]
 struct Args {
@@ -327,6 +328,7 @@ fn main() {
         precip::PrecipPlugin,
         lights::LightsPlugin,
         inspect::InspectPlugin,
+        water::WaterPlugin,
         battles::BattlesPlugin,
     ))
     .insert_resource(env_override)
@@ -400,6 +402,7 @@ fn setup(
     mut images: ResMut<Assets<Image>>,
     mut trees: ResMut<Assets<nature::TreeMaterial>>,
     mut grass: ResMut<Assets<nature::GrassMaterial>>,
+    mut waters: ResMut<Assets<water::WaterMaterial>>,
     mut buffers: ResMut<Assets<bevy::render::storage::ShaderBuffer>>,
     world: Res<World3d>,
     args: Res<Args>,
@@ -448,19 +451,25 @@ fn setup(
             biomes,
         },
     );
-    // The walking crowd (step 07) reads the same heightmap on the GPU.
+    // The walking crowd (step 07) and the water read the same heightmap on
+    // the GPU.
+    let grid = Vec4::new(t.origin.0 / SCALE, -t.origin.1 / SCALE, t.cell / SCALE, 1.0);
+    let dims = Vec4::new(w as f32, h as f32, 0.0, 0.0);
     commands.insert_resource(crowd::CrowdTerrain {
-        heights,
-        grid: Vec4::new(t.origin.0 / SCALE, -t.origin.1 / SCALE, t.cell / SCALE, 1.0),
-        dims: Vec4::new(w as f32, h as f32, 0.0, 0.0),
+        heights: heights.clone(),
+        grid,
+        dims,
     });
-    // --- water plane
-    commands.spawn((
-        Mesh3d(meshes.add(Plane3d::default().mesh().size(400.0, 400.0))),
-        // Opaque toon water, so it gets the same fog as everything else.
-        MeshMaterial3d(toons.add(toon::toon(Color::srgb(0.30, 0.52, 0.70)))),
-        Transform::from_xyz(0.0, -0.6, 0.0),
-    ));
+    // --- water (water.rs): one plane at the water level over the river beds
+    water::spawn_water(
+        &mut commands,
+        &mut meshes,
+        &mut waters,
+        heights,
+        grid,
+        dims,
+        -0.6,
+    );
     // --- roads between the towns (roads.rs); grass and trees keep off them
     let town_pos: Vec<(f32, f32)> = s.towns.iter().map(|tw| tw.position).collect();
     let road_cells = roads::spawn_roads(&mut commands, &mut meshes, &mut toons, t, &town_pos);
