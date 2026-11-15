@@ -10,6 +10,7 @@
 //! · Y why · T town · H history · L event log · I person (reports.rs)
 
 mod autorun;
+mod battles;
 mod economy_ui;
 mod hud;
 mod policy_ui;
@@ -127,6 +128,7 @@ fn main() {
         .insert_resource(policy_ui::Placing::default())
         .insert_resource(saving::Toast::default())
         .insert_resource(reports::Reports::default())
+        .insert_resource(battles::BattleScenes::default())
         .insert_resource(economy_ui::EconomyView::new(econ_town))
         .insert_resource(ClearColor(Color::srgb(0.08, 0.09, 0.08)))
         .add_systems(
@@ -164,6 +166,10 @@ fn main() {
             ),
         )
         .add_systems(Update, reports::update_reports.after(view::select_agent))
+        .add_systems(
+            Update,
+            (battles::start_battles, battles::draw_battles).chain(),
+        )
         .add_systems(
             Update,
             (
