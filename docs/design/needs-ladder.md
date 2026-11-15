@@ -198,9 +198,12 @@ makes the world harder, and together they compound.
 
 War thread finding: `military.kit_demand: Soldiers` (weapons stocked per
 soldier, not per head) cuts population 1914 -> 1834 and food per head 8.2 -> 4.3
-over 6 seeds x 20 years. Checked:
+over 6 seeds x 20 years. The per-head rule (`PerCapita`) was removed on
+2026-11-15, with the one-roll battles (`battles: Roll`), the fixed-length march
+(`march: Fixed`) and the random raid draw (`decision: Appetite`); the numbers
+below are history. Checked:
 
-| 6 seeds x 20 years | PerCapita | Soldiers |
+| 6 seeds x 20 years | PerCapita (since removed) | Soldiers |
 | --- | --- | --- |
 | swords | 984 | 200 |
 | input use | 136 | 96 |
