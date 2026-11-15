@@ -25,10 +25,19 @@ the water level (y = -0.6, under which the terrain sinks its river beds to
 5. **Sun glint.** The sun reflected by the rippled normal, sharp
    (exponent 180) and brighter than white, so the bloom gives it a halo. It's
    gone at night.
-6. **Foam.** Where the water is shallower than about 0.14 units, noise thresholds
+6. **Flow.** A flow map (water::flow_map, one texel per heightmap corner)
+   holds, for each river texel, the direction of the nearest stretch of its
+   river (downstream = the order of the river's points) and how much river
+   it is (fading over the banks). In the rivers the ripples are a smooth
+   pattern of four sine waves pushed downstream at 1.4 units a second. A
+   pattern pushed by a direction that differs from place to place would tear
+   at the bends, so two copies take turns over three seconds: one drifts and
+   fades out while the other starts fresh and fades in (the flow-map
+   technique). Foam drifts with the river too. The sea keeps the wind.
+7. **Foam.** Where the water is shallower than about 0.14 units, noise thresholds
    into drifting foam.
-7. **Ice.** In deep winter (`fog.ground.w`) the water turns pale, flat and matt.
-8. **Fog**, as in every material.
+8. **Ice.** In deep winter (`fog.ground.w`) the water turns pale, flat and matt.
+9. **Fog**, as in every material.
 
 Everything that changes over time comes from the shared buffer
 (`fog::FOG_BUFFER`), so the material never changes after it is made (see
@@ -41,8 +50,6 @@ waves and a lamp loop. It adds no entities and no CPU work.
 
 ## Ideas for later
 
-- Flow along the rivers: a direction per river cell from the terrain, so the
-  ripples run downstream instead of with the wind.
 - Smoother shores: the terrain's river beds follow the grid's cells, so the
   banks are blocky; a few subdivisions or a shore offset in the terrain mesh
   would round them.

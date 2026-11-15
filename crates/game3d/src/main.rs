@@ -460,12 +460,16 @@ fn setup(
         grid,
         dims,
     });
-    // --- water (water.rs): one plane at the water level over the river beds
+    // --- water (water.rs): one plane at the water level over the river beds,
+    // with a flow map baked from the rivers' courses.
+    let rivers = s.terrain.as_ref().map_or(&[][..], |tt| &tt.rivers[..]);
+    let flow = images.add(water::flow_map(rivers, t.origin, t.cell, w, h));
     water::spawn_water(
         &mut commands,
         &mut meshes,
         &mut waters,
         heights,
+        flow,
         grid,
         dims,
         -0.6,
