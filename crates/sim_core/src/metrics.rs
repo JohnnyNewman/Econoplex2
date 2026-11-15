@@ -315,11 +315,16 @@ pub fn record(
         .0
         .iter()
         .map(|t| {
-            let days = t.price_days.max(1) as f64;
+            let days = t.index_year.price_days.max(1) as f64;
             let mut price: Vec<f32> = (0..np)
-                .map(|p| t.price_sum.get(p).map_or(t.price[p], |s| (s / days) as f32))
+                .map(|p| {
+                    t.index_year
+                        .price_sum
+                        .get(p)
+                        .map_or(t.price[p], |s| (s / days) as f32)
+                })
                 .collect();
-            if t.price_days == 0 {
+            if t.index_year.price_days == 0 {
                 price = t.price.clone();
             }
             let pad = |v: &Vec<f32>| {
@@ -329,10 +334,10 @@ pub fn record(
             };
             crate::price_index::YearPrices {
                 price,
-                consumed: pad(&t.consumed_year),
-                inputs: pad(&t.inputs_year),
+                consumed: pad(&t.index_year.consumed),
+                inputs: pad(&t.index_year.inputs),
                 wage: t.ledger.last_year[crate::ledger::Flow::Wages as usize]
-                    / t.worker_days.max(1e-6),
+                    / t.index_year.worker_days.max(1e-6),
             }
         })
         .collect();
@@ -382,8 +387,9 @@ pub fn record(
         for &p in &products {
             let base = db.base_price[p] as f64;
             s.household_use +=
-                (town.consumed_year.get(p).copied().unwrap_or(0.0) as f64 * base) as f32;
-            s.input_use += (town.inputs_year.get(p).copied().unwrap_or(0.0) as f64 * base) as f32;
+                (town.index_year.consumed.get(p).copied().unwrap_or(0.0) as f64 * base) as f32;
+            s.input_use +=
+                (town.index_year.inputs.get(p).copied().unwrap_or(0.0) as f64 * base) as f32;
         }
         let happy: f32 = town
             .residents
@@ -539,11 +545,11 @@ pub fn record(
         t.moves = Default::default();
         t.starving = 0;
         t.price_vol.clear();
-        t.consumed_year.clear();
-        t.inputs_year.clear();
-        t.price_sum.clear();
-        t.price_days = 0;
-        t.worker_days = 0.0;
+        t.index_year.consumed.clear();
+        t.index_year.inputs.clear();
+        t.index_year.price_sum.clear();
+        t.index_year.price_days = 0;
+        t.index_year.worker_days = 0.0;
         t.loan_defaults = 0.0;
         t.credit_defaults = 0.0;
     }

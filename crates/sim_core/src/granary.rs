@@ -1,11 +1,10 @@
 //! Food as the ruler's challenge (economy redesign, step 7).
 //!
-//! `market.food_rules` in models.ron: `Ruler`, the only rule left. People eat
-//! what the market holds and take the jobs that pay. Bridging the hungry gap
-//! is the ruler's job, with the granary below, the seed reserve as an order
-//! (`reserve TOWN on`: seed grain and flour for `food_reserve_days` of bread
-//! are held out of reach of eating and of other trades), and the levers they
-//! already had (food subsidies, imports, new fields).
+//! People eat what the market holds and take the jobs that pay. Bridging the
+//! hungry gap is the ruler's job, with the granary below, the seed reserve as
+//! an order (`reserve TOWN on`: seed grain and flour for `food_reserve_days`
+//! of bread are held out of reach of eating and of other trades), and the
+//! levers they already had (food subsidies, imports, new fields).
 //!
 //! **Stockpiles** (order `stockpile TOWN GOOD AMOUNT`) are the general form:
 //! any good the town keeps in its stores against a siege or bad times. A
@@ -28,14 +27,6 @@
 
 use crate::db::Db;
 use crate::world::{Params, Towns};
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub enum FoodRules {
-    #[default]
-    Ruler,
-}
-
 /// Food value held in the granary.
 pub fn held(town: &crate::world::Town, db: &Db) -> f32 {
     db.foods
@@ -92,18 +83,18 @@ pub const SEASON_FLOOR: f32 = 0.25;
 /// Learns, for each good, how much the town makes minus uses per day in each
 /// month of the year (from the goods ledger; averaged over about two years).
 fn learn_profile(town: &mut crate::world::Town, np: usize, month: usize) {
-    town.flow_profile.resize(np * MONTHS, 0.0);
-    town.flow_seen.resize(np, 0.0);
-    let first = town.flow_seen_day == 0;
-    town.flow_seen_day += 1;
+    town.flow_profile.per_month.resize(np * MONTHS, 0.0);
+    town.flow_profile.seen.resize(np, 0.0);
+    let first = town.flow_profile.seen_day == 0;
+    town.flow_profile.seen_day += 1;
     for g in 0..np {
         let net = town.flows.net(g) - town.flows.get(crate::goods::Flow::Seeded, g);
-        let delta = (net - town.flow_seen[g]) as f32;
-        town.flow_seen[g] = net;
+        let delta = (net - town.flow_profile.seen[g]) as f32;
+        town.flow_profile.seen[g] = net;
         if first {
             continue;
         }
-        let v = &mut town.flow_profile[g * MONTHS + month];
+        let v = &mut town.flow_profile.per_month[g * MONTHS + month];
         *v += PROFILE_RATE * (delta - *v);
     }
 }
@@ -120,11 +111,11 @@ const PROFILE_RATE: f32 = 0.05;
 /// used evenly keep their whole target.
 pub fn season_scale(town: &crate::world::Town, np: usize, month: usize) -> Vec<f32> {
     let mut v = vec![1.0; np];
-    if town.flow_profile.len() < np * MONTHS {
+    if town.flow_profile.per_month.len() < np * MONTHS {
         return v;
     }
     for (g, out) in v.iter_mut().enumerate() {
-        let prof = &town.flow_profile[g * MONTHS..(g + 1) * MONTHS];
+        let prof = &town.flow_profile.per_month[g * MONTHS..(g + 1) * MONTHS];
         let need = |m: usize| {
             let (mut balance, mut deepest) = (0.0f32, 0.0f32);
             for k in 0..MONTHS {

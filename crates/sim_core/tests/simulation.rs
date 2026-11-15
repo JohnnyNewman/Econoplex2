@@ -1767,7 +1767,7 @@ fn price_classes_bound_daily_moves_and_volatility_is_reported() {
         floor: 0.05,
         ceiling: 20.0,
     };
-    params.market.pricing = sim_core::config::Pricing::Demand {
+    params.market.pricing = sim_core::config::Pricing {
         cover_days: 10.0,
         blocked_workers: 2.0,
     };
@@ -2452,12 +2452,7 @@ fn with_the_needs_ladder_winter_asks_for_fuel() {
 #[test]
 fn seasonal_crops_stand_in_summer_and_not_in_winter() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
-    let sets = [(
-        "farming".to_string(),
-        "Seasonal(crops: [\"field\", \"flax_field\", \"pasture\"], crop_capacity: 15.0, frost_loss: 0.05, rot_wet: 0.02, rot_cold: 0.01)".to_string(),
-    )];
-    let (db, params, mut scenario) =
-        sim_core::load_with(&AssetPaths::from_root(&root), &sets).unwrap();
+    let (db, params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
     scenario.seed = 8;
     let mut s = Simulation::new(db, params, &scenario);
     let field = s
@@ -2493,9 +2488,7 @@ fn seasonal_crops_stand_in_summer_and_not_in_winter() {
 #[test]
 fn a_granary_fills_from_a_full_market_and_feeds_a_hungry_one() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
-    let sets = [("market.food_rules".to_string(), "Ruler".to_string())];
-    let (db, params, mut scenario) =
-        sim_core::load_with(&AssetPaths::from_root(&root), &sets).unwrap();
+    let (db, params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
     scenario.seed = 12;
     for t in &mut scenario.towns {
         t.population = 60;
@@ -2785,7 +2778,7 @@ fn stockpile_targets_follow_the_seasons() {
 fn the_new_economy_preset_loads_and_runs() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     let sets = sim_core::read_preset(&root.join("config/presets/new_economy.ron")).unwrap();
-    assert!(sets.len() >= 5);
+    assert!(sets.len() >= 2);
     let (db, params, mut scenario) =
         sim_core::load_with(&AssetPaths::from_root(&root), &sets).unwrap();
     assert!(matches!(
@@ -2807,7 +2800,6 @@ fn the_new_economy_preset_loads_and_runs() {
 fn kit_reserve_follows_soldiers_until_the_government_sets_a_stockpile() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     let (db, mut params, scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
-    params.military.kit_demand = sim_core::config::KitDemand::Soldiers;
     params.military.levy_reserve = 0.05;
     let mut s = Simulation::new(db, params, &scenario);
     let target = |s: &Simulation, id: &str| {

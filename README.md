@@ -142,24 +142,29 @@ decisions, the town market, firms, time and weather, and graphics and UI.
 
 ### Which models run by default
 
-Most systems can be switched between variants in `models.ron`. These are the ones
-that shape a default run:
+Some systems can be switched between variants in `models.ron`. These are the
+ones that shape a default run:
 
 | System | Default | What it means |
 | --- | --- | --- |
-| Decisions (`decision.model`) | `Ladder` | People choose by what improves their needs most |
 | Consumption (`market.consumption`) | `Needs` | Households buy food, clothes, firewood and a home to fill nine needs on five rungs |
-| Prices (`market.pricing`) | `Demand` | Prices follow how many days of demand the stock covers |
 | Firms (`market.firms`) | `Treasury` | The town market buys all output and pays wages from the treasury |
-| Building value (`market.building_value`) | `Marginal` | A new building is worth what it would add |
-| Food rules (`market.food_rules`) | `Ruler` | The ruler sets how much food is held back |
 | Trade (`market.caravans`) | `Balance` | Caravans carry goods from where they are cheap to where they are dear |
-| Farming (`farming`) | `Seasonal` | Crops are sown and harvested by season, with frost and rot |
 | Climate and weather (`climate`, `weather`) | `Seasonal`, `Fronts` | A year has seasons, and weather fronts cross the map |
-| Working day (`time.work_hours`) | `Daylight` | People work while it is light |
-| Battles (`military.battles`) | `Field` | Squads with their own kit, skill and morale fight on a field |
-| Marching (`military.march`) | `Weather` | Rain and snow slow an army |
-| Kit (`military.kit_demand`) | `Soldiers` | Towns want weapons and armour for the soldiers they have |
+
+These always run, with their parameters in `models.ron`:
+
+| System | Parameters | What it means |
+| --- | --- | --- |
+| Decisions | `decision` | People choose by what improves their needs most |
+| Prices | `market.pricing` | Prices follow how many days of demand the stock covers |
+| Building value | `market.building_value` | A new building is worth what it would add |
+| Food | `market.granary_spoilage` | The ruler sets how much food is held back |
+| Farming | `farming` | Crops are sown and harvested by season, with frost and rot |
+| Working day | `time.day_length` | People work outdoors while it is light |
+| Battles | `battle` | Squads with their own kit, skill and morale fight on a field |
+| Marching | `military.march_speed` | Rain and snow slow an army |
+| Kit | `military.levy_reserve` | Towns want weapons and armour for the soldiers they have |
 
 ## How the simulation works
 

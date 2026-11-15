@@ -265,19 +265,9 @@ pub struct Town {
     /// labour); see `pricing::Volatility`.
     #[serde(default)]
     pub price_vol: Vec<crate::pricing::Volatility>,
-    /// This year so far, for the price indices (see `price_index`): what residents
-    /// consumed and trades used, by product; the sum of daily prices and the days
-    /// counted; worker-days paid.
+    /// This year so far, for the price indices (see `price_index`).
     #[serde(default)]
-    pub consumed_year: Vec<f32>,
-    #[serde(default)]
-    pub inputs_year: Vec<f32>,
-    #[serde(default)]
-    pub price_sum: Vec<f64>,
-    #[serde(default)]
-    pub price_days: u32,
-    #[serde(default)]
-    pub worker_days: f32,
+    pub index_year: IndexYear,
     /// The town's workshops as firms, one per `Db::firm_keys` (see `firms`; only
     /// active with `market.firms: Workshops`).
     #[serde(default)]
@@ -323,14 +313,9 @@ pub struct Town {
     /// below 1 for crops between harvests. Empty: 1 for every good.
     #[serde(default)]
     pub stockpile_scale: Vec<f32>,
-    /// Per good and month: made minus used per day, learned over the years
-    /// (`granary.rs`), and the ledger's running net it was last taken from.
+    /// What the town makes and uses of each good through the year (`granary.rs`).
     #[serde(default)]
-    pub flow_profile: Vec<f32>,
-    #[serde(default)]
-    pub flow_seen: Vec<f64>,
-    #[serde(default)]
-    pub flow_seen_day: u32,
+    pub flow_profile: FlowProfile,
     /// Goods made, used and lost in this town since the start (`goods.rs`).
     #[serde(default)]
     pub flows: crate::goods::GoodsFlows,
@@ -358,6 +343,30 @@ pub struct Raid {
     /// Fought and marching home.
     #[serde(default)]
     pub back: bool,
+}
+
+/// A town's tallies for the price indices this year so far (see
+/// `price_index`); cleared at each yearly report.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct IndexYear {
+    /// What residents consumed and trades used, by product.
+    pub consumed: Vec<f32>,
+    pub inputs: Vec<f32>,
+    /// The sum of daily prices, by product, and the days counted.
+    pub price_sum: Vec<f64>,
+    pub price_days: u32,
+    /// Worker-days paid.
+    pub worker_days: f32,
+}
+
+/// Per good and month: made minus used per day, learned over the years
+/// (`granary.rs`), and the ledger's running net it was last taken from.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct FlowProfile {
+    /// Indexed by good x 12 + month.
+    pub per_month: Vec<f32>,
+    pub seen: Vec<f64>,
+    pub seen_day: u32,
 }
 
 /// Military events since the last yearly report.
@@ -699,9 +708,7 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
             procured: vec![0.0; db.content.products.len()],
             granary: Vec::new(),
             stockpile_scale: Vec::new(),
-            flow_profile: Vec::new(),
-            flow_seen: Vec::new(),
-            flow_seen_day: 0,
+            flow_profile: FlowProfile::default(),
             flows,
             pay_rate: vec![0.0; db.recipes.len()],
             price_cap: Vec::new(),
@@ -709,11 +716,7 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
             input_use: Vec::new(),
             pressure: Vec::new(),
             price_vol: Vec::new(),
-            consumed_year: Vec::new(),
-            inputs_year: Vec::new(),
-            price_sum: Vec::new(),
-            price_days: 0,
-            worker_days: 0.0,
+            index_year: IndexYear::default(),
             firms: crate::firms::new_firms(&db),
             loan_defaults: 0.0,
             credit_defaults: 0.0,

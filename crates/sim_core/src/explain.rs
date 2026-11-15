@@ -102,7 +102,7 @@ impl Ctx<'_> {
         &self.db.content.products[p as usize].name
     }
 
-    /// The per-resident stock the market aims for (what `Demand` pricing uses
+    /// The per-resident stock the market aims for (what `market.pricing` uses
     /// for final goods; inputs also count what their trades use).
     fn target(&self, p: u32) -> f32 {
         let mp = &self.params.market;

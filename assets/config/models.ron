@@ -23,10 +23,8 @@
         // Jobs each agent weighs per decision with first-come places (sampled),
         // plus resting and its last job.
         candidates: 6,
-        // Which model picks jobs. Ladder (the only one): choices by the needs
-        // ladder's derivative. The components below can each be swapped on their
-        // own (docs/design/agent-decisions.md).
-        model: Ladder,
+        // Jobs are chosen by the needs ladder's derivative; the components below
+        // can each be swapped on their own (docs/design/agent-decisions.md).
         // How sharply people pick the option that raises their satisfaction most.
         ladder_scale: 200.0,
         // Component: price and pay expectations. Adaptive moves base_rate +
@@ -71,11 +69,7 @@
         // learn, paid apprentice_wage of a regular worker. Each workplace sets its
         // apprentice share monthly within share.min..max, while cheap labour now
         // plus a trained worker later (trainee_output, retention, payoff_days)
-        // is worth it. Example:
-        // matching: DeferredAcceptance(apprentice_wage: 0.4, share: (min: 0.0,
-        //     max: 0.3, step: 0.05, trainee_output: 0.5, retention: 0.8, payoff_days: 0.5)),
-        // Default since 2026-11-13 (6-seed, 40-year comparison in
-        // docs/design/town-market.md); FirstCome is the old rule.
+        // is worth it.
         matching: DeferredAcceptance(apprentice_wage: 0.4, share: (min: 0.0,
             max: 0.3, step: 0.05, trainee_output: 0.5, retention: 0.8, payoff_days: 0.5)),
         // Component: what living in another town is worth. Weighted: the
@@ -176,11 +170,11 @@
         // day (up to max_factor x base); otherwise it falls back. Example:
         // scarcity_cap: Loosen(rate: 0.01, max_factor: 50.0),
         scarcity_cap: Fixed,
-        // Demand(...): goods used as inputs aim for cover_days of their trades'
+        // Target stocks: goods used as inputs aim for cover_days of their trades'
         // daily use plus what profitable trades held up only by their shortage
         // would use (blocked_workers workers each); final goods aim for the
         // per-resident target, food for both.
-        pricing: Demand(cover_days: 10.0, blocked_workers: 2.0),
+        pricing: (cover_days: 10.0, blocked_workers: 2.0),
         // Who buys output and pays wages. Treasury: the town market buys every
         // output and pays its makers from the treasury. Workshops(...): each
         // town's workplaces of one kind are a firm with cash and stock; the market
@@ -190,26 +184,20 @@
         // treasury. A new firm, or one short of cash for close_days, raises
         // start_cash: a treasury grant (a fair share of half the treasury), then
         // its owners (each up to a fifth of their wealth); with too little it
-        // closes until capital comes. Example:
-        // credit_days > 0: trade credit; a firm takes inputs on account up to
-        // credit_days of its recent daily sales and pays from its sales. Example:
-        // grouping: Kind (one firm per building / nature site / guild trade) or
-        // Guild (one firm per guild domain, pooling the cash of all its work).
+        // closes until capital comes. credit_days > 0: trade credit; a firm takes
+        // inputs on account up to credit_days of its recent daily sales and pays
+        // from its sales. grouping: Kind (one firm per building / nature site /
+        // guild trade) or Guild (one firm per guild domain, pooling the cash of
+        // all its work). Example:
         // firms: Workshops(start_cash: 100.0, reserve_days: 10.0, payout_rate: 0.05, profit_tax: 0.2, close_days: 30, credit_days: 10.0, grouping: Guild),
         firms: Treasury,
-        // Who keeps the town fed (granary.rs): Ruler leaves it to the ruler's
-        // levers, the seed reserve (order `reserve TOWN on`) and the granary
-        // (order `granary TOWN DAYS`).
-        food_rules: Ruler,
-        // Tools and weapons in stock: Held (what the armory holds).
-        item_stock: Held,
+        // Granary spoilage as a share of the market's (granary.rs: keeping the
+        // town fed is the ruler's job, by the seed reserve and the granary).
         granary_spoilage: 0.25,
-        // The needs ladder (ladder.rs, step 4 of the economy redesign): households
-        // buy what serves their needs (content `household.serves`), warmth comes
-        // from house, clothes and fuel against the day's temperature; households
-        // share a hearth and keep two weeks of food at home. Default since
-        // 2026-11-13 (Nils: the principled mechanism first, tune later).
-        // None: households buy food and tools only.
+        // Needs: the needs ladder (ladder.rs): households buy what serves their
+        // needs (content `household.serves`), warmth comes from house, clothes
+        // and fuel against the day's temperature; households share a hearth and
+        // keep two weeks of food at home. None: households buy food and tools only.
         consumption: Needs((interval: 7, gate_at: 0.7, gate_width: 0.15, comfort_c: 16.0, house_c: 6.0, max_clothes: 2.0, fire_per_c: 0.5, fire_per_extra_person: 0.25, savings_days: 60.0, larder_days: 14.0, cold_damage: 0.02, plan_days: 30.0)),
         // Price dynamics per price class (each good's class is in the content:
         // price_class, else food is Essential and the rest Commodity; Labour is the
@@ -230,9 +218,8 @@
         trade_interval: 10,
         trade_amount: 6.0,
         // Fixed: up to trade_amount, at most half the seller's stock.
-        // Balance(max_load: 200.0): the seller's surplus over its target, up to
-        // what the buyer lacks of its target.
-        // Default since 2026-11-13: the 40-year comparison in town-market.md.
+        // Balance(max_load): the seller's surplus over its target, up to what the
+        // buyer lacks of its target, at most max_load.
         caravans: Balance(max_load: 400.0),
         // Per 1000 units of road: the straight road between neighbors is about 900.
         transport_cost: 0.28,
@@ -263,9 +250,10 @@
         // Construction: a town pays for a new building when the ones it has are this full.
         build_threshold: 0.75,
         new_building_appeal: 0.3,
-        // Another building of a type the town has: Marginal(payback_days,
-        // max_factor): what its places would earn above the town's typical pay.
-        building_value: Marginal(payback_days: 10.0, max_factor: 1.0),
+        // Another building of a type the town has is worth what its places would
+        // earn above the town's typical pay over payback_days, at most max_factor
+        // x base price.
+        building_value: (payback_days: 10.0, max_factor: 1.0),
         // Land: towns clear fields and plant woodlots when theirs are worn down.
         free_land: 6,
         land_threshold: 0.7,
@@ -306,23 +294,17 @@
         independence_rate: 0.05,
         battle_hours: 4.0,         // hours of use a battle puts on every fighter's kit
         // Kit in store: one per soldier the town means to keep, shared among the
-        // goods for the same slot (Soldiers).
-        kit_demand: Soldiers,
-        // With Soldiers: kit for this share of residents beyond the soldiers, to
-        // arm a levy, unless the government sets its own stockpile for the good.
+        // goods for the same slot, plus kit for this share of residents to arm a
+        // levy, unless the government sets its own stockpile for the good.
         levy_reserve: 0.05,
-        // Raids fight as squads on a field (battle.rs, Field) and march by
-        // daylight carrying rations (Weather).
-        battles: Field,
-        march: Weather,
+        // Raids fight as squads on a field (battle.rs) and march by daylight
+        // carrying rations. A town raids when a simulated fight says the haul
+        // beats wages, rations and the expected dead.
         ration_margin: 1.25,       // rations for 1.25 times the expected trip
-        // Planner: raid when a simulated fight says the haul beats wages, rations
-        // and the expected dead.
-        decision: Planner,
     ),
-    // Squad battles on a field (battle.rs, war redesign): every number has a unit.
-    // Not wired into the economy yet; `econoplex-sim --battle "cavalry*20 vs spearmen*30"`
-    // fights one. Matchups come from reach, armour, speed, skill and experience.
+    // Squad battles on a field (battle.rs): every number has a unit. Raids fight
+    // them; `econoplex-sim --battle "cavalry*20 vs spearmen*30"` fights one.
+    // Matchups come from reach, armour, speed, skill and experience.
     battle: (
         dt: 1.0,                   // seconds per step
         max_seconds: 10800.0,      // three hours
@@ -451,10 +433,9 @@
         year_starts_at: 0.25, // spring equinox (0 = midwinter)
         day_length: (equinox_hours: 12.0, swing_hours: 4.0, twilight_hours: 2.0),
         // Days of economy per game day. For play: days_per_month: 1 and 10
-        // here give 12 game days a year with the economy's 120.
+        // here give 12 game days a year with the economy's 120. Outdoor work
+        // follows the daylight (8 hours in midwinter, 16 in midsummer).
         economy_days_per_day: 1,
-        // Outdoor work: Daylight (8 hours in midwinter, 16 in midsummer).
-        work_hours: Daylight,
     ),
     // A temperate climate: frosty winters, warm summers, wettest in autumn.
     // `Constant(temperature: 15.0)` for no seasons.
@@ -473,7 +454,7 @@
     start: Steady(food_days: 25.0, input_days: 10.0, raw_days: 90.0),
     // Crops through the seasons (farming.rs): growth follows the temperature,
     // standing crop rots in wet and cold, so the harvest needs hands in time.
-    farming: Seasonal(crops: ["field", "flax_field", "pasture"], crop_capacity: 15.0, frost_loss: 0.05, rot_wet: 0.02, rot_cold: 0.01),
+    farming: (crops: ["field", "flax_field", "pasture"], crop_capacity: 15.0, frost_loss: 0.05, rot_wet: 0.02, rot_cold: 0.01),
     // Fronts drifting across the map from the west. `Clear` for none.
     weather: Fronts(
         front_size: 1500.0,

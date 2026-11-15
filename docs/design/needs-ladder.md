@@ -1,7 +1,7 @@
 # Needs ladder
 
 Step 4 of the economy redesign (items, time, needs). Code: `crates/sim_core/src/ladder.rs`.
-On by default since 2026-11-13: `market.consumption: Needs(...)` and `decision.model: Ladder` in models.ron.
+On by default since 2026-11-13: `market.consumption: Needs(...)` in models.ron, and job choice by the ladder (then `decision.model: Ladder`, now the only rule).
 
 ## Model
 
@@ -58,8 +58,8 @@ conflict the ladder brings out; growing it is for the rulers (steps 6 and 7).
 
 ## Seasons in farming (step 6)
 
-`farming: Seasonal(...)` (`farming.rs`; then off by default, now the only
-farming model, see below): crops (fields, flax,
+`farming` (`farming.rs`; then `Seasonal(...)` and off by default, now the
+only farming model, see below): crops (fields, flax,
 pasture) grow with the day's mean temperature (none below 4 °C, full from
 14 °C), scaled so a year grows what the old daily rule did. A season's growth
 stands in the field (`crop_capacity` × capacity) until reaped; frost damages
@@ -79,8 +79,8 @@ the ruler's levers is step 7.
 
 ## Food as the ruler's challenge (step 7, first part)
 
-`market.food_rules: Ruler` (`granary.rs`; then off by default, now the only
-food rule, see below) drops the two
+The ruler's food rules (`granary.rs`; then `market.food_rules: Ruler` and off
+by default, now the only food rule, see below) drops the two
 town-wide food rules: seed grain is no longer held back unless the ruler orders
 it (`reserve TOWN on`), and people are no longer drawn to farm by the town's
 food scarcity, only by pay. New lever: `granary TOWN DAYS`, food the town keeps
@@ -136,8 +136,8 @@ members, place, kit); `eats_from` says where a person eats (their squad while
 marching, else their home); `carry_capacity` says what a holder can carry
 (squads: 25 kg per member for now; goods have `kg` in the content).
 
-`market.item_stock: Held` makes the market's count of tools and weapons what
-its armory holds; the old count (`Counted`, removed 2026-11-15) kept weapons
+The market's count of tools and weapons is what its armory holds (then
+`market.item_stock: Held`, now always); the old count (`Counted`, removed 2026-11-15) kept weapons
 carried by soldiers in stock.
 6 seeds x 20 years: pop 1918 -> 1913, swords 1373 -> 1332, raids 27.7 -> 22.5.
 
@@ -369,3 +369,14 @@ variants left: the seed reserve is the ruler's order (`reserve TOWN on`), and
 a governor always forecasts its food, takes stock on the first day, holds the
 seed back and keeps a granary. The "Town rules" rows in the tables above are
 the record of how the old food rules ran.
+
+## Single-variant switches folded away (2026-11-15)
+
+With the old variants gone, the switches that had one choice left are now
+plain parameters or nothing at all, and the run is unchanged (same state
+hash): `farming: (crops, ...)`, `market.pricing: (cover_days,
+blocked_workers)` and `market.building_value: (payback_days, max_factor)`
+keep their numbers; `decision.model`, `market.food_rules`, `market.item_stock`,
+`time.work_hours`, `military.kit_demand`, `military.battles`,
+`military.march` and `military.decision` are gone. The names in the sections
+above are the record of the switches as they were.
