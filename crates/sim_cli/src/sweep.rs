@@ -66,7 +66,7 @@ struct Summary {
 pub const COLUMNS: [&str; 22] = [
     "pop", "starve%", "food/cap", "div", "ECI rng", "spec", "masters", "swords", "wealth", "gini",
     "raids", "conq", "revolts", "ruled%", "moves", "glut%", "gwork%", "hh use", "in use", "happy",
-    "capab", "ms/tick",
+    "capab", "ms/day",
 ];
 
 impl Summary {

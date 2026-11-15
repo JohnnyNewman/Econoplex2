@@ -3018,3 +3018,62 @@ fn state_without_eras(s: &Simulation) -> String {
     out.push_str(rest);
     out
 }
+
+fn sim_steps(seed: u64, steps_per_day: u32) -> Simulation {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let sets = [("time.steps_per_day".to_string(), steps_per_day.to_string())];
+    let (db, params, mut scenario) =
+        sim_core::load_with(&AssetPaths::from_root(&root), &sets).unwrap();
+    assert_eq!(params.time.steps_per_day, steps_per_day);
+    scenario.seed = seed;
+    for t in &mut scenario.towns {
+        t.population = 60;
+    }
+    Simulation::new(db, params, &scenario)
+}
+
+#[test]
+fn same_seed_same_state_at_any_steps_per_day() {
+    for spd in [7, 48] {
+        let (mut a, mut b) = (sim_steps(4, spd), sim_steps(4, spd));
+        run_years(&mut a, 1);
+        run_years(&mut b, 1);
+        assert_eq!(a.state_hash(), b.state_hash(), "{spd} steps a day");
+    }
+}
+
+#[test]
+fn steps_per_day_is_validated() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let sets = [("time.steps_per_day".to_string(), "0".to_string())];
+    assert!(sim_core::load_with(&AssetPaths::from_root(&root), &sets).is_err());
+}
+
+#[test]
+fn two_step_sizes_give_close_results() {
+    // The economy should not depend much on how finely a day is cut: the
+    // same seed run at 30 and 120 steps a day ends with about as many people
+    // and about as much food sold.
+    let summary = |spd: u32| {
+        let mut s = sim_steps(2, spd);
+        run_years(&mut s, 3);
+        let alive = s.world.resource::<sim_core::AgentStore>().alive_count() as f64;
+        let food: f64 = s
+            .world
+            .resource::<sim_core::Towns>()
+            .0
+            .iter()
+            .map(|t| t.ledger.total[sim_core::ledger::Flow::FoodSales as usize])
+            .sum();
+        (alive, food)
+    };
+    let (a, b) = (summary(30), summary(120));
+    let close = |x: f64, y: f64| (x - y).abs() <= 0.25 * x.max(y);
+    assert!(close(a.0, b.0), "people: {} at 30 vs {} at 120", a.0, b.0);
+    assert!(
+        close(a.1, b.1),
+        "food sold: {} at 30 vs {} at 120",
+        a.1,
+        b.1
+    );
+}

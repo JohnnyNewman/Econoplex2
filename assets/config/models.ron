@@ -435,9 +435,21 @@
     // written per day comes out per month (a month of meals, work, wages,
     // growth, wear), rates per year divide by the 12 simulated days, and counts
     // of events (intervals, cooldowns) are in months. Time constants written in
-    // days (horizons, memories, cover days) stay in days. Each day is cut into
-    // ticks for the hours and daylight; the economy runs on its first tick.
-    // Outdoor work follows the daylight (8 hours in midwinter, 16 in midsummer).
+    // days (horizons, memories, cover days) stay in days.
+    //
+    // steps_per_day (at least 1) cuts each simulated day into economy steps,
+    // and the whole economy runs every step: work, production, market,
+    // prices, eating, choices, migration, the military and governors. A step
+    // stands for days_per_month / steps_per_day days of time (1/30 day, 48
+    // minutes, at 300), and every rate is converted to the step in one place,
+    // the Calendar (calendar.rs). Indoor work runs 6:00-18:00 by the equinox
+    // hours, outdoor work from sunrise to sunset (8 hours in midwinter, 16 in
+    // midsummer). The slow processes of a body and a household (ageing, wear,
+    // fuel, happiness, fading ties) move once per day of time; events counted
+    // in months come at the first step of the simulated day. At the clients'
+    // default speed (5 minutes of real time a simulated day) 300 steps come
+    // about once a real second. Results stay about the same from 24 steps a
+    // day up; `--set time.steps_per_day=N` changes it.
     time: (
         steps_per_day: 300,
         days_per_month: 10,

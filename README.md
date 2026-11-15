@@ -97,7 +97,7 @@ The shader work behind the look is written up step by step in `docs/shaders/`.
 | Key | Action |
 | --- | --- |
 | Space | Pause |
-| 1 to 5 | Speed: 1, 4, 12, 30, 60 days per second |
+| 1 to 5 | Speed: 5 min, 1 min, 12 s of real time per simulated day, then 1 and 4 days per second |
 | WASD or arrows | Pan |
 | Mouse wheel | Zoom |
 | Left click | Inspect an agent (skills, mind, physique vs. genetic potential, state, guild, family) |
@@ -247,10 +247,14 @@ themselves be made. `econoplex-sim --tech-tree` prints the tree as a Mermaid cha
 
 A year is 12 simulated days, one per month: each is the month's representative
 day and counts for its 10 days (`time.days_per_month`), so a month of meals, work
-and growth happens in one step and generations show in short runs. A day is cut
-into `time.ticks_per_day` ticks (12 by default) for the hours and daylight. The
-economy runs once, on the first tick of the day; the other ticks move the hours and
-the weather on. Each day runs these steps in order:
+and growth happens in one simulated day and generations show in short runs. A day
+is cut into `time.steps_per_day` economy steps (300 by default, any value from 1
+with `--set time.steps_per_day=N`), and the whole economy runs every step; each
+step stands for 1/30 of a day of time and does the work that falls in its hours.
+Workplaces run batches with a progress bar: inputs go in when a batch starts and
+the whole output comes out when it is done. At the clients' default speed of 5
+minutes a simulated day, a step comes about once a real second. See
+`docs/design/time-and-weather.md`. Each step runs these systems in order:
 
 | Step | What happens |
 | --- | --- |
@@ -653,7 +657,7 @@ value, and several sweeps form a grid; `--seeds N` repeats each setting on N
 consecutive seeds. Runs go out to all cores and each comes back as one row:
 population, starvation, food, diversity, the ECI range between towns, specialization,
 masters, swords, wealth and its Gini between towns, raids, conquests, revolts, the
-share of town-years under a ruler, migrants and milliseconds per tick. The table shows
+share of town-years under a ruler, migrants and milliseconds per simulated day. The table shows
 the mean and spread per setting; `--csv` writes every run.
 
 ### Health bands

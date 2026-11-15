@@ -181,7 +181,7 @@ fn parse_args() -> Args {
                      --map-svg FILE write the map (towns, land, rivers, hills) as an SVG picture and exit\n\
                      --events FILE  write the event log (raids, conquests, buildings, famines, orders) as CSV\n\
                      --history FILE write monthly samples per town as CSV\n\
-                     --weather FILE write hour, season and weather per tick and town as CSV\n\
+                     --weather FILE write hour, season and weather per step and town as CSV\n\
                      --battle L     fight one squad battle and exit (with --seeds N: win rates), e.g.\n\
                                     \"cavalry*20 vs spearmen*30\" or \"swordsmen*45,archers*20 vs walls spearmen*30+5!0.6\"\n\
                                     squad: KIT*COUNT[+BATTLES][@SKILL][!MORALE]; KIT: spearmen swordsmen\n\
@@ -410,12 +410,21 @@ fn main() {
     }
     let elapsed = start.elapsed().as_secs_f64();
     let ticks = args.years * dpy;
+    let steps = ticks
+        * sim
+            .world
+            .resource::<sim_core::SimClock>()
+            .steps_per_day
+            .max(1) as u64;
     let agents = sim.world.resource::<sim_core::AgentStore>().alive_count();
     println!(
-        "\n{} ticks in {:.2} s ({:.2} ms per tick), {} agents alive",
+        "\n{} simulated days ({} steps) in {:.2} s ({:.2} ms per day, {:.3} ms per step, {:.0} ms per year), {} agents alive",
         ticks,
+        steps,
         elapsed,
         elapsed * 1000.0 / ticks.max(1) as f64,
+        elapsed * 1000.0 / steps.max(1) as f64,
+        elapsed * 1000.0 / args.years.max(1) as f64,
         agents
     );
     print_final(&sim);
@@ -803,7 +812,7 @@ fn print_final(sim: &Simulation) {
 
 fn print_profile(p: &sim_core::profile::Profile, ticks: u64) {
     let total: f64 = p.total.iter().map(|d| d.as_secs_f64()).sum();
-    println!("\nTime per system (ms per tick, share):");
+    println!("\nTime per system (ms per simulated day, share):");
     for (name, d) in sim_core::profile::SYSTEMS.iter().zip(&p.total) {
         let s = d.as_secs_f64();
         println!(
