@@ -20,6 +20,7 @@ use crate::fog::FOG_BUFFER;
 use crate::toon::{ToonSettings, ToonUniform};
 use bevy::asset::RenderAssetUsages;
 use bevy::camera::primitives::Aabb;
+use bevy::camera::visibility::NoAutoAabb;
 use bevy::light::NotShadowCaster;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::pbr::{ExtendedMaterial, MaterialExtension};
@@ -202,7 +203,7 @@ pub fn spawn_grass(
             b.pos.x, b.pos.y, b.pos.z, b.height, b.lean, b.tint, 0.0, 0.0,
         ]);
     }
-    let n_chunks = chunks.len();
+    let n_chunks = chunks.len();
     // One buffer of all blades, chunk after chunk, and one material for all
     // chunks: they differ only in their meshes, so they batch into one draw
     // (docs/design/graphics-ui.md, "Rules for many things").
@@ -249,6 +250,10 @@ pub fn spawn_grass(
             // The mesh's own bounds are a blade at the origin: give the real
             // ones, so frustum culling skips chunks outside the view.
             Aabb::from_min_max(min, max),
+            // ...and keep them: without this Bevy recomputes the bounds from
+            // the mesh when the entity appears (a blade at the origin), and
+            // frustum culling then drops every chunk: no grass was drawn.
+            NoAutoAabb,
             NotShadowCaster,
         ));
     }
