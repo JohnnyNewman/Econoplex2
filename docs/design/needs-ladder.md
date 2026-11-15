@@ -380,3 +380,21 @@ keep their numbers; `decision.model`, `market.food_rules`, `market.item_stock`,
 `time.work_hours`, `military.kit_demand`, `military.battles`,
 `military.march` and `military.decision` are gone. The names in the sections
 above are the record of the switches as they were.
+
+## Belonging and esteem pinned at 0.5 (2026-11-15)
+
+Little in the content serves belonging or esteem yet, so households spent
+savings chasing two rungs the economy could not supply. `fixed_needs` in
+`LadderParams` now holds both at a neutral 0.5 (models.ron), as growth already
+was. Goods earn nothing for serving a pinned need. Unpin a need once the
+content serves it.
+
+Default run, 8 seeds, 30 years (mean ± spread between seeds):
+
+| | pop | starve% | food/cap | div | happy | capab |
+| --- | --- | --- | --- | --- | --- | --- |
+| before | 1583 ± 155 | 1.10 ± 0.33 | 2.14 ± 0.55 | 25.4 ± 1.45 | 0.414 | 29.6 |
+| pinned | 2076 ± 215 | 0.33 ± 0.19 | 3.20 ± 0.63 | 27.2 ± 1.37 | 0.416 | 32.4 |
+
+Starving is lower on every seed. The population band in health_bands.ron was
+raised from 2000 to 2600 to match (Nils, 2026-11-15).

@@ -2659,6 +2659,26 @@ fn the_view_shows_needs_stores_and_the_armory() {
 }
 
 #[test]
+fn pinned_needs_stay_at_their_pinned_value() {
+    // models.ron holds belonging and esteem at 0.5 while little serves them.
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    scenario.seed = 2;
+    let mut s = Simulation::new(db, params, &scenario);
+    for _ in 0..60 {
+        s.step();
+    }
+    let snap = sim_core::view::ViewSnapshot::capture(&s.world, &mut Default::default());
+    let at = |n: sim_data::Need| sim_data::Need::ALL.iter().position(|&m| m == n).unwrap();
+    for t in &snap.towns {
+        for n in [sim_data::Need::Belonging, sim_data::Need::Esteem] {
+            let v = t.needs[at(n)];
+            assert!((v - 0.5).abs() < 1e-4, "{n:?} in {} is {v}", t.name);
+        }
+    }
+}
+
+#[test]
 fn a_stockpile_fills_the_town_store_and_draws_production() {
     let mut s = sim(14);
     s.step();
