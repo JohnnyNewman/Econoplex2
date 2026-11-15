@@ -20,6 +20,20 @@ pub struct InspectorText;
 #[derive(Component)]
 pub struct LeftColumn;
 
+/// Right-hand column: the inspector, then the policy panel, then the controls
+/// help. Stacked, so they never overlap; the inspector gives up height first.
+#[derive(Component)]
+pub struct RightColumn;
+
+/// The controls help, one line until `F1` opens it.
+#[derive(Component)]
+pub struct HelpText;
+
+/// The full controls help (`F1`).
+pub const HELP: &str = "Space pause | 1-5 speed | WASD pan | wheel zoom\nclick select | Esc deselect | P product space\nE economy | Tab next town | F5 save | F9 load\nY why | T town | H history | L log | I person\nC culture: red tradition, green faith, blue liberty\nF1 hide this help";
+/// The one line it shows while folded.
+pub const HELP_FOLDED: &str = "F1 controls";
+
 #[derive(Component)]
 pub struct LegendRoot;
 
@@ -49,9 +63,13 @@ pub fn spawn_hud(mut commands: Commands, db: Res<Db>) {
                 position_type: PositionType::Absolute,
                 left: Val::Px(8.0),
                 top: Val::Px(8.0),
+                bottom: Val::Px(8.0),
                 flex_direction: FlexDirection::Column,
                 row_gap: Val::Px(6.0),
                 align_items: AlignItems::FlexStart,
+                // What doesn't fit is cut off at the bottom (fold economy
+                // sections, or hide the panel with E).
+                overflow: Overflow::clip_y(),
                 ..default()
             },
             LeftColumn,
@@ -61,6 +79,10 @@ pub fn spawn_hud(mut commands: Commands, db: Res<Db>) {
                 Node {
                     padding: UiRect::all(Val::Px(8.0)),
                     flex_direction: FlexDirection::Column,
+                    // Long lines (the era list) wrap instead of running
+                    // under the panels in the middle.
+                    max_width: Val::Px(640.0),
+                    flex_shrink: 0.0,
                     ..default()
                 },
                 BackgroundColor(PANEL),
@@ -71,15 +93,39 @@ pub fn spawn_hud(mut commands: Commands, db: Res<Db>) {
         });
     commands
         .spawn((
-            panel(None, Some(8.0), Some(8.0), None),
-            BackgroundColor(PANEL),
+            Node {
+                position_type: PositionType::Absolute,
+                right: Val::Px(8.0),
+                top: Val::Px(8.0),
+                bottom: Val::Px(8.0),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(6.0),
+                align_items: AlignItems::FlexEnd,
+                ..default()
+            },
+            RightColumn,
         ))
-        .with_children(|p| {
-            p.spawn((
-                Text::new("Click an agent to inspect it."),
-                font(13.0),
-                InspectorText,
-            ));
+        .with_children(|c| {
+            // The inspector shrinks (and cuts off its last lines) before the
+            // policy panel below it does.
+            c.spawn((
+                Node {
+                    padding: UiRect::all(Val::Px(8.0)),
+                    flex_direction: FlexDirection::Column,
+                    flex_shrink: 1.0,
+                    min_height: Val::Px(0.0),
+                    overflow: Overflow::clip_y(),
+                    ..default()
+                },
+                BackgroundColor(PANEL),
+            ))
+            .with_children(|p| {
+                p.spawn((
+                    Text::new("Click an agent to inspect it."),
+                    font(13.0),
+                    InspectorText,
+                ));
+            });
         });
     commands
         .spawn((
@@ -103,15 +149,40 @@ pub fn spawn_hud(mut commands: Commands, db: Res<Db>) {
                 TextColor(Color::srgb(0.75, 0.75, 0.75)),
             ));
         });
-    commands.spawn((panel(None, Some(8.0), None, Some(8.0)), BackgroundColor(PANEL))).with_children(|p| {
-        p.spawn((
-            Text::new("Space pause | 1-5 speed | WASD pan | wheel zoom\nclick select | Esc deselect | P product space
-E economy | Tab next town | F5 save | F9 load
-Y why | T town | H history | L log | I person"),
-            font(12.0),
-            TextColor(Color::srgb(0.8, 0.8, 0.8)),
-        ));
-    });
+}
+
+/// The controls help at the foot of the right-hand column (after the policy
+/// panel, so it is spawned last).
+pub fn spawn_help(mut commands: Commands, column: Single<Entity, With<RightColumn>>) {
+    let help = commands
+        .spawn((
+            Node {
+                padding: UiRect::all(Val::Px(6.0)),
+                flex_shrink: 0.0,
+                ..default()
+            },
+            BackgroundColor(PANEL),
+        ))
+        .with_children(|p| {
+            p.spawn((
+                Text::new(HELP_FOLDED),
+                TextFont {
+                    font_size: FontSize::Px(12.0),
+                    ..default()
+                },
+                TextColor(Color::srgb(0.8, 0.8, 0.8)),
+                HelpText,
+            ));
+        })
+        .id();
+    commands.entity(*column).add_child(help);
+}
+
+/// `F1` opens and folds the controls help.
+pub fn toggle_help(keys: Res<ButtonInput<KeyCode>>, mut help: Single<&mut Text, With<HelpText>>) {
+    if keys.just_pressed(KeyCode::F1) {
+        help.0 = if help.0 == HELP { HELP_FOLDED } else { HELP }.to_string();
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -368,7 +439,7 @@ pub fn update_legend(
     overlay: Res<crate::view::Overlay>,
     economy: Res<crate::economy_ui::EconomyView>,
 ) {
-    **legend = if overlay.product_space || economy.visible {
+    **legend = if overlay.product_space || overlay.culture || economy.visible {
         Visibility::Hidden
     } else {
         Visibility::Inherited

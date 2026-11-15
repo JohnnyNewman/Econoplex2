@@ -18,8 +18,8 @@ in both clients.
 | 4 | **Weather, season and day length** (`sim_core::env`) | Farming follows the seasons; cold drives fuel demand | `T` report, first lines |
 | 5 | **History charts**: monthly series per town | Trends over years, not just today | `H` report, text sparklines |
 | 6 | **Event log** longer than the five latest events | Following raids, famines and foundings over a run | `L` report |
-| 7 | **Battle replays** beside the defending town (war thread) | Seeing how a battle went | Not yet: battles show as events in the log |
-| 8 | **Culture overlay** (towns tinted by culture) | Migration and culture drift | Not yet: the HUD lists each town's culture vector |
+| 7 | **Battle replays** beside the defending town (war thread) | Seeing how a battle went | Played back beside the defending town (battles.rs): squad blocks, red attackers, blue defenders, routs blink, outcome written; live battles with orders stay in the 3D client |
+| 8 | **Culture overlay** (towns tinted by culture) | Migration and culture drift | `C` overlay: people in their own culture's colour, towns ringed in theirs |
 | 9 | Day and night, people's daily routine, town lights, families sharing a house | Look and feel | Not planned: the 2D client steps whole days |
 
 Already in both clients: town table, events (latest five), economy panel

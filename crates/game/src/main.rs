@@ -10,6 +10,7 @@
 //! · Y why · T town · H history · L event log · I person (reports.rs)
 
 mod autorun;
+mod battles;
 mod economy_ui;
 mod hud;
 mod policy_ui;
@@ -127,6 +128,7 @@ fn main() {
         .insert_resource(policy_ui::Placing::default())
         .insert_resource(saving::Toast::default())
         .insert_resource(reports::Reports::default())
+        .insert_resource(battles::BattleScenes::default())
         .insert_resource(economy_ui::EconomyView::new(econ_town))
         .insert_resource(ClearColor(Color::srgb(0.08, 0.09, 0.08)))
         .add_systems(
@@ -138,7 +140,8 @@ fn main() {
                 view::spawn_skill_labels,
                 view::spawn_overlay_shade,
                 hud::spawn_hud,
-                policy_ui::spawn_policy_panel,
+                policy_ui::spawn_policy_panel.after(hud::spawn_hud),
+                hud::spawn_help.after(policy_ui::spawn_policy_panel),
                 economy_ui::spawn_economy_panel.after(hud::spawn_hud),
                 reports::spawn_reports,
             ),
@@ -166,6 +169,10 @@ fn main() {
         .add_systems(Update, reports::update_reports.after(view::select_agent))
         .add_systems(
             Update,
+            (battles::start_battles, battles::draw_battles).chain(),
+        )
+        .add_systems(
+            Update,
             (
                 controls,
                 saving::quicksave_keys,
@@ -181,6 +188,7 @@ fn main() {
                 hud::update_hud,
                 hud::update_inspector,
                 hud::update_legend,
+                hud::toggle_help,
                 policy_ui::policy_buttons,
                 policy_ui::update_policy_panel,
                 policy_ui::place_building.after(view::select_agent),
@@ -225,5 +233,8 @@ fn controls(
     }
     if keys.just_pressed(KeyCode::KeyP) {
         overlay.product_space = !overlay.product_space;
+    }
+    if keys.just_pressed(KeyCode::KeyC) {
+        overlay.culture = !overlay.culture;
     }
 }

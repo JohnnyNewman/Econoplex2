@@ -41,7 +41,7 @@ On by default since 2026-11-13: `market.consumption: Needs(...)` and `decision.m
 
 | | pop | food/head | swords | capability | happiness |
 | --- | --- | --- | --- | --- | --- |
-| Basket (default) | 1918 | 8.9 | 1373 | 36.8 | 0.70 |
+| Basket (then the default, since removed) | 1918 | 8.9 | 1373 | 36.8 | 0.70 |
 | Needs | 1906 | 8.0 | 1035 | 35.0 | 0.42 |
 | Needs + daylight work | 1819 | 5.5 | 962 | 35.9 | 0.41 |
 | Needs with households | 1884 | 8.9 | 911 | 35.5 | 0.43 |
@@ -58,7 +58,8 @@ conflict the ladder brings out; growing it is for the rulers (steps 6 and 7).
 
 ## Seasons in farming (step 6)
 
-`farming: Seasonal(...)` (off by default, `farming.rs`): crops (fields, flax,
+`farming: Seasonal(...)` (`farming.rs`; then off by default, now the only
+farming model, see below): crops (fields, flax,
 pasture) grow with the day's mean temperature (none below 4 °C, full from
 14 °C), scaled so a year grows what the old daily rule did. A season's growth
 stands in the field (`crop_capacity` × capacity) until reaped; frost damages
@@ -78,7 +79,8 @@ the ruler's levers is step 7.
 
 ## Food as the ruler's challenge (step 7, first part)
 
-`market.food_rules: Ruler` (off by default, `granary.rs`) drops the two
+`market.food_rules: Ruler` (`granary.rs`; then off by default, now the only
+food rule, see below) drops the two
 town-wide food rules: seed grain is no longer held back unless the ruler orders
 it (`reserve TOWN on`), and people are no longer drawn to farm by the town's
 food scarcity, only by pay. New lever: `granary TOWN DAYS`, food the town keeps
@@ -103,7 +105,7 @@ and the player's farm town is too easy to make the challenge felt.
 
 ### Food planner (step 7b)
 
-Under `Ruler` rules a governor now forecasts: food made and eaten per day,
+A governor now forecasts: food made and eaten per day,
 averaged over a year (`governor.forecast_days`, from the goods ledger), and the
 days its market and granary food would last at that rate. Below
 `food_horizon_days` (90) it acts as if hungry (food subsidies, imports, a new
@@ -134,8 +136,9 @@ members, place, kit); `eats_from` says where a person eats (their squad while
 marching, else their home); `carry_capacity` says what a holder can carry
 (squads: 25 kg per member for now; goods have `kg` in the content).
 
-`market.item_stock: Held` (off) makes the market's count of tools and weapons
-what its armory holds; the old count kept weapons carried by soldiers in stock.
+`market.item_stock: Held` makes the market's count of tools and weapons what
+its armory holds; the old count (`Counted`, removed 2026-11-15) kept weapons
+carried by soldiers in stock.
 6 seeds x 20 years: pop 1918 -> 1913, swords 1373 -> 1332, raids 27.7 -> 22.5.
 
 ## Stacks (step 2b-2)
@@ -195,9 +198,12 @@ makes the world harder, and together they compound.
 
 War thread finding: `military.kit_demand: Soldiers` (weapons stocked per
 soldier, not per head) cuts population 1914 -> 1834 and food per head 8.2 -> 4.3
-over 6 seeds x 20 years. Checked:
+over 6 seeds x 20 years. The per-head rule (`PerCapita`) was removed on
+2026-11-15, with the one-roll battles (`battles: Roll`), the fixed-length march
+(`march: Fixed`) and the random raid draw (`decision: Appetite`); the numbers
+below are history. Checked:
 
-| 6 seeds x 20 years | PerCapita | Soldiers |
+| 6 seeds x 20 years | PerCapita (since removed) | Soldiers |
 | --- | --- | --- |
 | swords | 984 | 200 |
 | input use | 136 | 96 |
@@ -299,7 +305,7 @@ Two principled fixes, both off by default for now:
 
 | decisions | pricing | buildings | pop | starving |
 | --- | --- | --- | --- | --- |
-| Features | StockTarget | Load (default) | 1140 | 0.88 % |
+| Features | StockTarget | Load (then the default; both since removed) | 1140 | 0.88 % |
 | Features | Demand | Load | 1143 | 0.82 % |
 | Features | Demand | Marginal(10, 1) | 1121 | 0.90 % |
 | Ladder | StockTarget | Load | 980 | 2.76 % |
@@ -348,3 +354,18 @@ For 300 people: about 1,600 bread, 320 flour, 2,900 grain, 1,450 wood. Over 4
 seeds and 15 years, the year-2 famine falls to about a third (starving samples
 66 against 197 with the scenario's stock), but year 2 is still the worst year:
 the labour shortage in milling and baking (food audit) is Phase 2.2.
+The `Features` and `Utility` decision models have since been removed
+(agent-decisions.md); `Ladder` is the only one. Under a consumption model
+other than `Needs` it reads the ladder's default parameters.
+
+## The old farming, food and work rules removed (2026-11-15)
+
+Seasonal farming, the ruler's food rules and daylight work are the defaults
+(since 2026-11-13), and the rules before them are now gone: `farming: AllYear`
+(every nature site regrows the same amount every day), `market.food_rules:
+Town` (seed grain always held back) and `time.work_hours: AllDay` (a full
+outdoor working day all year). `Seasonal`, `Ruler` and `Daylight` are the only
+variants left: the seed reserve is the ruler's order (`reserve TOWN on`), and
+a governor always forecasts its food, takes stock on the first day, holds the
+seed back and keeps a granary. The "Town rules" rows in the tables above are
+the record of how the old food rules ran.

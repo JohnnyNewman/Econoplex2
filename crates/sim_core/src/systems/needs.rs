@@ -28,7 +28,7 @@ pub fn sense(
         .0
         .iter()
         .map(|town| {
-            if crate::granary::keeps_reserve(town, &params) {
+            if town.policy.food_reserve {
                 super::decide::food_reserve(&db, town, &params)
             } else {
                 vec![0.0; town.stock.len()]
@@ -148,14 +148,8 @@ pub fn sense(
             // The needs ladder sets happiness (below).
             continue;
         }
-        let mut target = 0.7 - 0.5 * st[HUNGER] - 0.3 * st[FATIGUE]
+        let target = 0.7 - 0.5 * st[HUNGER] - 0.3 * st[FATIGUE]
             + 0.2 * (store.wealth[i].coins() / 50.0).tanh();
-        // Household goods make a home comfortable (see `consumption`).
-        if let crate::consumption::ConsumptionParams::Basket { comfort_weight, .. } =
-            &params.market.consumption
-        {
-            target += comfort_weight * (store.comfort[i] - 0.5);
-        }
         st[HAPPINESS] =
             (st[HAPPINESS] + p.happiness_rate * (target - st[HAPPINESS])).clamp(0.0, 1.0);
     }

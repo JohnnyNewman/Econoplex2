@@ -248,10 +248,6 @@ pub struct Town {
     /// moving average of realised pay, failures included).
     #[serde(default)]
     pub pay_rate: Vec<f32>,
-    /// What a successful worker-day at each recipe has paid here lately (failures
-    /// left out); see `decision.valuation.pay_basis`.
-    #[serde(default)]
-    pub success_pay: Vec<f32>,
     /// Each good's current price cap, as a factor of its base price (see
     /// `market.scarcity_cap`). Empty: `max_price_factor` for all.
     #[serde(default)]
@@ -348,15 +344,12 @@ pub struct Town {
 pub struct Raid {
     pub target: u16,
     pub soldiers: Vec<u32>,
-    pub depart: u64,
-    pub arrive: u64,
-    pub home: u64,
     pub fought: bool,
     /// People taken in battle, marched home with the squad.
     pub captives: Vec<u32>,
     /// Goods carried home (indexed by product).
     pub loot: Vec<f32>,
-    /// The squad the soldiers march as (`goods::Squads`), with `march: Weather`.
+    /// The squad the soldiers march as (`goods::Squads`).
     #[serde(default)]
     pub squad: Option<u32>,
     /// Share of the road behind it, 0 at home .. 1 at the target.
@@ -711,7 +704,6 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
             flow_seen_day: 0,
             flows,
             pay_rate: vec![0.0; db.recipes.len()],
-            success_pay: vec![0.0; db.recipes.len()],
             price_cap: Vec::new(),
             input_today: Vec::new(),
             input_use: Vec::new(),

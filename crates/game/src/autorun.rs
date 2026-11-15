@@ -3,7 +3,7 @@
 //! ```text
 //! econoplex [--load FILE] [--speed 1-5] [--shot FILE [--shot-day N] [--exit]]
 //!           [--town NAME] [--camera X Y] [--zoom F] [--no-economy] [--product-space]
-//!           [--report why|town|history|log|person] [--select ID]
+//!           [--report why|town|history|log|person] [--select ID] [--culture]
 //! ```
 //!
 //! `--shot` runs until day N (default: right away), pauses, lets the view settle,
@@ -29,6 +29,8 @@ pub struct GameArgs {
     pub zoom: Option<f32>,
     pub no_economy: bool,
     pub product_space: bool,
+    /// Start with the culture overlay on.
+    pub culture: bool,
     /// The town the player governs (overrides scenario.ron).
     pub player: Option<String>,
     /// Orders given on day 0, as typed in the CLI (e.g. "tax Greenvale income 0.1").
@@ -95,6 +97,7 @@ pub fn parse() -> GameArgs {
                 )
             }
             "--product-space" => a.product_space = true,
+            "--culture" => a.culture = true,
             "--player" => a.player = Some(val()),
             "--order" => a.orders.push(val()),
             "-h" | "--help" => {
@@ -139,6 +142,7 @@ pub fn apply_view_args(
         economy.visible = false;
     }
     overlay.product_space |= args.product_space;
+    overlay.culture |= args.culture;
 }
 
 /// Load `--load` once the view has been set up.

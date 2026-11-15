@@ -105,25 +105,10 @@ pub fn settle(
                 continue;
             }
             if db.category(p as u32) == Category::Building {
-                // A building is worth paying for when the ones the town has are nearly
-                // full, or, at a discount, when it has none (a new line of work).
-                // Only while what it makes is scarce: its goods sell above base price.
+                // A building is worth what its places would earn (see
+                // `BuildingValue`), or, at a discount, when the town has none (a
+                // new line of work).
                 let base = db.base_price[p];
-                let scarcity = db
-                    .recipes
-                    .iter()
-                    .filter(|m| m.building == Some(p as u32))
-                    .map(|m| {
-                        let (now, normal) = m.outputs.iter().fold((0.0, 0.0), |acc, &(o, q)| {
-                            (
-                                acc.0 + town.price[o as usize] * q,
-                                acc.1 + db.base_price[o as usize] * q,
-                            )
-                        });
-                        now / normal.max(1e-6)
-                    })
-                    .fold(0.0f32, f32::max);
-                let demand = (scarcity - 1.0).clamp(0.0, 1.0);
                 // A building the government ordered is paid for at full price.
                 if town
                     .policy
@@ -147,49 +132,40 @@ pub fn settle(
                     };
                     continue;
                 }
-                if let (
-                    crate::config::BuildingValue::Marginal {
-                        payback_days,
-                        max_factor,
-                    },
-                    true,
-                ) = (mp.building_value, town.building_count(p as u32) > 0)
-                {
-                    // What the workers who would fill it earn now: the pay of
-                    // the town's poorer jobs (the lower quartile of those that pay).
-                    let mut paid: Vec<f32> =
-                        town.pay_rate.iter().copied().filter(|&x| x > 0.0).collect();
-                    let typical = if paid.is_empty() {
-                        0.0
-                    } else {
-                        let q = paid.len() / 4;
-                        *paid.select_nth_unstable_by(q, f32::total_cmp).1
-                    };
-                    let best = db
-                        .recipes
-                        .iter()
-                        .enumerate()
-                        .filter(|(_, m)| m.building == Some(p as u32))
-                        .map(|(r, _)| town.pay_rate.get(r).copied().unwrap_or(0.0))
-                        .fold(0.0f32, f32::max);
-                    let slots = db.content.products[p].slots.max(1) as f32;
-                    // New places only earn while the ones the town has are full.
-                    let full = town.building_load[p] >= mp.build_threshold;
-                    let gain = if full {
-                        slots * (best - typical).max(0.0) * payback_days
-                    } else {
-                        0.0
-                    };
-                    town.price[p] = gain.min(base * max_factor);
+                if town.building_count(p as u32) == 0 {
+                    town.price[p] = base * mp.new_building_appeal;
                     continue;
                 }
-                town.price[p] = if town.building_count(p as u32) == 0 {
-                    base * mp.new_building_appeal
+                let crate::config::BuildingValue::Marginal {
+                    payback_days,
+                    max_factor,
+                } = mp.building_value;
+                // What the workers who would fill it earn now: the pay of
+                // the town's poorer jobs (the lower quartile of those that pay).
+                let mut paid: Vec<f32> =
+                    town.pay_rate.iter().copied().filter(|&x| x > 0.0).collect();
+                let typical = if paid.is_empty() {
+                    0.0
                 } else {
-                    let excess = (town.building_load[p] - mp.build_threshold)
-                        / (1.0 - mp.build_threshold).max(1e-3);
-                    base * excess.clamp(0.0, 1.0) * demand
+                    let q = paid.len() / 4;
+                    *paid.select_nth_unstable_by(q, f32::total_cmp).1
                 };
+                let best = db
+                    .recipes
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, m)| m.building == Some(p as u32))
+                    .map(|(r, _)| town.pay_rate.get(r).copied().unwrap_or(0.0))
+                    .fold(0.0f32, f32::max);
+                let slots = db.content.products[p].slots.max(1) as f32;
+                // New places only earn while the ones the town has are full.
+                let full = town.building_load[p] >= mp.build_threshold;
+                let gain = if full {
+                    slots * (best - typical).max(0.0) * payback_days
+                } else {
+                    0.0
+                };
+                town.price[p] = gain.min(base * max_factor);
                 continue;
             }
             let per_capita = if db.is_food[p] {
@@ -198,20 +174,16 @@ pub fn settle(
                 mp.target_per_capita
             };
             // Goods the government ordered raise the stock the market wants.
-            let wanted = match (&derived, mp.pricing) {
-                (Some(d), crate::config::Pricing::Demand { cover_days, .. }) => {
-                    // Inputs: what trades use; final goods: the per-resident
-                    // target; food both; plus what households buy.
-                    let households = cover_days * town.goods_use.get(p).copied().unwrap_or(0.0);
-                    households
-                        + if db.is_input[p] {
-                            d[ti][p] + if db.is_food[p] { per_capita * pop } else { 0.0 }
-                        } else {
-                            per_capita * pop
-                        }
-                }
-                _ => per_capita * pop,
-            };
+            // Inputs: what trades use; final goods: the per-resident target;
+            // food both; plus what households buy.
+            let crate::config::Pricing::Demand { cover_days, .. } = mp.pricing;
+            let households = cover_days * town.goods_use.get(p).copied().unwrap_or(0.0);
+            let wanted = households
+                + if db.is_input[p] {
+                    derived[ti][p] + if db.is_food[p] { per_capita * pop } else { 0.0 }
+                } else {
+                    per_capita * pop
+                };
             let target = wanted.max(1.0) + town.policy.ordered(p);
             // With workshops as firms, the market buys from their stock what it
             // wants, while the treasury can pay, and fills government orders.
@@ -775,57 +747,52 @@ pub fn class_index(c: crate::pricing::PriceClass) -> usize {
     }
 }
 
-/// For demand-driven pricing, each town's target stock of every good used as an
-/// input: `cover_days` × (its trades' daily use + what profitable trades held up
-/// only by its shortage would use). Also closes the day's input count.
+/// Each town's target stock of every good used as an input: `cover_days` ×
+/// (its trades' daily use + what profitable trades held up only by its
+/// shortage would use).
 fn derived_targets(
     towns: &Towns,
     db: &Db,
     params: &Params,
     sites: &Query<&mut NaturalResource>,
-) -> Option<Vec<Vec<f32>>> {
+) -> Vec<Vec<f32>> {
     let crate::config::Pricing::Demand {
         cover_days,
         blocked_workers,
-    } = params.market.pricing
-    else {
-        return None;
-    };
+    } = params.market.pricing;
     let np = db.content.products.len();
-    Some(
-        towns
-            .0
-            .iter()
-            .map(|town| {
-                let mut nature = vec![0.0f32; db.content.nature.len()];
-                for &e in &town.nature_sites {
-                    if let Ok(n) = sites.get(e) {
-                        nature[n.kind as usize] += n.amount;
+    towns
+        .0
+        .iter()
+        .map(|town| {
+            let mut nature = vec![0.0f32; db.content.nature.len()];
+            for &e in &town.nature_sites {
+                if let Ok(n) = sites.get(e) {
+                    nature[n.kind as usize] += n.amount;
+                }
+            }
+            let mut want = vec![0.0f32; np];
+            for (p, w) in want.iter_mut().enumerate() {
+                *w = town.input_use.get(p).copied().unwrap_or(0.0);
+            }
+            for (r, m) in db.recipes.iter().enumerate() {
+                if m.inputs.is_empty()
+                    || m.builds.is_some()
+                    || m.building.is_some_and(|b| town.building_count(b) == 0)
+                    || m.nature.is_some_and(|k| nature[k as usize] <= 0.0)
+                    || super::work::posted_pay(town, db, params, r) <= 0.0
+                {
+                    continue;
+                }
+                for &(p, q) in &m.inputs {
+                    if town.stock[p as usize] < q {
+                        want[p as usize] += q * blocked_workers / m.duration.max(1.0);
                     }
                 }
-                let mut want = vec![0.0f32; np];
-                for (p, w) in want.iter_mut().enumerate() {
-                    *w = town.input_use.get(p).copied().unwrap_or(0.0);
-                }
-                for (r, m) in db.recipes.iter().enumerate() {
-                    if m.inputs.is_empty()
-                        || m.builds.is_some()
-                        || m.building.is_some_and(|b| town.building_count(b) == 0)
-                        || m.nature.is_some_and(|k| nature[k as usize] <= 0.0)
-                        || super::work::posted_pay(town, db, params, r) <= 0.0
-                    {
-                        continue;
-                    }
-                    for &(p, q) in &m.inputs {
-                        if town.stock[p as usize] < q {
-                            want[p as usize] += q * blocked_workers / m.duration.max(1.0);
-                        }
-                    }
-                }
-                want.iter().map(|w| w * cover_days).collect()
-            })
-            .collect(),
-    )
+            }
+            want.iter().map(|w| w * cover_days).collect()
+        })
+        .collect()
 }
 
 /// New land is worth opening while the town's sites of that kind are worn down

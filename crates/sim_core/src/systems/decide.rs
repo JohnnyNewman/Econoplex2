@@ -1,14 +1,13 @@
-//! Decisions as linear algebra.
+//! Job choice by the needs ladder.
 //!
-//! Every option has a feature vector f = [value, skill, effort, novelty, social, need].
-//! An agent's preference weights are w = bias + Wm·mind + Ws·state, so personality
-//! is stable while hunger and fatigue shift priorities. Utility u = w·f, and the
-//! choice is a softmax over a short candidate list (temperature = bounded rationality).
+//! Each idle agent weighs resting against the jobs its town has open: an option
+//! is worth what it changes in the agent's needs, each weighted by the slope of
+//! its weighted satisfaction (`ladder::gradient`). The choice rule turns those
+//! values into a pick (first-come places) or a ranking (deferred acceptance).
 
 use super::streams;
 use super::work::{physique_bonus, state_factor};
 use crate::components::{NaturalResource, Participants, Task};
-use crate::config::FEATURES;
 use crate::db::Db;
 use crate::store::{Activity, AgentStore};
 use crate::world::{Decisions, Params, SimClock, SimSeed, Towns};
@@ -34,9 +33,7 @@ pub fn glutted(db: &Db, town: &crate::world::Town, params: &Params, p: usize) ->
 pub fn target_stock(db: &Db, town: &crate::world::Town, params: &Params, p: usize) -> f32 {
     let mp = &params.market;
     let def = &db.content.products[p];
-    if def.category == sim_data::Category::Weapon
-        && params.military.kit_demand == crate::config::KitDemand::Soldiers
-    {
+    if def.category == sim_data::Category::Weapon {
         // Kit is what the government keeps in reserve: its stockpile target if
         // it set one, else enough for its soldiers and the levy it could call.
         let keep = match town.stockpile_target(p) {
@@ -169,7 +166,7 @@ pub fn job_capacity(
                 cap = cap.min(nature_total[k as usize] / out * m.duration);
             }
             for &(p, q) in &m.inputs {
-                let held = if food || !crate::granary::keeps_reserve(town, params) {
+                let held = if food || !town.policy.food_reserve {
                     0.0
                 } else {
                     reserve[p as usize]
@@ -249,107 +246,37 @@ pub fn profit_per_day(db: &Db, town: &crate::world::Town, r: usize) -> f32 {
     (out - inp) / m.duration
 }
 
-pub fn preference_weights(params: &Params, mind: &MindVec, state: &StateVec) -> [f32; FEATURES] {
-    let d = &params.decision;
-    std::array::from_fn(|f| {
-        let m: f32 = d.mind_weights[f].iter().zip(mind).map(|(w, x)| w * x).sum();
-        let s: f32 = d.state_weights[f]
-            .iter()
-            .zip(state)
-            .map(|(w, x)| w * x)
-            .sum();
-        d.bias[f] + m + s
-    })
-}
-
 /// What every agent's job choice reads; shared by the parallel pass.
 struct Choice<'a> {
     db: &'a Db,
     params: &'a Params,
     feasible: &'a [Vec<u32>],
-    profit: &'a [Vec<f32>],
-    mean_profit: &'a [f32],
-    scarcity: &'a [f32],
-    charters: &'a [Vec<bool>],
-    mastery: f32,
     decision: &'a crate::decision::DecisionModels,
     models: &'a crate::models::Models,
     towns: &'a Towns,
-    /// Median resident wealth per town (for standing).
-    median_wealth: &'a [f32],
     days_per_year: u32,
-    /// With `decision.model: Ladder`: everyone's satisfaction per need, and
-    /// the ladder's parameters.
+    /// Everyone's satisfaction per need, and the ladder's parameters.
     sats: &'a [Option<crate::ladder::Sat>],
-    ladder: Option<&'a crate::ladder::LadderParams>,
+    ladder: &'a crate::ladder::LadderParams,
 }
 
 impl Choice<'_> {
-    /// How much agent `i` would like resting (first) and each job in `jobs`.
-    /// A score depends only on the agent and the job, so every agent's scores can
-    /// be worked out in parallel before anyone picks.
-    fn scores(&self, store: &AgentStore, i: usize, jobs: &[u32]) -> (f32, Vec<f32>) {
-        if self.params.decision.model == crate::config::DecisionModel::Utility {
-            return self.utility_scores(store, i, jobs);
-        }
-        if self.params.decision.model == crate::config::DecisionModel::Ladder {
-            if let Some(lp) = self.ladder {
-                return self.ladder_scores(store, i, jobs, 1.0, lp);
-            }
-        }
-        let (db, params) = (self.db, self.params);
-        let d = &params.decision;
-        let t = store.town[i] as usize;
-        let st = store.state[i];
-        let w = preference_weights(params, &store.mind[i], &st);
-        let sf = state_factor(&st, &params.needs);
-        let fatigue = st[state::FATIGUE];
-        let rest = [0.0, 0.0, 1.5 * fatigue, 0.0, 0.0, fatigue];
-        let job_scores = jobs
-            .iter()
-            .map(|&r| {
-                let m = &db.recipes[r as usize];
-                // Effective capability (own plus tool) along the recipe's skill.
-                let prof = dot(&store.cap[i], &m.skill) + dot(&store.equip_vec[i], &m.skill);
-                let eff = (prof + physique_bonus(&store.phys[i], m, params.physique.weight)) * sf;
-                let margin = eff - m.difficulty;
-                let in_guild = store.guild[i].is_some_and(|g| g.domain == m.domain);
-                // A chartered guild draws people into its trade, members or not.
-                let guild_pull = if in_guild {
-                    1.0
-                } else if self.charters[t][m.domain as usize] {
-                    params.policy.charter_pull
-                } else {
-                    0.0
-                };
-                let f = [
-                    ((self.profit[t][r as usize] - self.mean_profit[t]) / d.value_scale).tanh()
-                        * crate::models::sigmoid(6.0 * margin),
-                    // Centered success chance: rewards fit, not trivially easy work.
-                    crate::models::sigmoid(6.0 * margin) - 0.5,
-                    -(0.3 + m.phys_total) * (0.5 + fatigue),
-                    (1.0 - (prof / self.mastery).min(1.0)) * if margin > -0.3 { 1.0 } else { 0.2 },
-                    guild_pull,
-                    m.food_out * 0.25 * self.scarcity[t] * (0.5 + st[state::HUNGER]),
-                ];
-                dot(&w, &f)
-            })
-            .collect();
-        (dot(&w, &rest), job_scores)
-    }
-
-    /// The ladder model: an option is worth what it changes in the person's
-    /// needs, each weighted by the slope of their weighted satisfaction
-    /// (`ladder::gradient`). A day's work brings its expected pay (and what the
-    /// practice will earn later), worth what a coin buys at the margin: a meal
-    /// for the hungry, savings for the fed; it costs rest. Resting gives rest.
-    fn ladder_scores(
+    /// How much agent `i` would like resting (first) and each job in `jobs`, when
+    /// it would get `pay_factor` of a worker's pay (an apprentice place pays
+    /// less). A score depends only on the agent and the job, so every agent's
+    /// scores can be worked out in parallel before anyone picks.
+    ///
+    /// An option is worth what it changes in the person's needs, each weighted
+    /// by the slope of their weighted satisfaction (`ladder::gradient`). A day's
+    /// work brings its expected pay (and what the practice will earn later),
+    /// worth what a coin buys at the margin: a meal for the hungry, savings for
+    /// the fed; it costs rest. Resting gives rest.
+    fn scores(
         &self,
         store: &AgentStore,
         i: usize,
         jobs: &[u32],
         pay_factor: f32,
-        lp: &crate::ladder::LadderParams,
     ) -> (f32, Vec<f32>) {
         use crate::decision::expectations;
         use sim_data::Need;
@@ -359,6 +286,7 @@ impl Choice<'_> {
         let town = &self.towns.0[t];
         let st = store.state[i];
         let sat = self.sats.get(i).copied().flatten().unwrap_or([0.5; 9]);
+        let lp = self.ladder;
         let g = crate::ladder::gradient(&sat, lp);
         let at = |n: Need| Need::ALL.iter().position(|&m| m == n).unwrap();
         // What a coin is worth: the best of a meal's worth of food (hunger is
@@ -424,139 +352,6 @@ impl Choice<'_> {
         (d.ladder_scale * rest, job_scores)
     }
 
-    /// The utility model: each option's expected utility of the agent's needs over
-    /// the coming weeks (see `decision::valuation`).
-    fn utility_scores(&self, store: &AgentStore, i: usize, jobs: &[u32]) -> (f32, Vec<f32>) {
-        self.utility_scores_paid(store, i, jobs, 1.0)
-    }
-
-    /// Utility scores when the agent would get `pay_factor` of a worker's pay (an
-    /// apprentice place pays less).
-    fn utility_scores_paid(
-        &self,
-        store: &AgentStore,
-        i: usize,
-        jobs: &[u32],
-        pay_factor: f32,
-    ) -> (f32, Vec<f32>) {
-        use crate::decision::{expectations, utility, valuation};
-        let (db, params) = (self.db, self.params);
-        let d = &params.decision;
-        let t = store.town[i] as usize;
-        let mut st = store.state[i];
-        // Food the agent can buy counts as food it will have (food_secure_days).
-        if d.valuation.food_secure_days > 0.0 {
-            let town = &self.towns.0[t];
-            let meal = db
-                .foods
-                .iter()
-                .filter(|(p, _)| town.stock[*p as usize] >= 1.0)
-                .map(|(p, _)| town.price[*p as usize])
-                .fold(f32::MAX, f32::min);
-            if meal < f32::MAX {
-                let secure = valuation::food_security(
-                    town.food_stock(db),
-                    town.residents.len(),
-                    params.needs.hunger_per_day,
-                    store.wealth[i].coins(),
-                    meal,
-                    d.valuation.food_secure_days,
-                );
-                st[state::HUNGER] *= 1.0 - secure;
-            }
-        }
-        let weights = utility::need_weights(&d.utility, &store.mind[i]);
-        // Wealth after the rent of the coming weeks.
-        let rent = self.towns.0[t].rent * d.valuation.horizon_weight();
-        let situation = valuation::Situation {
-            state: &st,
-            wealth: (store.wealth[i].coins() - rent).max(0.0),
-            median_wealth: self.median_wealth[t],
-            weights: &weights,
-        };
-        let u = &*self.decision.utility;
-        let sf = state_factor(&st, &params.needs);
-        let rest = valuation::rest_value(u, &situation, params.needs.fatigue_rest_recovery);
-        let job_scores = jobs
-            .iter()
-            .map(|&r| {
-                let m = &db.recipes[r as usize];
-                let prof = dot(&store.cap[i], &m.skill) + dot(&store.equip_vec[i], &m.skill);
-                let eff = (prof + physique_bonus(&store.phys[i], m, params.physique.weight)) * sf;
-                let success = self.models.success.probability(eff, m.difficulty);
-                let town = &self.towns.0[t];
-                let pay = pay_factor
-                    * match d.valuation.pay_basis {
-                        valuation::PayBasis::Average => expectations::expected_pay(
-                            &store.pay_expect[i],
-                            r,
-                            town.pay_rate[r as usize],
-                        ),
-                        basis => basis.typical_pay(
-                            town.pay_rate[r as usize],
-                            town.success_pay.get(r as usize).copied().unwrap_or(0.0),
-                            d.valuation.typical_success,
-                        ),
-                    };
-                let fatigue = params.needs.fatigue_per_work_day * (0.5 + m.phys_total);
-                // A day of practice raises the agent's skill along the recipe by about
-                // rate x aptitude x room left x (success, failures teaching less).
-                let crate::config::LearningParams::Diminishing {
-                    rate,
-                    mastery,
-                    failure_factor,
-                } = params.learning;
-                let room = (1.0 - prof / mastery).max(0.0);
-                let mult = store.aptitude[i] * (0.5 + st[state::HAPPINESS]);
-                let practice = rate * mult * room * (success + (1.0 - success) * failure_factor);
-                let after = self
-                    .models
-                    .success
-                    .probability(eff + practice * sf, m.difficulty);
-                let learned =
-                    self.decision
-                        .learning
-                        .value(&crate::decision::learning::LearnInputs {
-                            success_now: success,
-                            success_after: after,
-                            pay_per_day: pay,
-                            typical_success: d.valuation.typical_success,
-                            age_years: store.age_years(i, self.days_per_year),
-                        });
-                // Food the household would keep from a day of this job, in meals.
-                let keep = d.subsistence.share();
-                let cover = if keep > 0.0 {
-                    let (meals, relief) = m
-                        .outputs
-                        .iter()
-                        .filter(|o| db.is_food[o.0 as usize])
-                        .fold((0.0, 0.0f32), |(n, r), &(p, q)| {
-                            let v = db.foods.iter().find(|f| f.0 == p).map_or(0.0, |f| f.1);
-                            (n + q, r.max(v))
-                        });
-                    crate::decision::subsistence::food_cover(
-                        keep * meals / m.duration.max(1e-3),
-                        relief,
-                        params.needs.hunger_per_day,
-                    )
-                } else {
-                    0.0
-                };
-                valuation::job_value_fed(
-                    u,
-                    &d.valuation,
-                    &situation,
-                    pay,
-                    success,
-                    fatigue,
-                    learned,
-                    cover,
-                )
-            })
-            .collect();
-        (rest, job_scores)
-    }
-
     /// Agent `i` weighs a random sample of the jobs still open (plus its habitual
     /// job, if still open) against resting, and picks one by softmax. `None` is
     /// rest. `score(r)` looks up the agent's score for job `r`.
@@ -617,23 +412,6 @@ pub fn decide(
     let (decision, models, env) = models;
     decisions.jobs.clear();
     decisions.apprentices.clear();
-    // Median resident wealth per town, for the standing need.
-    let median_wealth: Vec<f32> = towns
-        .0
-        .iter()
-        .map(|t| {
-            let mut w: Vec<f32> = t
-                .residents
-                .iter()
-                .map(|&i| store.wealth[i as usize].coins())
-                .collect();
-            if w.is_empty() {
-                return 1.0;
-            }
-            let mid = w.len() / 2;
-            *w.select_nth_unstable_by(mid, f32::total_cmp).1
-        })
-        .collect();
     let mastery = params.mastery();
 
     // Per-town context, computed once.
@@ -688,40 +466,6 @@ pub fn decide(
         .iter()
         .map(|t| feasible_recipes(&db, t, &sites))
         .collect();
-    let profit: Vec<Vec<f32>> = towns
-        .0
-        .iter()
-        .map(|t| {
-            (0..db.recipes.len())
-                .map(|r| profit_per_day(&db, t, r))
-                .collect()
-        })
-        .collect();
-    // Opportunity cost: the average profit of the jobs a town can offer right now.
-    let mean_profit: Vec<f32> = feasible
-        .iter()
-        .zip(&profit)
-        .map(|(f, p)| {
-            if f.is_empty() {
-                0.0
-            } else {
-                f.iter().map(|&r| p[r as usize]).sum::<f32>() / f.len() as f32
-            }
-        })
-        .collect();
-    let scarcity: Vec<f32> = towns
-        .0
-        .iter()
-        .map(|t| {
-            // Without town-wide food rules only pay draws people to farm.
-            if !params.market.food_rules.town() {
-                return 0.0;
-            }
-            let pc = t.food_stock(&db) / t.residents.len().max(1) as f32;
-            (1.0 - pc / params.market.food_target_per_capita).clamp(0.0, 1.0)
-        })
-        .collect();
-
     // Jobs each town can still take people for, in `feasible` order; shrinks as
     // choices fill capacity and building slots, instead of re-filtering per agent.
     let mut open_jobs: Vec<Vec<u32>> = feasible
@@ -735,31 +479,24 @@ pub fn decide(
         })
         .collect();
 
-    let charters: Vec<Vec<bool>> = towns.0.iter().map(|t| t.policy.charters.clone()).collect();
-    // With the ladder model, everyone's satisfaction per need, once.
+    // Everyone's satisfaction per need, once, on the ladder households buy by
+    // (its defaults under another consumption model).
+    let default_ladder;
     let ladder_params = match &params.market.consumption {
-        crate::consumption::ConsumptionParams::Needs(lp) => Some(lp),
-        _ => None,
-    };
-    let sats: Vec<Option<crate::ladder::Sat>> = match (params.decision.model, ladder_params) {
-        (crate::config::DecisionModel::Ladder, Some(lp)) => {
-            crate::ladder::all(&store, &towns, &db, &params, &env, lp)
+        crate::consumption::ConsumptionParams::Needs(lp) => lp,
+        _ => {
+            default_ladder = crate::ladder::LadderParams::default();
+            &default_ladder
         }
-        _ => Vec::new(),
     };
+    let sats = crate::ladder::all(&store, &towns, &db, &params, &env, ladder_params);
     let ctx = Choice {
         db: &db,
         params: &params,
         feasible: &feasible,
-        profit: &profit,
-        mean_profit: &mean_profit,
-        scarcity: &scarcity,
-        charters: &charters,
-        mastery,
         decision: &decision,
         models: &models,
         towns: &towns,
-        median_wealth: &median_wealth,
         days_per_year: clock.days_per_year,
         sats: &sats,
         ladder: ladder_params,
@@ -806,7 +543,7 @@ pub fn decide(
         let store = &*store;
         let open_jobs = &open_jobs;
         idle.par_iter()
-            .map(|&i| ctx.scores(store, i, &open_jobs[store.town[i] as usize]))
+            .map(|&i| ctx.scores(store, i, &open_jobs[store.town[i] as usize], 1.0))
             .collect()
     };
 
@@ -843,8 +580,6 @@ pub fn decide(
             .collect();
         // Every idle agent ranks its options (regular and apprentice places above
         // resting), in parallel, with its own random stream.
-        let utility_model = params.decision.model == crate::config::DecisionModel::Utility;
-        let ladder_model = params.decision.model == crate::config::DecisionModel::Ladder;
         let lists: Vec<Vec<Opt>> = {
             let store = &*store;
             let (open_jobs, places) = (&open_jobs, &places);
@@ -853,18 +588,7 @@ pub fn decide(
                 .map(|(&i, (rest, job_scores))| {
                     let t = store.town[i] as usize;
                     let jobs = &open_jobs[t];
-                    let app_scores: Vec<f32> = if utility_model {
-                        ctx.utility_scores_paid(store, i, jobs, *apprentice_wage).1
-                    } else if let (true, Some(lp)) = (ladder_model, ctx.ladder) {
-                        ctx.ladder_scores(store, i, jobs, *apprentice_wage, lp).1
-                    } else {
-                        // The feature model has no pay term: an apprentice place is
-                        // just a little less attractive than a regular one.
-                        job_scores
-                            .iter()
-                            .map(|v| v - 0.5 * params.decision.temperature)
-                            .collect()
-                    };
+                    let app_scores = ctx.scores(store, i, jobs, *apprentice_wage).1;
                     let mut options = Vec::with_capacity(jobs.len() * 2);
                     for (k, &v) in job_scores.iter().enumerate() {
                         options.push((2 * k as u32, v));

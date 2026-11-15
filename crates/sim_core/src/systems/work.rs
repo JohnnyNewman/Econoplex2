@@ -462,15 +462,11 @@ pub fn post_pay(towns: &mut crate::world::Towns, db: &Db, params: &Params) {
     if days <= 0.0 {
         return;
     }
-    let typical = params.decision.valuation.typical_success.max(1e-3);
     for town in towns.0.iter_mut() {
         town.pay_rate.resize(db.recipes.len(), 0.0);
-        town.success_pay.resize(db.recipes.len(), 0.0);
         for r in 0..db.recipes.len() {
             let posted = posted_pay(town, db, params, r);
             town.pay_rate[r] += (posted - town.pay_rate[r]) / days.max(1.0);
-            // The same pay, for a step that succeeds.
-            town.success_pay[r] += (posted / typical - town.success_pay[r]) / days.max(1.0);
         }
     }
 }
@@ -524,7 +520,7 @@ pub fn produce(
             store.worked_today[w as usize] = Some(r);
         }
         let day = (workers.len() as f32).powf(params.work.work_exponent);
-        task.progress += if outdoor_share != 1.0 && db.outdoor[task.recipe as usize] {
+        task.progress += if db.outdoor[task.recipe as usize] {
             day * outdoor_share
         } else {
             day
@@ -803,7 +799,6 @@ pub fn produce(
                 wage: (share * (value - input_cost)).max(0.0) * weight,
                 subsidy,
                 days,
-                succeeded: true,
                 firm,
             });
             for &w in &workers {
@@ -825,7 +820,6 @@ pub fn produce(
                 wage: 0.0,
                 subsidy: 0.0,
                 days,
-                succeeded: false,
                 firm: (params.market.firms.on() && !crate::firms::is_public(&db, m))
                     .then(|| db.recipe_firm[r as usize]),
             });
@@ -880,8 +874,6 @@ struct Claim {
     subsidy: f32,
     /// Days the team worked on it.
     days: f32,
-    /// Whether the step succeeded (failed steps pay nothing).
-    succeeded: bool,
     /// The firm that pays the wage; none: the treasury.
     firm: Option<usize>,
 }
@@ -986,11 +978,6 @@ fn settle_wages(
         town.worker_days += shares * c.days;
         let rate = &mut town.pay_rate[c.recipe as usize];
         *rate += PAY_RATE_SMOOTHING * (per_day - *rate);
-        if c.succeeded {
-            town.success_pay.resize(town.pay_rate.len(), 0.0);
-            let rate = &mut town.success_pay[c.recipe as usize];
-            *rate += PAY_RATE_SMOOTHING * (per_day - *rate);
-        }
         for &w in &c.workers {
             let wi = w as usize;
             let own = if c.trainees.contains(&w) {

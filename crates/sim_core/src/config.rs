@@ -4,13 +4,7 @@
 //! alternative shapes are enums: pick a variant in the RON file to swap the model.
 
 use serde::{Deserialize, Serialize};
-use sim_data::dims::{MIND_DIM, STATE_DIM};
 use std::path::Path;
-
-/// Number of decision features: value, skill, effort, novelty, social, need.
-pub const FEATURES: usize = 6;
-pub const FEATURE_NAMES: [&str; FEATURES] =
-    ["value", "skill", "effort", "novelty", "social", "need"];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelParams {
@@ -59,7 +53,7 @@ pub struct ModelParams {
 }
 
 impl ModelParams {
-    /// Check matrix shapes so a typo in the RON file fails loudly at load time.
+    /// Check the parameters so a typo in the RON file fails loudly at load time.
     pub fn validate(&self) -> Result<(), ConfigError> {
         let t = &self.time;
         if t.ticks_per_day == 0
@@ -81,22 +75,6 @@ impl ModelParams {
                 self.life.days_per_year
             )));
         }
-        let d = &self.decision;
-        let shape = |name: &str, rows: &[Vec<f32>], cols: usize| -> Result<(), ConfigError> {
-            if rows.len() != FEATURES || rows.iter().any(|r| r.len() != cols) {
-                return Err(ConfigError(format!(
-                    "decision.{name} must be {FEATURES} rows of {cols} values"
-                )));
-            }
-            Ok(())
-        };
-        if d.bias.len() != FEATURES {
-            return Err(ConfigError(format!(
-                "decision.bias must have {FEATURES} values"
-            )));
-        }
-        shape("mind_weights", &d.mind_weights, MIND_DIM)?;
-        shape("state_weights", &d.state_weights, STATE_DIM)?;
         Ok(())
     }
 }
@@ -171,20 +149,9 @@ pub enum CapacityParams {
 pub struct DecisionParams {
     /// Softmax temperature: higher = less rational choices.
     pub temperature: f32,
-    /// Preference weights per feature: w = bias + mind_weights · mind + state_weights · state.
-    /// One entry per feature.
-    pub bias: Vec<f32>,
-    /// One row per feature, one column per mind axis.
-    pub mind_weights: Vec<Vec<f32>>,
-    /// One row per feature, one column per state axis.
-    pub state_weights: Vec<Vec<f32>>,
-    /// Scale in `value = tanh(profit_per_day / value_scale)`.
-    pub value_scale: f32,
     /// How many candidate jobs each agent considers per decision (sampled), plus resting.
     pub candidates: usize,
-    /// Which decision model picks jobs: `Features` (the weighted feature matrix
-    /// above). More arrive with the utility-based components (see
-    /// docs/design/agent-decisions.md).
+    /// Which decision model picks jobs (`Ladder`, the only one).
     #[serde(default)]
     pub model: DecisionModel,
     /// With `model: Ladder`: scale from satisfaction per day to the choice
@@ -200,13 +167,13 @@ pub struct DecisionParams {
     /// Component: how option values become a choice.
     #[serde(default)]
     pub choice: crate::decision::choice::ChoiceParams,
-    /// The utility model's horizon and discounting.
+    /// Look-ahead and discounting, the typical success chance, and posted pay.
     #[serde(default)]
     pub valuation: crate::decision::valuation::ValuationParams,
     /// Component: how each job's pay moves with the balance of workers and places.
     #[serde(default)]
     pub wages: crate::decision::wages::WageParams,
-    /// Component: the value of the skill a job teaches (used by the utility model).
+    /// Component: the value of the skill a job teaches.
     #[serde(default)]
     pub learning: crate::decision::learning::LearningValueParams,
     /// Component: who gets which place, and apprentice places.
@@ -231,16 +198,12 @@ pub struct DecisionParams {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DecisionModel {
-    /// The weighted feature matrix (`bias`, `mind_weights`, `state_weights`).
-    #[default]
-    Features,
-    /// Expected utility of the agent's needs over a few weeks, from its own
-    /// expected pay and chance of success (`decision::valuation`).
-    Utility,
     /// The needs ladder's derivative: each option is worth the change it makes
     /// to the person's needs, weighted by how much each need raises their
-    /// weighted satisfaction (`ladder::gradient`). Needs
-    /// `market.consumption: Needs`.
+    /// weighted satisfaction (`ladder::gradient`). Reads the ladder's
+    /// parameters from `market.consumption: Needs`, or their defaults under
+    /// another consumption model.
+    #[default]
     Ladder,
 }
 
@@ -325,12 +288,8 @@ fn default_mint_below() -> f32 {
 
 /// `market.pricing` in models.ron: the stock of each good the market aims for. A
 /// good's price rises while its stock is below that target and falls above it.
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum Pricing {
-    /// Every good: a fixed stock per resident (`target_per_capita`, or
-    /// `food_target_per_capita` for food).
-    #[default]
-    StockTarget,
     /// Goods that trades use as inputs: `cover_days` of what the town's trades use
     /// a day, plus what profitable trades held up only by this input's shortage
     /// would use (`blocked_workers` workers each). Final goods keep the per-resident
@@ -340,6 +299,15 @@ pub enum Pricing {
         cover_days: f32,
         blocked_workers: f32,
     },
+}
+
+impl Default for Pricing {
+    fn default() -> Self {
+        Pricing::Demand {
+            cover_days: 10.0,
+            blocked_workers: 2.0,
+        }
+    }
 }
 
 /// `market.imports` in models.ron: emergency food imports.
@@ -385,12 +353,8 @@ pub enum ScarcityCap {
 }
 
 /// What another building of a type a town already has is worth to it.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum BuildingValue {
-    /// Base price while the buildings are nearly full (`build_threshold`) and
-    /// their goods sell above base price (the old rule).
-    #[default]
-    Load,
     /// What its places would earn: while the town's buildings of the type are
     /// full (`build_threshold`), its slots times how much more its best job
     /// pays than the town's typical job, over `payback_days`, at most
@@ -398,14 +362,20 @@ pub enum BuildingValue {
     Marginal { payback_days: f32, max_factor: f32 },
 }
 
+impl Default for BuildingValue {
+    fn default() -> Self {
+        BuildingValue::Marginal {
+            payback_days: 10.0,
+            max_factor: 1.0,
+        }
+    }
+}
+
 /// How a market counts its tools and weapons.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ItemStock {
-    /// A count kept beside the items: up when made, down when a tool is taken
-    /// (weapons soldiers carry stay counted). The old rule.
-    #[default]
-    Counted,
     /// What the town's armory holds, recounted daily.
+    #[default]
     Held,
 }
 
@@ -468,7 +438,7 @@ pub struct MarketParams {
     /// How the market counts tools and weapons in stock.
     #[serde(default)]
     pub item_stock: ItemStock,
-    /// Who keeps the town fed: town-wide rules, or the ruler (`granary.rs`).
+    /// Who keeps the town fed: the ruler (`granary.rs`).
     #[serde(default)]
     pub food_rules: crate::granary::FoodRules,
     /// Spoilage in a granary, as a share of the market's.
@@ -532,14 +502,9 @@ pub struct MilitaryParams {
     pub march_speed: f32,
     /// Days a town waits after a raid before the next one.
     pub raid_cooldown: u32,
-    /// A town raids only when its squad is this many times stronger than the defense.
-    pub raid_margin: f32,
-    /// Daily chance that a town able to raid decides to, scaled by its soldiers' ambition and risk.
-    pub raid_appetite: f32,
     pub min_raid_squad: usize,
-    /// Win chance = A^k / (A^k + D^k).
-    pub battle_steepness: f32,
-    /// Base chance a fighter falls in battle (scaled by the enemy's share of strength).
+    /// A tenth of it is the chance each civilian of a town whose defense
+    /// breaks is hurt.
     pub casualty_rate: f32,
     /// Share of the defender's treasury and stores a winning raid carries off.
     pub loot_share: f32,
@@ -574,11 +539,11 @@ pub struct MilitaryParams {
     /// Also how many civilians take up arms when the town is attacked.
     #[serde(default)]
     pub levy_reserve: f32,
-    /// How a raid's fight is decided: squads on a field, or one dice roll.
+    /// How a raid's fight is decided: squads on a field.
     #[serde(default)]
     pub battles: BattleModel,
     /// How a raid marches: by daylight, slowed by mud and snow and carrying its
-    /// rations, or a fixed number of days.
+    /// rations.
     #[serde(default)]
     pub march: MarchModel,
     /// Rations a squad takes along, as a multiple of what the trip there and
@@ -599,9 +564,6 @@ pub enum WarDecision {
     /// each). March on the best one worth it, unless snow or a storm says wait.
     #[default]
     Planner,
-    /// A daily draw on `raid_appetite` x the soldiers' temper, at the richest
-    /// neighbour beaten by `raid_margin`. The old rule.
-    Appetite,
 }
 
 fn default_ration_margin() -> f32 {
@@ -615,9 +577,6 @@ pub enum BattleModel {
     /// defenders' soldiers at home and a militia of townsfolk.
     #[default]
     Field,
-    /// One roll on the squads' strength (`battle_steepness`, `casualty_rate`).
-    /// The old rule.
-    Roll,
 }
 
 /// How a raid marches.
@@ -627,8 +586,6 @@ pub enum MarchModel {
     /// snow, stopped by storms; the squad carries and eats its own rations.
     #[default]
     Weather,
-    /// `road / march_speed` ticks each way, eating at home. The old rule.
-    Fixed,
 }
 
 /// How many pieces of kit a town wants in store.
@@ -640,9 +597,6 @@ pub enum KitDemand {
     /// spear, mail or a padded coat). See `military::kit_reserve`.
     #[default]
     Soldiers,
-    /// Like any other good: `market.target_per_capita` per resident, for every
-    /// kind of weapon. The old rule.
-    PerCapita,
 }
 
 fn default_battle_hours() -> f32 {
@@ -660,8 +614,6 @@ pub struct PolicyParams {
     pub school_rate: f32,
     /// Paid by the treasury to the teacher per pupil and day.
     pub school_fee: f32,
-    /// Pull of a chartered guild's trade in job choice (as being a member is 1).
-    pub charter_pull: f32,
     /// Extra teaching speed of a chartered guild's masters (1.0 doubles it).
     pub charter_teaching: f32,
     /// Appeal a town with encouraged immigration adds for migrants.
@@ -925,15 +877,14 @@ pub struct GovernorParams {
     pub max_loan_share: f32,
     /// Highest profit tax a governor sets (steps of `income_tax_step`).
     pub max_profit_tax: f32,
-    /// With `market.food_rules: Ruler`: days of food the granary aims to hold.
+    /// Days of food the granary aims to hold.
     #[serde(default = "granary_days")]
     pub granary_days: f32,
     /// Days over which food made and eaten are averaged for the forecast.
     #[serde(default = "forecast_days")]
     pub forecast_days: f32,
-    /// With `market.food_rules: Ruler`: a governor treats the town as hungry
-    /// while its food in store would last fewer days than this at the
-    /// forecast's rate.
+    /// A governor treats the town as hungry while its food in store would
+    /// last fewer days than this at the forecast's rate.
     #[serde(default = "food_horizon_days")]
     pub food_horizon_days: f32,
 }

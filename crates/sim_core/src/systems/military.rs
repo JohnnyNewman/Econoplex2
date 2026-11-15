@@ -236,25 +236,18 @@ pub fn military(
         raid.soldiers.retain(|&s| store.alive[s as usize]);
         let home_pos = towns.0[t].pos;
         let now = clock.tick;
-        let weather_march = mp.march == crate::config::MarchModel::Weather;
-        if weather_march {
-            march(&mut raid, t, &towns, &terrain, &env, mp);
-            if let Some(id) = raid.squad {
-                if let Some(s) = squads.list.get_mut(id as usize) {
-                    s.members.retain(|m| raid.soldiers.contains(m));
-                    s.place = crate::goods::Place::Road {
-                        from: t as u16,
-                        to: raid.target,
-                        progress: raid.progress,
-                    };
-                }
+        march(&mut raid, t, &towns, &terrain, &env, mp);
+        if let Some(id) = raid.squad {
+            if let Some(s) = squads.list.get_mut(id as usize) {
+                s.members.retain(|m| raid.soldiers.contains(m));
+                s.place = crate::goods::Place::Road {
+                    from: t as u16,
+                    to: raid.target,
+                    progress: raid.progress,
+                };
             }
         }
-        let arrived = if weather_march {
-            raid.progress >= 1.0
-        } else {
-            now >= raid.arrive
-        };
+        let arrived = raid.progress >= 1.0;
         // A live battle the player is fighting: wait for it, then settle it.
         let pending_here = links
             .pending
@@ -304,7 +297,6 @@ pub fn military(
             raid.back = true;
             let live_ok = links.live.as_ref().is_some_and(|l| l.0)
                 && links.pending.as_ref().is_some_and(|p| p.0.is_none())
-                && mp.battles == crate::config::BattleModel::Field
                 && links
                     .player
                     .as_ref()
@@ -338,11 +330,7 @@ pub fn military(
             // A battle wears everyone's kit; what breaks is gone.
             wear_kit(&mut commands, store, &mut kit, &fought, mp.battle_hours);
         }
-        let home = if weather_march {
-            raid.back && raid.progress <= 0.0
-        } else {
-            now >= raid.home
-        };
+        let home = raid.back && raid.progress <= 0.0;
         if home || raid.soldiers.is_empty() {
             // What is left in the packs goes back to the town's market.
             if let Some(id) = raid.squad.take() {
@@ -361,13 +349,7 @@ pub fn military(
             continue;
         }
         // Positions along the road: out until arrival, back afterwards.
-        let f = if weather_march {
-            raid.progress.clamp(0.0, 1.0)
-        } else if now < raid.arrive {
-            (now - raid.depart) as f32 / (raid.arrive - raid.depart).max(1) as f32
-        } else {
-            1.0 - (now - raid.arrive) as f32 / (raid.home - raid.arrive).max(1) as f32
-        };
+        let f = raid.progress.clamp(0.0, 1.0);
         let road = terrain.path(home_pos, raid.target as usize);
         let (x, y) = crate::terrain::along(&road, f);
         for &s in raid.soldiers.iter().chain(&raid.captives) {
@@ -398,7 +380,7 @@ pub fn military(
         }
         let target = if let Some(o) = ordered {
             o as usize
-        } else if mp.decision == crate::config::WarDecision::Planner {
+        } else {
             // A plan once a muster, and never into deep snow or a storm.
             let here = env.at(t);
             if mp.muster_interval == 0
@@ -414,46 +396,6 @@ pub fn military(
                 Some(o) => o,
                 None => continue,
             }
-        } else {
-            let attack = squad_power(store, &town.squad, &fight, loyalty);
-            // The richest neighbor the squad can beat with a clear margin.
-            let mut best: Option<(usize, f32)> = ordered.map(|o| (o as usize, 0.0));
-            for (o, other) in towns.0.iter().enumerate() {
-                // Rulers protect their tributaries; tributaries of one ruler keep the peace.
-                let ruled = other.ruler == Some(t as u16)
-                    || (town.ruler.is_some() && other.ruler == town.ruler);
-                // Nobody marches where no road leads.
-                if o == t || ruled || ordered.is_some() || !terrain.road(t, o).is_finite() {
-                    continue;
-                }
-                let defense = total_defense(store, &towns, o, &fight, mp, loyalty);
-                if attack < mp.raid_margin * defense {
-                    continue;
-                }
-                let prize = other.treasury.coins().max(0.0)
-                    + db.foods
-                        .iter()
-                        .map(|&(p, _)| other.stock[p as usize] * other.price[p as usize])
-                        .sum::<f32>();
-                if best.is_none_or(|b| prize > b.1) {
-                    best = Some((o, prize));
-                }
-            }
-            let Some((target, _)) = best else { continue };
-            // Ambitious, risk-loving soldiers push for war.
-            let temper: f32 = town
-                .squad
-                .iter()
-                .map(|&s| {
-                    let m = &store.mind[s as usize];
-                    m[mind::AMBITION] + m[mind::RISK]
-                })
-                .sum::<f32>()
-                / town.squad.len() as f32;
-            if ordered.is_none() && rng.random::<f32>() >= mp.raid_appetite * temper {
-                continue;
-            }
-            target
         };
         // The squad marches along the road, around rivers and over hills.
         let dist = terrain.road(t, target);
@@ -461,37 +403,31 @@ pub fn military(
             towns.0[t].policy.raid_order = None;
             continue;
         }
-        let days = (dist / mp.march_speed.max(1.0)).ceil().max(1.0) as u64;
         let soldiers = towns.0[t].squad.clone();
         let np = db.content.products.len();
         let town = &mut towns.0[t];
         town.policy.raid_order = None;
         town.war.raids += 1;
-        let squad = (mp.march == crate::config::MarchModel::Weather).then(|| {
-            let trip_days = 2.0 * dist / mp.march_speed.max(1.0);
-            raise_squad(
-                t,
-                target as u16,
-                &soldiers,
-                trip_days * mp.ration_margin,
-                &mut squads,
-                &mut towns,
-                store,
-                &db,
-                &params,
-            )
-        });
+        let trip_days = 2.0 * dist / mp.march_speed.max(1.0);
+        let squad = raise_squad(
+            t,
+            target as u16,
+            &soldiers,
+            trip_days * mp.ration_margin,
+            &mut squads,
+            &mut towns,
+            store,
+            &db,
+            &params,
+        );
         let town = &mut towns.0[t];
         town.raid = Some(Raid {
             target: target as u16,
             soldiers,
-            depart: clock.tick,
-            arrive: clock.tick + days,
-            home: clock.tick + 2 * days,
             fought: false,
             captives: Vec::new(),
             loot: vec![0.0; np],
-            squad,
+            squad: Some(squad),
             progress: 0.0,
             back: false,
         });
@@ -598,7 +534,7 @@ fn disband(
     }
 }
 
-/// One day of a raid's march (`march: Weather`; the military system runs once
+/// One day of a raid's march (the military system runs once
 /// a day): soldiers walk in daylight, `march_speed` map units on a 12-hour day,
 /// more in long summer days and less in short winter ones, slowed by wet roads
 /// and snow and stopped by storms; out to the target and, once they fought, home.
@@ -806,63 +742,33 @@ fn battle(
         .copied()
         .filter(|s| !away.contains(s))
         .collect();
-    let (won, fallen_a, fallen_d) = match mp.battles {
-        crate::config::BattleModel::Roll => {
-            let k = mp.battle_steepness;
-            let p_win = attack.powf(k) / (attack.powf(k) + defense.powf(k)).max(1e-6);
-            let won = rng.random::<f32>() < p_win;
-            let total = (attack + defense).max(1e-6);
-            // Casualties: each side's fighters fall in proportion to the enemy's
-            // strength, and the losing side takes heavier losses.
-            let fall =
-                |share: f32, lost: bool| mp.casualty_rate * share * if lost { 1.5 } else { 0.6 };
-            let mut fallen_a = 0;
-            for &s in &raid.soldiers {
-                if rng.random::<f32>() < fall(defense / total, !won) {
-                    store.state[s as usize][state::HEALTH] = 0.0;
-                    fallen_a += 1;
-                }
-            }
-            let mut fallen_d = 0;
-            for &s in &defenders {
-                if rng.random::<f32>() < fall(attack / total, won) {
-                    store.state[s as usize][state::HEALTH] = 0.0;
-                    fallen_d += 1;
-                }
-            }
-            (won, fallen_a, fallen_d)
-        }
-        crate::config::BattleModel::Field => {
-            // Townsfolk take up arms beside the soldiers at home.
-            let militia = muster_militia(store, &towns.0[d], &defenders, mp);
-            let seed = rng.random::<u64>();
-            // The field lies outside the defenders' town, toward the attackers.
-            let (home, there) = (towns.0[attacker].pos, towns.0[d].pos);
-            let (dx, dy) = (there.0 - home.0, there.1 - home.1);
-            let len = dx.hypot(dy).max(1e-3);
-            let facing = (dx / len, dy / len);
-            let at = (there.0 - facing.0 * 60.0, there.1 - facing.1 * 60.0);
-            let out = field_battle(
-                store,
-                db,
-                params,
-                fight,
-                gear_defs,
-                &raid.soldiers,
-                &defenders,
-                &militia,
-                seed,
-                log.map(|log| Record {
-                    log,
-                    town: d as u16,
-                    at,
-                    facing,
-                }),
-            );
-            defenders.extend(militia);
-            out
-        }
-    };
+    // Townsfolk take up arms beside the soldiers at home.
+    let militia = muster_militia(store, &towns.0[d], &defenders, mp);
+    let seed = rng.random::<u64>();
+    // The field lies outside the defenders' town, toward the attackers.
+    let (home, there) = (towns.0[attacker].pos, towns.0[d].pos);
+    let (dx, dy) = (there.0 - home.0, there.1 - home.1);
+    let len = dx.hypot(dy).max(1e-3);
+    let facing = (dx / len, dy / len);
+    let at = (there.0 - facing.0 * 60.0, there.1 - facing.1 * 60.0);
+    let (won, fallen_a, fallen_d) = field_battle(
+        store,
+        db,
+        params,
+        fight,
+        gear_defs,
+        &raid.soldiers,
+        &defenders,
+        &militia,
+        seed,
+        log.map(|log| Record {
+            log,
+            town: d as u16,
+            at,
+            facing,
+        }),
+    );
+    defenders.extend(militia);
     aftermath(
         commands,
         raid,
@@ -957,19 +863,7 @@ fn aftermath(
         towns.0[attacker]
             .ledger
             .add(crate::ledger::Flow::LootTaken, money);
-        if mp.battles == crate::config::BattleModel::Field {
-            plunder(raid, d, towns, store, db);
-        } else {
-            for p in 0..db.content.products.len() {
-                let cat = db.category(p as u32);
-                if cat == Category::Building || cat.is_item() {
-                    continue;
-                }
-                let q = (towns.0[d].stock[p] * mp.loot_share).floor();
-                towns.0[d].stock[p] -= q;
-                raid.loot[p] += q;
-            }
-        }
+        plunder(raid, d, towns, store, db);
         towns.0[attacker].war.raids_won += 1;
 
         // Captives: idle adults of the defeated town, a few per surviving soldier.

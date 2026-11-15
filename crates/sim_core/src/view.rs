@@ -79,7 +79,7 @@ pub struct TownView {
     pub granary_food: f32,
     #[serde(default)]
     pub granary_days: f32,
-    /// Whether seed grain is held back (always under the town food rules).
+    /// Whether seed grain is held back (order `reserve TOWN on`).
     #[serde(default)]
     pub seed_reserve: bool,
     /// Food in the market and in larders, as days of the residents' food.
@@ -326,9 +326,7 @@ impl ViewSnapshot {
                     needs: needs.get(ti).cloned().unwrap_or_default(),
                     granary_food: crate::granary::held(t, db),
                     granary_days: t.policy.granary_days,
-                    seed_reserve: world
-                        .get_resource::<crate::world::Params>()
-                        .is_some_and(|p| crate::granary::keeps_reserve(t, p)),
+                    seed_reserve: t.policy.food_reserve,
                     food_days: {
                         let hunger = world
                             .get_resource::<crate::world::Params>()
