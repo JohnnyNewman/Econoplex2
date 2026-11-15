@@ -31,7 +31,7 @@ fn the_state_hash_covers_everything_a_save_holds() {
     assert_eq!(before, s.state_hash(), "hashing leaves the state alone");
 
     // A town's treasury, the weather and the order queue are all state.
-    s.world.resource_mut::<sim_core::Towns>().0[0].treasury += 1.0;
+    s.world.resource_mut::<sim_core::Towns>().0[0].treasury += sim_core::Coin::from_coins(1.0);
     let treasury = s.state_hash();
     assert_ne!(before, treasury);
     s.world.resource_mut::<sim_core::env::Environment>().hour += 0.5;
@@ -86,26 +86,18 @@ fn economy_produces_and_people_learn() {
 
 #[test]
 fn money_is_conserved() {
-    // Money only grows by what the mints strike.
+    // Money only grows by what the mints strike, to the last unit, every day.
     let mut s = sim(4);
     let money = |s: &Simulation| {
         let towns = s.world.resource::<sim_core::Towns>();
-        let minted: f64 = towns
-            .0
-            .iter()
-            .map(|t| t.ledger.total[sim_core::ledger::Flow::Minted as usize])
-            .sum();
-        sim_core::world::total_money(s.world.resource::<sim_core::AgentStore>(), towns) - minted
+        let minted: sim_core::Coin = towns.0.iter().map(|t| t.minted).sum();
+        sim_core::world::total_coin(s.world.resource::<sim_core::AgentStore>(), towns) - minted
     };
     let before = money(&s);
-    for _ in 0..600 {
+    for day in 0..600 {
         s.step();
+        assert_eq!(money(&s), before, "money changed on day {day}");
     }
-    let after = money(&s);
-    assert!(
-        ((after - before) / before).abs() < 1e-3,
-        "money changed from {before} to {after}"
-    );
 }
 
 #[test]
@@ -342,8 +334,8 @@ fn tributaries_pay_their_ruler() {
     {
         let mut towns = s.world.resource_mut::<sim_core::Towns>();
         towns.0[1].ruler = Some(0);
-        towns.0[1].treasury += 500.0;
-        towns.0[0].treasury -= 500.0;
+        towns.0[1].treasury += sim_core::Coin::from_coins(500.0);
+        towns.0[0].treasury -= sim_core::Coin::from_coins(500.0);
     }
     for _ in 0..2 * interval {
         s.step();
@@ -718,7 +710,7 @@ fn the_ledger_accounts_for_every_treasury_change() {
         .resource::<sim_core::Towns>()
         .0
         .iter()
-        .map(|t| t.treasury)
+        .map(|t| t.treasury.coins())
         .collect();
     run_years(&mut s, 1);
     for (t, town) in s.world.resource::<sim_core::Towns>().0.iter().enumerate() {
@@ -729,7 +721,7 @@ fn the_ledger_accounts_for_every_treasury_change() {
             + sum_group(l, Group::ExternalIn)
             - sum_group(l, Group::Issued)
             - sum_group(l, Group::ExternalOut);
-        let change = town.treasury - before[t];
+        let change = town.treasury.coins() - before[t];
         let scale = sum_group(l, Group::Issued).max(1.0);
         assert!(
             (net - change).abs() < 1e-3 * scale,
@@ -1356,7 +1348,7 @@ fn under_the_utility_model_the_rich_work_less() {
             store.alive[i] && store.age_years(i, dpy) >= 20.0 && store.age_years(i, dpy) < 50.0
         };
         let a: Vec<usize> = (0..store.len()).filter(|&i| adult(i)).collect();
-        let w = a.iter().map(|&i| store.wealth[i]).collect();
+        let w = a.iter().map(|&i| store.wealth[i].coins()).collect();
         (a, w)
     };
     let mut sorted = wealth.clone();
@@ -1404,7 +1396,7 @@ fn market_pay_moves_both_ways_and_the_books_still_balance() {
         .resource::<sim_core::Towns>()
         .0
         .iter()
-        .map(|t| t.treasury)
+        .map(|t| t.treasury.coins())
         .collect();
     run_years(&mut s, 1);
     let towns = s.world.resource::<sim_core::Towns>();
@@ -1430,7 +1422,7 @@ fn market_pay_moves_both_ways_and_the_books_still_balance() {
             + sum_group(l, Group::ExternalIn)
             - sum_group(l, Group::Issued)
             - sum_group(l, Group::ExternalOut);
-        let change = town.treasury - before[t];
+        let change = town.treasury.coins() - before[t];
         assert!((net - change).abs() < 1e-3 * sum_group(l, Group::Issued).max(1.0));
     }
 }
@@ -1546,7 +1538,7 @@ fn matching_gives_beginners_apprentice_places_and_keeps_the_books() {
         .resource::<sim_core::Towns>()
         .0
         .iter()
-        .map(|t| t.treasury)
+        .map(|t| t.treasury.coins())
         .collect();
     let (mut apprentices, mut beginners) = (0usize, 0usize);
     for _ in 0..120 {
@@ -1590,7 +1582,7 @@ fn matching_gives_beginners_apprentice_places_and_keeps_the_books() {
             + sum_group(l, Group::ExternalIn)
             - sum_group(l, Group::Issued)
             - sum_group(l, Group::ExternalOut);
-        let change = town.treasury - before[t];
+        let change = town.treasury.coins() - before[t];
         assert!((net - change).abs() < 1e-3 * sum_group(l, Group::Issued).max(1.0));
     }
 }
@@ -1965,7 +1957,7 @@ fn every_town_has_its_workshops_with_books_ready() {
     for t in &towns.0 {
         assert_eq!(t.firms.len(), db.firm_keys.len());
         // Off by default: firms hold nothing.
-        assert!(t.firms.iter().all(|f| f.cash == 0.0));
+        assert!(t.firms.iter().all(|f| f.cash.coins() == 0.0));
     }
     // Recipes that share a building share a firm.
     for (r, m) in db.recipes.iter().enumerate() {
@@ -2267,7 +2259,7 @@ fn a_hungry_broke_town_imports_food_on_credit_and_recovers() {
         }
         b.stock.retain(|s| s.0 != "bread");
         let mut s = Simulation::new(db, params, &scenario);
-        s.world.resource_mut::<sim_core::Towns>().0[3].treasury = 0.0;
+        s.world.resource_mut::<sim_core::Towns>().0[3].treasury = sim_core::Coin::ZERO;
         if imports {
             s.order("imports Brassmoor auto").unwrap();
         }

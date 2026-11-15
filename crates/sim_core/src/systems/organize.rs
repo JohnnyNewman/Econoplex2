@@ -109,7 +109,7 @@ pub fn organize(
         let mut best: Option<(usize, f32)> = None;
         for (k, &(_, def, quality)) in shelf.iter().enumerate() {
             let cost = town.price[def as usize] * (0.5 + quality);
-            if cost <= store.wealth[i] + params.market.tool_credit
+            if cost <= store.wealth[i].coins() + params.market.tool_credit
                 && best.is_none_or(|b| quality > b.1)
             {
                 best = Some((k, quality));
@@ -121,8 +121,8 @@ pub fn organize(
             let prod = items.get(e).unwrap();
             // Tools are bought from the town, on credit if need be; wages repay it.
             let cost = town.price[prod.def as usize] * (0.5 + prod.quality);
-            store.wealth[i] -= cost;
-            town.treasury += cost;
+            store.wealth[i] -= crate::coin::Coin::from_coins(cost);
+            town.treasury += crate::coin::Coin::from_coins(cost);
             town.ledger.add(crate::ledger::Flow::ToolSales, cost);
             town.consumed_year.resize(town.stock.len(), 0.0);
             town.consumed_year[prod.def as usize] += 1.0;

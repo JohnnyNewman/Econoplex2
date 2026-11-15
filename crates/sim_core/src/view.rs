@@ -350,7 +350,7 @@ impl ViewSnapshot {
                     name: t.name.clone(),
                     pos: t.pos,
                     population: t.residents.len() as u32,
-                    treasury: t.treasury,
+                    treasury: t.treasury.coins(),
                     buildings: t
                         .buildings
                         .iter()
@@ -372,7 +372,7 @@ impl ViewSnapshot {
                         let n = t.residents.len().max(1) as f32;
                         t.residents
                             .iter()
-                            .map(|&i| store.wealth[i as usize])
+                            .map(|&i| store.wealth[i as usize].coins())
                             .sum::<f32>()
                             / n
                     },
@@ -508,7 +508,7 @@ pub fn person(world: &World, id: u32) -> Option<PersonInfo> {
         female: store.female[i],
         activity: activity.to_string(),
         job,
-        wealth: store.wealth[i],
+        wealth: store.wealth[i].coins(),
         needs,
         larder: store.larder.get(i).map_or_else(Vec::new, |l| goods(l)),
         owned: store.owned.get(i).map_or_else(Vec::new, |o| goods(o)),

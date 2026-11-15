@@ -242,7 +242,7 @@ pub fn economy_lines(
         );
         // Workshops as firms: their cash now, and last year's flows.
         if params.market.firms.on() {
-            let cash: f32 = town.firms.iter().map(|f| f.cash).sum();
+            let cash: f32 = town.firms.iter().map(|f| f.cash.coins()).sum();
             let y = sim_core::firms::last_year_totals(&town.firms);
             line(
                 format!("  workshops: {} firms, cash {cash:.0}", town.firms.len()),
@@ -319,10 +319,14 @@ pub fn economy_lines(
         let held: f32 = town
             .residents
             .iter()
-            .map(|&i| store.wealth[i as usize].max(0.0))
+            .map(|&i| store.wealth[i as usize].coins().max(0.0))
             .sum();
         line(
-            format!("  treasury {:.0}, people hold {:.0}", town.treasury, held),
+            format!(
+                "  treasury {:.0}, people hold {:.0}",
+                town.treasury.coins(),
+                held
+            ),
             DIM,
         );
     }

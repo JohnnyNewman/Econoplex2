@@ -100,7 +100,8 @@ pub fn military(
                 .filter(|&&i| store.activity[i as usize] != Activity::Child)
                 .count();
             // Keep enough in the treasury for a month of pay.
-            let affordable = (town.treasury.max(0.0) / (mp.soldier_pay * 30.0).max(1e-6)) as usize;
+            let affordable =
+                (town.treasury.coins().max(0.0) / (mp.soldier_pay * 30.0).max(1e-6)) as usize;
             let share = if town.ruler.is_some() {
                 mp.vassal_soldier_share
             } else {
@@ -188,11 +189,11 @@ pub fn military(
                 towns.0[t].war.revolts += 1;
                 continue;
             }
-            let pay = towns.0[t].treasury.max(0.0) * mp.tribute_share;
-            towns.0[t].treasury -= pay;
+            let pay = towns.0[t].treasury.coins().max(0.0) * mp.tribute_share;
+            towns.0[t].treasury -= crate::coin::Coin::from_coins(pay);
             towns.0[t].war.tribute_paid += pay;
             towns.0[t].ledger.add(crate::ledger::Flow::TributePaid, pay);
-            towns.0[r].treasury += pay;
+            towns.0[r].treasury += crate::coin::Coin::from_coins(pay);
             towns.0[r]
                 .ledger
                 .add(crate::ledger::Flow::TributeReceived, pay);
@@ -208,10 +209,10 @@ pub fn military(
         let marching: &[u32] = town.raid.as_ref().map_or(&[], |r| &r.soldiers);
         for &s in &town.squad {
             let i = s as usize;
-            let pay = mp.soldier_pay.min(town.treasury.max(0.0));
-            town.treasury -= pay;
+            let pay = mp.soldier_pay.min(town.treasury.coins().max(0.0));
+            town.treasury -= crate::coin::Coin::from_coins(pay);
             town.ledger.add(crate::ledger::Flow::SoldierPay, pay);
-            store.wealth[i] += pay;
+            store.wealth[i] += crate::coin::Coin::from_coins(pay);
             if !marching.contains(&s) {
                 let mult = mp.drill_rate * store.aptitude[i];
                 models
@@ -429,7 +430,7 @@ pub fn military(
                 if attack < mp.raid_margin * defense {
                     continue;
                 }
-                let prize = other.treasury.max(0.0)
+                let prize = other.treasury.coins().max(0.0)
                     + db.foods
                         .iter()
                         .map(|&(p, _)| other.stock[p as usize] * other.price[p as usize])
@@ -949,10 +950,10 @@ fn aftermath(
 
     // Plunder: money changes hands now, goods travel home with the squad.
     if won {
-        let money = towns.0[d].treasury.max(0.0) * mp.loot_share;
-        towns.0[d].treasury -= money;
+        let money = towns.0[d].treasury.coins().max(0.0) * mp.loot_share;
+        towns.0[d].treasury -= crate::coin::Coin::from_coins(money);
         towns.0[d].ledger.add(crate::ledger::Flow::LootLost, money);
-        towns.0[attacker].treasury += money;
+        towns.0[attacker].treasury += crate::coin::Coin::from_coins(money);
         towns.0[attacker]
             .ledger
             .add(crate::ledger::Flow::LootTaken, money);
@@ -1580,12 +1581,12 @@ fn plan_raid(
         let (p, dead, standing) = (wins / k, dead / k, standing / k);
         let defense = total_defense(store, towns, o, fight, mp, loyalty);
         let tribute = if attack >= mp.conquest_margin * defense {
-            mp.tribute_share * other.treasury.max(0.0)
+            mp.tribute_share * other.treasury.coins().max(0.0)
         } else {
             0.0
         };
         let haul = carry_value(other, db, standing * crate::goods::KG_PER_MEMBER)
-            + mp.loot_share * other.treasury.max(0.0)
+            + mp.loot_share * other.treasury.coins().max(0.0)
             + tribute;
         let trip = 2.0 * road / mp.march_speed.max(1.0);
         let cost = n * trip * (mp.soldier_pay + params.needs.hunger_per_day * food_cost)

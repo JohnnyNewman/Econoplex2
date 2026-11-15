@@ -164,7 +164,7 @@ impl FirmFlow {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Firm {
     pub key: Option<FirmKey>,
-    pub cash: f32,
+    pub cash: crate::coin::Coin,
     /// Unsold goods, by product.
     pub stock: Vec<f32>,
     /// Wages paid per day, averaged over about a month (for the reserve).
@@ -265,7 +265,7 @@ impl Firm {
     /// wages and inputs.
     pub fn payout(&self, reserve_days: f32, rate: f32) -> f32 {
         let reserve = (reserve_days * (self.wage_bill + self.input_bill)).max(self.capital);
-        ((self.cash - reserve) * rate.clamp(0.0, 1.0)).max(0.0)
+        ((self.cash.coins() - reserve) * rate.clamp(0.0, 1.0)).max(0.0)
     }
 
     /// What it owes on account.
@@ -282,7 +282,7 @@ impl Firm {
     /// Cash it can spend on wages: what is above `reserve_days` of its inputs (the
     /// working capital it keeps to buy the next inputs).
     pub fn wage_budget(&self, reserve_days: f32) -> f32 {
-        (self.cash - reserve_days * self.input_bill).max(0.0)
+        (self.cash.coins() - reserve_days * self.input_bill).max(0.0)
     }
 
     /// Close the day's books.
@@ -356,14 +356,14 @@ mod tests {
     #[test]
     fn a_firm_pays_out_only_above_its_reserve() {
         let mut f = Firm {
-            cash: 100.0,
+            cash: crate::coin::Coin::from_coins(100.0),
             wage_bill: 10.0,
             ..Default::default()
         };
         assert_eq!(f.payout(5.0, 0.5), 25.0);
         // Paid-in capital is never paid out.
         let idle = Firm {
-            cash: 30.0,
+            cash: crate::coin::Coin::from_coins(30.0),
             capital: 30.0,
             ..Default::default()
         };
@@ -371,7 +371,7 @@ mod tests {
         // Working capital for inputs comes before wages.
         f.input_bill = 4.0;
         assert_eq!(f.wage_budget(5.0), 80.0);
-        f.cash = 40.0;
+        f.cash = crate::coin::Coin::from_coins(40.0);
         assert_eq!(f.payout(5.0, 0.5), 0.0);
         f.book(FirmFlow::Wages, 20.0);
         f.end_day();

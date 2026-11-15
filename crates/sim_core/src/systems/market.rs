@@ -46,12 +46,12 @@ pub fn settle(
     // Demand-driven pricing: the stock each good's users need.
     if mp.mint_money_per_capita > 0.0 {
         for town in towns.0.iter_mut() {
-            let money = town.treasury
-                + town.firms.iter().map(|f| f.cash).sum::<f32>()
+            let money = town.treasury.coins()
+                + town.firms.iter().map(|f| f.cash.coins()).sum::<f32>()
                 + town
                     .residents
                     .iter()
-                    .map(|&i| store.wealth[i as usize])
+                    .map(|&i| store.wealth[i as usize].coins())
                     .sum::<f32>();
             town.money_per_capita = money / town.residents.len().max(1) as f32;
         }
@@ -283,12 +283,12 @@ pub fn settle(
         if !store.alive[i] {
             continue;
         }
-        let excess = store.wealth[i] - mp.tax_free_wealth;
+        let excess = store.wealth[i].coins() - mp.tax_free_wealth;
         if excess > 0.0 {
             let tax = excess * rates[store.town[i] as usize];
-            store.wealth[i] -= tax;
+            store.wealth[i] -= crate::coin::Coin::from_coins(tax);
             let town = &mut towns.0[store.town[i] as usize];
-            town.treasury += tax;
+            town.treasury += crate::coin::Coin::from_coins(tax);
             town.ledger.add(Flow::WealthTax, tax);
         }
     }
@@ -296,15 +296,17 @@ pub fn settle(
     // Public spending: a treasury above its reserve pays the excess out to residents.
     for town in towns.0.iter_mut() {
         let n = town.residents.len();
-        let excess = town.treasury - mp.treasury_reserve_per_capita * n as f32;
+        let excess = town.treasury.coins() - mp.treasury_reserve_per_capita * n as f32;
         if n == 0 || excess <= 0.0 {
             continue;
         }
         let rate = town.policy.public_spending.unwrap_or(mp.public_spending);
         let spend = excess * (rate / dpy).min(1.0);
-        town.treasury -= spend;
-        town.ledger.add(Flow::PublicSpending, spend);
-        let share = spend / n as f32;
+        // Equal shares to the unit; what does not divide stays in the treasury.
+        let (share, _) = crate::coin::Coin::from_coins(spend).split(n);
+        town.treasury -= crate::coin::Coin(share.0 * n as i64);
+        town.ledger
+            .add(Flow::PublicSpending, share.coins() * n as f32);
         for &i in &town.residents {
             store.wealth[i as usize] += share;
         }
@@ -358,7 +360,7 @@ pub fn settle(
                             surplus.min(lack).min(max_load).max(0.0)
                         }
                     };
-                    let amount = load.min(towns.0[b].treasury.max(0.0) / pb).floor();
+                    let amount = load.min(towns.0[b].treasury.coins().max(0.0) / pb).floor();
                     if amount < 1.0 {
                         continue;
                     }
@@ -383,14 +385,14 @@ pub fn settle(
                         }
                     }
                     towns.0[a].stock[p] = (towns.0[a].stock[p] - amount).max(0.0);
-                    towns.0[a].treasury += amount * pb;
+                    towns.0[a].treasury += crate::coin::Coin::from_coins(amount * pb);
                     towns.0[a].ledger.add(Flow::TradeSales, amount * pb);
                     towns.0[a].ledger.export(b, amount * pb);
                     let tb = &mut towns.0[b];
                     tb.quality[p] =
                         (tb.stock[p] * tb.quality[p] + amount * q) / (tb.stock[p] + amount);
                     tb.stock[p] += amount;
-                    tb.treasury -= amount * pb;
+                    tb.treasury -= crate::coin::Coin::from_coins(amount * pb);
                     tb.ledger.add(Flow::TradePurchases, amount * pb);
                 }
             }
@@ -409,19 +411,19 @@ fn buy_from_firms(town: &mut crate::world::Town, p: usize, target: f32) {
     let price = town.price[p].max(1e-6);
     let mut want = (target - town.stock[p]).max(0.0);
     for k in 0..town.firms.len() {
-        if want < 1e-3 || town.treasury <= 0.0 {
+        if want < 1e-3 || town.treasury.coins() <= 0.0 {
             break;
         }
         let have = town.firms[k].stock.get(p).copied().unwrap_or(0.0);
-        let q = have.min(want).min(town.treasury / price);
+        let q = have.min(want).min(town.treasury.coins() / price);
         if q <= 0.0 {
             continue;
         }
         let pay = q * price;
         town.firms[k].stock[p] -= q;
-        town.firms[k].cash += pay;
+        town.firms[k].cash += crate::coin::Coin::from_coins(pay);
         town.firms[k].book(crate::firms::FirmFlow::Sales, pay);
-        town.treasury -= pay;
+        town.treasury -= crate::coin::Coin::from_coins(pay);
         town.ledger.add(Flow::MarketPurchases, pay);
         town.stock[p] += q;
         want -= q;
@@ -463,7 +465,7 @@ fn firm_input_stocks(towns: &mut crate::world::Towns, db: &Db, reserve_days: f32
                 continue;
             }
             f.inputs.resize(np, 0.0);
-            let mut spare = f.cash - reserve_days * f.wage_bill;
+            let mut spare = f.cash.coins() - reserve_days * f.wage_bill;
             for p in 0..np {
                 let rate = town.firms[k].input_rate[p];
                 if rate <= 1e-3 || spare <= 0.0 {
@@ -477,11 +479,11 @@ fn firm_input_stocks(towns: &mut crate::world::Towns, db: &Db, reserve_days: f32
                 }
                 let cost = q * price;
                 town.stock[p] -= q;
-                town.treasury += cost;
+                town.treasury += crate::coin::Coin::from_coins(cost);
                 town.ledger.add(crate::ledger::Flow::InputSales, cost);
                 let f = &mut town.firms[k];
                 f.inputs[p] += q;
-                f.cash -= cost;
+                f.cash -= crate::coin::Coin::from_coins(cost);
                 f.book(crate::firms::FirmFlow::Inputs, cost);
                 spare -= cost;
             }
@@ -537,7 +539,7 @@ pub fn firm_finances(
         // still has too little closes until capital comes.
         let n = town.firms.len().max(1) as f32;
         for (k, f) in town.firms.iter_mut().enumerate() {
-            if f.cash < 0.2 * start_cash {
+            if f.cash.coins() < 0.2 * start_cash {
                 f.short_days += 1;
             } else {
                 f.short_days = 0;
@@ -548,12 +550,12 @@ pub fn firm_finances(
             }
             f.started = true;
             f.short_days = 0;
-            let mut need = (start_cash - f.cash).max(0.0);
-            let grant = need.min(0.5 * town.treasury.max(0.0) / n);
+            let mut need = (start_cash - f.cash.coins()).max(0.0);
+            let grant = need.min(0.5 * town.treasury.coins().max(0.0) / n);
             if grant > 0.0 {
-                town.treasury -= grant;
+                town.treasury -= crate::coin::Coin::from_coins(grant);
                 town.ledger.add(Flow::FirmGrants, grant);
-                f.cash += grant;
+                f.cash += crate::coin::Coin::from_coins(grant);
                 f.capital += grant;
                 f.book(crate::firms::FirmFlow::Grants, grant);
                 need -= grant;
@@ -561,14 +563,14 @@ pub fn firm_finances(
             if let Some(m) = owners.get(&domain[k]).filter(|m| !m.is_empty()) {
                 let ask = need / m.len() as f32;
                 for &i in m {
-                    let put = ask.min(0.2 * store.wealth[i as usize].max(0.0));
-                    store.wealth[i as usize] -= put;
-                    f.cash += put;
+                    let put = ask.min(0.2 * store.wealth[i as usize].coins().max(0.0));
+                    store.wealth[i as usize] -= crate::coin::Coin::from_coins(put);
+                    f.cash += crate::coin::Coin::from_coins(put);
                     f.capital += put;
                     f.book(crate::firms::FirmFlow::Capital, put);
                 }
             }
-            f.closed = f.cash < 0.2 * start_cash;
+            f.closed = f.cash.coins() < 0.2 * start_cash;
         }
         // Trade credit: debts on account are paid from cash, oldest first. A
         // closed firm's debts are written off (its creditors lose them).
@@ -582,11 +584,11 @@ pub fn firm_finances(
                 continue;
             }
             for o in owed.iter_mut() {
-                let pay = o.1.min(town.firms[k].cash.max(0.0));
+                let pay = o.1.min(town.firms[k].cash.coins().max(0.0));
                 if pay <= 0.0 {
                     break;
                 }
-                town.firms[k].cash -= pay;
+                town.firms[k].cash -= crate::coin::Coin::from_coins(pay);
                 super::work::receive(town, o.0, pay);
                 o.1 -= pay;
             }
@@ -601,12 +603,12 @@ pub fn firm_finances(
             let mut loans = std::mem::take(&mut f.loans);
             for l in loans.iter_mut() {
                 let (interest, principal) = l.due(dpy);
-                let paid_i = interest.min(f.cash.max(0.0));
-                let paid_p = principal.min((f.cash - paid_i).max(0.0));
-                f.cash -= paid_i + paid_p;
+                let paid_i = interest.min(f.cash.coins().max(0.0));
+                let paid_p = principal.min((f.cash.coins() - paid_i).max(0.0));
+                f.cash -= crate::coin::Coin::from_coins(paid_i + paid_p);
                 f.book(crate::firms::FirmFlow::Interest, paid_i);
                 f.book(crate::firms::FirmFlow::Repayments, paid_p);
-                town.treasury += paid_i + paid_p;
+                town.treasury += crate::coin::Coin::from_coins(paid_i + paid_p);
                 town.ledger.add(Flow::LoanInterest, paid_i);
                 town.ledger.add(Flow::LoanRepayments, paid_p);
                 l.left -= paid_p;
@@ -633,7 +635,8 @@ pub fn firm_finances(
             if out <= 0.0 {
                 continue;
             }
-            f.cash -= out;
+            let out_coin = crate::coin::Coin::from_coins(out);
+            f.cash -= out_coin;
             let members = owners.get(&domain[k]);
             let tax = match members {
                 Some(m) if !m.is_empty() => {
@@ -641,14 +644,22 @@ pub fn firm_finances(
                 }
                 _ => out,
             };
-            town.treasury += tax;
-            town.ledger.add(Flow::ProfitTax, tax);
-            f.book(crate::firms::FirmFlow::ProfitTax, tax);
+            // The owners share the rest equally; units that do not divide go
+            // to the treasury with the tax.
+            let mut tax_coin = crate::coin::Coin::from_coins(tax).min(out_coin);
             if let Some(m) = members.filter(|m| !m.is_empty()) {
-                let each = (out - tax) / m.len() as f32;
+                let (each, rest) = (out_coin - tax_coin).split(m.len());
+                tax_coin += rest;
                 for &i in m {
                     store.wealth[i as usize] += each;
                 }
+            } else {
+                tax_coin = out_coin;
+            }
+            town.treasury += tax_coin;
+            town.ledger.add(Flow::ProfitTax, tax);
+            f.book(crate::firms::FirmFlow::ProfitTax, tax);
+            if let Some(_m) = members.filter(|m| !m.is_empty()) {
                 f.book(crate::firms::FirmFlow::Dividends, out - tax);
             }
         }
@@ -679,8 +690,9 @@ fn food_imports(towns: &mut Towns, db: &Db, params: &Params, terrain: &Terrain, 
         }
         let reserve = mp.treasury_reserve_per_capita * towns.0[b].residents.len() as f32;
         let owed: f32 = towns.0[b].debts.iter().sum();
-        let pay =
-            ((towns.0[b].treasury - reserve).max(0.0) * ip.repay_share.clamp(0.0, 1.0)).min(owed);
+        let pay = ((towns.0[b].treasury.coins() - reserve).max(0.0)
+            * ip.repay_share.clamp(0.0, 1.0))
+        .min(owed);
         if pay <= 0.0 {
             continue;
         }
@@ -690,9 +702,9 @@ fn food_imports(towns: &mut Towns, db: &Db, params: &Params, terrain: &Terrain, 
                 continue;
             }
             towns.0[b].debts[a] -= share;
-            towns.0[b].treasury -= share;
+            towns.0[b].treasury -= crate::coin::Coin::from_coins(share);
             towns.0[b].ledger.add(Flow::DebtRepaid, share);
-            towns.0[a].treasury += share;
+            towns.0[a].treasury += crate::coin::Coin::from_coins(share);
             towns.0[a].ledger.add(Flow::DebtReceived, share);
         }
     }
@@ -736,16 +748,16 @@ fn food_imports(towns: &mut Towns, db: &Db, params: &Params, terrain: &Terrain, 
                 }
                 let price = towns.0[a].price[f] * (1.0 + mp.transport_cost * road / 1000.0);
                 let cost = amount * price;
-                let paid = cost.min(towns.0[b].treasury.max(0.0));
+                let paid = cost.min(towns.0[b].treasury.coins().max(0.0));
                 let q = towns.0[a].quality[f];
                 towns.0[a].stock[f] -= amount;
-                towns.0[a].treasury += paid;
+                towns.0[a].treasury += crate::coin::Coin::from_coins(paid);
                 towns.0[a].ledger.add(Flow::TradeSales, paid);
                 towns.0[a].ledger.export(b, cost);
                 let tb = &mut towns.0[b];
                 tb.quality[f] = (tb.stock[f] * tb.quality[f] + amount * q) / (tb.stock[f] + amount);
                 tb.stock[f] += amount;
-                tb.treasury -= paid;
+                tb.treasury -= crate::coin::Coin::from_coins(paid);
                 tb.ledger.add(Flow::TradePurchases, paid);
                 tb.debts[a] += cost - paid;
                 need -= amount * value;

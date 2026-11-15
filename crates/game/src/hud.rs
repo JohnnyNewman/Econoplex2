@@ -287,7 +287,7 @@ pub fn update_inspector(
         if store.female[i] { "female" } else { "male" },
         age,
         towns.0[store.town[i] as usize].name,
-        store.wealth[i],
+        store.wealth[i].coins(),
         activity_label(&store, &db, &tasks, i),
     );
     if let Some(g) = store.guild[i] {

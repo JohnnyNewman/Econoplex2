@@ -162,7 +162,7 @@ pub fn spend(
             let mut w: Vec<f32> = t
                 .residents
                 .iter()
-                .map(|&i| store.wealth[i as usize])
+                .map(|&i| store.wealth[i as usize].coins())
                 .collect();
             if w.is_empty() {
                 return 1.0;
@@ -197,10 +197,10 @@ pub fn spend(
             .map(|(g, taste)| {
                 let taste = taste.map_or(0.5, |d| store.mind[i][d]);
                 let e = g.elasticity.unwrap_or(*elasticity);
-                desired(g.want, taste, store.wealth[i], medians[t], e)
+                desired(g.want, taste, store.wealth[i].coins(), medians[t], e)
             })
             .collect();
-        let mut budget = spend_share.clamp(0.0, 1.0) * store.wealth[i].max(0.0);
+        let mut budget = spend_share.clamp(0.0, 1.0) * store.wealth[i].coins().max(0.0);
         let mut out = vec![false; goods.len()];
         for _ in 0..16 {
             // The good the household is furthest short of, that it can still buy.
@@ -209,7 +209,8 @@ pub fn spend(
                     !out[k]
                         && ids[k].is_some()
                         && wanted[k] - have[k] >= 0.5
-                        && store.wealth[i] >= goods[k].min_wealth.unwrap_or(0.0) * medians[t]
+                        && store.wealth[i].coins()
+                            >= goods[k].min_wealth.unwrap_or(0.0) * medians[t]
                 })
                 .max_by(|&a, &b| {
                     ((wanted[a] - have[a]) / wanted[a].max(1e-6))
@@ -239,13 +240,13 @@ pub fn spend(
                     firm.stock[p] -= 1.0;
                     town.flows.add(crate::goods::Flow::Bought, p, 1.0);
                     let firm = &mut town.firms[f];
-                    firm.cash += price;
+                    firm.cash += crate::coin::Coin::from_coins(price);
                     firm.book(crate::firms::FirmFlow::DirectSales, price);
                 }
                 None if town.stock[p] >= 1.0 => {
                     town.stock[p] -= 1.0;
                     town.flows.add(crate::goods::Flow::Bought, p, 1.0);
-                    town.treasury += price;
+                    town.treasury += crate::coin::Coin::from_coins(price);
                     town.ledger.add(crate::ledger::Flow::HouseholdGoods, price);
                 }
                 None => {
@@ -253,7 +254,7 @@ pub fn spend(
                     continue;
                 }
             }
-            store.wealth[i] -= price;
+            store.wealth[i] -= crate::coin::Coin::from_coins(price);
             budget -= price;
             have[k] += 1.0;
             town.goods_today[p] += 1.0;

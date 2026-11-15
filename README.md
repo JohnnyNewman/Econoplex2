@@ -270,6 +270,7 @@ smiths only by working next to their parents.
 
 Every town starts with `starting_coins` in its treasury. After that, new money comes
 only from a **mint** (see below); otherwise money is never created or destroyed.
+Money is counted in whole thousandths of a coin (`coin.rs`), so it adds up exactly.
 `econoplex-sim` prints the total each year, and the `money_is_conserved` test checks
 that it changes by exactly what the mints struck. Money moves between agents' wealth
 and town treasuries:
@@ -689,7 +690,6 @@ food to spare.
 - People choose a job afresh each day. There are no careers yet.
 - Belonging and esteem are held at a neutral value until there are goods and
   institutions that serve them.
-- Money is stored as floating point numbers.
 - Battles are decided squad by squad. Individual soldiers, formations and terrain on
   the battlefield are not simulated, and walls do not yet count.
 - A conquered town keeps its own people and economy and only pays tribute. There is

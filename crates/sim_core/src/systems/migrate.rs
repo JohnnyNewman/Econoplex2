@@ -84,7 +84,7 @@ pub fn migrate(
             let mut w: Vec<f32> = t
                 .residents
                 .iter()
-                .map(|&i| store.wealth[i as usize])
+                .map(|&i| store.wealth[i as usize].coins())
                 .collect();
             if w.is_empty() {
                 return 1.0;
@@ -250,7 +250,7 @@ pub fn migrate(
             let st = store.state[m];
             let me = MoverView {
                 state: &st,
-                wealth: store.wealth[m],
+                wealth: store.wealth[m].coins(),
                 median_wealth: median_wealth[home],
                 weights: &weights,
             };
@@ -344,12 +344,12 @@ pub fn migrate(
         if towns.0[to].policy.immigration == Immigration::Encouraged {
             // Settlement grant for each newcomer, paid to the household.
             let grant = (params.policy.settlement_grant * n as f32)
-                .clamp(0.0, towns.0[to].treasury.max(0.0));
-            towns.0[to].treasury -= grant;
+                .clamp(0.0, towns.0[to].treasury.coins().max(0.0));
+            towns.0[to].treasury -= crate::coin::Coin::from_coins(grant);
             towns.0[to]
                 .ledger
                 .add(crate::ledger::Flow::SettlementGrants, grant);
-            store.wealth[i] += grant;
+            store.wealth[i] += crate::coin::Coin::from_coins(grant);
         }
         towns.0[home].moves.left += n;
         towns.0[to].moves.arrived += n;

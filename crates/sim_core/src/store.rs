@@ -70,7 +70,7 @@ pub struct AgentStore {
     pub female: Vec<bool>,
     pub partner: Vec<Option<u32>>,
     pub parents: Vec<Option<(u32, u32)>>,
-    pub wealth: Vec<f32>,
+    pub wealth: Vec<crate::coin::Coin>,
     pub activity: Vec<Activity>,
     pub guild: Vec<Option<GuildLink>>,
     /// Recipe worked today (for physique training), cleared every tick.
@@ -113,7 +113,7 @@ pub struct NewAgent {
     pub aptitude: f32,
     pub parents: Option<(u32, u32)>,
     pub target: (f32, f32),
-    pub wealth: f32,
+    pub wealth: crate::coin::Coin,
 }
 
 impl AgentStore {
