@@ -226,4 +226,7 @@ fn controls(
     if keys.just_pressed(KeyCode::KeyP) {
         overlay.product_space = !overlay.product_space;
     }
+    if keys.just_pressed(KeyCode::KeyC) {
+        overlay.culture = !overlay.culture;
+    }
 }

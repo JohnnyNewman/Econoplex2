@@ -107,7 +107,8 @@ pub fn spawn_hud(mut commands: Commands, db: Res<Db>) {
         p.spawn((
             Text::new("Space pause | 1-5 speed | WASD pan | wheel zoom\nclick select | Esc deselect | P product space
 E economy | Tab next town | F5 save | F9 load
-Y why | T town | H history | L log | I person"),
+Y why | T town | H history | L log | I person
+C culture: red tradition, green faith, blue liberty"),
             font(12.0),
             TextColor(Color::srgb(0.8, 0.8, 0.8)),
         ));
@@ -368,7 +369,7 @@ pub fn update_legend(
     overlay: Res<crate::view::Overlay>,
     economy: Res<crate::economy_ui::EconomyView>,
 ) {
-    **legend = if overlay.product_space || economy.visible {
+    **legend = if overlay.product_space || overlay.culture || economy.visible {
         Visibility::Hidden
     } else {
         Visibility::Inherited
