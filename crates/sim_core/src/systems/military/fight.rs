@@ -214,7 +214,7 @@ pub(super) fn aftermath(
                 let i = i as usize;
                 store.alive[i]
                     && store.state[i][state::HEALTH] > 0.0
-                    && matches!(store.activity[i], Activity::Idle | Activity::Resting)
+                    && store.can_be_called(i)
             })
             .map(|i| (rng.random::<f32>(), i))
             .collect();

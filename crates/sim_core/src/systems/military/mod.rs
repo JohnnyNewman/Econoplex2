@@ -84,7 +84,7 @@ pub fn military(
         return;
     };
     let fight = db.skill_vecs[fight_idx as usize].clone();
-    let mut rng = seed.rng(clock.tick, streams::MILITARY);
+    let mut rng = seed.rng(clock.steps(), streams::MILITARY);
     let store = &mut *store;
     let dpy = clock.months_per_year;
     let cal = clock.calendar();
@@ -95,7 +95,7 @@ pub fn military(
     }
 
     // --- muster: recruit, release and arm
-    if mp.muster_interval > 0 && clock.tick.is_multiple_of(mp.muster_interval as u64) {
+    if clock.every_months(mp.muster_interval) {
         // The threat next door: the largest army a road leads from.
         let armies: Vec<f32> = towns.0.iter().map(|t| t.squad.len() as f32).collect();
         for (t, town) in towns.0.iter_mut().enumerate() {
@@ -128,9 +128,9 @@ pub fn military(
                     .copied()
                     .filter(|&i| {
                         let i = i as usize;
-                        // Anyone not in the middle of a job can be called up; in a busy
-                        // economy few adults are ever idle.
-                        matches!(store.activity[i], Activity::Idle | Activity::Resting)
+                        // Anyone at home and grown can be called up, from a
+                        // job too (the team works on without them).
+                        store.can_be_called(i)
                             && store.age_years(i, dpy) <= mp.max_recruit_age
                             && store.state[i][state::HEALTH] > 0.6
                     })
@@ -181,7 +181,7 @@ pub fn military(
     }
 
     // --- tribute, uprisings and peaceful independence
-    if mp.tribute_interval > 0 && clock.tick.is_multiple_of(mp.tribute_interval as u64) {
+    if clock.every_months(mp.tribute_interval) {
         let chance = mp.independence_rate * mp.tribute_interval as f32 / dpy as f32;
         // A ruler's whole squad holds all its tributaries at once.
         let hold: Vec<f32> = (0..n_towns)
@@ -215,7 +215,7 @@ pub fn military(
         }
     }
 
-    // --- a month's pay and drill for soldiers at home
+    // --- the step's pay and drill for soldiers at home
     for town in towns.0.iter_mut() {
         let marching: &[u32] = town.raid.as_ref().map_or(&[], |r| &r.soldiers);
         for &s in &town.squad {
@@ -230,7 +230,7 @@ pub fn military(
                     .learning
                     .practice(&mut store.cap[i], &fight, mult, true, cal.days());
                 let st = &mut store.state[i];
-                st[state::FATIGUE] = (st[state::FATIGUE] + 0.05).min(1.0);
+                st[state::FATIGUE] = (st[state::FATIGUE] + cal.flow(0.05)).min(1.0);
                 store.target[i] = (
                     town.pos.0 - 30.0 + rng.random_range(-12.0..12.0f32),
                     town.pos.1 - 30.0 + rng.random_range(-12.0..12.0f32),
@@ -247,7 +247,8 @@ pub fn military(
         raid.soldiers.retain(|&s| store.alive[s as usize]);
         let home_pos = towns.0[t].pos;
         let now = clock.tick;
-        march(&mut raid, t, &towns, &terrain, &env, mp, cal);
+        let walk_days = crate::env::work_days_this_step(&clock, &env, &params.time, true);
+        march(&mut raid, t, &towns, &terrain, &env, mp, walk_days);
         if let Some(id) = raid.squad {
             if let Some(s) = squads.list.get_mut(id as usize) {
                 s.members.retain(|m| raid.soldiers.contains(m));
@@ -394,8 +395,7 @@ pub fn military(
         } else {
             // A plan once a muster, and never into deep snow or a storm.
             let here = env.at(t);
-            if mp.muster_interval == 0
-                || !clock.tick.is_multiple_of(mp.muster_interval as u64)
+            if !clock.every_months(mp.muster_interval)
                 || here.ground.snow > 0.3
                 || here.weather.storm()
             {
@@ -545,10 +545,11 @@ fn disband(
     }
 }
 
-/// A simulated day of a raid's march, a month of marching days (the
-/// military system runs once a simulated day): soldiers walk in daylight, `march_speed` map units on a 12-hour day,
-/// more in long summer days and less in short winter ones, slowed by wet roads
-/// and snow and stopped by storms; out to the target and, once they fought, home.
+/// A step of a raid's march: soldiers walk in daylight, `march_speed` map
+/// units on a 12-hour day (`walk_days` is the step's walking in such days,
+/// more in long summer days and less in short winter ones), slowed by wet
+/// roads and snow and stopped by storms; out to the target and, once they
+/// fought, home.
 fn march(
     raid: &mut Raid,
     t: usize,
@@ -556,7 +557,7 @@ fn march(
     terrain: &crate::terrain::Terrain,
     env: &crate::env::Environment,
     mp: &crate::config::MilitaryParams,
-    cal: crate::calendar::Calendar,
+    walk_days: f32,
 ) {
     // The weather where the squad is: near home, or near the target.
     let here = if raid.progress < 0.5 {
@@ -569,10 +570,8 @@ fn march(
         return;
     }
     let road = terrain.road(t, raid.target as usize).max(1.0);
-    let daylight = (env.sunset - env.sunrise).clamp(0.0, 24.0) / 12.0;
     let pace = (1.0 - 0.5 * local.ground.wet) * (1.0 - 0.7 * local.ground.snow);
-    // A month of marching days.
-    let step = cal.flow(mp.march_speed) * daylight * pace / road;
+    let step = mp.march_speed * walk_days * pace / road;
     if raid.back {
         raid.progress = (raid.progress - step).max(0.0);
     } else {

@@ -31,6 +31,10 @@ pub fn relocate(
 ) {
     store.town[i] = to;
     commands.entity(store.entity[i]).insert(TownId(to));
+    // A job in the old town is left behind (the team works on without them).
+    if matches!(store.activity[i], Activity::Working(_)) {
+        store.activity[i] = Activity::Idle;
+    }
     // Guilds are per town; organize enrolls the agent in the new town's guild.
     if let Some(g) = store.guild[i].take() {
         commands.entity(g.membership).despawn();
@@ -52,10 +56,10 @@ pub fn migrate(
 ) {
     use crate::decision::migration::{MoverView, TownView};
     let mp = &params.migration;
-    if mp.interval == 0 || !clock.tick.is_multiple_of(mp.interval as u64) || towns.0.len() < 2 {
+    if !clock.every_months(mp.interval) || towns.0.len() < 2 {
         return;
     }
-    let mut rng = seed.rng(clock.tick, streams::MIGRATE);
+    let mut rng = seed.rng(clock.steps(), streams::MIGRATE);
     let store = &mut *store;
     let dpy = clock.months_per_year;
     let n_towns = towns.0.len();
@@ -132,7 +136,7 @@ pub fn migrate(
     let fade = params
         .decision
         .knowledge
-        .fade(mp.interval as f32 * clock.calendar().days());
+        .fade(mp.interval as f32 * clock.calendar().month_days());
     for mem in store.lived_in.iter_mut() {
         mem.iter_mut().for_each(|e| e.1 *= fade);
         mem.retain(|e| e.1 > 0.01);
@@ -146,9 +150,8 @@ pub fn migrate(
     // The journey is as long as the road, not the crow's flight.
     let dist = |a: usize, b: usize, _: &Towns| terrain.road(a, b);
 
-    let free = |s: &AgentStore, j: usize| {
-        s.alive[j] && matches!(s.activity[j], Activity::Idle | Activity::Resting)
-    };
+    // Anyone grown and at home can move, from a job too.
+    let free = |s: &AgentStore, j: usize| s.can_be_called(j);
     let mut moved = vec![false; store.len()];
     for i in 0..store.len() {
         if moved[i]
@@ -240,7 +243,7 @@ pub fn migrate(
             })
             .collect();
         // Estimates of little-known towns are off: one error per town for the household.
-        let mut hrng = seed.agent_rng(clock.tick, streams::MIGRATE, i);
+        let mut hrng = seed.agent_rng(clock.steps(), streams::MIGRATE, i);
         let errors: Vec<f32> = (0..n_towns)
             .map(|t| know.error(known[t], hrng.random_range(-1.0..1.0f32)))
             .collect();

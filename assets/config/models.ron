@@ -439,7 +439,7 @@
     // ticks for the hours and daylight; the economy runs on its first tick.
     // Outdoor work follows the daylight (8 hours in midwinter, 16 in midsummer).
     time: (
-        ticks_per_day: 12,
+        steps_per_day: 300,
         days_per_month: 10,
         months_per_year: 12,
         year_starts_at: 0.25, // spring equinox (0 = midwinter)

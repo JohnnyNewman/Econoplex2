@@ -66,7 +66,7 @@ pub struct ClassParams {
 }
 
 impl ClassParams {
-    /// The class over a simulated day of `cal`: a month of daily moves, so
+    /// The class over a step of `cal`: its share of a day's move, so
     /// speeds and the cap on a move scale with the days (log price moves add
     /// up), and the pressure is smoothed over the month.
     pub fn over(&self, cal: crate::calendar::Calendar) -> ClassParams {
@@ -79,7 +79,7 @@ impl ClassParams {
             },
             Inertia::Smoothed { speed, memory_days } => Inertia::Smoothed {
                 speed: speed * d,
-                memory_days: cal.months(memory_days).max(1.0),
+                memory_days: cal.steps(memory_days).max(1.0),
             },
         };
         ClassParams {

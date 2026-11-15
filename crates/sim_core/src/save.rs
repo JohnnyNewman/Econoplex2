@@ -34,7 +34,7 @@ use std::path::Path;
 /// 10: towns' price-index tallies (`index_year`) and seasonal flow profile
 /// (`flow_profile`) became sub-structs, and the model switches with one
 /// choice left were folded into plain parameters.
-pub const SAVE_VERSION: u32 = 11;
+pub const SAVE_VERSION: u32 = 12;
 
 /// One simulation entity and its components.
 #[derive(Serialize, Deserialize)]

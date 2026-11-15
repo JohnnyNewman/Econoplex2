@@ -1,10 +1,9 @@
 //! State dynamics: hunger, eating, health, fatigue recovery, happiness.
 //!
-//! One simulated day stands for a month (`calendar.rs`): people get a month's
-//! hunger and eat meals until they are no longer hungry, so hunger after the
-//! meals is a day's, as before; health and happiness move by a month's worth.
-//! Fatigue is the representative day's: a month of work tires as a day did,
-//! and a month of rest restores as a day did.
+//! Every economy step people get the step's hunger (`calendar.rs`) and eat
+//! a meal when they are hungry, from the first source that has food; health,
+//! fatigue and happiness move by the step's share of a day. A rest lasts a day
+//! of time (`rest_until`), then the person is free to choose again.
 
 use crate::db::Db;
 use crate::store::{Activity, AgentStore};
@@ -12,19 +11,25 @@ use crate::world::{Params, Towns};
 use bevy_ecs::prelude::*;
 use sim_data::dims::state::*;
 
-/// Most meals one person eats in a simulated day (a month of meals).
+/// Most meals one person eats in a step (more than one only when a step
+/// stands for more than a day).
 const MAX_MEALS: usize = 64;
 
+#[allow(clippy::too_many_arguments)]
 pub fn sense(
     mut store: ResMut<AgentStore>,
     mut towns: ResMut<Towns>,
     db: Res<Db>,
     params: Res<Params>,
     env: Res<crate::env::Environment>,
+    clock: Res<crate::world::SimClock>,
     mut squads: ResMut<crate::goods::Squads>,
 ) {
     let p = &params.needs;
     let cal = params.calendar();
+    let now = clock.steps();
+    // Starving is counted once a simulated day, as person-months.
+    let count_starving = clock.day_start();
     let ladder = match &params.market.consumption {
         crate::consumption::ConsumptionParams::Needs(lp) => Some(lp),
         _ => None,
@@ -32,7 +37,7 @@ pub fn sense(
     let store = &mut *store;
 
     // Food that a recipe turns into more food (grain into flour for bread) is held
-    // back for one day of that work, so hungry people don't eat the seed of the
+    // back for a reserve of that work, so hungry people don't eat the seed of the
     // next harvest and lock the town into famine.
     let reserve: Vec<Vec<f32>> = towns
         .0
@@ -77,9 +82,8 @@ pub fn sense(
         let st = &mut store.state[i];
 
         st[HUNGER] += cal.flow(p.hunger_per_day);
-        // Meals until the month's hunger is stilled: each meal is a portion
-        // from the first source that has food (squad packs, larder, firms,
-        // the market).
+        // Meals until the hunger is stilled: each meal is a portion from the
+        // first source that has food (squad packs, larder, firms, the market).
         for _ in 0..MAX_MEALS {
             if st[HUNGER] <= p.eat_threshold {
                 break;
@@ -153,20 +157,25 @@ pub fn sense(
         }
 
         if st[HUNGER] > 1.0 {
-            towns.0[store.town[i] as usize].starving += 1;
+            if count_starving {
+                towns.0[store.town[i] as usize].starving += 1;
+            }
             st[HUNGER] = st[HUNGER].min(1.5);
             st[HEALTH] -= cal.flow(p.starvation_damage);
         } else if st[HUNGER] < 0.6 {
             st[HEALTH] = (st[HEALTH] + cal.flow(p.health_regen)).min(1.0);
         }
 
+        // Rest restores, idling a little; work tires (work::produce).
         match store.activity[i] {
             Activity::Resting => {
-                st[FATIGUE] = (st[FATIGUE] - p.fatigue_rest_recovery).max(0.0);
-                store.activity[i] = Activity::Idle;
+                st[FATIGUE] = (st[FATIGUE] - cal.flow(p.fatigue_rest_recovery)).max(0.0);
+                if now >= store.rest_until[i] {
+                    store.activity[i] = Activity::Idle;
+                }
             }
             Activity::Idle | Activity::Child | Activity::Soldier | Activity::Captive => {
-                st[FATIGUE] = (st[FATIGUE] - p.fatigue_idle_recovery).max(0.0)
+                st[FATIGUE] = (st[FATIGUE] - cal.flow(p.fatigue_idle_recovery)).max(0.0)
             }
             Activity::Working(_) => {}
         }
@@ -181,6 +190,6 @@ pub fn sense(
             .clamp(0.0, 1.0);
     }
     if let Some(lp) = ladder {
-        crate::ladder::daily(store, &mut towns, &db, &params, &env, lp);
+        crate::ladder::daily(store, &mut towns, &db, &params, &env, lp, count_starving);
     }
 }

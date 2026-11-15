@@ -1,15 +1,16 @@
 //! Time of day, seasons and weather.
 //!
-//! The clock ([`SimClock`]) cuts each day into `time.ticks_per_day` ticks. The
-//! economy runs on the first tick of each day; the other ticks only move the
-//! hours and the weather on (see `build_schedule`). Each simulated day is the
-//! representative day of a month (`calendar.rs`): its date is the middle of
-//! its month, so twelve of them walk through the seasons once a year.
+//! The clock ([`SimClock`]) cuts each simulated day into `time.steps_per_day`
+//! economy steps. Every step moves the hours and the weather on and runs the
+//! whole economy (see `build_schedule`); the hour of the day is the step's
+//! place in the day. Each simulated day is the representative day of a month
+//! (`calendar.rs`): its date is the middle of its month, so twelve of them
+//! walk through the seasons once a year.
 //!
 //! The weather is a pure function of the world seed, the time and the place:
 //! seeded value noise drifting across the map makes weather fronts, so towns
 //! close together share a cold snap or a wet week, and a run replays exactly.
-//! Only the ground (snow cover, wet soil) keeps state from tick to tick.
+//! Only the ground (snow cover, wet soil) keeps state from step to step.
 //!
 //! [`Environment`] mirrors the stand-in that `game3d` draws from
 //! (`game3d/src/env.rs`): hour, season (0 = midwinter, 0.5 = midsummer),
@@ -26,10 +27,11 @@ use std::f32::consts::TAU;
 /// finely a day is cut.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TimeParams {
-    /// Ticks per day (6, 8, 12 or 24 are sensible; 1 = the old daily clock).
-    /// The economy runs on the first; the others move the hours and the
-    /// weather on, for daylight and the views.
-    pub ticks_per_day: u32,
+    /// Economy steps per simulated day. Every step runs the whole economy for
+    /// its slice of the day's 24 hours; rates convert per step (`calendar.rs`).
+    /// 300 makes a step about a real second at the clients' default speed of
+    /// five minutes a day.
+    pub steps_per_day: u32,
     /// Days each simulated day stands for: the representative day of its
     /// month (see `calendar.rs`). Daily rates come out per month through it.
     pub days_per_month: u32,
@@ -50,7 +52,7 @@ fn spring() -> f32 {
 impl Default for TimeParams {
     fn default() -> Self {
         TimeParams {
-            ticks_per_day: 1,
+            steps_per_day: 300,
             days_per_month: 10,
             months_per_year: 12,
             year_starts_at: spring(),
@@ -204,10 +206,10 @@ pub struct LocalEnv {
     pub day_mean_c: f32,
 }
 
-/// Time of day, season and the weather at every town, for this tick.
+/// Time of day, season and the weather at every town, for this step.
 #[derive(Resource, Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Environment {
-    /// Hour of the day at the middle of this tick, 0 .. 24.
+    /// Hour of the day at the middle of this step, 0 .. 24.
     pub hour: f32,
     /// Fraction of the year, 0 .. 1 (0 = midwinter, 0.5 = midsummer).
     pub season: f32,
@@ -234,10 +236,10 @@ impl Environment {
 
 // ---------------------------------------------------------------- the model
 
-/// Hour at the middle of the clock's current tick.
+/// Hour at the middle of the clock's current step.
 pub fn hour(clock: &SimClock) -> f32 {
-    let tpd = clock.ticks_per_day.max(1) as f32;
-    (clock.sub as f32 + 0.5) * 24.0 / tpd
+    let spd = clock.steps_per_day.max(1) as f32;
+    (clock.step as f32 + 0.5) * 24.0 / spd
 }
 
 /// Days since the start, continuous. Each simulated day is the middle day of
@@ -396,37 +398,60 @@ pub fn ground_step(ground: Ground, w: &Weather, days: f32) -> Ground {
     }
 }
 
-/// Moves the clock on by one tick. A new simulated day starts when the last
-/// tick of the old one has run; the economy runs on that first tick.
+/// Moves the clock on by one step. A new simulated day starts when the last
+/// step of the old one has run.
 pub fn advance(mut clock: ResMut<SimClock>) {
-    let tpd = clock.ticks_per_day.max(1);
-    if clock.sub + 1 >= tpd {
-        clock.sub = 0;
+    let spd = clock.steps_per_day.max(1);
+    if clock.step + 1 >= spd {
+        clock.step = 0;
         clock.tick += 1;
     } else {
-        clock.sub += 1;
+        clock.step += 1;
     }
 }
 
-/// On the first tick of a simulated day, runs the day's economy once (the
-/// `EconomyDay` schedule): one representative day for the whole month.
+/// Runs the economy for this step (the `EconomyStep` schedule).
 pub fn run_economy(world: &mut World) {
-    if world.resource::<SimClock>().sub != 0 {
-        return;
+    world.run_schedule(crate::EconomyStep);
+}
+
+/// Run condition: the first step of a simulated day (a month), when the
+/// monthly things happen: ageing, births, records, and events counted in
+/// months.
+pub fn day_start(clock: Res<SimClock>) -> bool {
+    clock.day_start()
+}
+
+/// The working hours of the representative day, for indoor or outdoor work.
+/// Indoor work keeps the equinox's hours (a full day's work every day);
+/// outdoor work (fields, forests, mines, building, clearing land) goes on
+/// while it is light: two thirds of a day's work in midwinter (8 hours
+/// against 12), a third more in midsummer.
+pub fn work_hours(env: &Environment, time: &TimeParams, outdoor: bool) -> (f32, f32) {
+    if outdoor {
+        (env.sunrise, env.sunset)
+    } else {
+        let h = time.day_length.equinox_hours.clamp(0.0, 24.0);
+        (12.0 - h / 2.0, 12.0 + h / 2.0)
     }
-    world.run_schedule(crate::EconomyDay);
 }
 
-/// How much of a full day's work an outdoor job (fields, forests, mines,
-/// building, clearing land) gets done today (1 = a full day). Outdoor work
-/// goes on while it is light: a day's work at the equinox, two thirds of it
-/// in midwinter (8 hours against 12), a third more in midsummer. Indoor jobs
-/// always get 1.
-pub fn outdoor_work_share(env: &Environment, time: &TimeParams) -> f32 {
-    ((env.sunset - env.sunrise) / time.day_length.equinox_hours.max(1.0)).max(0.0)
+/// How much work one worker does in this step, in days of work: the step's
+/// slice of the working hours (`Calendar::work_share`) on each of the
+/// month's days. Over a simulated day it adds up to a month of working days
+/// (outdoors, as many as the light allows).
+pub fn work_days_this_step(
+    clock: &SimClock,
+    env: &Environment,
+    time: &TimeParams,
+    outdoor: bool,
+) -> f32 {
+    let cal = clock.calendar();
+    let (start, end) = work_hours(env, time, outdoor);
+    cal.work_share(clock.step, start, end, time.day_length.equinox_hours) * cal.month_days()
 }
 
-/// Works out the hour, season and the weather at every town for this tick.
+/// Works out the hour, season and the weather at every town for this step.
 pub fn update(
     clock: Res<SimClock>,
     params: Res<Params>,
@@ -445,9 +470,9 @@ pub fn update(
     env.sunrise = sunrise;
     env.sunset = sunset;
     env.phase = phase(h, sunrise, sunset, time.day_length.twilight_hours);
-    // Each tick of the representative day stands for that tick of every day
+    // Each step of the representative day stands for that slice of every day
     // of the month, so the ground follows the month's weather.
-    let dt = clock.days_per_month.max(1) as f32 / clock.ticks_per_day.max(1) as f32;
+    let dt = clock.calendar().days();
     let n = towns.0.len();
     env.towns.resize(n, LocalEnv::default());
     for (i, town) in towns.0.iter().enumerate() {

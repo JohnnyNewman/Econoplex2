@@ -48,9 +48,9 @@ pub fn player_town(scenario: &Scenario) -> crate::policy::PlayerTown {
 
 /// Simulation clock. A year is `months_per_year` simulated days, one per
 /// month, each standing for `days_per_month` days (see [`crate::calendar`]).
-/// Each simulated day is cut into `ticks_per_day` ticks; `tick` counts
-/// simulated days (the economy runs once a day, on the day's first tick) and
-/// `sub` is the tick within the day. See `env` for hours, seasons and weather.
+/// Each simulated day is cut into `steps_per_day` economy steps; `tick`
+/// counts simulated days (months) and `step` is the step within the day.
+/// Every step runs the whole economy. See `env` for hours, seasons and weather.
 #[derive(Resource, Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct SimClock {
     /// Simulated days started so far (day 1 is the first day the economy runs).
@@ -59,41 +59,55 @@ pub struct SimClock {
     pub months_per_year: u32,
     /// Days each simulated day stands for.
     pub days_per_month: u32,
-    pub ticks_per_day: u32,
-    /// Tick within the current day, 0 .. ticks_per_day. Before the first day it
-    /// is the last tick of day 0, so the first step starts day 1.
-    pub sub: u32,
+    /// Economy steps in a simulated day.
+    pub steps_per_day: u32,
+    /// Step within the current day, 0 .. steps_per_day. Before the first day
+    /// it is the last step of day 0, so the first step starts day 1.
+    pub step: u32,
 }
 
 impl SimClock {
     pub fn new(time: &crate::env::TimeParams) -> Self {
-        let tpd = time.ticks_per_day.max(1);
+        let spd = time.steps_per_day.max(1);
         SimClock {
             tick: 0,
             months_per_year: time.months_per_year.max(1),
             days_per_month: time.days_per_month.max(1),
-            ticks_per_day: tpd,
-            sub: tpd - 1,
+            steps_per_day: spd,
+            step: spd - 1,
         }
     }
     /// Simulated days started so far (the same as `tick`).
     pub fn day(&self) -> u64 {
         self.tick
     }
-    /// Hour at the middle of the current tick, 0 .. 24.
+    /// Steps run so far, counting the current one: a number for each step,
+    /// for random streams and for timers counted in steps.
+    pub fn steps(&self) -> u64 {
+        self.tick.saturating_sub(1) * self.steps_per_day.max(1) as u64 + self.step as u64 + 1
+    }
+    /// Hour at the middle of the current step, 0 .. 24.
     pub fn hour(&self) -> f32 {
         crate::env::hour(self)
     }
-    /// The calendar this clock runs on.
+    /// The calendar this clock runs on: how long a step is.
     pub fn calendar(&self) -> crate::calendar::Calendar {
-        crate::calendar::Calendar {
-            days: self.days_per_month.max(1) as f32,
-            per_year: self.months_per_year.max(1),
-        }
+        crate::calendar::Calendar::of(self.days_per_month, self.months_per_year, self.steps_per_day)
     }
-    /// Whether this tick is the last of its day (a whole day has run).
+    /// Whether this step is the first of its simulated day (the month's
+    /// things happen then).
+    pub fn day_start(&self) -> bool {
+        self.step == 0
+    }
+    /// Whether this is the first step of a simulated day whose number is a
+    /// multiple of `months`: the step that events counted in months happen on.
+    /// Never for `months == 0`.
+    pub fn every_months(&self, months: u32) -> bool {
+        months > 0 && self.day_start() && self.tick.is_multiple_of(months as u64)
+    }
+    /// Whether this step is the last of its day (a whole day has run).
     pub fn day_done(&self) -> bool {
-        self.sub + 1 >= self.ticks_per_day.max(1)
+        self.step + 1 >= self.steps_per_day.max(1)
     }
     pub fn year(&self) -> u64 {
         self.tick / self.months_per_year.max(1) as u64
@@ -104,7 +118,7 @@ impl SimClock {
     }
 }
 
-/// World seed. Each system derives its own stream per tick, so results do not
+/// World seed. Each system derives its own stream per step, so results do not
 /// depend on system scheduling.
 #[derive(Resource, Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct SimSeed(pub u64);

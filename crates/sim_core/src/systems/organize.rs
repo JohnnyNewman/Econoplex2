@@ -16,7 +16,7 @@ pub fn organize(
     items: Query<&Product, With<Stored>>,
 ) {
     let op = &params.organize;
-    if op.interval == 0 || !clock.tick.is_multiple_of(op.interval as u64) {
+    if !clock.every_months(op.interval) {
         return;
     }
     let dpy = clock.months_per_year;

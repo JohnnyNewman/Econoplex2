@@ -194,7 +194,7 @@ pub struct Firm {
     pub capital: f32,
     /// Days in a row it has been short of cash, and whether it is closed.
     #[serde(default)]
-    pub short_days: u32,
+    pub short_days: f32,
     #[serde(default)]
     pub closed: bool,
     /// Loans from the town's treasury still to repay.
@@ -221,16 +221,17 @@ pub struct Loan {
     pub left: f32,
     /// Yearly interest rate.
     pub rate: f32,
-    pub days_left: u32,
+    /// Days until it falls due.
+    pub days_left: f32,
 }
 
 impl Loan {
-    /// This simulated day's instalment: (interest, principal), a month of
-    /// them.
+    /// This step's instalment: (interest, principal), the principal spread
+    /// evenly over the steps left.
     pub fn due(&self, cal: crate::calendar::Calendar) -> (f32, f32) {
         let interest = self.left * self.rate.max(0.0) / cal.per_year() as f32;
-        let months_left = cal.months(self.days_left as f32).ceil().max(1.0);
-        let principal = self.left / months_left;
+        let steps_left = cal.steps(self.days_left).ceil().max(1.0);
+        let principal = self.left / steps_left;
         (interest, principal)
     }
 }
@@ -287,8 +288,8 @@ impl Firm {
         (self.cash.coins() - reserve_days * self.input_bill).max(0.0)
     }
 
-    /// Close the simulated day's books: its flows are a month of daily ones,
-    /// and the bills are daily averages over about a month of days.
+    /// Close the step's books: the bills are daily averages over about a
+    /// month of days.
     pub fn end_day(&mut self, cal: crate::calendar::Calendar) {
         let a = cal.smoothing(30.0);
         let d = cal.days();
@@ -380,7 +381,7 @@ mod tests {
         assert_eq!(f.payout(5.0, 0.5), 0.0);
         // A month of 20 a day in wages (200), against a bill of 10 a day.
         f.book(FirmFlow::Wages, 200.0);
-        let cal = crate::calendar::Calendar::default();
+        let cal = crate::calendar::Calendar::of(10, 12, 1);
         f.end_day(cal);
         let a = 1.0 - (1.0 - 1.0f32 / 30.0).powi(10);
         assert!((f.wage_bill - (10.0 + (20.0 - 10.0) * a)).abs() < 1e-4);
@@ -405,18 +406,18 @@ mod tests {
         let mut l = Loan {
             left: 120.0,
             rate: 0.1,
-            days_left: 120,
+            days_left: 120.0,
         };
-        // A year of 12 months of 10 days: 120 days are 12 instalments.
-        let cal = crate::calendar::Calendar::default();
+        // A year of 12 months of 10 days, a step a month: 12 instalments.
+        let cal = crate::calendar::Calendar::of(10, 12, 1);
         let (i, p) = l.due(cal);
         assert!((i - 1.0).abs() < 1e-6 && (p - 10.0).abs() < 1e-6);
         let mut paid = 0.0;
-        while l.days_left > 0 {
+        while l.days_left > 1e-3 {
             let (i, p) = l.due(cal);
             paid += i + p;
             l.left -= p;
-            l.days_left = l.days_left.saturating_sub(cal.whole_days());
+            l.days_left = (l.days_left - cal.days()).max(0.0);
         }
         assert!(l.left.abs() < 1e-3);
         assert!(paid > 120.0 && paid < 120.0 * 1.1);

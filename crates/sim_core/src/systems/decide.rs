@@ -98,17 +98,17 @@ pub fn makes_food(db: &Db, r: usize) -> bool {
     m.food_out > in_food
 }
 
-/// Inputs held back for `food_reserve_months` simulated days (each a month) of
-/// the food the town needs, made along each food
+/// Inputs held back for `food_reserve_months` months of the food the town
+/// needs, made along each food
 /// chain (grain for the mills, flour and wood for the bakeries). Hungry people don't
 /// eat the grain the mills need, and other trades don't take the wood the bakeries
 /// need, but anything beyond that is free for other work. A recipe whose
 /// output is already piling up reserves nothing.
 pub fn food_reserve(db: &Db, town: &crate::world::Town, params: &Params) -> Vec<f32> {
     let need = town.residents.len() as f32
-        * params
-            .calendar()
-            .flow(params.needs.hunger_per_day * params.market.food_reserve_months);
+        * params.needs.hunger_per_day
+        * params.calendar().month_days()
+        * params.market.food_reserve_months;
     let mut r = vec![0.0; db.content.products.len()];
     for (k, m) in db.recipes.iter().enumerate() {
         if !makes_food(db, k)
@@ -126,8 +126,8 @@ pub fn food_reserve(db: &Db, town: &crate::world::Town, params: &Params) -> Vec<
     r
 }
 
-/// How many more workers each recipe can absorb in `town` this simulated day
-/// (each working the whole month), limited by the
+/// How many more workers each recipe can absorb in `town` now (each taking a
+/// day's inputs and nature), limited by the
 /// nature left to harvest and the inputs in stock. Jobs fill up as agents choose
 /// them, so the rest of the town spreads to other work instead of queueing.
 /// Nobody makes a good the town is glutted with, and trades that don't feed
@@ -139,8 +139,8 @@ pub fn job_capacity(
     sites: &Query<&NaturalResource>,
 ) -> Vec<f32> {
     let reserve = food_reserve(db, town, params);
-    // A worker uses a month of a day's inputs and nature.
-    let days = params.calendar().days();
+    // A worker uses a day's inputs and nature (a step's, if a step is longer).
+    let days = params.calendar().days().max(1.0);
     let mut nature_total = vec![0.0f32; db.content.nature.len()];
     for &e in &town.nature_sites {
         if let Ok(n) = sites.get(e) {
@@ -426,6 +426,9 @@ pub fn decide(
     decisions.jobs.clear();
     decisions.apprentices.clear();
     let mastery = params.mastery();
+    let cal = params.calendar();
+    // A rest lasts a day.
+    let rest_until = clock.steps() + cal.steps(1.0).round().max(1.0) as u64;
 
     // Per-town context, computed once.
     let mut capacity: Vec<Vec<f32>> = towns
@@ -502,7 +505,11 @@ pub fn decide(
             &default_ladder
         }
     };
-    let sats = crate::ladder::all(&store, &towns, &db, &params, &env, ladder_params);
+    // Only the people choosing now need their satisfaction.
+    let idle: Vec<usize> = (0..store.len())
+        .filter(|&i| store.alive[i] && store.activity[i] == Activity::Idle)
+        .collect();
+    let sats = crate::ladder::of_people(&store, &towns, &db, &params, &env, ladder_params, &idle);
     let savings_costs = crate::ladder::savings_costs(&towns, &db, &params, &env);
     let ctx = Choice {
         db: &db,
@@ -517,7 +524,7 @@ pub fn decide(
         ladder: ladder_params,
     };
 
-    // Places each job had at the start of the day, for the wage factors.
+    // Places each job had at the start of the step, for the wage factors.
     let places_start: Vec<Vec<f32>> = (0..towns.0.len())
         .map(|t| {
             (0..db.recipes.len())
@@ -537,12 +544,9 @@ pub fn decide(
         .collect();
 
     // Phase 1, in parallel: every idle agent scores the jobs its town has open at
-    // the start of the day. Jobs only close during the day, so these scores cover
-    // everything an agent can still pick.
+    // the start of the step. Jobs only close during the step, so these scores
+    // cover everything an agent can still pick.
     let store = &mut *store;
-    let idle: Vec<usize> = (0..store.len())
-        .filter(|&i| store.alive[i] && store.activity[i] == Activity::Idle)
-        .collect();
     // Position of each recipe in its town's opening list.
     let slot_of: Vec<Vec<u32>> = open_jobs
         .iter()
@@ -611,7 +615,7 @@ pub fn decide(
                             options.push((2 * k as u32 + 1, app_scores[k]));
                         }
                     }
-                    let mut rng = seed.agent_rng(clock.tick, streams::DECIDE, i);
+                    let mut rng = seed.agent_rng(clock.steps(), streams::DECIDE, i);
                     let rng: &mut dyn rand::RngCore = &mut rng;
                     decision
                         .choice
@@ -691,8 +695,9 @@ pub fn decide(
                     }
                 }
                 None => {
-                    let mut rng = seed.agent_rng(clock.tick, streams::DECIDE + 100, i);
+                    let mut rng = seed.agent_rng(clock.steps(), streams::DECIDE + 100, i);
                     store.activity[i] = Activity::Resting;
+                    store.rest_until[i] = rest_until;
                     let c = towns.0[t].pos;
                     store.target[i] = (
                         c.0 + rng.random_range(-45.0..45.0f32),
@@ -704,8 +709,8 @@ pub fn decide(
         decisions.apprentices.sort_unstable();
 
         // Every 30 days every workplace reconsiders its share of apprentice places.
-        let every = params.calendar().months(30.0).round().max(1.0) as u64;
-        if clock.tick.is_multiple_of(every) {
+        let every = cal.steps(30.0).round().max(1.0) as u64;
+        if clock.steps().is_multiple_of(every) {
             for town in towns.0.iter_mut() {
                 town.apprentice_share
                     .resize(db.recipes.len(), share_params.min);
@@ -727,7 +732,7 @@ pub fn decide(
         let mut pool: Vec<u32> = Vec::new();
         for (&i, (rest, job_scores)) in idle.iter().zip(&scores) {
             let t = store.town[i] as usize;
-            let mut rng = seed.agent_rng(clock.tick, streams::DECIDE, i);
+            let mut rng = seed.agent_rng(clock.steps(), streams::DECIDE, i);
             let choice = ctx.pick(
                 store,
                 i,
@@ -741,6 +746,7 @@ pub fn decide(
             match choice {
                 None => {
                     store.activity[i] = Activity::Resting;
+                    store.rest_until[i] = rest_until;
                     let c = towns.0[t].pos;
                     store.target[i] = (
                         c.0 + rng.random_range(-45.0..45.0f32),
@@ -770,7 +776,6 @@ pub fn decide(
 
     // Each job's pay moves with how many took it against its places.
     let takers = demand;
-    let cal = params.calendar();
     for (t, town) in towns.0.iter_mut().enumerate() {
         town.wage_factor.resize(db.recipes.len(), 1.0);
         for r in 0..db.recipes.len() {

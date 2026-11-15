@@ -530,7 +530,7 @@ fn town_views(
                 day_food_cost: day_food_cost.max(1e-3),
                 day_cost,
                 heat_price,
-                month_days: params.calendar().days(),
+                month_days: params.calendar().month_days(),
                 mean_c: env.at(t).day_mean_c,
                 hunger_per_day: params.needs.hunger_per_day.max(1e-3),
                 ahead: expected_temps(params, env, env.at(t).day_mean_c),
@@ -599,8 +599,10 @@ fn assess(
     s
 }
 
-/// Each simulated day, a month of it: clothes and goods wear, each hearth burns the fuel the cold asks
-/// for, cold hurts, and happiness follows the ladder.
+/// Each step, its share of the day: clothes and goods wear, each hearth burns
+/// the fuel the cold asks for, cold hurts, and happiness follows the ladder.
+/// With `count`, people left cold add a month of person-days to their town's
+/// `cold_days` (once a simulated day).
 pub fn daily(
     store: &mut AgentStore,
     towns: &mut Towns,
@@ -608,6 +610,7 @@ pub fn daily(
     params: &Params,
     env: &crate::env::Environment,
     lp: &LadderParams,
+    count: bool,
 ) {
     use sim_data::dims::state::*;
     let goods = goods(db);
@@ -628,7 +631,7 @@ pub fn daily(
         }
     }
     let homes = Homes::of(store, &goods, lp);
-    // Each hearth burns what the month's days need, fuel by fuel.
+    // Each hearth burns what the step's share of the days needs, fuel by fuel.
     let mut warm = vec![1.0f32; store.len()];
     for k in 0..store.len() {
         if !store.alive[k] || homes.keeper[k] != k {
@@ -669,8 +672,8 @@ pub fn daily(
         }
         let view = &views[store.town[i] as usize];
         let w = warm[homes.keeper[i]];
-        if w < 0.5 {
-            towns.0[store.town[i] as usize].cold_days += cal.whole_days();
+        if w < 0.5 && count {
+            towns.0[store.town[i] as usize].cold_days += cal.month_days().round() as u32;
         }
         let h = homes.holdings(store, i, &goods, lp);
         let short_c = (lp.comfort_c - (view.mean_c + lp.house_c + h.clothes)).max(0.0);
@@ -692,29 +695,48 @@ pub fn all(
     env: &crate::env::Environment,
     lp: &LadderParams,
 ) -> Vec<Option<Sat>> {
+    let people: Vec<usize> = (0..store.len()).filter(|&i| store.alive[i]).collect();
+    of_people(store, towns, db, params, env, lp, &people)
+}
+
+/// The satisfaction per need of `people` (by index, in a list as long as the
+/// store; everyone else `None`).
+pub fn of_people(
+    store: &AgentStore,
+    towns: &Towns,
+    db: &Db,
+    params: &Params,
+    env: &crate::env::Environment,
+    lp: &LadderParams,
+    people: &[usize],
+) -> Vec<Option<Sat>> {
+    let mut out = vec![None; store.len()];
+    if people.is_empty() {
+        return out;
+    }
     let goods = goods(db);
     let views = town_views(towns, db, params, env);
     let homes = Homes::of(store, &goods, lp);
-    (0..store.len())
-        .map(|i| {
-            store.alive[i].then(|| {
-                let h = homes.holdings(store, i, &goods, lp);
-                assess(
-                    store,
-                    i,
-                    &h,
-                    store.wealth[i].coins(),
-                    &views[store.town[i] as usize],
-                    lp,
-                    db,
-                    false,
-                )
-            })
-        })
-        .collect()
+    for &i in people {
+        if !store.alive[i] {
+            continue;
+        }
+        let h = homes.holdings(store, i, &goods, lp);
+        out[i] = Some(assess(
+            store,
+            i,
+            &h,
+            store.wealth[i].coins(),
+            &views[store.town[i] as usize],
+            lp,
+            db,
+            false,
+        ));
+    }
+    out
 }
 
-/// Every `interval` months (staggered), each adult buys what raises its weighted
+/// Every `interval` months (staggered over the steps), each adult buys what raises its weighted
 /// satisfaction most per coin, while that beats keeping the money: clothes and
 /// other personal goods for themself, and, if they keep the home, fuel and home
 /// goods for the household (worth as much as it does for everyone at the
@@ -726,26 +748,33 @@ pub fn spend(
     params: &Params,
     env: &crate::env::Environment,
     lp: &LadderParams,
-    tick: u64,
+    step: u64,
 ) {
     let goods = goods(db);
     if goods.is_empty() {
         return;
     }
+    let cal = params.calendar();
+    // A trip every `interval` months: each person on their own step of it.
+    let iv = lp.interval.max(1) as u64 * cal.steps as u64;
+    let shoppers: Vec<usize> = (0..store.len())
+        .filter(|&i| {
+            store.alive[i]
+                && !matches!(store.activity[i], Activity::Child | Activity::Captive)
+                && (step + i as u64).is_multiple_of(iv)
+        })
+        .collect();
+    if shoppers.is_empty() {
+        return;
+    }
     let views = town_views(towns, db, params, env);
     let homes = Homes::of(store, &goods, lp);
-    let iv = lp.interval.max(1) as u64;
     // Units bought one by one on a trip: up to 16 for each week the trip
     // covers.
-    let max_units = (16.0 * iv as f32 * params.calendar().days() / 7.0).ceil() as usize;
+    let max_units =
+        (16.0 * lp.interval.max(1) as f32 * cal.month_days() / 7.0).ceil() as usize;
     let firms_on = params.market.firms.on();
-    for i in 0..store.len() {
-        if !store.alive[i]
-            || matches!(store.activity[i], Activity::Child | Activity::Captive)
-            || !(tick + i as u64).is_multiple_of(iv)
-        {
-            continue;
-        }
+    for i in shoppers {
         let t = store.town[i] as usize;
         let view = &views[t];
         let keeps_home = homes.keeper[i] == i;

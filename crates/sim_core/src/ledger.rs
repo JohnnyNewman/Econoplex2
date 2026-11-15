@@ -210,7 +210,7 @@ impl Ledger {
         sum_group(&self.last_year, g)
     }
 
-    /// Close a simulated day: its flows are a month of daily ones; `monthly`
+    /// Close a step: its flows are over the days it stands for; `monthly`
     /// keeps the daily average over about the last month of days.
     fn end_day(&mut self, cal: crate::calendar::Calendar) {
         let a = cal.smoothing(MONTH_DAYS);
@@ -241,9 +241,9 @@ pub fn sum_group(v: &[f32; FLOWS], g: Group) -> f32 {
         .sum()
 }
 
-/// Close the day's books (and the year's at year end). Runs before metrics.
+/// Close the step's books (and the year's at year end). Runs before metrics.
 pub fn close_day(mut towns: ResMut<Towns>, clock: Res<SimClock>) {
-    let year_end = clock.tick > 0 && clock.day_of_year() == 0;
+    let year_end = clock.tick > 0 && clock.day_of_year() == 0 && clock.day_start();
     let cal = clock.calendar();
     for t in towns.0.iter_mut() {
         t.ledger.end_day(cal);
@@ -273,8 +273,8 @@ mod tests {
     #[test]
     fn the_monthly_average_approaches_a_steady_flow() {
         let mut l = Ledger::new(2);
-        // 100 simulated days of 10 days each, 100 a month: 10 a day.
-        let cal = crate::calendar::Calendar::default();
+        // 100 steps of 10 days each, 100 a step: 10 a day.
+        let cal = crate::calendar::Calendar::of(10, 12, 1);
         for _ in 0..100 {
             l.add(Flow::Wages, 100.0);
             l.export(1, 40.0);

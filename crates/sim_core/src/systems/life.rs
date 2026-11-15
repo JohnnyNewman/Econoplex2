@@ -97,10 +97,13 @@ pub fn lifecycle(
     clock: Res<SimClock>,
     seed: Res<SimSeed>,
 ) {
-    let mut rng = seed.rng(clock.tick, streams::LIFE);
+    let mut rng = seed.rng(clock.steps(), streams::LIFE);
     let lp = &params.life;
     // Simulated days (months) a year: ages, yearly hazards and birth rates.
+    // People age, die of old age, partner and are born once a month, on the
+    // first step of a simulated day; ill health kills on any step.
     let dpy = clock.months_per_year.max(1);
+    let month = clock.day_start();
     let cal = clock.calendar();
     let store = &mut *store;
     let n = store.len();
@@ -111,13 +114,17 @@ pub fn lifecycle(
         if !store.alive[i] {
             continue;
         }
-        store.age_months[i] += 1;
-        let age = store.age_years(i, dpy);
-        if store.activity[i] == Activity::Child && age >= lp.adult_age {
-            store.activity[i] = Activity::Idle;
+        let mut dies = store.state[i][state::HEALTH] <= 0.0;
+        if month {
+            store.age_months[i] += 1;
+            let age = store.age_years(i, dpy);
+            if store.activity[i] == Activity::Child && age >= lp.adult_age {
+                store.activity[i] = Activity::Idle;
+            }
+            let hazard = lp.mortality_a * (lp.mortality_b * age).exp() / dpy as f32;
+            dies |= rng.random::<f32>() < hazard;
         }
-        let hazard = lp.mortality_a * (lp.mortality_b * age).exp() / dpy as f32;
-        if store.state[i][state::HEALTH] <= 0.0 || rng.random::<f32>() < hazard {
+        if dies {
             store.alive[i] = false;
             commands.entity(store.entity[i]).despawn();
             dead.push(i);
@@ -148,7 +155,7 @@ pub fn lifecycle(
     }
 
     // --- partnering
-    if lp.partner_interval > 0 && clock.tick.is_multiple_of(lp.partner_interval as u64) {
+    if clock.every_months(lp.partner_interval) {
         for town in &towns.0 {
             let single = |i: u32, female: bool, s: &AgentStore| {
                 let i = i as usize;
@@ -212,7 +219,7 @@ pub fn lifecycle(
         .collect();
     let gp = &params.genetics;
     for mother in 0..n {
-        if !store.alive[mother] || !store.female[mother] {
+        if !month || !store.alive[mother] || !store.female[mother] {
             continue;
         }
         let Some(father) = store.partner[mother] else {
@@ -284,7 +291,7 @@ pub fn lifecycle(
             .insert((Agent { idx }, TownId(t as u16)));
     }
 
-    // --- rebuild residents
+    // --- rebuild residents (people also move between towns on other steps)
     for town in towns.0.iter_mut() {
         town.residents.clear();
     }

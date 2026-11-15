@@ -56,7 +56,7 @@ pub fn settle(
         }
     }
     firm_finances(&mut towns, &mut store, &db, &params);
-    crate::consumption::spend(&mut towns, &mut store, &db, &params, &env, clock.tick);
+    crate::consumption::spend(&mut towns, &mut store, &db, &params, &env, clock.steps());
     let derived = derived_targets(&towns, &db, &params, &sites);
     // Each good's price dynamics: its class's, or its own override.
     let dynamics: Option<Vec<crate::pricing::ClassParams>> =
@@ -74,8 +74,8 @@ pub fn settle(
                 })
                 .collect()
         });
-    // Daily use, averaged over about a month of days: this simulated day's use
-    // is a month of it.
+    // Daily use, averaged over about a month of days: this step's use over
+    // the days it stands for.
     let month = cal.smoothing(crate::ledger::MONTH_DAYS);
     for town in towns.0.iter_mut() {
         town.input_use.resize(np, 0.0);
@@ -260,7 +260,7 @@ pub fn settle(
             if old > 0.0 && town.price[p] > 0.0 {
                 town.price_vol.resize(3, Default::default());
                 let k = class_index(db.content.products[p].price_class());
-                // Recorded as a move per day, the month's spread evenly.
+                // Recorded as a move per day, the step's spread over its days.
                 town.price_vol[k].add((town.price[p] / old).ln().abs() / cal.days());
             }
             if let crate::config::ScarcityCap::Loosen { rate, max_factor } = mp.scarcity_cap {
@@ -276,7 +276,7 @@ pub fn settle(
         }
     }
 
-    // Yearly rates over the simulated days of a year.
+    // Yearly rates over the steps of a year.
     let dpy = cal.per_year() as f32;
     for town in towns.0.iter_mut() {
         for &(food, _) in &db.foods {
@@ -338,7 +338,8 @@ pub fn settle(
     }
 
     // Caravans: move bulk goods from cheap to expensive towns when the margin covers transport.
-    if mp.trade_interval > 0 && clock.tick.is_multiple_of(mp.trade_interval as u64) {
+    let trade_round = clock.every_months(mp.trade_interval);
+    if trade_round {
         let n = towns.0.len();
         for p in 0..np {
             let cat = db.category(p as u32);
@@ -415,7 +416,7 @@ pub fn settle(
         }
     }
 
-    food_imports(&mut towns, &db, &params, &terrain, clock.tick);
+    food_imports(&mut towns, &db, &params, &terrain, trade_round);
 
     crate::farming::regrow(&towns, &db, &params, &env, &mut sites);
 }
@@ -564,16 +565,16 @@ pub fn firm_finances(
         let n = town.firms.len().max(1) as f32;
         for (k, f) in town.firms.iter_mut().enumerate() {
             if f.cash.coins() < 0.2 * start_cash {
-                f.short_days += cal.whole_days();
+                f.short_days += cal.days();
             } else {
-                f.short_days = 0;
+                f.short_days = 0.0;
                 f.closed = false;
             }
-            if f.started && f.short_days < close_days {
+            if f.started && f.short_days < close_days as f32 {
                 continue;
             }
             f.started = true;
-            f.short_days = 0;
+            f.short_days = 0.0;
             let mut need = (start_cash - f.cash.coins()).max(0.0);
             let grant = need.min(0.5 * town.treasury.coins().max(0.0) / n);
             if grant > 0.0 {
@@ -619,7 +620,7 @@ pub fn firm_finances(
             owed.retain(|o| o.1 > 1e-4);
             town.firms[k].payables = owed;
         }
-        // Loans: each month's instalment, interest first, out of the firm's cash.
+        // Loans: each step's instalment, interest first, out of the firm's cash.
         // A closed firm's overdue loans default: the rest is written off.
         for f in town.firms.iter_mut() {
             let closed = f.closed;
@@ -635,14 +636,14 @@ pub fn firm_finances(
                 town.ledger.add(Flow::LoanInterest, paid_i);
                 town.ledger.add(Flow::LoanRepayments, paid_p);
                 l.left -= paid_p;
-                l.days_left = l.days_left.saturating_sub(cal.whole_days());
-                if l.days_left == 0 && l.left > 1e-3 {
+                l.days_left = (l.days_left - cal.days()).max(0.0);
+                if l.days_left <= 0.0 && l.left > 1e-3 {
                     if closed {
                         town.loan_defaults += l.left;
                         l.left = 0.0;
                     } else {
                         // Overdue: the rest falls due over another month.
-                        l.days_left = 30;
+                        l.days_left = 30.0;
                     }
                 }
             }
@@ -692,9 +693,9 @@ pub fn firm_finances(
 /// Emergency food imports. Every trade round, a town importing (policy on, or
 /// auto while short of food) buys food from neighbours with stock to spare, at
 /// the seller's price plus transport, paying from its treasury and owing the
-/// rest. Each simulated day a town with debts pays a month's a share of its treasury above its
+/// rest. Each step a town with debts pays the step's share of its treasury above its
 /// reserve toward them; debts grow with interest.
-fn food_imports(towns: &mut Towns, db: &Db, params: &Params, terrain: &Terrain, tick: u64) {
+fn food_imports(towns: &mut Towns, db: &Db, params: &Params, terrain: &Terrain, round: bool) {
     use crate::policy::Imports;
     let mp = &params.market;
     let ip = &mp.imports;
@@ -731,7 +732,7 @@ fn food_imports(towns: &mut Towns, db: &Db, params: &Params, terrain: &Terrain, 
             towns.0[a].ledger.add(Flow::DebtReceived, share);
         }
     }
-    if mp.trade_interval == 0 || !tick.is_multiple_of(mp.trade_interval as u64) {
+    if !round {
         return;
     }
     for b in 0..n {

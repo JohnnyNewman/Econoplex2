@@ -69,7 +69,7 @@ pub struct AgentStore {
     pub alive: Vec<bool>,
     pub entity: Vec<Entity>,
     pub town: Vec<u16>,
-    /// Age in simulated days, one per month.
+    /// Age in simulated days (months).
     pub age_months: Vec<u32>,
     pub female: Vec<bool>,
     pub partner: Vec<Option<u32>>,
@@ -77,7 +77,7 @@ pub struct AgentStore {
     pub wealth: Vec<crate::coin::Coin>,
     pub activity: Vec<Activity>,
     pub guild: Vec<Option<GuildLink>>,
-    /// Recipe worked today (for physique training), cleared every tick.
+    /// Recipe worked this step (for physique training), cleared every step.
     pub worked_today: Vec<Option<u32>>,
     pub last_recipe: Vec<Option<u32>>,
     /// Where the agent is heading (world units). The view animates toward it.
@@ -99,6 +99,8 @@ pub struct AgentStore {
     /// Household goods held (good, units); see `ladder`.
     #[serde(default)]
     pub owned: Vec<Vec<(u32, f32)>>,
+    /// The step (`SimClock::steps`) a rest ends on: a rest lasts a day.
+    pub rest_until: Vec<u64>,
 }
 
 /// Everything needed to create an agent.
@@ -170,6 +172,7 @@ impl AgentStore {
         self.larder.push(Vec::new());
         self.lived_in.push(Vec::new());
         self.owned.push(Vec::new());
+        self.rest_until.push(0);
         idx
     }
 
@@ -193,6 +196,17 @@ impl AgentStore {
             *x += e;
         }
         v
+    }
+
+    /// Whether person `i` is a free adult at home: idle, resting or at work
+    /// (not a child, a soldier or a captive), so a muster, a raid or a move
+    /// can take them; a team they leave works on without them.
+    pub fn can_be_called(&self, i: usize) -> bool {
+        self.alive[i]
+            && matches!(
+                self.activity[i],
+                Activity::Idle | Activity::Resting | Activity::Working(_)
+            )
     }
 
     /// Age in years, with `per_year` simulated days (months) a year.

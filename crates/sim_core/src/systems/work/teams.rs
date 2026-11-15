@@ -66,10 +66,11 @@ pub fn assign(
     mut sites: Query<(&mut NaturalResource, &Pos)>,
     mut log: ResMut<WorkLog>,
 ) {
-    let mut rng = seed.rng(clock.tick, streams::ASSIGN);
+    let mut rng = seed.rng(clock.steps(), streams::ASSIGN);
     let store = &mut *store;
-    // A team works the whole month: a month of a day's runs.
-    let days = params.calendar().days();
+    // A team's task is one batch: a day's runs of a short recipe, or one run
+    // of a long one (a step's runs when a step stands for more than a day).
+    let days = params.calendar().days().max(1.0);
 
     // Group choices by (town, recipe), keeping agent order for determinism.
     let mut groups: BTreeMap<(u16, u32), Vec<u32>> = BTreeMap::new();
@@ -122,7 +123,7 @@ pub fn assign(
         let m = &db.recipes[r as usize];
         let town = &mut towns.0[t as usize];
         for team in &trusted_teams(store, &agents, m.max_team, &mut place) {
-            // A team's month of work covers several runs of a short recipe.
+            // A team's batch covers several runs of a short recipe.
             let rate = (team.len() as f32).powf(params.work.work_exponent) * days;
             let mut batches = ((rate / m.duration).floor() as u32).max(1);
             let firms_on = params.market.firms.on();
@@ -141,7 +142,7 @@ pub fn assign(
             let out: f32 = m.outputs.iter().map(|o| o.1).sum();
             let mut pos = town.pos;
             if let Some(kind) = m.nature {
-                // A month's runs may take several sites in turn.
+                // A batch's runs may take several sites in turn.
                 let mut found = None;
                 let mut runs = 0u32;
                 let list = &mut nature[t as usize][kind as usize];

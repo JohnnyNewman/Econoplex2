@@ -157,26 +157,31 @@ pub fn produce(
     mut log: ResMut<WorkLog>,
     env: Res<crate::env::Environment>,
 ) {
-    let mut rng = seed.rng(clock.tick, streams::PRODUCE);
+    let mut rng = seed.rng(clock.steps(), streams::PRODUCE);
     let cal = params.calendar();
-    // Outdoor jobs (nature, buildings, new land) only work while it is light.
-    let outdoor_share = crate::env::outdoor_work_share(&env, &params.time);
+    // A worker's work this step, in days: the step's slice of the working
+    // hours on each day of the month. Outdoor jobs (nature, buildings, new
+    // land) only work while it is light.
+    let indoor_days = crate::env::work_days_this_step(&clock, &env, &params.time, false);
+    let outdoor_days = crate::env::work_days_this_step(&clock, &env, &params.time, true);
     let mut order: Vec<(u64, Entity)> = tasks.iter().map(|(e, t, _)| (t.serial, e)).collect();
     order.sort_unstable();
     let store = &mut *store;
 
-    // Phase A: a month's work on every task (fatigue is the representative
-    // day's); collect the ones that finish this simulated day.
+    // Phase A: this step's work on every task (a batch makes progress while
+    // its team works and delivers when the work is done); collect the ones
+    // that finish this step.
     let mut done: Vec<(Entity, u32, Vec<u32>)> = Vec::new();
     for (_, e) in order {
         let Ok((_, mut task, parts)) = tasks.get_mut(e) else {
             continue;
         };
+        // Members called away (to a squad, a raid, another town) have left it.
         let workers: Vec<u32> = parts
             .workers
             .iter()
             .copied()
-            .filter(|&w| store.alive[w as usize])
+            .filter(|&w| store.alive[w as usize] && store.activity[w as usize] == Activity::Working(e))
             .collect();
         if workers.is_empty() {
             commands.entity(e).despawn();
@@ -184,19 +189,26 @@ pub fn produce(
         }
         let r = task.recipe;
         let m = &db.recipes[r as usize];
+        let worked = if db.outdoor[r as usize] {
+            outdoor_days
+        } else {
+            indoor_days
+        };
+        // On a task: busy (and training its muscles) until it is done.
+        for &w in &workers {
+            store.worked_today[w as usize] = Some(r);
+        }
+        if worked <= 0.0 {
+            // Outside the working hours the team waits for the morning.
+            continue;
+        }
         for &w in &workers {
             let st = &mut store.state[w as usize];
             st[state::FATIGUE] = (st[state::FATIGUE]
-                + params.needs.fatigue_per_work_day * (0.5 + m.phys_total))
+                + params.needs.fatigue_per_work_day * (0.5 + m.phys_total) * worked)
                 .min(1.0);
-            store.worked_today[w as usize] = Some(r);
         }
-        let day = (workers.len() as f32).powf(params.work.work_exponent) * cal.days();
-        task.progress += if db.outdoor[task.recipe as usize] {
-            day * outdoor_share
-        } else {
-            day
-        };
+        task.progress += (workers.len() as f32).powf(params.work.work_exponent) * worked;
         if task.progress >= task.required {
             done.push((e, r, workers));
         }
@@ -245,15 +257,19 @@ pub fn produce(
         };
         let m = &db.recipes[r as usize];
         let n = workers.len();
-        // Days the team worked on it, and the share of a month that is (a
-        // run's success or failure cheers or annoys by its days).
+        // Days the team worked on it (a run's success or failure cheers or
+        // annoys once, as a day's work did).
         let uses = (task.required / (n as f32).powf(params.work.work_exponent))
             .round()
             .max(1.0) as u32;
         let rate_day = (n as f32).powf(params.work.work_exponent);
         let practice_days = (uses as f32 / (m.duration / rate_day).max(1.0)).max(1.0);
-        let mood =
-            cal.kick(0.03, params.needs.happiness_rate) * (practice_days / cal.days()).min(1.0);
+        let mood = if cal.days() <= 1.0 {
+            0.03
+        } else {
+            // Coarse steps: a step's runs cheer as its days of runs would.
+            cal.kick(0.03, params.needs.happiness_rate) * (practice_days / cal.days()).min(1.0)
+        };
         {
             // Diagnostics: labour spent, and labour spent on goods already
             // glutted (over target, at their floor price).
@@ -480,6 +496,7 @@ pub fn produce(
                 wage: (share * (value - input_cost)).max(0.0) * weight,
                 subsidy,
                 days,
+                runs: task.batches,
                 firm,
             });
             for &w in &workers {
@@ -501,6 +518,7 @@ pub fn produce(
                 wage: 0.0,
                 subsidy: 0.0,
                 days,
+                runs: task.batches,
                 firm: (params.market.firms.on() && !crate::firms::is_public(&db, m))
                     .then(|| db.recipe_firm[r as usize]),
             });
@@ -542,7 +560,6 @@ pub fn produce(
         &decision,
         params.decision.matching.apprentice_wage(),
         params.market.firms,
-        cal,
     );
 }
 
@@ -557,6 +574,8 @@ struct Claim {
     subsidy: f32,
     /// Days the team worked on it.
     days: f32,
+    /// Runs of the recipe in it.
+    runs: u32,
     /// The firm that pays the wage; none: the treasury.
     firm: Option<usize>,
 }

@@ -39,7 +39,7 @@ fn follow_culture(store: &AgentStore, towns: &mut Towns, params: &Params) {
             &mean,
             params
                 .calendar()
-                .months(params.decision.culture.memory_days),
+                .steps(params.decision.culture.memory_days),
         );
     }
 }
@@ -53,11 +53,11 @@ pub fn socialize(
     seed: Res<SimSeed>,
     mut log: ResMut<WorkLog>,
 ) {
-    let mut rng = seed.rng(clock.tick, streams::SOCIAL);
+    let mut rng = seed.rng(clock.steps(), streams::SOCIAL);
     let store = &mut *store;
     follow_culture(store, &mut towns, &params);
     let tp = &params.trust;
-    // A simulated day is a month of days: ties fade, coworkers meet and
+    // Each step, its share of the days: ties fade, coworkers meet and
     // people run into each other as they would day by day.
     let cal = params.calendar();
     store.fade_trust(cal.keep(1.0 - tp.fade));
@@ -109,7 +109,7 @@ pub fn socialize(
         }
     }
 
-    // Random contacts within the town: a month of daily chances.
+    // Random contacts within the town: the step's share of the daily chances.
     let p = cal.flow(models.social.daily_contacts());
     let (whole, part) = (p.floor() as usize, p.fract());
     for town in &towns.0 {

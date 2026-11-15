@@ -22,9 +22,9 @@ pub fn spend(
     db: &crate::db::Db,
     params: &crate::world::Params,
     env: &crate::env::Environment,
-    tick: u64,
+    step: u64,
 ) {
     if let ConsumptionParams::Needs(lp) = &params.market.consumption {
-        crate::ladder::spend(towns, store, db, params, env, lp, tick);
+        crate::ladder::spend(towns, store, db, params, env, lp, step);
     }
 }
