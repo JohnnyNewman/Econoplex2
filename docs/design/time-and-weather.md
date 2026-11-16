@@ -40,9 +40,9 @@ Claude Doc: "Econoplex economy redesign: items, time, needs".
 
 | Cadence | What |
 | --- | --- |
-| every step | needs and eating, going back to the day's job after a batch, team assignment, work and batches, pay, market, prices, caravans, loans, the military's march and fights, deaths of the sick, the residents' list |
+| every step | needs and eating, going back to the day's job, team assignment, production flows, pay, the market's use and spoilage, caravans, loans, the military's march and fights, deaths of the sick, the residents' list |
 | once per day of time (`SimClock::day_of_time()`, every `steps(1)` steps) | body (capacity, training, disuse), the household ladder's wear, fuel, cold and happiness, social ties fading, culture following neighbours, random contacts |
-| first step of each day of time (`SimClock::work_day_start`) | job choice (capacity, scoring, matching, pay) |
+| first step of each day of time (`SimClock::work_day_start`) | job choice (capacity, scoring, matching, pay); prices, scarcity caps and the market's purchases from workshops, by the day's move (run every step, gluts grew from 4% at 10 steps a day to 17% at 300; once a day they stay at 7-10% at 10, 24 and 300, 16 seeds over 30 years) |
 | first step of the simulated day (`env::day_start`) | ageing, births, partnering, hazards, starving counts, governors, metrics, history samples, goals, the ledger's year end |
 | every N months, on the first step (`SimClock::every_months(n)`) | trade rounds, organize, muster, raid plans, tribute, migration |
 

@@ -108,174 +108,180 @@ pub fn settle(
         }
     }
 
-    for (ti, town) in towns.0.iter_mut().enumerate() {
-        let pop = town.residents.len().max(1) as f32;
-        let mint_wanted = town.mint_wanted(mp);
-        // The pay of the town's poorer jobs (the lower quartile of those that
-        // pay), at the start of the step.
-        let poor_pay = {
-            let mut paid: Vec<f32> = town.pay_rate.iter().copied().filter(|&x| x > 0.0).collect();
-            if paid.is_empty() {
-                0.0
-            } else {
-                let q = paid.len() / 4;
-                *paid.select_nth_unstable_by(q, f32::total_cmp).1
-            }
-        };
-        for p in 0..np {
-            if db.coin[p] > 0.0 {
-                // Coin is worth its face value, while the town wants more of it.
-                town.price[p] = if mint_wanted { db.coin[p] } else { 0.0 };
-                continue;
-            }
-            if let Some(kind) = db.opens[p] {
-                town.price[p] = land_price(&db, town, mp, p, kind, &sites);
-                continue;
-            }
-            if db.category(p as u32) == Category::Building {
-                // A building is worth what its places would earn (see
-                // `BuildingValue`), or, at a discount, when the town has none (a
-                // new line of work).
-                let base = db.base_price[p];
-                // A building the government ordered is paid for at full price.
-                if town
-                    .policy
-                    .commissions
-                    .iter()
-                    .any(|c| c.building == p as u32)
-                {
-                    town.price[p] = base;
+    // Prices move once a day of time (as when a step was a day), by the
+    // day's move.
+    let price_day = clock.work_day_start();
+    let pcal = cal.every(clock.steps_per_day_of_time());
+    if price_day {
+        for (ti, town) in towns.0.iter_mut().enumerate() {
+            let pop = town.residents.len().max(1) as f32;
+            let mint_wanted = town.mint_wanted(mp);
+            // The pay of the town's poorer jobs (the lower quartile of those that
+            // pay), at the start of the step.
+            let poor_pay = {
+                let mut paid: Vec<f32> =
+                    town.pay_rate.iter().copied().filter(|&x| x > 0.0).collect();
+                if paid.is_empty() {
+                    0.0
+                } else {
+                    let q = paid.len() / 4;
+                    *paid.select_nth_unstable_by(q, f32::total_cmp).1
+                }
+            };
+            for p in 0..np {
+                if db.coin[p] > 0.0 {
+                    // Coin is worth its face value, while the town wants more of it.
+                    town.price[p] = if mint_wanted { db.coin[p] } else { 0.0 };
                     continue;
                 }
-                // A mint is worth building when the town wants coin and has none.
-                let mints = db.recipes.iter().any(|m| {
-                    m.building == Some(p as u32)
-                        && m.outputs.iter().any(|o| db.coin[o.0 as usize] > 0.0)
-                });
-                if mints {
-                    town.price[p] = if mint_wanted && town.building_count(p as u32) == 0 {
-                        base
+                if let Some(kind) = db.opens[p] {
+                    town.price[p] = land_price(&db, town, mp, p, kind, &sites);
+                    continue;
+                }
+                if db.category(p as u32) == Category::Building {
+                    // A building is worth what its places would earn (see
+                    // `BuildingValue`), or, at a discount, when the town has none (a
+                    // new line of work).
+                    let base = db.base_price[p];
+                    // A building the government ordered is paid for at full price.
+                    if town
+                        .policy
+                        .commissions
+                        .iter()
+                        .any(|c| c.building == p as u32)
+                    {
+                        town.price[p] = base;
+                        continue;
+                    }
+                    // A mint is worth building when the town wants coin and has none.
+                    let mints = db.recipes.iter().any(|m| {
+                        m.building == Some(p as u32)
+                            && m.outputs.iter().any(|o| db.coin[o.0 as usize] > 0.0)
+                    });
+                    if mints {
+                        town.price[p] = if mint_wanted && town.building_count(p as u32) == 0 {
+                            base
+                        } else {
+                            0.0
+                        };
+                        continue;
+                    }
+                    if town.building_count(p as u32) == 0 {
+                        town.price[p] = base * mp.new_building_appeal;
+                        continue;
+                    }
+                    let crate::config::BuildingValue {
+                        payback_days,
+                        max_factor,
+                    } = mp.building_value;
+                    // What the workers who would fill it earn now: the pay of
+                    // the town's poorer jobs.
+                    let typical = poor_pay;
+                    let best = db
+                        .recipes
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, m)| m.building == Some(p as u32))
+                        .map(|(r, _)| town.pay_rate.get(r).copied().unwrap_or(0.0))
+                        .fold(0.0f32, f32::max);
+                    let slots = db.content.products[p].slots.max(1) as f32;
+                    // New places only earn while the ones the town has are full.
+                    let full = town.building_load[p] >= mp.build_threshold;
+                    let gain = if full {
+                        slots * (best - typical).max(0.0) * payback_days
                     } else {
                         0.0
                     };
+                    town.price[p] = gain.min(base * max_factor);
                     continue;
                 }
-                if town.building_count(p as u32) == 0 {
-                    town.price[p] = base * mp.new_building_appeal;
-                    continue;
-                }
-                let crate::config::BuildingValue {
-                    payback_days,
-                    max_factor,
-                } = mp.building_value;
-                // What the workers who would fill it earn now: the pay of
-                // the town's poorer jobs.
-                let typical = poor_pay;
-                let best = db
-                    .recipes
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, m)| m.building == Some(p as u32))
-                    .map(|(r, _)| town.pay_rate.get(r).copied().unwrap_or(0.0))
-                    .fold(0.0f32, f32::max);
-                let slots = db.content.products[p].slots.max(1) as f32;
-                // New places only earn while the ones the town has are full.
-                let full = town.building_load[p] >= mp.build_threshold;
-                let gain = if full {
-                    slots * (best - typical).max(0.0) * payback_days
+                let per_capita = if db.is_food[p] {
+                    mp.food_target_per_capita
                 } else {
-                    0.0
+                    mp.target_per_capita
                 };
-                town.price[p] = gain.min(base * max_factor);
-                continue;
-            }
-            let per_capita = if db.is_food[p] {
-                mp.food_target_per_capita
-            } else {
-                mp.target_per_capita
-            };
-            // Goods the government ordered raise the stock the market wants.
-            // Inputs: what trades use; final goods: the per-resident target;
-            // food both; plus what households buy.
-            let cover_days = mp.pricing.cover_days;
-            let households = cover_days * town.goods_use.get(p).copied().unwrap_or(0.0);
-            let wanted = households
-                + if db.is_input[p] {
-                    derived[ti][p] + if db.is_food[p] { per_capita * pop } else { 0.0 }
-                } else {
-                    per_capita * pop
-                };
-            let target = wanted.max(1.0) + town.policy.ordered(p);
-            // With workshops as firms, the market buys from their stock what it
-            // wants, while the treasury can pay, and fills government orders.
-            if mp.firms.on()
-                && town
-                    .firms
-                    .iter()
-                    .any(|f| f.stock.get(p).is_some_and(|&s| s > 0.0))
-            {
-                buy_from_firms(town, p, target);
-            }
-            let pressure = ((target - town.stock[p]) / target).clamp(-1.0, 1.0);
-            let base = db.base_price[p];
-            let cap = town
-                .price_cap
-                .get(p)
-                .copied()
-                .unwrap_or(mp.max_price_factor);
-            let old = town.price[p];
-            match &dynamics {
-                Some(d) => {
-                    town.pressure.resize(np, 0.0);
-                    let mut c = d[p];
-                    // A loosened scarcity cap widens the class's ceiling too.
-                    c.ceiling = c.ceiling.max(cap * c.ceiling / mp.max_price_factor);
-                    town.price[p] = c.step(old, base, pressure, &mut town.pressure[p]);
-                }
-                None => {
-                    town.price[p] = (old * (cal.flow(mp.price_adjust) * pressure).exp())
-                        .clamp(base * mp.min_price_factor, base * cap);
-                }
-            }
-            // Nobody sells below cost: a made good is worth at least its inputs
-            // at today's prices plus a day's pay of the town's poorer jobs for
-            // the work, by its cheapest recipe. Without this flour fell below
-            // grain in winter and milling paid nothing while bread ran short.
-            let cost = makers[p]
-                .iter()
-                .filter(|&&(_, out)| out > 0.0)
-                .map(|&(r, out)| {
-                    let m = &db.recipes[r];
-                    let inputs: f32 = m
-                        .inputs
+                // Goods the government ordered raise the stock the market wants.
+                // Inputs: what trades use; final goods: the per-resident target;
+                // food both; plus what households buy.
+                let cover_days = mp.pricing.cover_days;
+                let households = cover_days * town.goods_use.get(p).copied().unwrap_or(0.0);
+                let wanted = households
+                    + if db.is_input[p] {
+                        derived[ti][p] + if db.is_food[p] { per_capita * pop } else { 0.0 }
+                    } else {
+                        per_capita * pop
+                    };
+                let target = wanted.max(1.0) + town.policy.ordered(p);
+                // With workshops as firms, the market buys from their stock what it
+                // wants, while the treasury can pay, and fills government orders.
+                if mp.firms.on()
+                    && town
+                        .firms
                         .iter()
-                        .map(|&(i, q)| town.price[i as usize] * q)
-                        .sum();
-                    (inputs + poor_pay * m.duration) / out
-                })
-                .fold(f32::INFINITY, f32::min);
-            if cost.is_finite() {
-                town.price[p] = town.price[p].max(cost.min(base * cap));
-            }
-            if old > 0.0 && town.price[p] > 0.0 {
-                town.price_vol.resize(3, Default::default());
-                let k = class_index(db.content.products[p].price_class());
-                // Recorded as a move per day, the step's spread over its days.
-                town.price_vol[k].add((town.price[p] / old).ln().abs() / cal.days());
-            }
-            if let crate::config::ScarcityCap::Loosen { rate, max_factor } = mp.scarcity_cap {
-                town.price_cap.resize(np, mp.max_price_factor);
-                let c = &mut town.price_cap[p];
-                if pressure > 0.0 && town.price[p] >= base * *c * 0.999 {
-                    *c = (*c * (1.0 + rate).powf(cal.days()))
-                        .min(max_factor.max(mp.max_price_factor));
-                } else {
-                    *c = (*c * cal.keep(1.0 - rate)).max(mp.max_price_factor);
+                        .any(|f| f.stock.get(p).is_some_and(|&s| s > 0.0))
+                {
+                    buy_from_firms(town, p, target);
+                }
+                let pressure = ((target - town.stock[p]) / target).clamp(-1.0, 1.0);
+                let base = db.base_price[p];
+                let cap = town
+                    .price_cap
+                    .get(p)
+                    .copied()
+                    .unwrap_or(mp.max_price_factor);
+                let old = town.price[p];
+                match &dynamics {
+                    Some(d) => {
+                        town.pressure.resize(np, 0.0);
+                        let mut c = d[p];
+                        // A loosened scarcity cap widens the class's ceiling too.
+                        c.ceiling = c.ceiling.max(cap * c.ceiling / mp.max_price_factor);
+                        town.price[p] = c.step(old, base, pressure, &mut town.pressure[p]);
+                    }
+                    None => {
+                        town.price[p] = (old * (pcal.flow(mp.price_adjust) * pressure).exp())
+                            .clamp(base * mp.min_price_factor, base * cap);
+                    }
+                }
+                // Nobody sells below cost: a made good is worth at least its inputs
+                // at today's prices plus a day's pay of the town's poorer jobs for
+                // the work, by its cheapest recipe. Without this flour fell below
+                // grain in winter and milling paid nothing while bread ran short.
+                let cost = makers[p]
+                    .iter()
+                    .filter(|&&(_, out)| out > 0.0)
+                    .map(|&(r, out)| {
+                        let m = &db.recipes[r];
+                        let inputs: f32 = m
+                            .inputs
+                            .iter()
+                            .map(|&(i, q)| town.price[i as usize] * q)
+                            .sum();
+                        (inputs + poor_pay * m.duration) / out
+                    })
+                    .fold(f32::INFINITY, f32::min);
+                if cost.is_finite() {
+                    town.price[p] = town.price[p].max(cost.min(base * cap));
+                }
+                if old > 0.0 && town.price[p] > 0.0 {
+                    town.price_vol.resize(3, Default::default());
+                    let k = class_index(db.content.products[p].price_class());
+                    // Recorded as a move per day, the step's spread over its days.
+                    town.price_vol[k].add((town.price[p] / old).ln().abs() / pcal.days());
+                }
+                if let crate::config::ScarcityCap::Loosen { rate, max_factor } = mp.scarcity_cap {
+                    town.price_cap.resize(np, mp.max_price_factor);
+                    let c = &mut town.price_cap[p];
+                    if pressure > 0.0 && town.price[p] >= base * *c * 0.999 {
+                        *c = (*c * (1.0 + rate).powf(pcal.days()))
+                            .min(max_factor.max(mp.max_price_factor));
+                    } else {
+                        *c = (*c * pcal.keep(1.0 - rate)).max(mp.max_price_factor);
+                    }
                 }
             }
         }
     }
-
     // Yearly rates over the steps of a year.
     let dpy = cal.per_year() as f32;
     for town in towns.0.iter_mut() {

@@ -99,7 +99,10 @@ pub fn socialize(
             .chain(ev.apprentices.iter())
             .copied()
             .collect();
-        let days = ev.days.round().max(1.0) as usize;
+        // A meeting a day of work together: whole days, and the part of a day
+        // by chance (short runs at fine steps meet as often in all).
+        let whole = ev.days.max(0.0).floor();
+        let days = whole as usize + usize::from(rng.random::<f32>() < ev.days - whole);
         for _ in 0..days {
             for pair in members.windows(2) {
                 meet(store, pair[0] as usize, pair[1] as usize, &mut rng);
