@@ -43,8 +43,8 @@ impl Baked {
     pub fn occlude_from(&mut self, start: usize, ground: f32) {
         for k in start..self.pos.len() {
             let ao = occlusion(self.pos[k][1] - ground, Vec3::from(self.nrm[k]));
-            for c in 0..3 {
-                self.col[k][c] *= ao;
+            for c in &mut self.col[k][..3] {
+                *c *= ao;
             }
         }
     }
