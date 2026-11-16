@@ -14,7 +14,7 @@
 //! A rung counts only as the rungs below it are met: its weight is the product
 //! of a smooth gate (from `gate_at - gate_width` to `gate_at + gate_width`) over
 //! the satisfaction of every rung below. Goods declare in the content which
-//! needs they serve (`household.serves`). Every `interval` months a household
+//! needs they serve (`household.serves`). Every `interval` days a household
 //! buys, one unit at a time, the good that raises its weighted satisfaction
 //! most per coin, and stops when nothing is worth more than the money it would
 //! keep: money serves savings, so the budget comes out of the same rule
@@ -43,8 +43,8 @@ use sim_data::{Need, Serves, Use};
 /// `market.consumption: Needs(...)`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LadderParams {
-    /// Simulated days (months) between a household's shopping trips
-    /// (staggered by person).
+    /// Days of time between a household's shopping trips (staggered by
+    /// person over the steps).
     pub interval: u32,
     /// A rung opens as the rungs below pass `gate_at`, over ± `gate_width`.
     pub gate_at: f32,
@@ -82,7 +82,7 @@ fn plan_days() -> f32 {
 impl Default for LadderParams {
     fn default() -> Self {
         LadderParams {
-            interval: 1,
+            interval: 7,
             gate_at: 0.7,
             gate_width: 0.15,
             comfort_c: 16.0,
@@ -767,7 +767,7 @@ pub fn of_people(
     out
 }
 
-/// Every `interval` months (staggered over the steps), each adult buys what raises its weighted
+/// Every `interval` days (staggered over the steps), each adult buys what raises its weighted
 /// satisfaction most per coin, while that beats keeping the money: clothes and
 /// other personal goods for themself, and, if they keep the home, fuel and home
 /// goods for the household (worth as much as it does for everyone at the
@@ -786,8 +786,8 @@ pub fn spend(
         return;
     }
     let cal = params.calendar();
-    // A trip every `interval` months: each person on their own step of it.
-    let iv = lp.interval.max(1) as u64 * cal.steps as u64;
+    // A trip every `interval` days: each person on their own step of it.
+    let iv = cal.steps(lp.interval.max(1) as f32).round().max(1.0) as u64;
     let shoppers: Vec<usize> = (0..store.len())
         .filter(|&i| {
             store.alive[i]
@@ -802,7 +802,8 @@ pub fn spend(
     let homes = Homes::for_people(store, &goods, lp, &shoppers);
     // Units bought one by one on a trip: up to 16 for each week the trip
     // covers.
-    let max_units = (16.0 * lp.interval.max(1) as f32 * cal.month_days() / 7.0).ceil() as usize;
+    let trip_days = (iv as f32 * cal.days()).max(lp.interval.max(1) as f32);
+    let max_units = (16.0 * trip_days / 7.0).ceil() as usize;
     let firms_on = params.market.firms.on();
     for i in shoppers {
         let t = store.town[i] as usize;
@@ -974,7 +975,7 @@ mod tests {
 
     fn lp() -> LadderParams {
         LadderParams {
-            interval: 1,
+            interval: 7,
             gate_at: 0.7,
             gate_width: 0.15,
             comfort_c: 16.0,

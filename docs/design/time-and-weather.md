@@ -42,7 +42,8 @@ Claude Doc: "Econoplex economy redesign: items, time, needs".
 | --- | --- |
 | every step | needs and eating, going back to the day's job after a batch, team assignment, work and batches, pay, market, prices, caravans, loans, the military's march and fights, deaths of the sick, the residents' list |
 | once per day of time (`SimClock::day_of_time()`, every `steps(1)` steps) | body (capacity, training, disuse), the household ladder's wear, fuel, cold and happiness, social ties fading, culture following neighbours, random contacts |
-| first step of the simulated day (`env::day_start`) | job choice (capacity, scoring, matching, pay), ageing, births, partnering, hazards, starving counts, governors, metrics, history samples, goals, the ledger's year end |
+| first step of each day of time (`SimClock::work_day_start`) | job choice (capacity, scoring, matching, pay) |
+| first step of the simulated day (`env::day_start`) | ageing, births, partnering, hazards, starving counts, governors, metrics, history samples, goals, the ledger's year end |
 | every N months, on the first step (`SimClock::every_months(n)`) | trade rounds, organize, muster, raid plans, tribute, migration |
 
 The slow processes moved to once per day of time are those whose state
@@ -54,12 +55,13 @@ third of a step's time and changed nothing measurable.
 - Work and production: the working days that fall in the step's hours
   (`work_days_this_step`), and inputs, nature and output flowing with them,
   so a day of steps does the same work at any `steps_per_day`.
-- Tiredness: a state within the representative day (`Calendar::day_part`):
-  a day's work raises it by `fatigue_per_work_day`, a day's rest or idling
-  takes the recovery once, however many steps the day has.
-- Job choice, places and pay: once a simulated day, at its first step, with
-  the day's calendar (`Calendar::every(steps_per_day)`); places count a day's
-  inputs per worker, as before steps. Every job starts out showing what it
+- Tiredness: work adds `fatigue_per_work_day` per working day done; rest and
+  idling recover per day of time in the part of each step not spent at work
+  (`AgentStore::busy`), so people on a team recover through the night.
+- Job choice, places and pay: once a day of time (every `steps(1)` steps,
+  `SimClock::work_day_start`), with that day's calendar; places count a day's
+  inputs per worker. At `steps_per_day = days_per_month` (10) a step is a day
+  of time and the economy runs as it did when a tick was an economy day. Every job starts out showing what it
   would pay at the starting prices (a rate that starts at nothing kept
   everyone idle on the first day). A rest lasts until the next day's
   choices.
@@ -82,10 +84,11 @@ team works at that fraction of its rate. Runs accumulate in `Task::progress`;
 each whole run's output goes to market (in whole units) when it is done,
 with its pay, its success roll and its practice, and the fraction carries
 on. That fraction is the progress bar (`BuildingView::progress`, 0..1), drawn
-over the building in both clients. Teams break up at the day's last step
-(the run under way counts if at least half done, so nothing is gained or
-lost on average) and everyone chooses again the next day. The sum over a day
-is the same at any step size.
+over the building in both clients. Teams break up at the end of each day of
+time (`SimClock::work_day_end`; what is under way is
+kept: `Town::wip` carries the runs under way to the next team on the recipe,
+so work longer than a day is not lost) and everyone chooses again the next
+day of time. The sum over a day is the same at any step size.
 
 ### Real time in the clients
 
@@ -136,7 +139,7 @@ What converts how (config units stay as written unless named):
 | rent; rent stickiness | needs.rs | `flow`; `smoothing` |
 | happiness relaxation | needs.rs, ladder.rs | `share` |
 | ladder wear, fuel, cold damage, cold days | ladder.rs | `keep`, `flow`, `flow`, `whole_days` |
-| ladder `interval`, shopping size | ladder.rs, models.ron | months (7 days became 1); units bought scale with the days |
+| ladder `interval`, shopping size | ladder.rs, models.ron | days (7), as `steps(interval)` steps; units bought scale with the days |
 | expected temperatures over the year | ladder.rs | `days_per_year()` |
 | adaptive expectations | decision/expectations.rs | rate `share` |
 | excess-demand wage step | decision/wages.rs | step times days |

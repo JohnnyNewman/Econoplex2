@@ -90,13 +90,6 @@ impl Calendar {
         self.month_days() * self.months_per_year() as f32
     }
 
-    /// A step's part of a change per representative day: for states that
-    /// live within the day, like tiredness, which a day's work raises and a
-    /// night's or a day's rest takes away (not per day of time).
-    pub fn day_part(&self, x: f32) -> f32 {
-        x / self.steps.max(1) as f32
-    }
-
     /// Hours of the representative day one step covers.
     pub fn step_hours(&self) -> f32 {
         24.0 / self.steps.max(1) as f32

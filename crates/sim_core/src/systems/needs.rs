@@ -167,19 +167,25 @@ pub fn sense(
         }
 
         // Rest restores, idling a little; work tires (work::produce), per day
-        // of time: teams break up after each working day, so people rest
-        // between days as they did when a step was a day.
+        // of time. Recovery comes in the part of the last step not spent at
+        // work (`AgentStore::busy`): someone on a team still recovers through
+        // the night, as when a step was a day and the team met each morning.
+        let free = 1.0 - store.busy[i].clamp(0.0, 1.0);
+        store.busy[i] = 0.0;
         match store.activity[i] {
             Activity::Resting => {
-                st[FATIGUE] = (st[FATIGUE] - cal.flow(p.fatigue_rest_recovery)).max(0.0);
+                st[FATIGUE] = (st[FATIGUE] - free * cal.flow(p.fatigue_rest_recovery)).max(0.0);
                 if now >= store.rest_until[i] {
                     store.activity[i] = Activity::Idle;
                 }
             }
-            Activity::Idle | Activity::Child | Activity::Soldier | Activity::Captive => {
-                st[FATIGUE] = (st[FATIGUE] - cal.flow(p.fatigue_idle_recovery)).max(0.0)
+            Activity::Idle
+            | Activity::Child
+            | Activity::Soldier
+            | Activity::Captive
+            | Activity::Working(_) => {
+                st[FATIGUE] = (st[FATIGUE] - free * cal.flow(p.fatigue_idle_recovery)).max(0.0)
             }
-            Activity::Working(_) => {}
         }
 
         if ladder.is_some() {

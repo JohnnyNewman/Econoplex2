@@ -2460,7 +2460,7 @@ fn with_the_needs_ladder_winter_asks_for_fuel() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     let sets = [(
         "market.consumption".to_string(),
-        "Needs((interval: 1, gate_at: 0.7, gate_width: 0.15, comfort_c: 16.0, house_c: 6.0, max_clothes: 2.0, fire_per_c: 0.5, fire_per_extra_person: 0.25, cold_damage: 0.02, plan_days: 30.0))".to_string(),
+        "Needs((interval: 7, gate_at: 0.7, gate_width: 0.15, comfort_c: 16.0, house_c: 6.0, max_clothes: 2.0, fire_per_c: 0.5, fire_per_extra_person: 0.25, cold_damage: 0.02, plan_days: 30.0))".to_string(),
     )];
     let (db, params, mut scenario) =
         sim_core::load_with(&AssetPaths::from_root(&root), &sets).unwrap();
@@ -2668,7 +2668,7 @@ fn the_view_shows_needs_stores_and_the_armory() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     let sets = [(
         "market.consumption".to_string(),
-        "Needs((interval: 1, gate_at: 0.7, gate_width: 0.15, comfort_c: 16.0, house_c: 6.0, max_clothes: 2.0, fire_per_c: 0.5, fire_per_extra_person: 0.25, cold_damage: 0.02, plan_days: 30.0))".to_string(),
+        "Needs((interval: 7, gate_at: 0.7, gate_width: 0.15, comfort_c: 16.0, house_c: 6.0, max_clothes: 2.0, fire_per_c: 0.5, fire_per_extra_person: 0.25, cold_damage: 0.02, plan_days: 30.0))".to_string(),
     )];
     let (db, params, mut scenario) =
         sim_core::load_with(&AssetPaths::from_root(&root), &sets).unwrap();
@@ -2749,7 +2749,7 @@ fn households_and_workshops_keep_their_own_stocks() {
     let sets = [
         (
             "market.consumption".to_string(),
-            "Needs((interval: 1, gate_at: 0.7, gate_width: 0.15, comfort_c: 16.0, house_c: 6.0, max_clothes: 2.0, fire_per_c: 0.5, fire_per_extra_person: 0.25, larder_days: 14.0, cold_damage: 0.02, plan_days: 30.0))".to_string(),
+            "Needs((interval: 7, gate_at: 0.7, gate_width: 0.15, comfort_c: 16.0, house_c: 6.0, max_clothes: 2.0, fire_per_c: 0.5, fire_per_extra_person: 0.25, larder_days: 14.0, cold_damage: 0.02, plan_days: 30.0))".to_string(),
         ),
         (
             "market.firms".to_string(),
