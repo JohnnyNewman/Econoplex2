@@ -29,6 +29,7 @@ mod crowd;
 mod crowd_compute;
 mod env;
 mod fog;
+mod grounding;
 mod hud;
 mod inspect;
 mod lights;
@@ -329,6 +330,7 @@ fn main() {
         lights::LightsPlugin,
         inspect::InspectPlugin,
         water::WaterPlugin,
+        grounding::GroundingPlugin,
         battles::BattlesPlugin,
     ))
     .insert_resource(env_override)
@@ -437,6 +439,16 @@ fn setup(
             });
         }
     }
+    // Grounding (grounding.rs): a contact map over the terrain, from texel
+    // (0, 0) at the smallest x and z to the far corner.
+    let (x0, z1) = (t.origin.0 / SCALE, -t.origin.1 / SCALE);
+    let cell3d = t.cell / SCALE;
+    let (sx, sz) = ((w - 1) as f32 * cell3d, (h - 1) as f32 * cell3d);
+    let contact = grounding::ContactMap {
+        image: images.add(grounding::contact_image()),
+        rect: Vec4::new(x0, z1 - sz, sx, sz),
+    };
+    commands.insert_resource(contact.clone());
     let heights = terrain::spawn_terrain(
         &mut commands,
         &mut meshes,
@@ -449,6 +461,8 @@ fn setup(
             cell: t.cell / SCALE,
             heights,
             biomes,
+            contact: contact.image.clone(),
+            contact_rect: contact.rect,
         },
     );
     // The walking crowd (step 07) and the water read the same heightmap on
@@ -521,6 +535,16 @@ fn setup(
         25.0,
     );
     info!("trees: {} in {} chunks", forest.len(), chunks);
+    // Trees stand on the ground too (grounding.rs); houses and buildings are
+    // added as they appear (live.rs).
+    commands.insert_resource(grounding::Footprints {
+        trees: forest
+            .iter()
+            .map(|tr| (Vec2::new(tr.root.x, tr.root.z), 0.5 * tr.scale))
+            .collect(),
+        dirty: true,
+        ..default()
+    });
     // --- grass (shader step 06): blades over the meadows, away from towns,
     // rivers and steep slopes; a few per square unit, jittered by a hash.
     let mut blades = Vec::new();

@@ -12,6 +12,7 @@ struct Terrain {
     toon: Toon,
     towns: array<vec4<f32>, 16>,    // culture overlay: x, z, radius per town
     cultures: array<vec4<f32>, 16>, // culture overlay: colour per town
+    contact: vec4<f32>,             // contact map: x, z of its corner, size along x, z (grounding.rs)
 };
 @group(constants::MATERIAL_BIND_GROUP) @binding(100) var<uniform> terrain: Terrain;
 // Heights, read texel by texel with textureLoad (32-bit floats aren't

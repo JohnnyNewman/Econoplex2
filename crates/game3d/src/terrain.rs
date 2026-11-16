@@ -62,6 +62,9 @@ pub struct TerrainUniform {
     pub towns: [Vec4; MAX_TINTED],
     /// ...and its culture colour (linear rgb).
     pub cultures: [Vec4; MAX_TINTED],
+    /// Where the contact map lies: x, z of its first corner, size along x
+    /// and z (grounding.rs).
+    pub contact: Vec4,
 }
 
 /// How many towns the culture overlay can tint (the uniform's array size).
@@ -80,6 +83,10 @@ pub struct TerrainExt {
     /// The fog, shared by all materials (`fog::FOG_BUFFER`).
     #[storage(103, read_only)]
     pub fog: Handle<ShaderBuffer>,
+    /// Contact shadows on the ground (grounding.rs).
+    #[texture(104)]
+    #[sampler(105)]
+    pub contact: Handle<Image>,
 }
 
 impl MaterialExtension for TerrainExt {
@@ -108,6 +115,9 @@ pub struct TerrainData {
     pub heights: Vec<f32>,
     /// Biome weights of each texel: meadow, fields, water, unused (0..1).
     pub biomes: Vec<[f32; 4]>,
+    /// The contact map (grounding.rs) and where it lies.
+    pub contact: Handle<Image>,
+    pub contact_rect: Vec4,
 }
 
 /// Grid step and debug view for the terrain.
@@ -230,10 +240,12 @@ pub fn spawn_terrain(
                 },
                 towns: [Vec4::ZERO; MAX_TINTED],
                 cultures: [Vec4::ZERO; MAX_TINTED],
+                contact: data.contact_rect,
             },
             heights: heights.clone(),
             biomes: images.add(biomes),
             fog: FOG_BUFFER,
+            contact: data.contact.clone(),
         },
     };
     let step = 1;

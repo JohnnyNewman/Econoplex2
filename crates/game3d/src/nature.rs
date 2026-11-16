@@ -296,6 +296,7 @@ pub fn spawn_forest(
             // The trunk stands on the root; the crown sits on the trunk and
             // sways (`up` 0 at its base, 1 at its tip). Trunks don't sway.
             let root = Vec2::new(t.root.x, t.root.z);
+            let start = baked.pos.len();
             baked.add(
                 &trunk,
                 Transform::from_translation(t.root + Vec3::Y * 0.4),
@@ -309,6 +310,8 @@ pub fn spawn_forest(
                 t.crown,
                 Some(root),
             );
+            // Grounding: the trunk's foot and the crown's underside darker.
+            baked.occlude_from(start, t.root.y);
         }
         commands.spawn((
             Mesh3d(meshes.add(baked.mesh())),
