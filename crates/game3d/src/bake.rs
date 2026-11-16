@@ -25,7 +25,30 @@ pub struct Baked {
     pub idx: Vec<u32>,
 }
 
+/// Ambient occlusion baked into vertex colours (grounding): how much light
+/// a point `dy` above its object's ground, with normal `n`, still gets. Wall
+/// feet are darker (the ground and the wall shade each other), faces that
+/// look down (eaves, the underside of a crown) darker still.
+pub fn occlusion(dy: f32, n: Vec3) -> f32 {
+    let t = (dy / 0.6).clamp(0.0, 1.0);
+    let foot = 0.55 + 0.45 * t * t * (3.0 - 2.0 * t);
+    let under = if n.y < -0.3 { 0.62 } else { 1.0 };
+    foot * under
+}
+
 impl Baked {
+    /// Darken the vertices from `start` on (one object) by `occlusion`, with
+    /// `ground` the height its base stands at. The alpha (the glow markers of
+    /// step 12) stays.
+    pub fn occlude_from(&mut self, start: usize, ground: f32) {
+        for k in start..self.pos.len() {
+            let ao = occlusion(self.pos[k][1] - ground, Vec3::from(self.nrm[k]));
+            for c in &mut self.col[k][..3] {
+                *c *= ao;
+            }
+        }
+    }
+
     /// Append `mesh`, moved by `at`, in `colour` (linear RGBA). `sway`: the
     /// tree root, if this part sways (its height runs from the mesh's lowest
     /// to its highest point, 0 to 1).
@@ -80,6 +103,15 @@ impl Baked {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn wall_feet_and_undersides_are_darker() {
+        let up = Vec3::Y;
+        assert!(occlusion(0.0, up) < 0.6);
+        assert_eq!(occlusion(1.0, up), 1.0);
+        assert!(occlusion(1.0, Vec3::NEG_Y) < 0.7);
+        assert!(occlusion(0.2, Vec3::X) < occlusion(0.5, Vec3::X));
+    }
 
     #[test]
     fn baking_moves_scales_and_colours_every_part() {

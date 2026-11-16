@@ -18,6 +18,8 @@ import super::lights::{Env, lamp_term};
 // The uniform block, the textures and the height helpers, shared with the
 // shadow pass (terrain_prepass.wesl).
 import super::terrain_common::{terrain, biomes, texel_coord, height_at, normal_at, displaced};
+@group(constants::MATERIAL_BIND_GROUP) @binding(104) var contact_map: texture_2d<f32>;
+@group(constants::MATERIAL_BIND_GROUP) @binding(105) var contact_sampler: sampler;
 @group(constants::MATERIAL_BIND_GROUP) @binding(103) var<storage, read> env: Env; // the shared fog and lamps (src/fog.rs, FOG_BUFFER)
 
 
@@ -123,6 +125,10 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     if weight > 0.0 {
         albedo = mix(albedo, tint / weight, min(weight, 1.0) * 0.6);
     }
+    // Grounding: soft contact shadows around what stands on the ground.
+    let cuv = (p.xz - terrain.contact.xy) / terrain.contact.zw;
+    let hemmed = textureSampleLevel(contact_map, contact_sampler, cuv, 0.0).r;
+    albedo *= 1.0 - 0.55 * hemmed;
 
     // Lighting: the shared toon lighting of step 02 (or PBR with the M key).
     let tp = terrain.toon;
