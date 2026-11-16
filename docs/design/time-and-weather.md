@@ -152,8 +152,8 @@ What converts how (config units stay as written unless named):
 | loans: interest, instalments | firms.rs | yearly rate per step; spread over the `steps(days_left)` steps left |
 | firm payout, import repayment | market.rs | `share` |
 | bills, ledger figures | firms.rs, ledger.rs | kept as daily averages of the month |
-| food reserve | decide.rs, models.ron | `food_reserve_months` (was `food_reserve_days`) times a month of hunger |
-| job places | decide.rs | stock-limited places divided by days (a worker uses a month of inputs) |
+| food reserve | decide.rs, models.ron | `food_reserve_days` times a day of hunger (as on main: one day, not a month) |
+| job places | decide.rs | a day's inputs and nature per worker, as when a step was a day; none in a day of time with no working hours |
 | apprentice share reconsidered | decide.rs | every `steps(30)` steps |
 | labour max daily, building load | decide.rs | `flow`; `smoothing(30)` |
 | team output rate | work/teams.rs | times days; harvests can draw on several sites |

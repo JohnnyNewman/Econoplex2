@@ -422,6 +422,11 @@ pub fn day_start(clock: Res<SimClock>) -> bool {
     clock.day_start()
 }
 
+/// Run condition: the last step of a simulated day.
+pub fn day_done(clock: Res<SimClock>) -> bool {
+    clock.day_done()
+}
+
 /// The working hours of the representative day, for indoor or outdoor work.
 /// Indoor work keeps the equinox's hours (a full day's work every day);
 /// outdoor work (fields, forests, mines, building, clearing land) goes on

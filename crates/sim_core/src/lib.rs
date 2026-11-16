@@ -136,9 +136,9 @@ pub fn build_economy_schedule() -> Schedule {
                 life::lifecycle,
                 profile::mark::<11>,
                 ledger::close_day,
-                metrics::record.run_if(env::day_start),
+                metrics::record.run_if(env::day_done),
                 history::record.run_if(env::day_start),
-                goal::evaluate.run_if(env::day_start),
+                goal::evaluate.run_if(env::day_done),
                 governor::govern,
                 profile::mark::<12>,
             )

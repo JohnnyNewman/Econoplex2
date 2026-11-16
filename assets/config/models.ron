@@ -162,7 +162,7 @@
         // true: also stop offering work on a good once the town holds more than its
         // target and its price is at the floor.
         stop_at_floor: false,
-        food_reserve_months: 1.0,
+        food_reserve_days: 1.0,
         min_price_factor: 0.2,
         max_price_factor: 5.0,
         // Fixed: prices stay within max_price_factor x base. Loosen(rate, max_factor):

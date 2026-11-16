@@ -205,17 +205,11 @@ pub fn produce(
         }
         let rate = (workers.len() as f32).powf(params.work.work_exponent);
         if worked > 0.0 {
-            // The share of the step at work: a whole working day of steps
-            // adds up to the working hours.
-            let busy = (worked / cal.month_days() * params.time.day_length.equinox_hours
-                / cal.step_hours())
-            .clamp(0.0, 1.0);
             for &w in &workers {
                 let st = &mut store.state[w as usize];
                 st[state::FATIGUE] = (st[state::FATIGUE]
                     + params.needs.fatigue_per_work_day * (0.5 + m.phys_total) * worked)
                     .min(1.0);
-                store.busy[w as usize] = busy;
             }
             // Runs this step's work does, as a flow: inputs and nature go in
             // at the same rate (fractional amounts), at a fraction of the

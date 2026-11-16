@@ -33,8 +33,10 @@ use std::path::Path;
 /// 2: the ledger gained income tax (18 flows). 3: agents' pay expectations.
 /// 10: towns' price-index tallies (`index_year`) and seasonal flow profile
 /// (`flow_profile`) became sub-structs, and the model switches with one
-/// choice left were folded into plain parameters.
-pub const SAVE_VERSION: u32 = 12;
+/// choice left were folded into plain parameters. 13: production as a flow
+/// with runs under way kept per town (`wip`), the day's job choice
+/// (`job_today`), and `food_reserve_days` back in days.
+pub const SAVE_VERSION: u32 = 13;
 
 /// One simulation entity and its components.
 #[derive(Serialize, Deserialize)]

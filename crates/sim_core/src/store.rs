@@ -105,9 +105,6 @@ pub struct AgentStore {
     /// a simulated day (teams break up at the day's end) and go back to it
     /// if their team broke up during the day.
     pub job_today: Vec<Option<(u32, bool)>>,
-    /// Share of the last step spent at work (0..1), set by work::produce;
-    /// fatigue recovers in the rest of it (needs::sense).
-    pub busy: Vec<f32>,
 }
 
 /// Everything needed to create an agent.
@@ -181,7 +178,6 @@ impl AgentStore {
         self.owned.push(Vec::new());
         self.rest_until.push(0);
         self.job_today.push(None);
-        self.busy.push(0.0);
         idx
     }
 

@@ -241,9 +241,11 @@ pub fn sum_group(v: &[f32; FLOWS], g: Group) -> f32 {
         .sum()
 }
 
-/// Close the step's books (and the year's at year end). Runs before metrics.
+/// Close the step's books (and the year's after the year's last step: the
+/// whole simulated days of the year, as when a step was a day). Runs before
+/// metrics, which read the closed year in the same step.
 pub fn close_day(mut towns: ResMut<Towns>, clock: Res<SimClock>) {
-    let year_end = clock.tick > 0 && clock.day_of_year() == 0 && clock.day_start();
+    let year_end = clock.tick > 0 && clock.day_of_year() == 0 && clock.day_done();
     let cal = clock.calendar();
     for t in towns.0.iter_mut() {
         t.ledger.end_day(cal);

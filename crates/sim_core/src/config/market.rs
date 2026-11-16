@@ -107,10 +107,10 @@ pub struct MarketParams {
     /// signals it has enough. Off by default (only `glut_factor` applies).
     #[serde(default)]
     pub stop_at_floor: bool,
-    /// Months (simulated days) of the town's food need whose inputs (grain,
-    /// flour, wood) are kept for the mills and bakeries, out of reach of eating
-    /// and of other trades.
-    pub food_reserve_months: f32,
+    /// Days of the town's food need whose inputs (grain, flour, wood) are
+    /// kept for the mills and bakeries, out of reach of eating and of other
+    /// trades.
+    pub food_reserve_days: f32,
     pub min_price_factor: f32,
     pub max_price_factor: f32,
     /// Whether a good's price cap loosens while it stays scarce.

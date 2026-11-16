@@ -97,17 +97,15 @@ pub fn makes_food(db: &Db, r: usize) -> bool {
     m.food_out > in_food
 }
 
-/// Inputs held back for `food_reserve_months` months of the food the town
+/// Inputs held back for `food_reserve_days` days of the food the town
 /// needs, made along each food
 /// chain (grain for the mills, flour and wood for the bakeries). Hungry people don't
 /// eat the grain the mills need, and other trades don't take the wood the bakeries
 /// need, but anything beyond that is free for other work. A recipe whose
 /// output is already piling up reserves nothing.
 pub fn food_reserve(db: &Db, town: &crate::world::Town, params: &Params) -> Vec<f32> {
-    let need = town.residents.len() as f32
-        * params.needs.hunger_per_day
-        * params.calendar().month_days()
-        * params.market.food_reserve_months;
+    let need =
+        town.residents.len() as f32 * params.needs.hunger_per_day * params.market.food_reserve_days;
     let mut r = vec![0.0; db.content.products.len()];
     for (k, m) in db.recipes.iter().enumerate() {
         if !makes_food(db, k)
@@ -136,6 +134,7 @@ pub fn job_capacity(
     town: &crate::world::Town,
     params: &Params,
     sites: &Query<&NaturalResource>,
+    window_days: [f32; 2],
 ) -> Vec<f32> {
     let reserve = food_reserve(db, town, params);
     // Places count a day's inputs and nature per worker, as when the
@@ -204,9 +203,34 @@ pub fn job_capacity(
                     cap = cap.min(funds / per_batch * m.duration);
                 }
             }
-            cap
+            // A day of time without working hours (indoors or out, as the
+            // job is: `window_days`) has no places.
+            if window_days[usize::from(db.outdoor[r])] > 0.0 {
+                cap
+            } else {
+                0.0
+            }
         })
         .collect()
+}
+
+/// How many days of work one worker does over the day of time that starts at
+/// this step, indoors and outdoors.
+pub fn window_work_days(
+    clock: &SimClock,
+    env: &crate::env::Environment,
+    time: &crate::env::TimeParams,
+) -> [f32; 2] {
+    let cal = clock.calendar();
+    let k = clock.steps_per_day_of_time();
+    let last = (clock.step + k).min(clock.steps_per_day);
+    [false, true].map(|outdoor| {
+        let (start, end) = crate::env::work_hours(env, time, outdoor);
+        (clock.step..last)
+            .map(|s| cal.work_share(s, start, end, time.day_length.equinox_hours))
+            .sum::<f32>()
+            * cal.month_days()
+    })
 }
 
 /// Recipes a town can start right now (building, nature and inputs available).
@@ -462,11 +486,17 @@ pub fn decide(
     }
     let k = clock.steps_per_day_of_time();
     let cal = step_cal.every(k);
+    store.job_today.iter_mut().for_each(|j| *j = None);
+    // A day of time in the night hours has no work to choose (nor a rest
+    // to take): people stay as they are until the next.
+    let window_days = window_work_days(&clock, &env, &params.time);
+    if window_days.iter().all(|&d| d <= 0.0) {
+        return;
+    }
     // A rest lasts until the next day's choices.
     let rest_until = clock.steps() + k as u64;
     // The people choosing now: those free of a rest, and those at work, who
     // finish the batch under way and then go to what they chose.
-    store.job_today.iter_mut().for_each(|j| *j = None);
     let idle: Vec<usize> = (0..store.len())
         .filter(|&i| {
             store.alive[i] && matches!(store.activity[i], Activity::Idle | Activity::Working(_))
@@ -477,7 +507,7 @@ pub fn decide(
     let mut capacity: Vec<Vec<f32>> = towns
         .0
         .iter()
-        .map(|t| job_capacity(&db, t, &params, &sites))
+        .map(|t| job_capacity(&db, t, &params, &sites, window_days))
         .collect();
     // Building slots: a building holds `slots` workers, including those on
     // multi-day tasks. Only one crew at a time builds each building type.

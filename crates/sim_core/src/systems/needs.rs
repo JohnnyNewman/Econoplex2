@@ -28,6 +28,8 @@ pub fn sense(
     let p = &params.needs;
     let cal = params.calendar();
     let now = clock.steps();
+    // Days of work a rest skips this step (indoor working hours).
+    let rest_days = crate::env::work_days_this_step(&clock, &env, &params.time, false);
     // Starving is counted once a simulated day, as person-months.
     let count_starving = clock.day_start();
     let ladder = match &params.market.consumption {
@@ -166,15 +168,13 @@ pub fn sense(
             st[HEALTH] = (st[HEALTH] + cal.flow(p.health_regen)).min(1.0);
         }
 
-        // Rest restores, idling a little; work tires (work::produce), per day
-        // of time. Recovery comes in the part of the last step not spent at
-        // work (`AgentStore::busy`): someone on a team still recovers through
-        // the night, as when a step was a day and the team met each morning.
-        let free = 1.0 - store.busy[i].clamp(0.0, 1.0);
-        store.busy[i] = 0.0;
+        // Work tires (work::produce); everyone recovers a little each day of
+        // time, at work or not, as when a step was a day. A rest restores
+        // more for each day of work it skips, so it counts in the working
+        // hours (a night needs no rest day).
         match store.activity[i] {
             Activity::Resting => {
-                st[FATIGUE] = (st[FATIGUE] - free * cal.flow(p.fatigue_rest_recovery)).max(0.0);
+                st[FATIGUE] = (st[FATIGUE] - rest_days * p.fatigue_rest_recovery).max(0.0);
                 if now >= store.rest_until[i] {
                     store.activity[i] = Activity::Idle;
                 }
@@ -184,7 +184,7 @@ pub fn sense(
             | Activity::Soldier
             | Activity::Captive
             | Activity::Working(_) => {
-                st[FATIGUE] = (st[FATIGUE] - free * cal.flow(p.fatigue_idle_recovery)).max(0.0)
+                st[FATIGUE] = (st[FATIGUE] - cal.flow(p.fatigue_idle_recovery)).max(0.0)
             }
         }
 

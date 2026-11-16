@@ -2,7 +2,7 @@
 //!
 //! People eat what the market holds and take the jobs that pay. Bridging the
 //! hungry gap is the ruler's job, with the granary below, the seed reserve as
-//! an order (`reserve TOWN on`: seed grain and flour for `food_reserve_months`
+//! an order (`reserve TOWN on`: seed grain and flour for `food_reserve_days`
 //! of bread are held out of reach of eating and of other trades), and the
 //! levers they already had (food subsidies, imports, new fields).
 //!

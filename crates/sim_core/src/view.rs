@@ -719,6 +719,12 @@ mod tests {
         }
         // Every event was delivered exactly once.
         assert_eq!(all_events, s.world.resource::<History>().events.len());
+        // At midday people are at work (a day ends at midnight, when they
+        // are not).
+        let spd = s.world.resource::<crate::world::SimClock>().steps_per_day;
+        for _ in 0..spd / 2 {
+            s.step_tick();
+        }
         // Every living person is there once, with a target.
         let alive = s
             .world
