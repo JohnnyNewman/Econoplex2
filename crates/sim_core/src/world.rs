@@ -876,8 +876,10 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
     crate::start::households(&mut towns, &mut store, &db, &params);
     // Every job shows what it would pay at the starting prices, so the first
     // day's choices see pay (the rate otherwise starts at nothing and only
-    // drifts up after the first day has been chosen, idle, at no pay).
-    for town in towns.0.iter_mut() {
+    // drifts up after the first day has been chosen, idle, at no pay). With
+    // posted pay off (`posted_pay_days` 0) only realised pay shows.
+    let posted = params.decision.valuation.posted_pay_days > 0.0;
+    for town in towns.0.iter_mut().filter(|_| posted) {
         town.pay_rate = (0..db.recipes.len())
             .map(|r| crate::systems::work::posted_pay(town, &db, &params, r))
             .collect();

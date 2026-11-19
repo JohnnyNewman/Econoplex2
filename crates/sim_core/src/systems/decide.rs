@@ -233,6 +233,20 @@ pub fn window_work_days(
     })
 }
 
+/// Whether no earlier step of the simulated day had working hours (indoors
+/// or out): this day of time holds the day's first choices.
+fn first_choice_of_day(
+    clock: &SimClock,
+    env: &crate::env::Environment,
+    time: &crate::env::TimeParams,
+) -> bool {
+    let cal = clock.calendar();
+    [false, true].iter().all(|&outdoor| {
+        let (start, end) = crate::env::work_hours(env, time, outdoor);
+        (0..clock.step).all(|s| cal.work_share(s, start, end, time.day_length.equinox_hours) <= 0.0)
+    })
+}
+
 /// Recipes a town can start right now (building, nature and inputs available).
 pub fn feasible_recipes(
     db: &Db,
@@ -785,9 +799,10 @@ pub fn decide(
         }
         decisions.apprentices.sort_unstable();
 
-        // Every 30 days every workplace reconsiders its share of apprentice places.
-        let every = step_cal.steps(30.0).round().max(1.0) as u64;
-        if (clock.steps() - 1).is_multiple_of(every) {
+        // Every 30 days every workplace reconsiders its share of apprentice
+        // places, at the day's first choices (there are none at night).
+        let months = (30 / clock.days_per_month.max(1)).max(1) as u64;
+        if clock.tick.is_multiple_of(months) && first_choice_of_day(&clock, &env, &params.time) {
             for town in towns.0.iter_mut() {
                 town.apprentice_share
                     .resize(db.recipes.len(), share_params.min);
