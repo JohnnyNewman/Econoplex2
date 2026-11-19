@@ -422,6 +422,7 @@
         idle_high: 0.15,         // share of adults idle that triggers public works
         public_works: ["cut_stone", "brick", "plank"],
         works_amount: 60.0,
+        granary_days: 40.0,      // days of food the granary aims to hold
         personalities: [
             ("balanced", (thrift: 1.0, ambition: 1.0)),
             ("frugal", (thrift: 1.5, ambition: 0.6)),
