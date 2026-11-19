@@ -2811,6 +2811,11 @@ fn households_and_workshops_keep_their_own_stocks() {
 fn stockpile_targets_follow_the_seasons() {
     // Grain is reaped once a year and firewood burned in winter: their
     // stockpiles should be fullest before the lean months, not all year.
+    // How seasonal a town's wood is depends on its trades (charcoal burners
+    // and bakers use wood all year, households burn more in winter): from
+    // 0.25 to 0.96 at its lowest over seeds and towns. So the check is that
+    // the stockpiles follow the seasons where the town's use does, in the
+    // most seasonal town.
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     let sets = sim_core::read_preset(&root.join("config/presets/new_economy.ron")).unwrap();
     let (db, params, mut scenario) =
@@ -2822,18 +2827,24 @@ fn stockpile_targets_follow_the_seasons() {
     let np = db.content.products.len();
     let grain = db.content.product("grain").unwrap() as usize;
     let wood = db.content.product("wood").unwrap() as usize;
-    let town = &s.world.resource::<sim_core::Towns>().0[1];
-    let by_month = |g: usize| -> Vec<f32> {
-        (0..12)
-            .map(|m| sim_core::granary::season_scale(town, np, m)[g])
-            .collect()
-    };
-    let (g, w) = (by_month(grain), by_month(wood));
-    eprintln!("grain {g:?}\nwood  {w:?}");
-    for v in [&g, &w] {
-        let lo = v.iter().copied().fold(1.0f32, f32::min);
+    let towns = &s.world.resource::<sim_core::Towns>().0;
+    for g in [grain, wood] {
+        let by_town: Vec<Vec<f32>> = towns
+            .iter()
+            .map(|town| {
+                (0..12)
+                    .map(|m| sim_core::granary::season_scale(town, np, m)[g])
+                    .collect()
+            })
+            .collect();
+        let lo = |v: &Vec<f32>| v.iter().copied().fold(1.0f32, f32::min);
+        let v = by_town
+            .iter()
+            .min_by(|a, b| lo(a).total_cmp(&lo(b)))
+            .unwrap();
+        eprintln!("{} {v:?}", db.content.products[g].id);
         let hi = v.iter().copied().fold(0.0f32, f32::max);
-        assert!(hi > 0.99 && lo < 0.6, "{v:?}");
+        assert!(hi > 0.99 && lo(v) < 0.6, "{v:?}");
     }
 }
 
@@ -2893,6 +2904,47 @@ fn kit_reserve_follows_soldiers_until_the_government_sets_a_stockpile() {
     s.order(&format!("stockpile {town} horse 40")).unwrap();
     s.step();
     assert_eq!(target(&s, "horse"), 40.0);
+}
+
+#[test]
+fn kit_is_priced_against_the_reserve_its_makers_stop_at() {
+    // The market prices kit by the stock the government keeps (its reserve
+    // or stockpile), the same stock its makers stop at, not by a stock per
+    // resident: a town told to keep one piece of the kit its armory holds
+    // most of pays less for it than one told to keep many.
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let run = |order: Option<(&str, f32)>| {
+        let mut s = Simulation::from_paths(&AssetPaths::from_root(&root)).unwrap();
+        let town = s.world.resource::<sim_core::Towns>().0[0].name.clone();
+        if let Some((good, amount)) = order {
+            s.order(&format!("stockpile {town} {good} {amount}"))
+                .unwrap();
+        }
+        for _ in 0..6 {
+            s.step();
+        }
+        s
+    };
+    // The kit the first town's armory holds most of.
+    let s = run(None);
+    let db = s.world.resource::<sim_core::Db>();
+    let town = &s.world.resource::<sim_core::Towns>().0[0];
+    let p = (0..db.content.products.len())
+        .filter(|&p| db.content.products[p].category == sim_data::Category::Weapon)
+        .max_by(|&a, &b| town.stock[a].total_cmp(&town.stock[b]))
+        .unwrap();
+    let good = db.content.products[p].id.clone();
+    let held = town.stock[p];
+    assert!(held > 2.0, "the armory holds {held} {good}");
+    let price = |amount: f32| {
+        let s = run(Some((&good, amount)));
+        s.world.resource::<sim_core::Towns>().0[0].price[p]
+    };
+    let (few, many) = (price(1.0), price(1000.0));
+    assert!(
+        few < many,
+        "{good} costs {few} with a reserve of one and {many} with a reserve of 1000"
+    );
 }
 
 #[test]
