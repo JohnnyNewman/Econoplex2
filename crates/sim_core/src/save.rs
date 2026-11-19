@@ -35,8 +35,9 @@ use std::path::Path;
 /// (`flow_profile`) became sub-structs, and the model switches with one
 /// choice left were folded into plain parameters. 13: production as a flow
 /// with runs under way kept per town (`wip`), the day's job choice
-/// (`job_today`), and `food_reserve_days` back in days.
-pub const SAVE_VERSION: u32 = 13;
+/// (`job_today`), and `food_reserve_days` back in days. 14: tasks count
+/// the work no practice has counted yet (`Task::worked_runs`).
+pub const SAVE_VERSION: u32 = 14;
 
 /// One simulation entity and its components.
 #[derive(Serialize, Deserialize)]

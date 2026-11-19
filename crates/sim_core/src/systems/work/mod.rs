@@ -315,6 +315,7 @@ pub fn produce(
                         }
                     }
                     task.progress += runs;
+                    task.worked_runs += runs;
                 }
             }
             // Whole runs are delivered as they are done; the run under way goes on
@@ -340,35 +341,13 @@ pub fn produce(
         let effs: Vec<f32> = {
             let store = &*store;
             crate::systems::par_map(&done, |(_, r, workers)| {
-                let m = &db.recipes[*r as usize];
-                let n = workers.len();
-                let caps: Vec<CapVec> = workers
-                    .iter()
-                    .map(|&w| store.effective_cap(w as usize))
-                    .collect();
-                let team = models.pooling.pool(&caps);
-                let mut sorted = workers.clone();
-                sorted.sort_unstable();
-                // People who trust each other coordinate better.
-                let prof = dot(&team, &m.skill) - models.pooling.coordination_penalty(n)
-                    + params.trust.team_bonus * store.cohesion(workers, &sorted);
-                let pb: f32 = workers
-                    .iter()
-                    .map(|&w| physique_bonus(&store.phys[w as usize], m, params.physique.weight))
-                    .sum::<f32>()
-                    / n as f32;
-                let sf: f32 = workers
-                    .iter()
-                    .map(|&w| state_factor(&store.state[w as usize], &params.needs))
-                    .sum::<f32>()
-                    / n as f32;
-                (prof + pb) * sf
+                team_skill(store, &db, &models, &params, *r, workers)
             })
         };
 
         // Phase C, in task order: resolve each finished step.
         for ((e, r, workers), eff) in done.into_iter().zip(effs) {
-            let Ok((_, task, parts)) = tasks.get_mut(e) else {
+            let Ok((_, mut task, parts)) = tasks.get_mut(e) else {
                 continue;
             };
             let m = &db.recipes[r as usize];
@@ -382,7 +361,10 @@ pub fn produce(
                 let whole = team_days.floor();
                 (whole + f32::from(rng.random::<f32>() < team_days - whole)) as u32
             };
-            let practice_days = (team_days / (m.duration / rate_day).max(1.0)).max(1e-3);
+            // Practice for the part of these runs this team did (the rest
+            // was counted when the team before it broke up).
+            let own = task.worked_runs.min(task.batches as f32);
+            let practice_days = (own * practice_per_run(m.duration, rate_day)).max(1e-3);
             // A day's work cheers (or annoys) as it did when a simulated day was
             // one step: by the month's kick, for the share of the month worked.
             let mood = cal
@@ -670,6 +652,7 @@ pub fn produce(
                 quality,
                 days: practice_days,
             });
+            task.worked_runs -= own;
             if m.builds.is_some() {
                 // A building site is done once it stands.
                 for &w in &parts.workers {
@@ -688,6 +671,36 @@ pub fn produce(
         for (e, task, parts) in tasks.iter() {
             if built.contains(&e) {
                 continue; // just built, and gone
+            }
+            // The team learns from the work it leaves to the next one, as it
+            // would from a run, judged by how well it was going.
+            let workers: Vec<u32> = parts
+                .workers
+                .iter()
+                .copied()
+                .filter(|&w| {
+                    store.alive[w as usize] && store.activity[w as usize] == Activity::Working(e)
+                })
+                .collect();
+            if task.worked_runs > 1e-4 && !workers.is_empty() {
+                let m = &db.recipes[task.recipe as usize];
+                let eff = team_skill(store, &db, &models, &params, task.recipe, &workers);
+                let success = m.builds.is_some()
+                    || rng.random::<f32>() < models.success.probability(eff, m.difficulty);
+                let quality = models.quality.combine(
+                    models.quality.step_quality(eff, m.difficulty),
+                    task.input_quality,
+                );
+                let rate = (workers.len() as f32).powf(params.work.work_exponent);
+                log.events.push(WorkEvent {
+                    recipe: task.recipe,
+                    town: task.town,
+                    workers,
+                    apprentices: parts.apprentices.clone(),
+                    success,
+                    quality,
+                    days: task.worked_runs * practice_per_run(m.duration, rate),
+                });
             }
             let town = &mut towns.0[task.town as usize];
             town.wip.resize(db.recipes.len(), 0.0);
@@ -726,4 +739,46 @@ struct Claim {
     runs: u32,
     /// The firm that pays the wage; none: the treasury.
     firm: Option<usize>,
+}
+
+/// A team's effective skill at recipe `r`: its pooled skill less the cost of
+/// coordinating, plus trust and physique, times how fit its members are.
+fn team_skill(
+    store: &AgentStore,
+    db: &Db,
+    models: &Models,
+    params: &Params,
+    r: u32,
+    workers: &[u32],
+) -> f32 {
+    let m = &db.recipes[r as usize];
+    let n = workers.len();
+    let caps: Vec<CapVec> = workers
+        .iter()
+        .map(|&w| store.effective_cap(w as usize))
+        .collect();
+    let team = models.pooling.pool(&caps);
+    let mut sorted = workers.to_vec();
+    sorted.sort_unstable();
+    // People who trust each other coordinate better.
+    let prof = dot(&team, &m.skill) - models.pooling.coordination_penalty(n)
+        + params.trust.team_bonus * store.cohesion(workers, &sorted);
+    let pb: f32 = workers
+        .iter()
+        .map(|&w| physique_bonus(&store.phys[w as usize], m, params.physique.weight))
+        .sum::<f32>()
+        / n as f32;
+    let sf: f32 = workers
+        .iter()
+        .map(|&w| state_factor(&store.state[w as usize], &params.needs))
+        .sum::<f32>()
+        / n as f32;
+    (prof + pb) * sf
+}
+
+/// Days of practice one run gives its team (`rate` = n^work_exponent): its
+/// days of work, counted as one lesson a day for runs shorter than a day.
+fn practice_per_run(duration: f32, rate: f32) -> f32 {
+    let days = duration / rate.max(1e-6);
+    days / days.max(1.0)
 }

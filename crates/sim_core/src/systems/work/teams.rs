@@ -325,6 +325,7 @@ pub fn assign(
                     required: 1.0,
                     input_quality: p.input_quality,
                     batches: 0,
+                    worked_runs: 0.0,
                 },
                 TownId(p.town),
                 Pos {
