@@ -249,6 +249,12 @@ pub struct Town {
     pub work_days: [f32; 2],
     #[serde(default)]
     pub glut_work_days: [f32; 2],
+    /// Per recipe: worker-days of finished work this year, and last year. A
+    /// diagnostic (metrics' food and farm shares of the work).
+    #[serde(default)]
+    pub recipe_days_this_year: Vec<f32>,
+    #[serde(default)]
+    pub recipe_days_last_year: Vec<f32>,
     /// Per good: the last year (counted from 1) the town made any of it; 0 =
     /// never. For capability: what the town can make (see metrics).
     #[serde(default)]
@@ -728,6 +734,8 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
             glut_made_last_year: vec![0.0; np],
             work_days: [0.0; 2],
             glut_work_days: [0.0; 2],
+            recipe_days_this_year: Vec::new(),
+            recipe_days_last_year: Vec::new(),
             last_made: vec![0; np],
             building_load: vec![0.0; np],
             built: 0,

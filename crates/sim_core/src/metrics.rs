@@ -13,6 +13,18 @@ pub struct TownStats {
     pub population: usize,
     pub adults: usize,
     pub food_per_capita: f32,
+    /// Months of its residents' food the town holds as the year closes (at
+    /// the end of winter): in the market, the granary, its firms and its
+    /// households' larders.
+    #[serde(default)]
+    pub reserve_months: f32,
+    /// Shares of last year's worker-days spent on the food chain (recipes
+    /// that take or make something edible: farming, milling, baking,
+    /// brewing) and on farming (food from nature, with no inputs).
+    #[serde(default)]
+    pub food_work_share: f32,
+    #[serde(default)]
+    pub farm_work_share: f32,
     /// Share of residents' months (simulated days) spent starving this year.
     pub starving: f32,
     /// Products made last year.
@@ -266,6 +278,7 @@ pub fn record(
     for t in towns.0.iter_mut() {
         t.work_days = [0.0, t.work_days[0]];
         t.glut_work_days = [0.0, t.glut_work_days[0]];
+        t.recipe_days_last_year = std::mem::take(&mut t.recipe_days_this_year);
         // The year just finished, counted from 1.
         let year = clock.year() as u32;
         t.last_made.resize(t.produced_this_year.len(), 0);
@@ -379,6 +392,39 @@ pub fn record(
             ..Default::default()
         };
         s.food_per_capita = town.food_stock(&db) / s.population.max(1) as f32;
+        let firms: f32 = db
+            .foods
+            .iter()
+            .map(|&(f, v)| town.firm_stock(f as usize) * v)
+            .sum();
+        let larders: f32 = town
+            .residents
+            .iter()
+            .flat_map(|&i| store.larder[i as usize].iter())
+            .map(|&(f, q)| q * db.content.products[f as usize].food)
+            .sum();
+        let held = town.food_stock(&db) + crate::granary::held(town, &db) + firms + larders;
+        let month = params.needs.hunger_per_day * clock.days_per_month as f32;
+        s.reserve_months = held / (s.population.max(1) as f32 * month).max(1e-6);
+        let worked: f32 = town.recipe_days_last_year.iter().sum();
+        let share = |keep: &dyn Fn(usize) -> bool| {
+            town.recipe_days_last_year
+                .iter()
+                .enumerate()
+                .filter(|&(r, _)| keep(r))
+                .map(|(_, d)| d)
+                .sum::<f32>()
+                / worked.max(1e-6)
+        };
+        // The food chain: recipes that take or make something edible (grain
+        // to flour, flour to bread); farming: those that grow it.
+        let edible = |p: u32| db.is_food[p as usize];
+        let rec = |r: usize| &db.recipes[r];
+        s.food_work_share = share(&|r| {
+            rec(r).outputs.iter().any(|o| edible(o.0)) || rec(r).inputs.iter().any(|i| edible(i.0))
+        });
+        s.farm_work_share =
+            share(&|r| rec(r).inputs.is_empty() && rec(r).outputs.iter().any(|o| edible(o.0)));
         s.production_value = products
             .iter()
             .map(|&p| town.produced_last_year[p] * db.base_price[p])
