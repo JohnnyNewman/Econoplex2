@@ -58,13 +58,16 @@ pub struct TerrainUniform {
     /// `debug.y` of the toon uniform turns toon on (1) or PBR (0).
     pub toon: ToonUniform,
     /// The culture overlay: per town, x, z of its centre and the radius of its
-    /// tint (`dims.z` of them are used)...
+    /// tint (`dims.z` of them are used); w: the share of its fields reaped
+    /// (fields.rs)...
     pub towns: [Vec4; MAX_TINTED],
     /// ...and its culture colour (linear rgb).
     pub cultures: [Vec4; MAX_TINTED],
     /// Where the contact map lies: x, z of its first corner, size along x
     /// and z (grounding.rs).
     pub contact: Vec4,
+    /// x: towns with a harvest in `towns[k].w` (fields.rs); yzw unused.
+    pub fields: Vec4,
 }
 
 /// How many towns the culture overlay can tint (the uniform's array size).
@@ -241,6 +244,7 @@ pub fn spawn_terrain(
                 towns: [Vec4::ZERO; MAX_TINTED],
                 cultures: [Vec4::ZERO; MAX_TINTED],
                 contact: data.contact_rect,
+                fields: Vec4::ZERO,
             },
             heights: heights.clone(),
             biomes: images.add(biomes),
