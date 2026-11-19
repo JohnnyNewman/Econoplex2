@@ -13,7 +13,7 @@ struct Fog {
     sun_color: vec4<f32>, // rgb: colour toward the sun; a: glow strength
     params: vec4<f32>,    // x: distance density, y: height density at base,
                           // z: height falloff, w: base height
-    debug: vec4<f32>,     // x: debug view
+    debug: vec4<f32>,     // x: debug view, y: fraction of the year (0 midwinter)
     ground: vec4<f32>,    // step 11: x snow cover, y wet, z autumn, w winter
     wind: vec4<f32>,      // step 11: xy wind direction, z strength 0..1, w spring
 };

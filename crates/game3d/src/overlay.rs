@@ -164,7 +164,8 @@ fn tint_terrain(
             0.0
         };
         for (k, t) in towns.iter().take(MAX_TINTED).enumerate() {
-            u.towns[k] = Vec4::new(t.pos.0 / SCALE, -t.pos.1 / SCALE, 32.0, 0.0);
+            // w is the harvest's (fields.rs).
+            u.towns[k] = Vec4::new(t.pos.0 / SCALE, -t.pos.1 / SCALE, 32.0, u.towns[k].w);
             let c = culture_colour(&t.culture);
             u.cultures[k] = Vec4::new(c[0], c[1], c[2], 1.0);
         }

@@ -28,6 +28,7 @@ mod camera;
 mod crowd;
 mod crowd_compute;
 mod env;
+mod fields;
 mod fog;
 mod grounding;
 mod hud;
@@ -331,6 +332,7 @@ fn main() {
         inspect::InspectPlugin,
         water::WaterPlugin,
         grounding::GroundingPlugin,
+        fields::FieldsPlugin,
         battles::BattlesPlugin,
     ))
     .insert_resource(env_override)
