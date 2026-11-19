@@ -2896,6 +2896,47 @@ fn kit_reserve_follows_soldiers_until_the_government_sets_a_stockpile() {
 }
 
 #[test]
+fn kit_is_priced_against_the_reserve_its_makers_stop_at() {
+    // The market prices kit by the stock the government keeps (its reserve
+    // or stockpile), the same stock its makers stop at, not by a stock per
+    // resident: a town told to keep one piece of the kit its armory holds
+    // most of pays less for it than one told to keep many.
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let run = |order: Option<(&str, f32)>| {
+        let mut s = Simulation::from_paths(&AssetPaths::from_root(&root)).unwrap();
+        let town = s.world.resource::<sim_core::Towns>().0[0].name.clone();
+        if let Some((good, amount)) = order {
+            s.order(&format!("stockpile {town} {good} {amount}"))
+                .unwrap();
+        }
+        for _ in 0..6 {
+            s.step();
+        }
+        s
+    };
+    // The kit the first town's armory holds most of.
+    let s = run(None);
+    let db = s.world.resource::<sim_core::Db>();
+    let town = &s.world.resource::<sim_core::Towns>().0[0];
+    let p = (0..db.content.products.len())
+        .filter(|&p| db.content.products[p].category == sim_data::Category::Weapon)
+        .max_by(|&a, &b| town.stock[a].total_cmp(&town.stock[b]))
+        .unwrap();
+    let good = db.content.products[p].id.clone();
+    let held = town.stock[p];
+    assert!(held > 2.0, "the armory holds {held} {good}");
+    let price = |amount: f32| {
+        let s = run(Some((&good, amount)));
+        s.world.resource::<sim_core::Towns>().0[0].price[p]
+    };
+    let (few, many) = (price(1.0), price(1000.0));
+    assert!(
+        few < many,
+        "{good} costs {few} with a reserve of one and {many} with a reserve of 1000"
+    );
+}
+
+#[test]
 fn an_army_marches_eats_its_rations_fights_and_comes_home() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     let mut s = Simulation::from_paths(&AssetPaths::from_root(&root)).unwrap();
