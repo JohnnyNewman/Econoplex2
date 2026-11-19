@@ -18,7 +18,7 @@ Through the year (`year` = 0 at midwinter, 0.5 at midsummer):
 
 1. **Winter, early spring:** ploughed soil with furrows (snow from step 11
    on top).
-2. **Spring (0.2 → 0.42):** green rows sprout and close up. Between young
+2. **Spring (0.16 → 0.36):** green rows sprout and close up. Between young
    rows the soil shows: `gap` is 0 on a row and 1 between rows, and the crop
    covers `cover · (1 − gap)` early and everything once `cover` is near 1.
 3. **Summer:** grain ripens from green to gold (0.4 → 0.56). Flax flowers pale
@@ -45,8 +45,10 @@ since they keep their own year. Wetness and snow still apply.
   (`towns[k].w`, with `fields.x` towns), written only when a value moves by
   more than a 64th, a few times a season. A plot follows the town nearest
   to it.
-- A town whose crop never stands (reaped as it grows), and the view without
-  a sim, fall back to the calendar's harvest: from late summer to mid-autumn.
+- A town whose crop never stands (reaped as it grows), the view without a
+  sim, and a season set by hand (`U`, `--season`: the sim's harvest belongs to
+  its own date) fall back to the calendar's harvest: from late summer to
+  mid-autumn.
 
 So a town short of hands at harvest time keeps standing gold fields well into
 autumn, which is exactly when the sim starts losing that crop.

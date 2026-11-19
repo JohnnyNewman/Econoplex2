@@ -110,31 +110,33 @@ fn field_colour(xz: vec2<f32>, year: f32, reaped: f32) -> vec3<f32> {
     let gap = smoothstep(0.2, 0.45, abs(fract(along) - 0.5));
     let y = year + (late - 0.5) * 0.05;
 
-    let soil = vec3(0.40, 0.30, 0.21);
+    let soil = vec3(0.36, 0.27, 0.19);
     let ploughed = soil * (1.0 - 0.18 * gap);            // furrows
     var c = ploughed;
     if kind < 0.15 {
         // Fallow: rough pasture all year.
-        c = vec3(0.47, 0.58, 0.28);
+        c = vec3(0.40, 0.52, 0.24);
     } else {
         // Sprouts from early spring, rows close up by late spring.
-        let cover = smoothstep(0.2, 0.42, y);
-        var crop = vec3(0.38, 0.58, 0.22);
+        let cover = smoothstep(0.16, 0.36, y);
+        var crop = vec3(0.30, 0.48, 0.16);
         if kind < 0.6 {
             // Grain: green, then gold through summer.
-            crop = mix(crop, vec3(0.86, 0.72, 0.34), smoothstep(0.4, 0.56, y));
+            crop = mix(crop, vec3(0.78, 0.58, 0.20), smoothstep(0.4, 0.56, y));
         } else {
             // A green crop (flax, roots): stays green, darker; flax flowers
             // blue for a few weeks in early summer.
-            crop = vec3(0.30, 0.50, 0.24);
+            crop = vec3(0.22, 0.40, 0.16);
             let bloom = smoothstep(0.38, 0.42, y) * (1.0 - smoothstep(0.46, 0.5, y));
-            crop = mix(crop, vec3(0.50, 0.58, 0.80), bloom * step(kind, 0.75) * 0.7);
+            crop = mix(crop, vec3(0.42, 0.50, 0.78), bloom * step(kind, 0.75) * 0.7);
         }
-        // Young rows show the soil between them; a full crop hides it.
+        // Young rows show the soil between them; a full crop hides it, but
+        // for a faint shade along its rows.
+        crop *= 1.0 - 0.12 * gap;
         c = mix(ploughed, crop, cover * mix(1.0 - gap, 1.0, cover * cover));
         // Reaped plot by plot as the town takes its harvest in: stubble,
         // ploughed again plot by plot in late autumn.
-        let stubble = mix(vec3(0.80, 0.70, 0.44), soil, 0.25 * gap);
+        let stubble = mix(vec3(0.62, 0.52, 0.30), soil, 0.3 * gap);
         let cut = step(turn, reaped) * step(0.45, y);
         c = mix(c, stubble, cut);
         let plough = step(turn, smoothstep(0.78, 0.92, y));

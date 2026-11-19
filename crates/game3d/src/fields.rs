@@ -11,10 +11,11 @@
 //!   standing crop (`TownView::crops`) against this year's peak. The plots
 //!   nearest each town are reaped one by one as its crop is taken in.
 //!
-//! A town whose crop never stands (reaped as it grows), or no sim at all,
-//! falls back to the calendar's harvest.
+//! A town whose crop never stands (reaped as it grows), no sim at all, or a
+//! season set by hand (the sim's harvest belongs to its own date) fall back
+//! to the calendar's harvest.
 
-use crate::env::Environment;
+use crate::env::{EnvOverride, Environment};
 use crate::live::LiveSim;
 use crate::terrain::{TerrainMaterial, MAX_TINTED};
 use crate::SCALE;
@@ -66,6 +67,7 @@ fn smoothstep(a: f32, b: f32, x: f32) -> f32 {
 fn field_state(
     live: Option<Res<LiveSim>>,
     env: Res<Environment>,
+    over: Res<EnvOverride>,
     mut year: Local<CropYear>,
     terrains: Query<&MeshMaterial3d<TerrainMaterial>>,
     mut materials: ResMut<Assets<TerrainMaterial>>,
@@ -91,7 +93,12 @@ fn field_state(
         .zip(year.peak.iter_mut())
         .map(|(&(_, crops), peak)| {
             *peak = peak.max(crops);
-            (reaped(crops, *peak, env.season) * 64.0).round() / 64.0
+            let r = if over.season.is_some() {
+                calendar_reaped(env.season)
+            } else {
+                reaped(crops, *peak, env.season)
+            };
+            (r * 64.0).round() / 64.0
         })
         .collect();
     for handle in &terrains {
