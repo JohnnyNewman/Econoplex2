@@ -82,7 +82,7 @@ pub const SEASON_FLOOR: f32 = 0.25;
 
 /// Learns, for each good, how much the town makes minus uses per day in each
 /// month of the year (from the goods ledger; averaged over about two years).
-fn learn_profile(town: &mut crate::world::Town, np: usize, month: usize) {
+fn learn_profile(town: &mut crate::world::Town, np: usize, month: usize, rate: f32) {
     town.flow_profile.per_month.resize(np * MONTHS, 0.0);
     town.flow_profile.seen.resize(np, 0.0);
     let first = town.flow_profile.seen_day == 0;
@@ -95,7 +95,7 @@ fn learn_profile(town: &mut crate::world::Town, np: usize, month: usize) {
             continue;
         }
         let v = &mut town.flow_profile.per_month[g * MONTHS + month];
-        *v += PROFILE_RATE * (delta - *v);
+        *v += rate * (delta - *v);
     }
 }
 
@@ -133,14 +133,16 @@ pub fn season_scale(town: &crate::world::Town, np: usize, month: usize) -> Vec<f
     v
 }
 
-/// Daily: the granary takes the market's food surplus up to its target, or
+/// Each simulated day: the granary takes the market's food surplus up to its target, or
 /// releases food into a hungry market; and its store slowly spoils.
-pub fn tend(towns: &mut Towns, db: &Db, params: &Params, days_per_year: f32, season: f32) {
+pub fn tend(towns: &mut Towns, db: &Db, params: &Params, per_year: f32, season: f32) {
     let np = db.content.products.len();
+    // Each simulated day is a month of daily observations.
+    let rate = params.calendar().share(PROFILE_RATE);
     let month =
         ((season - params.time.year_starts_at).rem_euclid(1.0) * MONTHS as f32) as usize % MONTHS;
     for town in towns.0.iter_mut() {
-        learn_profile(town, np, month);
+        learn_profile(town, np, month, rate);
         if !town.policy.stockpile.is_empty() {
             town.stockpile_scale = season_scale(town, np, month);
         }
@@ -187,7 +189,7 @@ pub fn tend(towns: &mut Towns, db: &Db, params: &Params, days_per_year: f32, sea
                 want -= q * v;
             }
         }
-        let rate = mp.food_spoilage / days_per_year * mp.granary_spoilage;
+        let rate = mp.food_spoilage / per_year * mp.granary_spoilage;
         for &(f, _) in &db.foods {
             let f = f as usize;
             let rotted = town.granary[f] * rate;

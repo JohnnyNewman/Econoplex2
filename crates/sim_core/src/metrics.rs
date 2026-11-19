@@ -13,7 +13,7 @@ pub struct TownStats {
     pub population: usize,
     pub adults: usize,
     pub food_per_capita: f32,
-    /// Share of residents' days spent starving this year.
+    /// Share of residents' months (simulated days) spent starving this year.
     pub starving: f32,
     /// Products made last year.
     pub diversity: usize,
@@ -262,7 +262,7 @@ pub fn record(
     if clock.tick == 0 || clock.day_of_year() != 0 {
         return;
     }
-    let dpy = clock.days_per_year;
+    let dpy = clock.months_per_year;
     for t in towns.0.iter_mut() {
         t.work_days = [0.0, t.work_days[0]];
         t.glut_work_days = [0.0, t.glut_work_days[0]];
@@ -475,7 +475,7 @@ pub fn record(
         s.moves = town.moves;
         s.ruler = town.ruler;
         s.starving =
-            town.starving as f32 / (s.population.max(1) * clock.days_per_year as usize) as f32;
+            town.starving as f32 / (s.population.max(1) * clock.months_per_year as usize) as f32;
         for (k, v) in town.price_vol.iter().enumerate().take(3) {
             s.price_vol[k] = (v.mean(), v.p95());
         }

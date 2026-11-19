@@ -66,7 +66,7 @@ struct Summary {
 pub const COLUMNS: [&str; 22] = [
     "pop", "starve%", "food/cap", "div", "ECI rng", "spec", "masters", "swords", "wealth", "gini",
     "raids", "conq", "revolts", "ruled%", "moves", "glut%", "gwork%", "hh use", "in use", "happy",
-    "capab", "ms/tick",
+    "capab", "ms/day",
 ];
 
 impl Summary {
@@ -279,7 +279,7 @@ pub fn run(
                     .expect("settings were checked before the threads started");
                 let mut scenario = plan.scenario.clone();
                 scenario.seed = seed;
-                let ticks = plan.years * params.life.days_per_year as u64;
+                let ticks = plan.years * params.time.months_per_year as u64;
                 let mut sim = Simulation::new(db, params, &scenario);
                 let t0 = Instant::now();
                 for tick in 0..ticks {

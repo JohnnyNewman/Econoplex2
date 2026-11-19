@@ -13,8 +13,14 @@ use sim_data::dims::{mind, MIND_DIM};
 
 const AXES: usize = MIND_DIM - mind::IDEOLOGY_START;
 
-/// Each town's culture moves a day toward its residents' average outlook.
-fn follow_culture(store: &AgentStore, towns: &mut Towns, params: &Params) {
+/// Each town's culture moves the days of `cal` toward its residents' average
+/// outlook.
+fn follow_culture(
+    store: &AgentStore,
+    towns: &mut Towns,
+    params: &Params,
+    cal: crate::calendar::Calendar,
+) {
     for town in towns.0.iter_mut() {
         if town.residents.is_empty() {
             continue;
@@ -37,7 +43,7 @@ fn follow_culture(store: &AgentStore, towns: &mut Towns, params: &Params) {
         crate::decision::culture::follow(
             &mut town.culture,
             &mean,
-            params.decision.culture.memory_days,
+            cal.steps(params.decision.culture.memory_days),
         );
     }
 }
@@ -51,11 +57,16 @@ pub fn socialize(
     seed: Res<SimSeed>,
     mut log: ResMut<WorkLog>,
 ) {
-    let mut rng = seed.rng(clock.tick, streams::SOCIAL);
+    let mut rng = seed.rng(clock.steps(), streams::SOCIAL);
     let store = &mut *store;
-    follow_culture(store, &mut towns, &params);
     let tp = &params.trust;
-    store.fade_trust(1.0 - tp.fade);
+    // Coworkers meet when their batch is done; once a day of time ties fade,
+    // the town's culture follows its people and people run into each other.
+    let day = clock.day_of_time();
+    if let Some(cal) = day {
+        follow_culture(store, &mut towns, &params, cal);
+        store.fade_trust(cal.keep(1.0 - tp.fade));
+    }
     let mut noise = [0.0f32; 2 * AXES];
     let mut meet =
         |store: &mut AgentStore, a: usize, b: usize, rng: &mut rand_chacha::ChaCha8Rng| {
@@ -88,10 +99,16 @@ pub fn socialize(
             .chain(ev.apprentices.iter())
             .copied()
             .collect();
-        for pair in members.windows(2) {
-            meet(store, pair[0] as usize, pair[1] as usize, &mut rng);
+        // A meeting a day of work together: whole days, and the part of a day
+        // by chance (short runs at fine steps meet as often in all).
+        let whole = ev.days.max(0.0).floor();
+        let days = whole as usize + usize::from(rng.random::<f32>() < ev.days - whole);
+        for _ in 0..days {
+            for pair in members.windows(2) {
+                meet(store, pair[0] as usize, pair[1] as usize, &mut rng);
+            }
         }
-        let gain = tp.cowork_gain * if ev.success { 1.0 } else { tp.failure_factor };
+        let gain = tp.cowork_gain * ev.days * if ev.success { 1.0 } else { tp.failure_factor };
         for (k, &a) in members.iter().enumerate() {
             for &b in &members[k + 1..] {
                 if store.alive[a as usize] && store.alive[b as usize] {
@@ -101,15 +118,20 @@ pub fn socialize(
         }
     }
 
-    // Random contacts within the town.
-    let p = models.social.daily_contacts();
+    // Random contacts within the town: a day's chances.
+    let Some(cal) = day else {
+        return;
+    };
+    let p = cal.flow(models.social.daily_contacts());
+    let (whole, part) = (p.floor() as usize, p.fract());
     for town in &towns.0 {
         let n = town.residents.len();
         if n < 2 {
             continue;
         }
         for &a in &town.residents {
-            if rng.random::<f32>() < p {
+            let meetings = whole + (rng.random::<f32>() < part) as usize;
+            for _ in 0..meetings {
                 let b = town.residents[rng.random_range(0..n)];
                 let (a, b) = (a as usize, b as usize);
                 meet(store, a, b, &mut rng);

@@ -56,7 +56,7 @@ fn default_max_public_spending() -> f32 {
 #[serde(default)]
 pub struct GovernorParams {
     pub enabled: bool,
-    /// Days between decisions.
+    /// Months (simulated days) between decisions.
     pub interval: u32,
     /// Days over which observations are averaged.
     pub smoothing_days: f32,
@@ -132,7 +132,7 @@ impl Default for GovernorParams {
     fn default() -> Self {
         GovernorParams {
             enabled: true,
-            interval: 30,
+            interval: 3,
             smoothing_days: 30.0,
             govern_player_town: false,
             food_low: 0.5,

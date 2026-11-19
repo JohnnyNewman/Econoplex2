@@ -1,16 +1,16 @@
 //! History as data: an event log and monthly time series per town.
 //!
-//! One system, `record`, runs at the end of each day. It compares each town
-//! with how it was the day before and logs what changed:
+//! One system, `record`, runs at the end of each simulated day (a month). It
+//! compares each town with how it was the month before and logs what changed:
 //! - raids won and lost, conquests, revolts;
 //! - buildings finished, land opened;
-//! - famines (starving starts / ends after a quiet month);
+//! - famines (starving starts / ends after three quiet months);
 //! - migration waves (many arrivals in a month);
 //! - every government order (player's and AI's).
 //!
-//! Every `SAMPLE_DAYS` it also records a sample per town: population, food per
-//! resident, treasury, mean wealth, soldiers, buildings, starving person-days in
-//! the month, bread price and ruler.
+//! Every `SAMPLE_MONTHS` simulated days it also records a sample per town:
+//! population, food per resident, treasury, mean wealth, soldiers, buildings,
+//! starving person-months since the last sample, bread price and ruler.
 //!
 //! Nothing in the simulation reads it back; it is for the HUD, exports
 //! (`--events`, `--history` in the CLI) and analysis. Saves keep it.
@@ -22,8 +22,8 @@ use crate::world::{SimClock, Towns};
 use bevy_ecs::prelude::*;
 use serde::{Deserialize, Serialize};
 
-/// Days between samples.
-pub const SAMPLE_DAYS: u64 = 30;
+/// Simulated days (months) between samples: one a month.
+pub const SAMPLE_MONTHS: u64 = 1;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum EventKind {
@@ -91,7 +91,7 @@ struct Snapshot {
     starving: u32,
     starving_at_sample: u32,
     famine: bool,
-    quiet_days: u32,
+    quiet_months: u32,
     arrived: u32,
     arrived_at_sample: u32,
 }
@@ -189,8 +189,8 @@ pub fn describe(order: &Order, db: &Db, towns: &Towns) -> String {
     }
 }
 
-/// Days without starving before a famine counts as over.
-const QUIET_DAYS: u32 = 30;
+/// Months (simulated days) without starving before a famine counts as over.
+const QUIET_MONTHS: u32 = 3;
 /// Arrivals in a month, as a share of the population, that make a wave.
 const WAVE_SHARE: f32 = 0.05;
 
@@ -323,10 +323,10 @@ pub fn record(
                 format!("{} opened new land", town.name),
             );
         }
-        // Famine: people starving today, after a quiet month.
+        // Famine: people starving this month, after quiet months.
         let starving_today = town.starving > s.starving;
         if starving_today {
-            s.quiet_days = 0;
+            s.quiet_months = 0;
             if !s.famine {
                 s.famine = true;
                 push(
@@ -337,8 +337,8 @@ pub fn record(
                 );
             }
         } else if s.famine {
-            s.quiet_days += 1;
-            if s.quiet_days >= QUIET_DAYS {
+            s.quiet_months += 1;
+            if s.quiet_months >= QUIET_MONTHS {
                 s.famine = false;
                 push(
                     &mut h.events,
@@ -357,7 +357,7 @@ pub fn record(
         s.arrived = town.moves.arrived;
 
         // Monthly sample.
-        if tick.is_multiple_of(SAMPLE_DAYS) {
+        if tick.is_multiple_of(SAMPLE_MONTHS) {
             let pop = town.residents.len();
             let arrivals = town.moves.arrived - s.arrived_at_sample;
             if pop > 0 && arrivals as f32 > WAVE_SHARE * pop as f32 {

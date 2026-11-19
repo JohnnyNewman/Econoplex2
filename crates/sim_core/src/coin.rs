@@ -1,7 +1,7 @@
 //! Money as whole numbers.
 //!
 //! Every holding (a person's wealth, a town's treasury, a firm's cash) is a
-//! [`Coin`]: a count of thousandths of a coin. Whole numbers add up exactly in
+//! [`Coin`]: a count of millionths of a coin. Whole numbers add up exactly in
 //! any order, so money is conserved to the last unit and two runs can never
 //! drift apart by rounding.
 //!
@@ -14,9 +14,10 @@ use std::iter::Sum;
 use std::ops::{Add, AddAssign, Neg, Sub, SubAssign};
 
 /// Units in one coin.
-pub const UNITS: i64 = 1000;
+pub const UNITS: i64 = 1_000_000;
 
-/// An amount of money, in thousandths of a coin.
+/// An amount of money, in millionths of a coin (fine enough that a step's
+/// share of a daily tax or wage is many units).
 #[derive(
     Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
@@ -105,10 +106,10 @@ mod tests {
 
     #[test]
     fn amounts_round_to_the_nearest_unit_and_read_back() {
-        assert_eq!(Coin::from_coins(0.3), Coin(300));
-        assert_eq!(Coin::from_coins(-1.2504), Coin(-1250));
+        assert_eq!(Coin::from_coins(0.3), Coin(300_000));
+        assert_eq!(Coin::from_coins(-1.2504), Coin(-1_250_400));
         assert_eq!(Coin::from_coins(f32::NAN), Coin::ZERO);
-        assert_eq!(Coin(1500).coins(), 1.5);
+        assert_eq!(Coin(1_500_000).coins(), 1.5);
     }
 
     #[test]

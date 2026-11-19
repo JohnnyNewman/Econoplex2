@@ -100,8 +100,6 @@ pub struct GeneticsParams {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LifeParams {
-    /// Simulation ticks per in-game year (1 tick = 1 day).
-    pub days_per_year: u32,
     pub adult_age: f32,
     pub apprentice_age: f32,
     pub min_birth_age: f32,
@@ -111,6 +109,7 @@ pub struct LifeParams {
     pub mortality_a: f32,
     pub mortality_b: f32,
     pub partner_min_score: f32,
+    /// Months (simulated days) between rounds of partnering.
     pub partner_interval: u32,
     /// Food stock per capita at which births run at full rate.
     pub food_for_births: f32,
@@ -123,6 +122,7 @@ pub struct LifeParams {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrganizeParams {
+    /// Months (simulated days) between rounds of trades and guilds.
     pub interval: u32,
     /// Skill at which an adult with no trade joins the guild of their best
     /// skill (someone who never apprenticed).
@@ -174,7 +174,7 @@ pub struct TrustParams {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct MigrationParams {
-    /// Days between migration rounds.
+    /// Months (simulated days) between migration rounds.
     pub interval: u32,
     /// Chance an idle adult weighs moving in a round.
     pub consider: f32,

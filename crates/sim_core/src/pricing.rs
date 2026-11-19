@@ -66,6 +66,29 @@ pub struct ClassParams {
 }
 
 impl ClassParams {
+    /// The class over a step of `cal`: its share of a day's move, so
+    /// speeds and the cap on a move scale with the days (log price moves add
+    /// up), and the pressure is smoothed over the month.
+    pub fn over(&self, cal: crate::calendar::Calendar) -> ClassParams {
+        let d = cal.days();
+        let inertia = match self.inertia {
+            Inertia::Partial { speed } => Inertia::Partial { speed: speed * d },
+            Inertia::Sticky { up, down } => Inertia::Sticky {
+                up: up * d,
+                down: down * d,
+            },
+            Inertia::Smoothed { speed, memory_days } => Inertia::Smoothed {
+                speed: speed * d,
+                memory_days: cal.steps(memory_days).max(1.0),
+            },
+        };
+        ClassParams {
+            inertia,
+            max_daily: self.max_daily * d,
+            ..*self
+        }
+    }
+
     /// Today's price from yesterday's, the pressure and the smoothed pressure.
     pub fn step(&self, price: f32, base: f32, pressure: f32, smoothed: &mut f32) -> f32 {
         let m = self.max_daily.max(0.0);

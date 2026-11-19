@@ -210,17 +210,20 @@ impl Ledger {
         sum_group(&self.last_year, g)
     }
 
-    fn end_day(&mut self) {
-        let a = 1.0 / MONTH_DAYS;
+    /// Close a step: its flows are over the days it stands for; `monthly`
+    /// keeps the daily average over about the last month of days.
+    fn end_day(&mut self, cal: crate::calendar::Calendar) {
+        let a = cal.smoothing(MONTH_DAYS);
+        let d = cal.days();
         for k in 0..FLOWS {
-            self.monthly[k] += a * (self.today[k] - self.monthly[k]);
+            self.monthly[k] += a * (self.today[k] / d - self.monthly[k]);
             self.this_year[k] += self.today[k];
             self.total[k] += self.today[k] as f64;
         }
         self.today = [0.0; FLOWS];
         self.exports.resize(self.exports_today.len(), 0.0);
         for (m, t) in self.exports.iter_mut().zip(self.exports_today.iter_mut()) {
-            *m += a * (*t - *m);
+            *m += a * (*t / d - *m);
             *t = 0.0;
         }
     }
@@ -238,13 +241,16 @@ pub fn sum_group(v: &[f32; FLOWS], g: Group) -> f32 {
         .sum()
 }
 
-/// Close the day's books (and the year's at year end). Runs before metrics.
+/// Close the step's books (and the year's after the year's last step: the
+/// whole simulated days of the year, as when a step was a day). Runs before
+/// metrics, which read the closed year in the same step.
 pub fn close_day(mut towns: ResMut<Towns>, clock: Res<SimClock>) {
-    let year_end = clock.tick > 0 && clock.day_of_year() == 0;
+    let year_end = clock.tick > 0 && clock.day_of_year() == 0 && clock.day_done();
+    let cal = clock.calendar();
     for t in towns.0.iter_mut() {
-        t.ledger.end_day();
+        t.ledger.end_day(cal);
         for f in t.firms.iter_mut() {
-            f.end_day();
+            f.end_day(cal);
         }
         if year_end {
             t.ledger.end_year();
@@ -269,16 +275,18 @@ mod tests {
     #[test]
     fn the_monthly_average_approaches_a_steady_flow() {
         let mut l = Ledger::new(2);
-        for _ in 0..300 {
-            l.add(Flow::Wages, 10.0);
-            l.export(1, 4.0);
-            l.end_day();
+        // 100 steps of 10 days each, 100 a step: 10 a day.
+        let cal = crate::calendar::Calendar::of(10, 12, 1);
+        for _ in 0..100 {
+            l.add(Flow::Wages, 100.0);
+            l.export(1, 40.0);
+            l.end_day(cal);
         }
         assert!((l.monthly[Flow::Wages as usize] - 10.0).abs() < 0.01);
         assert!((l.exports[1] - 4.0).abs() < 0.01);
         assert_eq!(l.monthly_group(Group::Issued), l.monthly[0]);
         l.end_year();
-        assert_eq!(l.last_year[Flow::Wages as usize], 3000.0);
+        assert_eq!(l.last_year[Flow::Wages as usize], 10000.0);
         assert_eq!(l.this_year[Flow::Wages as usize], 0.0);
     }
 }

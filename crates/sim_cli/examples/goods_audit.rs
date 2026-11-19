@@ -13,7 +13,7 @@ fn main() {
     if let Some(s) = seed {
         scenario.seed = s;
     }
-    let dpy = params.life.days_per_year as u64;
+    let dpy = params.time.months_per_year as u64;
     let mut sim = Simulation::new(db, params, &scenario);
     for y in 1..=years {
         for _ in 0..dpy {

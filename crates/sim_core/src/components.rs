@@ -98,6 +98,10 @@ pub struct Task {
     pub input_quality: f32,
     /// How many runs of the recipe this team does in one go (larger teams batch work).
     pub batches: u32,
+    /// Runs' worth of work this team has done that no practice has counted
+    /// yet: a run it finishes counts the part it did, and what it leaves to
+    /// the next team counts when it breaks up.
+    pub worked_runs: f32,
 }
 
 #[derive(Component, Debug, Clone, Default, serde::Serialize, serde::Deserialize)]

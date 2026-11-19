@@ -411,16 +411,15 @@ fn history(world: &World) -> String {
 // ------------------------------------------------------------------ Log
 
 fn log(world: &World) -> String {
-    let dpy = world.resource::<SimClock>().days_per_year.max(1) as u64;
+    let per_year = world.resource::<SimClock>().months_per_year;
     let towns = world.resource::<Towns>();
     let events = &world.resource::<History>().events;
     let mut s = format!("EVENT LOG   {} events, newest first\n\n", events.len());
     for e in events.iter().rev().take(30) {
         let town = towns.0.get(e.town as usize).map_or("", |t| t.name.as_str());
         s.push_str(&format!(
-            "  y{} d{:>3}  {:<10} {}\n",
-            e.tick / dpy,
-            e.tick % dpy,
+            "  {:<7}  {:<10} {}\n",
+            sim_core::calendar::date(e.tick, per_year),
             town,
             e.text
         ));

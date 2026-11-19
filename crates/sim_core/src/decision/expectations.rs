@@ -2,13 +2,14 @@
 //! what it observes.
 //!
 //! Interface: the previous expectation (or `None` if the agent has none yet), an
-//! observation, and the agent's curiosity in 0..1 (curious agents update faster).
-//! Output: the new expectation. Nothing else is read.
+//! observation, the days of experience it stands for, and the agent's
+//! curiosity in 0..1 (curious agents update faster). Output: the new
+//! expectation. Nothing else is read.
 
 use serde::{Deserialize, Serialize};
 
 pub trait Expectations: Send + Sync {
-    fn update(&self, previous: Option<f32>, observed: f32, curiosity: f32) -> f32;
+    fn update(&self, previous: Option<f32>, observed: f32, days: f32, curiosity: f32) -> f32;
 }
 
 /// Which expectation rule to use, with its parameters (`decision.expectations`).
@@ -17,7 +18,8 @@ pub enum ExpectationsParams {
     /// Expect exactly the last observation.
     Fixed,
     /// Move a share of the way toward each observation (an exponential moving
-    /// average); the share is `base_rate + curiosity_rate × curiosity`.
+    /// average); the share for a day's observation is
+    /// `base_rate + curiosity_rate × curiosity`, compounded over its days.
     Adaptive { base_rate: f32, curiosity_rate: f32 },
 }
 
@@ -46,7 +48,7 @@ pub fn build(p: &ExpectationsParams) -> Box<dyn Expectations> {
 pub struct Fixed;
 
 impl Expectations for Fixed {
-    fn update(&self, _previous: Option<f32>, observed: f32, _curiosity: f32) -> f32 {
+    fn update(&self, _previous: Option<f32>, observed: f32, _days: f32, _curiosity: f32) -> f32 {
         observed
     }
 }
@@ -57,11 +59,14 @@ pub struct Adaptive {
 }
 
 impl Expectations for Adaptive {
-    fn update(&self, previous: Option<f32>, observed: f32, curiosity: f32) -> f32 {
+    /// An observation of `days` days moves the expectation as far as that
+    /// many daily ones would, so it does not matter how the work was cut.
+    fn update(&self, previous: Option<f32>, observed: f32, days: f32, curiosity: f32) -> f32 {
         match previous {
             None => observed,
             Some(e) => {
-                let rate = (self.base_rate + self.curiosity_rate * curiosity).clamp(0.0, 1.0);
+                let daily = (self.base_rate + self.curiosity_rate * curiosity).clamp(0.0, 1.0);
+                let rate = 1.0 - (1.0 - daily).powf(days.max(0.0));
                 e + rate * (observed - e)
             }
         }
@@ -76,19 +81,20 @@ pub fn remember(
     list: &mut Vec<(u32, f32)>,
     recipe: u32,
     observed: f32,
+    days: f32,
     curiosity: f32,
     rule: &dyn Expectations,
 ) {
     match list.iter().position(|e| e.0 == recipe) {
         Some(k) => {
             let (_, prev) = list.remove(k);
-            list.push((recipe, rule.update(Some(prev), observed, curiosity)));
+            list.push((recipe, rule.update(Some(prev), observed, days, curiosity)));
         }
         None => {
             if list.len() >= KEEP {
                 list.remove(0);
             }
-            list.push((recipe, rule.update(None, observed, curiosity)));
+            list.push((recipe, rule.update(None, observed, days, curiosity)));
         }
     }
 }
@@ -109,9 +115,9 @@ mod tests {
             base_rate: 0.05,
             curiosity_rate: 0.2,
         };
-        let mut e = rule.update(None, 1.0, 0.5);
+        let mut e = rule.update(None, 1.0, 1.0, 0.5);
         for _ in 0..200 {
-            e = rule.update(Some(e), 4.0, 0.5);
+            e = rule.update(Some(e), 4.0, 1.0, 0.5);
         }
         assert!((e - 4.0).abs() < 1e-3);
     }
@@ -122,9 +128,21 @@ mod tests {
             base_rate: 0.05,
             curiosity_rate: 0.2,
         };
-        let slow = rule.update(Some(0.0), 10.0, 0.0);
-        let fast = rule.update(Some(0.0), 10.0, 1.0);
+        let slow = rule.update(Some(0.0), 10.0, 1.0, 0.0);
+        let fast = rule.update(Some(0.0), 10.0, 1.0, 1.0);
         assert!(fast > slow && slow > 0.0);
+        // Ten days' observation moves it as far as ten daily ones, and ten
+        // tenths of a day as far as one.
+        let mut daily = 0.0;
+        for _ in 0..10 {
+            daily = rule.update(Some(daily), 10.0, 1.0, 0.0);
+        }
+        assert!((rule.update(Some(0.0), 10.0, 10.0, 0.0) - daily).abs() < 1e-4);
+        let mut tenths = 0.0;
+        for _ in 0..10 {
+            tenths = rule.update(Some(tenths), 10.0, 0.1, 0.0);
+        }
+        assert!((rule.update(Some(0.0), 10.0, 1.0, 0.0) - tenths).abs() < 1e-4);
     }
 
     #[test]
@@ -132,7 +150,7 @@ mod tests {
         let rule = Fixed;
         let mut list = Vec::new();
         for r in 0..(KEEP as u32 + 3) {
-            remember(&mut list, r, r as f32, 0.5, &rule);
+            remember(&mut list, r, r as f32, 1.0, 0.5, &rule);
         }
         assert_eq!(list.len(), KEEP);
         assert!(list.iter().all(|e| e.0 >= 3));

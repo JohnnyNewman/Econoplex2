@@ -46,77 +46,120 @@ pub fn player_town(scenario: &Scenario) -> crate::policy::PlayerTown {
     }))
 }
 
-/// Simulation calendar. Each day is cut into `ticks_per_day` ticks; `tick`
-/// counts days (the economy runs once a day, on the day's first tick) and
-/// `sub` is the tick within the day. See `env` for hours, seasons and weather.
+/// Simulation clock. A year is `months_per_year` simulated days, one per
+/// month, each standing for `days_per_month` days (see [`crate::calendar`]).
+/// Each simulated day is cut into `steps_per_day` economy steps; `tick`
+/// counts simulated days (months) and `step` is the step within the day.
+/// Every step runs the whole economy. See `env` for hours, seasons and weather.
 #[derive(Resource, Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct SimClock {
-    /// Days started so far (day 1 is the first day the economy runs).
+    /// Simulated days started so far (day 1 is the first day the economy runs).
     pub tick: u64,
-    pub days_per_year: u32,
-    #[serde(default = "one")]
-    pub ticks_per_day: u32,
-    /// Tick within the current day, 0 .. ticks_per_day. Before the first day it
-    /// is the last tick of day 0, so the first step starts day 1.
-    #[serde(default)]
-    pub sub: u32,
-    #[serde(default = "twelve")]
+    /// Simulated days (months) in a year.
     pub months_per_year: u32,
-    /// Game days started so far (each runs `economy_days_per_day` days of
-    /// economy, counted by `tick`).
-    #[serde(default)]
-    pub game_day: u64,
-    #[serde(default = "one")]
-    pub economy_days_per_day: u32,
-}
-
-fn one() -> u32 {
-    1
-}
-
-fn twelve() -> u32 {
-    12
+    /// Days each simulated day stands for.
+    pub days_per_month: u32,
+    /// Economy steps in a simulated day.
+    pub steps_per_day: u32,
+    /// Step within the current day, 0 .. steps_per_day. Before the first day
+    /// it is the last step of day 0, so the first step starts day 1.
+    pub step: u32,
 }
 
 impl SimClock {
-    pub fn new(days_per_year: u32, time: &crate::env::TimeParams) -> Self {
-        let tpd = time.ticks_per_day.max(1);
+    pub fn new(time: &crate::env::TimeParams) -> Self {
+        let spd = time.steps_per_day.max(1);
         SimClock {
             tick: 0,
-            days_per_year,
-            ticks_per_day: tpd,
-            sub: tpd - 1,
             months_per_year: time.months_per_year.max(1),
-            game_day: 0,
-            economy_days_per_day: time.economy_days_per_day.max(1),
+            days_per_month: time.days_per_month.max(1),
+            steps_per_day: spd,
+            step: spd - 1,
         }
     }
-    /// Days of economy started so far (the same as `tick`).
+    /// Simulated days started so far (the same as `tick`).
     pub fn day(&self) -> u64 {
         self.tick
     }
-    /// Hour at the middle of the current tick, 0 .. 24.
+    /// Steps run so far, counting the current one: a number for each step,
+    /// for random streams and for timers counted in steps.
+    pub fn steps(&self) -> u64 {
+        self.tick.saturating_sub(1) * self.steps_per_day.max(1) as u64 + self.step as u64 + 1
+    }
+    /// Hour at the middle of the current step, 0 .. 24.
     pub fn hour(&self) -> f32 {
         crate::env::hour(self)
     }
-    /// Month of the year, 0 .. months_per_year.
-    pub fn month(&self) -> u32 {
-        let dpm = (self.days_per_year / self.months_per_year.max(1)).max(1);
-        (self.day_of_year() / dpm).min(self.months_per_year.max(1) - 1)
+    /// The calendar this clock runs on: how long a step is.
+    pub fn calendar(&self) -> crate::calendar::Calendar {
+        crate::calendar::Calendar::of(
+            self.days_per_month,
+            self.months_per_year,
+            self.steps_per_day,
+        )
     }
-    /// Whether this tick is the last of its day (a whole day has run).
+    /// Whether this step is the first of its simulated day (the month's
+    /// things happen then).
+    pub fn day_start(&self) -> bool {
+        self.step == 0
+    }
+    /// Whether this is the first step of a simulated day whose number is a
+    /// multiple of `months`: the step that events counted in months happen on.
+    /// Never for `months == 0`.
+    pub fn every_months(&self, months: u32) -> bool {
+        months > 0 && self.day_start() && self.tick.is_multiple_of(months as u64)
+    }
+    /// The day of time step `step` of the simulated day falls in: the day is
+    /// cut into `days_per_month` equal stretches of hours, whatever the
+    /// step, so a day of time is the same span of game time at any step size.
+    fn day_of_time_at(&self, step: u32) -> u64 {
+        step as u64 * self.days_per_month.max(1) as u64 / self.steps_per_day.max(1) as u64
+    }
+    /// The first step of the day of time `d` (or `steps_per_day` past the last).
+    fn first_step_of(&self, d: u64) -> u32 {
+        let (dpm, spd) = (
+            self.days_per_month.max(1) as u64,
+            self.steps_per_day.max(1) as u64,
+        );
+        (d * spd).div_ceil(dpm).min(spd) as u32
+    }
+    /// Steps in the day of time this step is in (at least one): the pace of
+    /// the slow processes (wear, fuel, body, forgetting, ties fading), which
+    /// run once a day as they did when a step was a day.
+    pub fn steps_per_day_of_time(&self) -> u32 {
+        let d = self.day_of_time_at(self.step);
+        (self.first_step_of(d + 1) - self.first_step_of(d)).max(1)
+    }
+    /// On the first step of each day of time, the calendar of that day (its
+    /// steps taken together); `None` on the other steps.
+    pub fn day_of_time(&self) -> Option<crate::calendar::Calendar> {
+        self.work_day_start()
+            .then(|| self.calendar().every(self.steps_per_day_of_time()))
+    }
+    /// Whether this step starts a day of time within the simulated day.
+    /// People choose their work then, once a day of time, as when a step was
+    /// a day.
+    pub fn work_day_start(&self) -> bool {
+        self.step == 0 || self.day_of_time_at(self.step) != self.day_of_time_at(self.step - 1)
+    }
+    /// Whether this step ends a day of time (the teams break up after it).
+    pub fn work_day_end(&self) -> bool {
+        self.day_done() || self.day_of_time_at(self.step + 1) != self.day_of_time_at(self.step)
+    }
+    /// Whether this step is the last of its day (a whole day has run).
     pub fn day_done(&self) -> bool {
-        self.sub + 1 >= self.ticks_per_day.max(1)
+        self.step + 1 >= self.steps_per_day.max(1)
     }
     pub fn year(&self) -> u64 {
-        self.tick / self.days_per_year as u64
+        self.tick / self.months_per_year.max(1) as u64
     }
+    /// Simulated day of the year, which is its month: 0 .. months_per_year.
     pub fn day_of_year(&self) -> u32 {
-        (self.tick % self.days_per_year as u64) as u32
+        (self.tick % self.months_per_year.max(1) as u64) as u32
     }
 }
 
-/// World seed. Each system derives its own stream per tick, so results do not
+/// World seed. Each system derives its own stream per step, so results do not
 /// depend on system scheduling.
 #[derive(Resource, Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct SimSeed(pub u64);
@@ -248,6 +291,11 @@ pub struct Town {
     /// moving average of realised pay, failures included).
     #[serde(default)]
     pub pay_rate: Vec<f32>,
+    /// Runs under way per recipe when the teams broke up at the end of the
+    /// last working day (inputs already in): the next team on that recipe
+    /// carries them on, so work longer than a day is not lost.
+    #[serde(default)]
+    pub wip: Vec<f32>,
     /// Each good's current price cap, as a factor of its base price (see
     /// `market.scarcity_cap`). Empty: `max_price_factor` for all.
     #[serde(default)]
@@ -520,6 +568,9 @@ pub struct WorkEvent {
     pub apprentices: Vec<u32>,
     pub success: bool,
     pub quality: f32,
+    /// Days of practice the run gave its team: one per run as it would have
+    /// gone day by day (a month of short runs is a month of practice).
+    pub days: f32,
 }
 
 #[derive(Resource, Default, serde::Serialize, serde::Deserialize)]
@@ -544,7 +595,7 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
     let resolved = crate::worldgen::resolve(scenario, &db);
     let scenario = &resolved;
     let models = Models::from_params(&params);
-    let dpy = params.life.days_per_year;
+    let per_year = params.time.months_per_year.max(1);
     let params_time = params.time.clone();
     let seed = SimSeed(scenario.seed);
     let mut rng = seed.rng(0, 0xC0FFEE);
@@ -711,6 +762,7 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
             flow_profile: FlowProfile::default(),
             flows,
             pay_rate: vec![0.0; db.recipes.len()],
+            wip: vec![0.0; db.recipes.len()],
             price_cap: Vec::new(),
             input_today: Vec::new(),
             input_use: Vec::new(),
@@ -801,7 +853,7 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
                     entity,
                     town: t,
                     female,
-                    age_days: (age_years * dpy as f32) as u32,
+                    age_months: (age_years * per_year as f32) as u32,
                     cap,
                     mind,
                     phys,
@@ -822,6 +874,16 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
         towns.0[t as usize].residents.push(i as u32);
     }
     crate::start::households(&mut towns, &mut store, &db, &params);
+    // Every job shows what it would pay at the starting prices, so the first
+    // day's choices see pay (the rate otherwise starts at nothing and only
+    // drifts up after the first day has been chosen, idle, at no pay). With
+    // posted pay off (`posted_pay_days` 0) only realised pay shows.
+    let posted = params.decision.valuation.posted_pay_days > 0.0;
+    for town in towns.0.iter_mut().filter(|_| posted) {
+        town.pay_rate = (0..db.recipes.len())
+            .map(|r| crate::systems::work::posted_pay(town, &db, &params, r))
+            .collect();
+    }
 
     let goal = crate::goal::MatchState::new(scenario.goal.as_ref(), &db, scenario.towns.len())
         .unwrap_or_else(|e| panic!("{e}"));
@@ -839,7 +901,7 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
     world.insert_resource(ScenarioSpec(scenario.clone()));
     world.insert_resource(crate::governor::Governors::new(scenario.towns.len()));
     world.insert_resource(crate::history::History::default());
-    world.insert_resource(SimClock::new(dpy, &params_time));
+    world.insert_resource(SimClock::new(&params_time));
     world.insert_resource(crate::env::Environment::default());
     world.insert_resource(crate::goods::Squads::default());
     world.insert_resource(crate::battle::BattleLog::default());

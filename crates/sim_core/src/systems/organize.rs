@@ -2,7 +2,7 @@
 
 use crate::components::*;
 use crate::db::Db;
-use crate::store::{Activity, AgentStore, GuildLink, Role};
+use crate::store::{AgentStore, GuildLink, Role};
 use crate::world::{Params, SimClock, Towns};
 use bevy_ecs::prelude::*;
 
@@ -16,10 +16,10 @@ pub fn organize(
     items: Query<&Product, With<Stored>>,
 ) {
     let op = &params.organize;
-    if op.interval == 0 || !clock.tick.is_multiple_of(op.interval as u64) {
+    if !clock.every_months(op.interval) {
         return;
     }
-    let dpy = clock.days_per_year;
+    let dpy = clock.months_per_year;
     let store = &mut *store;
     let nd = db.domain_dirs.len();
 
@@ -162,8 +162,9 @@ pub fn organize(
             }
         }
 
-        // --- tools: an idle guild member without a tool takes the best matching one
-        if store.equipped[i].is_some() || store.activity[i] != Activity::Idle {
+        // --- tools: a free guild member (idle, resting or at work) without a
+        // tool takes the best matching one
+        if store.equipped[i].is_some() || !store.can_be_called(i) {
             continue;
         }
         let Some(g) = store.guild[i] else { continue };

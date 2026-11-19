@@ -1,11 +1,14 @@
 //! Econoplex simulation core.
 //!
 //! Every unit is an economic agent whose skills, mind, physique and state are
-//! vectors in [`store::AgentStore`]. One simulation tick is one in-game day and
-//! runs the [`SimTick`] schedule (see [`systems`] for the pipeline). The core is
-//! headless: the CLI runs it directly, the game runs it from Bevy's `FixedUpdate`.
+//! vectors in [`store::AgentStore`]. A year is twelve simulated days, one per
+//! month ([`calendar`]); each is cut into economy steps, and one step runs the
+//! [`SimTick`] schedule, the whole economy included (see [`systems`] for the
+//! pipeline). The core is headless: the CLI runs it directly, the clients run
+//! it at their game speed.
 
 pub mod battle;
+pub mod calendar;
 pub mod coin;
 pub mod components;
 pub mod config;
@@ -50,22 +53,23 @@ pub use db::Db;
 pub use store::AgentStore;
 pub use world::{SimClock, Towns};
 
-/// The schedule that advances the simulation by one tick (a part of a day).
+/// The schedule that advances the simulation by one economy step (a slice of
+/// a simulated day): the clock, the weather, then [`EconomyStep`].
 #[derive(ScheduleLabel, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SimTick;
 
-/// One day of economy; [`SimTick`] runs it `time.economy_days_per_day` times
-/// on the first tick of each game day.
+/// One economy step: work, production, market, eating, decisions, migration,
+/// military and governors, for the step's slice of the month.
 #[derive(ScheduleLabel, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct EconomyDay;
+pub struct EconomyStep;
 
-/// Adds both schedules to `world`: run [`SimTick`] once per tick.
+/// Adds both schedules to `world`: run [`SimTick`] once per step.
 pub fn add_schedules(world: &mut World) {
     world.add_schedule(build_schedule());
     world.add_schedule(build_economy_schedule());
 }
 
-/// Runs the rest of the current game day (every tick up to its last).
+/// Runs the rest of the current simulated day (every step up to its last).
 pub fn run_day(world: &mut World) {
     loop {
         world.run_schedule(SimTick);
@@ -75,7 +79,7 @@ pub fn run_day(world: &mut World) {
     }
 }
 
-/// Build the tick schedule. Systems run single-threaded in a fixed order so the
+/// Build the step schedule. Systems run single-threaded in a fixed order so the
 /// simulation is reproducible from its seed; the heavy loops are written over
 /// flat arrays and can be parallelized internally later.
 pub fn build_schedule() -> Schedule {
@@ -92,54 +96,51 @@ pub fn build_schedule() -> Schedule {
     schedule
 }
 
-/// Build the economy schedule (one day of economy). Systems run single-threaded
-/// in a fixed order so the simulation is reproducible from its seed.
+/// Build the economy schedule (one step of economy). Systems run single-threaded
+/// in a fixed order so the simulation is reproducible from its seed. Records
+/// and year-end checks run on the first step of each simulated day (a month).
 pub fn build_economy_schedule() -> Schedule {
     use systems::*;
-    let mut schedule = Schedule::new(EconomyDay);
+    let mut schedule = Schedule::new(EconomyStep);
     schedule.set_executor(SingleThreadedExecutor::new());
     schedule.add_systems(
         (
-            crate::env::new_economy_day,
             (
-                (
-                    profile::start,
-                    policy::apply_orders,
-                    needs::sense,
-                    profile::mark::<0>,
-                    decide::decide,
-                    profile::mark::<1>,
-                    work::assign,
-                    profile::mark::<2>,
-                    work::produce,
-                    profile::mark::<3>,
-                    work::learn,
-                    profile::mark::<4>,
-                    social::socialize,
-                    profile::mark::<5>,
-                    body::body,
-                    profile::mark::<6>,
-                )
-                    .chain(),
-                (
-                    market::settle,
-                    profile::mark::<7>,
-                    organize::organize,
-                    profile::mark::<8>,
-                    military::military,
-                    profile::mark::<9>,
-                    migrate::migrate,
-                    profile::mark::<10>,
-                    life::lifecycle,
-                    profile::mark::<11>,
-                    ledger::close_day,
-                    metrics::record,
-                    history::record,
-                    goal::evaluate,
-                    governor::govern,
-                    profile::mark::<12>,
-                )
-                    .chain(),
+                profile::start,
+                policy::apply_orders,
+                needs::sense,
+                profile::mark::<0>,
+                decide::decide,
+                profile::mark::<1>,
+                work::assign,
+                profile::mark::<2>,
+                work::produce,
+                profile::mark::<3>,
+                work::learn,
+                profile::mark::<4>,
+                social::socialize,
+                profile::mark::<5>,
+                body::body,
+                profile::mark::<6>,
+            )
+                .chain(),
+            (
+                market::settle,
+                profile::mark::<7>,
+                organize::organize,
+                profile::mark::<8>,
+                military::military,
+                profile::mark::<9>,
+                migrate::migrate,
+                profile::mark::<10>,
+                life::lifecycle,
+                profile::mark::<11>,
+                ledger::close_day,
+                metrics::record.run_if(env::day_done),
+                history::record.run_if(env::day_start),
+                goal::evaluate.run_if(env::day_done),
+                governor::govern,
+                profile::mark::<12>,
             )
                 .chain(),
         )
@@ -267,8 +268,8 @@ impl Simulation {
         save::save_to_file(&self.world, path)
     }
 
-    /// Runs the rest of the current day: every tick up to and including the
-    /// day's last (one whole day from a day boundary).
+    /// Runs the rest of the current simulated day: every step up to and
+    /// including the day's last (one whole day from a day boundary).
     pub fn step(&mut self) {
         loop {
             self.step_tick();
@@ -278,8 +279,8 @@ impl Simulation {
         }
     }
 
-    /// Runs one tick (a part of a day: hours and weather move on; the economy
-    /// runs on the first tick of each day).
+    /// Runs one economy step (a slice of a simulated day: the hours and the
+    /// weather move on and the whole economy runs).
     pub fn step_tick(&mut self) {
         self.schedule.run(&mut self.world);
     }
@@ -289,7 +290,7 @@ impl Simulation {
         self.world.resource::<SimClock>().tick
     }
 
-    /// Queue a text order (see [`policy::Order::parse`]) for the next tick.
+    /// Queue a text order (see [`policy::Order::parse`]) for the next step.
     pub fn order(&mut self, text: &str) -> Result<(), String> {
         let order = policy::Order::parse(
             text,

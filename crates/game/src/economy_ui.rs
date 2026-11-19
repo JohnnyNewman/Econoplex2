@@ -295,7 +295,7 @@ pub fn economy_lines(
             );
         }
         // Trend: this month's daily rate against last year's.
-        let dpy = params.life.days_per_year.max(1) as f32;
+        let dpy = params.calendar().days_per_year();
         let trend = |g: Group, now: f32| {
             let before = l.last_year_group(g) / dpy;
             if before < 0.05 {
@@ -368,7 +368,7 @@ pub fn economy_lines(
                 line(format!("  run by its AI government ({personality})"), DIM);
                 for (tick, why) in g.decisions.iter().rev().take(3) {
                     line(
-                        format!("    y{} d{}: {why}", tick / dpy as u64, tick % dpy as u64),
+                        format!("    {}: {why}", sim_core::calendar::date(*tick, dpy)),
                         DIM,
                     );
                 }
@@ -591,7 +591,7 @@ pub fn update_economy_panel(
         .towns
         .get(t)
         .filter(|_| ai)
-        .map(|g| (personality.as_str(), g, params.life.days_per_year));
+        .map(|g| (personality.as_str(), g, params.time.months_per_year));
     let content = economy_lines(
         town,
         t,

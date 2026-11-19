@@ -69,14 +69,15 @@ pub struct AgentStore {
     pub alive: Vec<bool>,
     pub entity: Vec<Entity>,
     pub town: Vec<u16>,
-    pub age_days: Vec<u32>,
+    /// Age in simulated days (months).
+    pub age_months: Vec<u32>,
     pub female: Vec<bool>,
     pub partner: Vec<Option<u32>>,
     pub parents: Vec<Option<(u32, u32)>>,
     pub wealth: Vec<crate::coin::Coin>,
     pub activity: Vec<Activity>,
     pub guild: Vec<Option<GuildLink>>,
-    /// Recipe worked today (for physique training), cleared every tick.
+    /// Recipe worked this step (for physique training), cleared every step.
     pub worked_today: Vec<Option<u32>>,
     pub last_recipe: Vec<Option<u32>>,
     /// Where the agent is heading (world units). The view animates toward it.
@@ -98,6 +99,12 @@ pub struct AgentStore {
     /// Household goods held (good, units); see `ladder`.
     #[serde(default)]
     pub owned: Vec<Vec<(u32, f32)>>,
+    /// The step (`SimClock::steps`) a rest ends on: the next simulated day.
+    pub rest_until: Vec<u64>,
+    /// The job (recipe, as an apprentice) chosen for today: people choose once
+    /// a simulated day (teams break up at the day's end) and go back to it
+    /// if their team broke up during the day.
+    pub job_today: Vec<Option<(u32, bool)>>,
 }
 
 /// Everything needed to create an agent.
@@ -105,7 +112,7 @@ pub struct NewAgent {
     pub entity: Entity,
     pub town: u16,
     pub female: bool,
-    pub age_days: u32,
+    pub age_months: u32,
     pub cap: CapVec,
     pub mind: MindVec,
     pub phys: PhysVec,
@@ -149,7 +156,7 @@ impl AgentStore {
         self.alive.push(true);
         self.entity.push(a.entity);
         self.town.push(a.town);
-        self.age_days.push(a.age_days);
+        self.age_months.push(a.age_months);
         self.female.push(a.female);
         self.partner.push(None);
         self.parents.push(a.parents);
@@ -169,6 +176,8 @@ impl AgentStore {
         self.larder.push(Vec::new());
         self.lived_in.push(Vec::new());
         self.owned.push(Vec::new());
+        self.rest_until.push(0);
+        self.job_today.push(None);
         idx
     }
 
@@ -194,8 +203,20 @@ impl AgentStore {
         v
     }
 
-    pub fn age_years(&self, i: usize, days_per_year: u32) -> f32 {
-        self.age_days[i] as f32 / days_per_year as f32
+    /// Whether person `i` is a free adult at home: idle, resting or at work
+    /// (not a child, a soldier or a captive), so a muster, a raid or a move
+    /// can take them; a team they leave works on without them.
+    pub fn can_be_called(&self, i: usize) -> bool {
+        self.alive[i]
+            && matches!(
+                self.activity[i],
+                Activity::Idle | Activity::Resting | Activity::Working(_)
+            )
+    }
+
+    /// Age in years, with `per_year` simulated days (months) a year.
+    pub fn age_years(&self, i: usize, per_year: u32) -> f32 {
+        self.age_months[i] as f32 / per_year.max(1) as f32
     }
 
     pub fn alive_count(&self) -> usize {

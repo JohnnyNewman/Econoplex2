@@ -2,13 +2,18 @@
 
 use super::*;
 
-/// Share of the way the public pay rate moves toward each realised step.
+/// Share of the way the public pay rate moves toward each realised run of work.
 const PAY_RATE_SMOOTHING: f32 = 0.05;
 
 /// What a worker-day at recipe `r` would pay in this town at today's prices: the
 /// workers' share of the value added (plus subsidy) of one run, over the days one
 /// worker needs for it, at a typical worker's success rate.
-pub fn posted_pay(town: &crate::world::Town, db: &Db, params: &Params, r: usize) -> f32 {
+pub fn posted_pay(
+    town: &crate::world::Town,
+    db: &Db,
+    params: &crate::config::ModelParams,
+    r: usize,
+) -> f32 {
     let m = &db.recipes[r];
     let out: f32 = m
         .outputs
@@ -30,7 +35,7 @@ pub fn posted_pay(town: &crate::world::Town, db: &Db, params: &Params, r: usize)
         / m.duration.max(1.0)
 }
 
-/// Every day each town's public pay rate drifts toward the posted pay at today's
+/// Every step each town's public pay rate drifts toward the posted pay at today's
 /// prices, over `decision.valuation.posted_pay_days`. Realised pay pulls much
 /// harder (each finished step), so for jobs people do the rate is what they
 /// earn; a job nobody has tried yet still shows what it would pay, instead of
@@ -40,16 +45,17 @@ pub fn post_pay(towns: &mut crate::world::Towns, db: &Db, params: &Params) {
     if days <= 0.0 {
         return;
     }
+    let a = params.calendar().smoothing(days);
     for town in towns.0.iter_mut() {
         town.pay_rate.resize(db.recipes.len(), 0.0);
         for r in 0..db.recipes.len() {
             let posted = posted_pay(town, db, params, r);
-            town.pay_rate[r] += (posted - town.pay_rate[r]) / days.max(1.0);
+            town.pay_rate[r] += (posted - town.pay_rate[r]) * a;
         }
     }
 }
 
-/// Pay the day's claims. When a town's treasury can't cover all wages, every claim
+/// Pay the step's claims. When a town's treasury can't cover all wages, every claim
 /// gets the same share of what it is owed, so pay still follows prices; subsidies are
 /// paid the same way from what is left. Then income tax, the workers' pay, and the pay
 /// expectations (public rate and each worker's own).
@@ -147,8 +153,10 @@ pub(super) fn settle_wages(
         let each = (pay - tax) / shares.max(1e-6);
         let per_day = each / c.days;
         town.index_year.worker_days += shares * c.days;
+        // Each run moves the public rate a step toward what it paid.
+        let smoothing = 1.0 - (1.0 - PAY_RATE_SMOOTHING).powi(c.runs.max(1) as i32);
         let rate = &mut town.pay_rate[c.recipe as usize];
-        *rate += PAY_RATE_SMOOTHING * (per_day - *rate);
+        *rate += smoothing * (per_day - *rate);
         for &w in &c.workers {
             let wi = w as usize;
             let own = if c.trainees.contains(&w) {
@@ -164,6 +172,7 @@ pub(super) fn settle_wages(
                 &mut store.pay_expect[wi],
                 c.recipe,
                 own / c.days,
+                c.days,
                 curiosity,
                 &*decision.expectations,
             );

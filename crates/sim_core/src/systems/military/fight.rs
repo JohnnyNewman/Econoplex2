@@ -184,7 +184,7 @@ pub(super) fn aftermath(
             let side_won = won == raid.soldiers.contains(&s);
             models
                 .learning
-                .practice(&mut store.cap[i], fight, mult, side_won);
+                .practice(&mut store.cap[i], fight, mult, side_won, 1.0);
         }
     }
 
@@ -212,9 +212,7 @@ pub(super) fn aftermath(
             .copied()
             .filter(|&i| {
                 let i = i as usize;
-                store.alive[i]
-                    && store.state[i][state::HEALTH] > 0.0
-                    && matches!(store.activity[i], Activity::Idle | Activity::Resting)
+                store.alive[i] && store.state[i][state::HEALTH] > 0.0 && store.can_be_called(i)
             })
             .map(|i| (rng.random::<f32>(), i))
             .collect();

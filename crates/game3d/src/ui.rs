@@ -400,7 +400,10 @@ fn panels(
                 ui.separator();
                 ui.label("sent:");
                 for (tick, text) in &state.sent {
-                    ui.small(format!("day {tick}: {text}"));
+                    ui.small(format!(
+                        "{}: {text}",
+                        sim_core::calendar::date(*tick, snap.months_per_year)
+                    ));
                 }
             }
             if !state.errors.is_empty() {
@@ -421,7 +424,11 @@ fn panels(
                 .max_height(240.0)
                 .show(ui, |ui| {
                     for e in &live.recent {
-                        ui.small(format!("day {}: {}", e.tick, e.text));
+                        ui.small(format!(
+                            "{}: {}",
+                            sim_core::calendar::date(e.tick, snap.months_per_year),
+                            e.text
+                        ));
                     }
                 });
         });
@@ -489,6 +496,7 @@ fn panels(
                 snap.towns.len(),
                 ti,
                 METRICS[state.metric].1,
+                snap.months_per_year,
             );
             ui.small(format!(
                 "{} (bold), monthly; {} samples",
@@ -681,6 +689,7 @@ fn chart(
     towns: usize,
     selected: usize,
     metric: Metric,
+    months_per_year: u32,
 ) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(360.0, 170.0), egui::Sense::hover());
     let painter = ui.painter_at(rect);
@@ -748,7 +757,7 @@ fn chart(
     label(
         inner.right_bottom(),
         egui::Align2::RIGHT_BOTTOM,
-        format!("day {t1}"),
+        sim_core::calendar::date(t1, months_per_year),
     );
 }
 

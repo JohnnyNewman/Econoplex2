@@ -44,7 +44,8 @@ pub(super) fn plan_raid(
     } else {
         0.0
     };
-    let year = params.life.days_per_year.max(1) as f32;
+    // A year of a soldier's daily pay, in days.
+    let year = params.calendar().days_per_year();
     let mut best: Option<(usize, f32)> = None;
     for (o, other) in towns.0.iter().enumerate() {
         let ruled =

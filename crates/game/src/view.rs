@@ -5,7 +5,7 @@ use crate::Selection;
 use bevy::input::mouse::AccumulatedMouseScroll;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
-use sim_core::components::{Agent, NaturalResource, Pos, Product, Structure};
+use sim_core::components::{Agent, NaturalResource, Pos, Product, Structure, Task};
 use sim_core::store::Activity;
 use sim_core::world::Params;
 use sim_core::{AgentStore, Db, Towns};
@@ -266,7 +266,7 @@ pub fn animate_agents(
         tf.translation.x = next.x;
         tf.translation.y = next.y;
 
-        let child = store.age_years(i, clock.days_per_year) < params.life.adult_age;
+        let child = store.age_years(i, clock.months_per_year) < params.life.adult_age;
         let selected = selection.0 == Some(a.idx);
         let (d, strength) = dominant_domain(&db, &store.cap[i]);
         sprite.color = if selected {
@@ -287,6 +287,42 @@ pub fn animate_agents(
         };
         sprite.custom_size = Some(Vec2::splat(size));
         tf.translation.z = if selected { 4.0 } else { 2.0 };
+    }
+}
+
+/// A progress bar over each building with a team at work: grey for a whole
+/// run, green for the part of the run under way that is done. Inputs flow in
+/// as the team works; each whole run's output goes to market when it fills.
+pub fn draw_batches(
+    mut gizmos: Gizmos,
+    db: Res<Db>,
+    overlay: Res<Overlay>,
+    tasks: Query<(&Task, &Pos)>,
+) {
+    if overlay.product_space {
+        return;
+    }
+    for (task, pos) in &tasks {
+        if db
+            .recipes
+            .get(task.recipe as usize)
+            .and_then(|r| r.building)
+            .is_none()
+        {
+            continue;
+        }
+        let p = (task.progress / task.required.max(1e-6)).clamp(0.0, 1.0);
+        let start = Vec2::new(pos.x - 13.0, pos.y + 18.0);
+        gizmos.line_2d(
+            start,
+            start + Vec2::X * 26.0,
+            Color::srgba(0.2, 0.2, 0.2, 0.8),
+        );
+        gizmos.line_2d(
+            start,
+            start + Vec2::X * 26.0 * p,
+            Color::srgb(0.35, 0.85, 0.4),
+        );
     }
 }
 

@@ -13,7 +13,6 @@ use crate::store::{Activity, AgentStore};
 use crate::world::{Decisions, Params, SimClock, SimSeed, Towns};
 use bevy_ecs::prelude::*;
 use rand::Rng;
-use rayon::prelude::*;
 use sim_data::dims::*;
 use sim_data::Category;
 
@@ -98,7 +97,8 @@ pub fn makes_food(db: &Db, r: usize) -> bool {
     m.food_out > in_food
 }
 
-/// Inputs held back for `food_reserve_days` of the food the town needs, made along each food
+/// Inputs held back for `food_reserve_days` days of the food the town
+/// needs, made along each food
 /// chain (grain for the mills, flour and wood for the bakeries). Hungry people don't
 /// eat the grain the mills need, and other trades don't take the wood the bakeries
 /// need, but anything beyond that is free for other work. A recipe whose
@@ -123,7 +123,8 @@ pub fn food_reserve(db: &Db, town: &crate::world::Town, params: &Params) -> Vec<
     r
 }
 
-/// How many more workers each recipe can absorb in `town` today, limited by the
+/// How many more workers each recipe can absorb in `town` now (each taking a
+/// day's inputs and nature), limited by the
 /// nature left to harvest and the inputs in stock. Jobs fill up as agents choose
 /// them, so the rest of the town spreads to other work instead of queueing.
 /// Nobody makes a good the town is glutted with, and trades that don't feed
@@ -133,8 +134,13 @@ pub fn job_capacity(
     town: &crate::world::Town,
     params: &Params,
     sites: &Query<&NaturalResource>,
+    window_days: [f32; 2],
 ) -> Vec<f32> {
     let reserve = food_reserve(db, town, params);
+    // Places count a day's inputs and nature per worker, as when the
+    // economy ran once a simulated day: whoever takes the job draws on the
+    // stock as the day's batches start, and the stock refills as others make
+    // and sell (people choose once a simulated day).
     let mut nature_total = vec![0.0f32; db.content.nature.len()];
     for &e in &town.nature_sites {
         if let Ok(n) = sites.get(e) {
@@ -197,9 +203,48 @@ pub fn job_capacity(
                     cap = cap.min(funds / per_batch * m.duration);
                 }
             }
-            cap
+            // A day of time without working hours (indoors or out, as the
+            // job is: `window_days`) has no places.
+            if window_days[usize::from(db.outdoor[r])] > 0.0 {
+                cap
+            } else {
+                0.0
+            }
         })
         .collect()
+}
+
+/// How many days of work one worker does over the day of time that starts at
+/// this step, indoors and outdoors.
+pub fn window_work_days(
+    clock: &SimClock,
+    env: &crate::env::Environment,
+    time: &crate::env::TimeParams,
+) -> [f32; 2] {
+    let cal = clock.calendar();
+    let k = clock.steps_per_day_of_time();
+    let last = (clock.step + k).min(clock.steps_per_day);
+    [false, true].map(|outdoor| {
+        let (start, end) = crate::env::work_hours(env, time, outdoor);
+        (clock.step..last)
+            .map(|s| cal.work_share(s, start, end, time.day_length.equinox_hours))
+            .sum::<f32>()
+            * cal.month_days()
+    })
+}
+
+/// Whether no earlier step of the simulated day had working hours (indoors
+/// or out): this day of time holds the day's first choices.
+fn first_choice_of_day(
+    clock: &SimClock,
+    env: &crate::env::Environment,
+    time: &crate::env::TimeParams,
+) -> bool {
+    let cal = clock.calendar();
+    [false, true].iter().all(|&outdoor| {
+        let (start, end) = crate::env::work_hours(env, time, outdoor);
+        (0..clock.step).all(|s| cal.work_share(s, start, end, time.day_length.equinox_hours) <= 0.0)
+    })
 }
 
 /// Recipes a town can start right now (building, nature and inputs available).
@@ -254,7 +299,8 @@ struct Choice<'a> {
     decision: &'a crate::decision::DecisionModels,
     models: &'a crate::models::Models,
     towns: &'a Towns,
-    days_per_year: u32,
+    /// Simulated days (months) a year, for ages.
+    per_year: u32,
     /// Everyone's satisfaction per need, and the ladder's parameters.
     sats: &'a [Option<crate::ladder::Sat>],
     /// Per town: food, month and hunger costs for the savings slope.
@@ -349,7 +395,7 @@ impl Choice<'_> {
                             success_after: after,
                             pay_per_day: pay,
                             typical_success: d.valuation.typical_success,
-                            age_years: store.age_years(i, self.days_per_year),
+                            age_years: store.age_years(i, self.per_year),
                         });
                 let tired = params.needs.fatigue_per_work_day * (0.5 + m.phys_total);
                 d.ladder_scale * (coin * (pay + learned) - rest_slope * tired)
@@ -419,12 +465,66 @@ pub fn decide(
     decisions.jobs.clear();
     decisions.apprentices.clear();
     let mastery = params.mastery();
+    // People choose their work once a day of time, at its first step, as
+    // when a step was a day: capacity, pay and places are judged for the
+    // day's work, by the day's calendar. In its other steps the idle who
+    // chose a job today go back to it, and whoever chose to rest rests until
+    // the next day's choices.
+    let step_cal = params.calendar();
+    if !clock.work_day_start() {
+        for i in 0..store.len() {
+            if store.alive[i] && store.activity[i] == Activity::Idle {
+                if let Some((r, apprentice)) = store.job_today[i] {
+                    // Not into a glut: once what the job makes piles up,
+                    // the rest of the day is off.
+                    let town = &towns.0[store.town[i] as usize];
+                    let mut goods = db.recipes[r as usize]
+                        .outputs
+                        .iter()
+                        .filter(|o| db.category(o.0) != Category::Building)
+                        .peekable();
+                    if goods.peek().is_some()
+                        && goods.all(|o| glutted(&db, town, &params, o.0 as usize))
+                    {
+                        store.job_today[i] = None;
+                        continue;
+                    }
+                    decisions.jobs.push((i as u32, r));
+                    if apprentice {
+                        decisions.apprentices.push(i as u32);
+                    }
+                }
+            }
+        }
+        return;
+    }
+    let k = clock.steps_per_day_of_time();
+    let cal = step_cal.every(k);
+    store.job_today.iter_mut().for_each(|j| *j = None);
+    // A day of time in the night hours has no work to choose (nor a rest
+    // to take): people stay as they are until the next.
+    let window_days = window_work_days(&clock, &env, &params.time);
+    if window_days.iter().all(|&d| d <= 0.0) {
+        return;
+    }
+    // A rest lasts until the next day's choices: it restores for each day of
+    // work it skips, from this step on.
+    let rest_until = clock.steps() + k as u64;
+    let rest_now = crate::env::work_days_this_step(&clock, &env, &params.time, false)
+        * params.needs.fatigue_rest_recovery;
+    // The people choosing now: those free of a rest, and those at work, who
+    // finish the batch under way and then go to what they chose.
+    let idle: Vec<usize> = (0..store.len())
+        .filter(|&i| {
+            store.alive[i] && matches!(store.activity[i], Activity::Idle | Activity::Working(_))
+        })
+        .collect();
 
     // Per-town context, computed once.
     let mut capacity: Vec<Vec<f32>> = towns
         .0
         .iter()
-        .map(|t| job_capacity(&db, t, &params, &sites))
+        .map(|t| job_capacity(&db, t, &params, &sites, window_days))
         .collect();
     // Building slots: a building holds `slots` workers, including those on
     // multi-day tasks. Only one crew at a time builds each building type.
@@ -438,13 +538,12 @@ pub fn decide(
             }
         }
     }
+    // Every place is open: the people at work choose today too (they take
+    // their place back by choosing it again).
     let mut slots_left = slots_total.clone();
-    for (task, parts) in tasks.iter() {
+    for (task, _) in tasks.iter() {
         let m = &db.recipes[task.recipe as usize];
         let t = task.town as usize;
-        if let Some(b) = m.building {
-            slots_left[t][b as usize] -= parts.workers.len() as f32;
-        }
         if m.builds.is_some() {
             capacity[t][task.recipe as usize] = 0.0;
         }
@@ -495,7 +594,8 @@ pub fn decide(
             &default_ladder
         }
     };
-    let sats = crate::ladder::all(&store, &towns, &db, &params, &env, ladder_params);
+    // Only the people choosing now need their satisfaction.
+    let sats = crate::ladder::of_people(&store, &towns, &db, &params, &env, ladder_params, &idle);
     let savings_costs = crate::ladder::savings_costs(&towns, &db, &params, &env);
     let ctx = Choice {
         db: &db,
@@ -504,13 +604,13 @@ pub fn decide(
         decision: &decision,
         models: &models,
         towns: &towns,
-        days_per_year: clock.days_per_year,
+        per_year: clock.months_per_year,
         sats: &sats,
         savings_costs: &savings_costs,
         ladder: ladder_params,
     };
 
-    // Places each job had at the start of the day, for the wage factors.
+    // Places each job had at the start of the step, for the wage factors.
     let places_start: Vec<Vec<f32>> = (0..towns.0.len())
         .map(|t| {
             (0..db.recipes.len())
@@ -530,12 +630,9 @@ pub fn decide(
         .collect();
 
     // Phase 1, in parallel: every idle agent scores the jobs its town has open at
-    // the start of the day. Jobs only close during the day, so these scores cover
-    // everything an agent can still pick.
+    // the start of the step. Jobs only close during the step, so these scores
+    // cover everything an agent can still pick.
     let store = &mut *store;
-    let idle: Vec<usize> = (0..store.len())
-        .filter(|&i| store.alive[i] && store.activity[i] == Activity::Idle)
-        .collect();
     // Position of each recipe in its town's opening list.
     let slot_of: Vec<Vec<u32>> = open_jobs
         .iter()
@@ -550,9 +647,9 @@ pub fn decide(
     let scores: Vec<(f32, Vec<f32>)> = {
         let store = &*store;
         let open_jobs = &open_jobs;
-        idle.par_iter()
-            .map(|&i| ctx.scores(store, i, &open_jobs[store.town[i] as usize], 1.0))
-            .collect()
+        super::par_map(&idle, |&i| {
+            ctx.scores(store, i, &open_jobs[store.town[i] as usize], 1.0)
+        })
     };
 
     // How many wanted each job today (for the wage factors).
@@ -591,32 +688,30 @@ pub fn decide(
         let lists: Vec<Vec<Opt>> = {
             let store = &*store;
             let (open_jobs, places) = (&open_jobs, &places);
-            idle.par_iter()
-                .zip(&scores)
-                .map(|(&i, (rest, job_scores))| {
-                    let t = store.town[i] as usize;
-                    let jobs = &open_jobs[t];
-                    let app_scores = ctx.scores(store, i, jobs, *apprentice_wage).1;
-                    let mut options = Vec::with_capacity(jobs.len() * 2);
-                    for (k, &v) in job_scores.iter().enumerate() {
-                        options.push((2 * k as u32, v));
-                        if places[t][k].apprentice > 0 {
-                            options.push((2 * k as u32 + 1, app_scores[k]));
-                        }
+            let pairs: Vec<(usize, &(f32, Vec<f32>))> = idle.iter().copied().zip(&scores).collect();
+            super::par_map(&pairs, |&(i, (rest, job_scores))| {
+                let t = store.town[i] as usize;
+                let jobs = &open_jobs[t];
+                let app_scores = ctx.scores(store, i, jobs, *apprentice_wage).1;
+                let mut options = Vec::with_capacity(jobs.len() * 2);
+                for (k, &v) in job_scores.iter().enumerate() {
+                    options.push((2 * k as u32, v));
+                    if places[t][k].apprentice > 0 {
+                        options.push((2 * k as u32 + 1, app_scores[k]));
                     }
-                    let mut rng = seed.agent_rng(clock.tick, streams::DECIDE, i);
-                    let rng: &mut dyn rand::RngCore = &mut rng;
-                    decision
-                        .choice
-                        .rank(*rest, &options, &store.mind[i], rng)
-                        .into_iter()
-                        .map(|id| Opt {
-                            job: id / 2,
-                            apprentice: id % 2 == 1,
-                        })
-                        .collect()
-                })
-                .collect()
+                }
+                let mut rng = seed.agent_rng(clock.steps(), streams::DECIDE, i);
+                let rng: &mut dyn rand::RngCore = &mut rng;
+                decision
+                    .choice
+                    .rank(*rest, &options, &store.mind[i], rng)
+                    .into_iter()
+                    .map(|id| Opt {
+                        job: id / 2,
+                        apprentice: id % 2 == 1,
+                    })
+                    .collect()
+            })
         };
         // Stable matching per town: regular places go to the best hands, apprentice
         // places to those with the most to learn.
@@ -678,14 +773,22 @@ pub fn decide(
                         slots_left[t][b as usize] -= 1.0;
                     }
                     log.chosen[r as usize] += 1;
-                    decisions.jobs.push((i as u32, r));
-                    if opt.apprentice {
-                        decisions.apprentices.push(i as u32);
+                    store.job_today[i] = Some((r, opt.apprentice));
+                    if store.activity[i] == Activity::Idle {
+                        decisions.jobs.push((i as u32, r));
+                        if opt.apprentice {
+                            decisions.apprentices.push(i as u32);
+                        }
                     }
                 }
+                None if store.activity[i] != Activity::Idle => {}
                 None => {
-                    let mut rng = seed.agent_rng(clock.tick, streams::DECIDE + 100, i);
+                    let mut rng = seed.agent_rng(clock.steps(), streams::DECIDE + 100, i);
                     store.activity[i] = Activity::Resting;
+                    store.rest_until[i] = rest_until;
+                    // This step's rest (needs::sense has run already).
+                    let st = &mut store.state[i];
+                    st[state::FATIGUE] = (st[state::FATIGUE] - rest_now).max(0.0);
                     let c = towns.0[t].pos;
                     store.target[i] = (
                         c.0 + rng.random_range(-45.0..45.0f32),
@@ -696,8 +799,10 @@ pub fn decide(
         }
         decisions.apprentices.sort_unstable();
 
-        // Each month every workplace reconsiders its share of apprentice places.
-        if clock.tick.is_multiple_of(30) {
+        // Every 30 days every workplace reconsiders its share of apprentice
+        // places, at the day's first choices (there are none at night).
+        let months = (30 / clock.days_per_month.max(1)).max(1) as u64;
+        if clock.tick.is_multiple_of(months) && first_choice_of_day(&clock, &env, &params.time) {
             for town in towns.0.iter_mut() {
                 town.apprentice_share
                     .resize(db.recipes.len(), share_params.min);
@@ -719,7 +824,7 @@ pub fn decide(
         let mut pool: Vec<u32> = Vec::new();
         for (&i, (rest, job_scores)) in idle.iter().zip(&scores) {
             let t = store.town[i] as usize;
-            let mut rng = seed.agent_rng(clock.tick, streams::DECIDE, i);
+            let mut rng = seed.agent_rng(clock.steps(), streams::DECIDE, i);
             let choice = ctx.pick(
                 store,
                 i,
@@ -731,8 +836,13 @@ pub fn decide(
                 &mut rng,
             );
             match choice {
+                None if store.activity[i] != Activity::Idle => {}
                 None => {
                     store.activity[i] = Activity::Resting;
+                    store.rest_until[i] = rest_until;
+                    // This step's rest (needs::sense has run already).
+                    let st = &mut store.state[i];
+                    st[state::FATIGUE] = (st[state::FATIGUE] - rest_now).max(0.0);
                     let c = towns.0[t].pos;
                     store.target[i] = (
                         c.0 + rng.random_range(-45.0..45.0f32),
@@ -751,12 +861,17 @@ pub fn decide(
                         open_jobs[t].retain(|&q| open(&slots_left, &capacity, t, q));
                     }
                     log.chosen[r as usize] += 1;
-                    decisions.jobs.push((i as u32, r));
+                    store.job_today[i] = Some((r, false));
+                    if store.activity[i] == Activity::Idle {
+                        decisions.jobs.push((i as u32, r));
+                    }
                 }
             }
         }
-        for &(i, r) in &decisions.jobs {
-            demand[store.town[i as usize] as usize][r as usize] += 1.0;
+        for &i in &idle {
+            if let Some((r, _)) = store.job_today[i] {
+                demand[store.town[i] as usize][r as usize] += 1.0;
+            }
         }
     }
 
@@ -781,13 +896,13 @@ pub fn decide(
                                 d *= down / up;
                             }
                         }
-                        let m = c.max_daily.max(0.0);
+                        let m = cal.flow(c.max_daily).max(0.0);
                         new = (old * d.clamp(-m, m).exp()).clamp(c.floor, c.ceiling.max(c.floor));
                     }
                 }
                 if old > 0.0 && new > 0.0 && new != old {
                     town.price_vol.resize(3, Default::default());
-                    town.price_vol[2].add((new / old).ln().abs());
+                    town.price_vol[2].add((new / old).ln().abs() / cal.days());
                 }
                 town.wage_factor[r] = new;
             }
@@ -804,7 +919,7 @@ pub fn decide(
             } else {
                 0.0
             };
-            town.building_load[p] += (today - town.building_load[p]) / 30.0;
+            town.building_load[p] += (today - town.building_load[p]) * cal.smoothing(30.0);
         }
     }
 }

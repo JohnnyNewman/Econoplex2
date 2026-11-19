@@ -63,11 +63,44 @@ pub fn assign(
     decisions: Res<Decisions>,
     clock: Res<SimClock>,
     seed: Res<SimSeed>,
-    mut sites: Query<(&mut NaturalResource, &Pos)>,
+    sites: Query<(&mut NaturalResource, &Pos)>,
+    mut tasks: Query<(Entity, &Task, &mut Participants, &Pos)>,
     mut log: ResMut<WorkLog>,
 ) {
-    let mut rng = seed.rng(clock.tick, streams::ASSIGN);
+    let mut rng = seed.rng(clock.steps(), streams::ASSIGN);
     let store = &mut *store;
+    // Batches under way with room in their team, per (town, recipe), oldest
+    // first: people who take up that job join them before new batches start,
+    // so teams are as large as when everyone chose their work at once.
+    // Each: (serial, task, free places).
+    type Open = Vec<(u64, Entity, usize)>;
+    let mut open: BTreeMap<(u16, u32), Open> = BTreeMap::new();
+    for (e, task, parts, _) in tasks.iter() {
+        let working = parts
+            .workers
+            .iter()
+            .filter(|&&w| {
+                store.alive[w as usize] && store.activity[w as usize] == Activity::Working(e)
+            })
+            .count();
+        let room = db.recipes[task.recipe as usize]
+            .max_team
+            .saturating_sub(working);
+        if room > 0 && task.progress < task.required {
+            open.entry((task.town, task.recipe))
+                .or_default()
+                .push((task.serial, e, room));
+        }
+    }
+    for list in open.values_mut() {
+        list.sort_unstable();
+    }
+    // A team's task is one batch: a day's runs of a short recipe, or one run
+    // of a long one (a working step's runs when a step does more than a day's
+    // work).
+    let days = params
+        .calendar()
+        .work_step_days(params.time.day_length.equinox_hours);
 
     // Group choices by (town, recipe), keeping agent order for determinism.
     let mut groups: BTreeMap<(u16, u32), Vec<u32>> = BTreeMap::new();
@@ -119,9 +152,39 @@ pub fn assign(
     for ((t, r), agents) in groups {
         let m = &db.recipes[r as usize];
         let town = &mut towns.0[t as usize];
+        // Join the batches under way first.
+        let mut agents = agents;
+        if let Some(list) = open.get_mut(&(t, r)) {
+            let mut rest = Vec::new();
+            for a in agents {
+                match list.iter_mut().find(|x| x.2 > 0) {
+                    Some(slot) => {
+                        slot.2 -= 1;
+                        let e = slot.1;
+                        let Ok((_, _, mut parts, pos)) = tasks.get_mut(e) else {
+                            rest.push(a);
+                            continue;
+                        };
+                        // Whoever left the team earlier is no longer in it.
+                        parts.workers.retain(|&w| {
+                            store.alive[w as usize]
+                                && store.activity[w as usize] == Activity::Working(e)
+                        });
+                        parts.workers.push(a);
+                        if decisions.apprentices.binary_search(&a).is_ok() {
+                            parts.trainees.push(a);
+                        }
+                        store.activity[a as usize] = Activity::Working(e);
+                        store.target[a as usize] = jitter((pos.x, pos.y), 14.0, &mut rng);
+                    }
+                    None => rest.push(a),
+                }
+            }
+            agents = rest;
+        }
         for team in &trusted_teams(store, &agents, m.max_team, &mut place) {
-            // A team's daily work covers several runs of a short recipe.
-            let rate = (team.len() as f32).powf(params.work.work_exponent);
+            // A team's batch covers several runs of a short recipe.
+            let rate = (team.len() as f32).powf(params.work.work_exponent) * days;
             let mut batches = ((rate / m.duration).floor() as u32).max(1);
             let firms_on = params.market.firms.on();
             for &(p, q) in &m.inputs {
@@ -139,21 +202,27 @@ pub fn assign(
             let out: f32 = m.outputs.iter().map(|o| o.1).sum();
             let mut pos = town.pos;
             if let Some(kind) = m.nature {
+                // A batch's runs may take several sites in turn.
                 let mut found = None;
+                let mut runs = 0u32;
                 let list = &mut nature[t as usize][kind as usize];
                 let c = &mut cursor[t as usize][kind as usize];
                 while let Some(site) = list.get_mut(*c) {
                     if site.1 >= out {
-                        batches = batches.min((site.1 / out).floor() as u32);
-                        site.1 -= out * batches as f32;
-                        found = Some(site.2);
-                        break;
+                        let here = (batches - runs).min((site.1 / out).floor() as u32);
+                        site.1 -= out * here as f32;
+                        runs += here;
+                        found.get_or_insert(site.2);
+                        if runs >= batches {
+                            break;
+                        }
                     }
                     *c += 1;
                 }
+                batches = runs;
                 match found {
-                    Some(p) => pos = p,
-                    None => continue,
+                    Some(p) if runs > 0 => pos = p,
+                    _ => continue,
                 }
             }
             if let Some(b) = m.building {
@@ -189,21 +258,10 @@ pub fn assign(
                         continue;
                     }
                 }
-                for &(p, q) in &m.inputs {
-                    take_input(town, p as usize, q * batches as f32, buyer);
-                }
             }
+            // Inputs and nature flow in as the team works (work::produce).
             let mut input_quality: f32 = 1.0;
-            town.input_today.resize(town.stock.len(), 0.0);
-            for &(p, q) in &m.inputs {
-                if !firms_on {
-                    town.stock[p as usize] -= q * batches as f32;
-                    town.flows
-                        .add(crate::goods::Flow::Input, p as usize, q * batches as f32);
-                }
-                town.input_today[p as usize] += q * batches as f32;
-                town.index_year.inputs.resize(town.stock.len(), 0.0);
-                town.index_year.inputs[p as usize] += q * batches as f32;
+            for &(p, _) in &m.inputs {
                 input_quality = input_quality.min(town.quality[p as usize]);
             }
             pending.push(PendingTask {
@@ -218,17 +276,7 @@ pub fn assign(
                     .collect(),
                 input_quality,
                 pos,
-                batches,
             });
-        }
-    }
-
-    // Write the harvested amounts back.
-    for (e, amount, _) in nature.into_iter().flatten().flatten() {
-        if let Ok((mut n, _)) = sites.get_mut(e) {
-            if n.amount != amount {
-                n.amount = amount;
-            }
         }
     }
 
@@ -239,12 +287,12 @@ pub fn assign(
             task_of[w as usize] = k;
         }
     }
-    let dpy = params.life.days_per_year;
+    let per_year = params.time.months_per_year.max(1);
     for i in 0..store.len() {
         if !store.alive[i] || store.activity[i] != Activity::Child {
             continue;
         }
-        if store.age_years(i, dpy) < params.life.apprentice_age {
+        if store.age_years(i, per_year) < params.life.apprentice_age {
             continue;
         }
         if let Some((a, b)) = store.parents[i] {
@@ -261,7 +309,10 @@ pub fn assign(
     }
 
     for p in pending {
-        let m = &db.recipes[p.recipe as usize];
+        // The first team on a recipe takes up the runs left under way.
+        let town = &mut towns.0[p.town as usize];
+        town.wip.resize(db.recipes.len(), 0.0);
+        let progress = std::mem::take(&mut town.wip[p.recipe as usize]);
         log.next_serial += 1;
         let e = commands
             .spawn((
@@ -269,10 +320,12 @@ pub fn assign(
                     serial: log.next_serial,
                     recipe: p.recipe,
                     town: p.town,
-                    progress: 0.0,
-                    required: m.duration * p.batches as f32,
+                    // Runs done towards the next whole one (the progress bar).
+                    progress,
+                    required: 1.0,
                     input_quality: p.input_quality,
-                    batches: p.batches,
+                    batches: 0,
+                    worked_runs: 0.0,
                 },
                 TownId(p.town),
                 Pos {

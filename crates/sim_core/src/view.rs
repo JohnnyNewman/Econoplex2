@@ -26,6 +26,12 @@ pub struct BuildingView {
     pub kind: String,
     /// Map position.
     pub pos: (f32, f32),
+    /// How far the run under way in the building has got, 0..1 (the most
+    /// advanced one if several teams work there); `None` when it stands idle.
+    /// Inputs flow in as the team works; each whole run's output goes to
+    /// market when the bar fills, and the rest carries on.
+    #[serde(default)]
+    pub progress: Option<f32>,
 }
 
 /// A town's government levers, with the defaults from models.ron filled in.
@@ -143,8 +149,15 @@ pub struct Seen {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ViewSnapshot {
     pub tick: u64,
+    /// Economy step within the simulated day, and steps a day.
+    #[serde(default)]
+    pub step: u32,
+    #[serde(default)]
+    pub steps_per_day: u32,
+    /// Simulated day of the year, which is its month (0 = the first).
     pub day_of_year: u32,
-    pub days_per_year: u32,
+    /// Simulated days in a year: one per month.
+    pub months_per_year: u32,
     pub towns: Vec<TownView>,
     pub people: PeopleView,
     /// Number of skill domains (for colouring `Doing::Working`).
@@ -268,6 +281,7 @@ impl ViewSnapshot {
         let towns = world.resource::<Towns>();
         let db = world.resource::<Db>();
         let store = world.resource::<crate::AgentStore>();
+        let progress = batch_progress(world);
         let mut people = PeopleView::default();
         let keepers = crate::ladder::keepers(store);
         for i in 0..store.len() {
@@ -316,8 +330,10 @@ impl ViewSnapshot {
             .unwrap_or_default();
         ViewSnapshot {
             tick: clock.tick,
+            step: clock.step,
+            steps_per_day: clock.steps_per_day,
             day_of_year: clock.day_of_year(),
-            days_per_year: clock.days_per_year,
+            months_per_year: clock.months_per_year,
             towns: towns
                 .0
                 .iter()
@@ -356,6 +372,11 @@ impl ViewSnapshot {
                             id: e.to_bits(),
                             kind: db.content.products[def as usize].id.clone(),
                             pos,
+                            progress: progress
+                                .iter()
+                                .filter(|b| b.0 == ti as u16 && b.1 == def && b.2 == pos)
+                                .map(|b| b.3)
+                                .reduce(f32::max),
                         })
                         .collect(),
                     ruler: t.ruler,
@@ -412,9 +433,10 @@ impl ViewSnapshot {
         }
     }
 
-    /// Fraction of the year gone, 0..1 (for seasons).
+    /// Fraction of the year gone at the middle of this month, 0..1 (for
+    /// seasons).
     pub fn season(&self) -> f32 {
-        self.day_of_year as f32 / self.days_per_year.max(1) as f32
+        (self.day_of_year as f32 + 0.5) / self.months_per_year.max(1) as f32
     }
 }
 
@@ -501,8 +523,8 @@ pub fn person(world: &World, id: u32) -> Option<PersonInfo> {
     Some(PersonInfo {
         id,
         town: store.town[i],
-        age_years: store.age_days[i] as f32
-            / world.resource::<SimClock>().days_per_year.max(1) as f32,
+        age_years: store.age_months[i] as f32
+            / world.resource::<SimClock>().months_per_year.max(1) as f32,
         female: store.female[i],
         activity: activity.to_string(),
         job,
@@ -584,6 +606,27 @@ fn needs_by_town(world: &World) -> Vec<Vec<f32>> {
 }
 
 /// Tools and weapons in each town's armory, by product.
+/// Every batch under way in a building: (town, building def, position,
+/// progress 0..1).
+fn batch_progress(world: &World) -> Vec<(u16, u32, (f32, f32), f32)> {
+    use crate::components::{Pos, Task};
+    let db = world.resource::<Db>();
+    let Some(mut q) = world.try_query::<(&Task, &Pos)>() else {
+        return Vec::new();
+    };
+    q.iter(world)
+        .filter_map(|(t, p)| {
+            let b = db.recipes.get(t.recipe as usize)?.building?;
+            Some((
+                t.town,
+                b,
+                (p.x, p.y),
+                (t.progress / t.required.max(1e-6)).clamp(0.0, 1.0),
+            ))
+        })
+        .collect()
+}
+
 fn armory_counts(world: &World) -> Vec<Vec<(u32, u32)>> {
     let towns = world.resource::<Towns>();
     towns
@@ -676,6 +719,12 @@ mod tests {
         }
         // Every event was delivered exactly once.
         assert_eq!(all_events, s.world.resource::<History>().events.len());
+        // At midday people are at work (a day ends at midnight, when they
+        // are not).
+        let spd = s.world.resource::<crate::world::SimClock>().steps_per_day;
+        for _ in 0..spd / 2 {
+            s.step_tick();
+        }
         // Every living person is there once, with a target.
         let alive = s
             .world

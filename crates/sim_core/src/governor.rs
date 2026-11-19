@@ -114,9 +114,10 @@ pub fn govern(
     governors
         .towns
         .resize(towns.0.len(), GovernorState::default());
-    let a = 1.0 / gp.smoothing_days.max(1.0);
+    let cal = params.calendar();
+    let a = cal.smoothing(gp.smoothing_days);
 
-    // Daily observation, smoothed.
+    // An observation each step, smoothed over the days.
     for (t, town) in towns.0.iter().enumerate() {
         let st = &mut governors.towns[t];
         let pop = town.residents.len().max(1) as f32;
@@ -127,7 +128,8 @@ pub fn govern(
             let i = i as usize;
             match store.activity[i] {
                 Activity::Child | Activity::Captive | Activity::Soldier => {}
-                Activity::Resting => adults += 1,
+                // On a task (also outside its working hours), or resting.
+                Activity::Resting | Activity::Working(_) => adults += 1,
                 _ => {
                     adults += 1;
                     if store.worked_today[i].is_none() {
@@ -154,9 +156,11 @@ pub fn govern(
             )
         });
         if let Some((m0, e0)) = st.flows_seen {
-            let y = 1.0 / gp.forecast_days.max(1.0);
-            st.food_made += y * ((made - m0) as f32 - st.food_made);
-            st.food_eaten += y * ((eaten - e0) as f32 - st.food_eaten);
+            // Per day, over the step's days.
+            let y = cal.smoothing(gp.forecast_days);
+            let d = cal.days() as f64;
+            st.food_made += y * (((made - m0) / d) as f32 - st.food_made);
+            st.food_eaten += y * (((eaten - e0) / d) as f32 - st.food_eaten);
         } else {
             // First look: assume the town makes what it eats.
             st.food_eaten = pop * params.needs.hunger_per_day;
@@ -174,7 +178,8 @@ pub fn govern(
     // A governor also takes stock on the first day: nothing else feeds the
     // town while it waits a month.
     let first_day = clock.tick == 1;
-    if gp.interval == 0
+    if !clock.day_start()
+        || gp.interval == 0
         || clock.tick == 0
         || !(clock.tick.is_multiple_of(gp.interval as u64) || first_day)
     {

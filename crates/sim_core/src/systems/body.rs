@@ -29,12 +29,18 @@ pub fn body(
     clock: Res<SimClock>,
 ) {
     let p = &params.physique;
-    let dpy = clock.days_per_year;
+    let per_year = clock.months_per_year;
+    // A day's forgetting, training and disuse, once a day of time (the
+    // body changes slowly; whoever is on a task then trains for the day).
+    let Some(cal) = clock.day_of_time() else {
+        return;
+    };
+    let days = cal.days();
     let store = &mut *store;
     // Each agent's update touches only its own vectors: run them in parallel.
     let (alive, age, worked_today, potential) = (
         &store.alive,
-        &store.age_days,
+        &store.age_months,
         &store.worked_today,
         &store.potential,
     );
@@ -47,9 +53,9 @@ pub fn body(
             if !alive[i] {
                 return;
             }
-            models.capacity.apply(cap);
+            models.capacity.apply(cap, days);
 
-            let ceiling = age_curve(age[i] as f32 / dpy as f32, p);
+            let ceiling = age_curve(age[i] as f32 / per_year.max(1) as f32, p);
             let worked = worked_today[i].map(|r| db.recipes[r as usize].phys);
             for k in 0..PHYS_DIM {
                 let max = potential[i][k] * ceiling;
@@ -57,9 +63,9 @@ pub fn body(
                 let x = &mut phys[k];
                 let demand = worked.map_or(0.0, |d| d[k]);
                 if demand > 0.0 {
-                    *x += p.train_rate * demand * (max - *x);
+                    *x += cal.share(p.train_rate * demand) * (max - *x);
                 } else {
-                    *x += p.disuse_rate * (floor - *x);
+                    *x += cal.share(p.disuse_rate) * (floor - *x);
                 }
                 *x = x.min(max);
             }

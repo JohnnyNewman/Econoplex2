@@ -52,7 +52,7 @@ pub struct ModelParams {
     /// AI town governments (`governor.rs`).
     #[serde(default)]
     pub governor: GovernorParams,
-    /// Ticks per day, days per month, months per year (`env.rs`).
+    /// The calendar and ticks per day (`env.rs`, `calendar.rs`).
     #[serde(default)]
     pub time: crate::env::TimeParams,
     /// Average weather through the year (`env.rs`).
@@ -74,26 +74,22 @@ impl ModelParams {
     /// Check the parameters so a typo in the RON file fails loudly at load time.
     pub fn validate(&self) -> Result<(), ConfigError> {
         let t = &self.time;
-        if t.ticks_per_day == 0
-            || t.days_per_month == 0
-            || t.months_per_year == 0
-            || t.economy_days_per_day == 0
-        {
+        if t.steps_per_day == 0 || t.days_per_month == 0 || t.months_per_year == 0 {
             return Err(ConfigError(
-                "time: ticks_per_day, days_per_month, months_per_year and economy_days_per_day must be at least 1".into(),
+                "time: steps_per_day, days_per_month and months_per_year must be at least 1".into(),
             ));
         }
-        if t.days_per_year() != self.life.days_per_year {
-            return Err(ConfigError(format!(
-                "time: {} days per month times {} months times {} economy days per day is {} days, but life.days_per_year is {}",
-                t.days_per_month,
-                t.months_per_year,
-                t.economy_days_per_day,
-                t.days_per_year(),
-                self.life.days_per_year
-            )));
+        if t.production_hours.is_nan() || t.production_hours <= 0.0 {
+            return Err(ConfigError(
+                "time: production_hours must be more than 0".into(),
+            ));
         }
         Ok(())
+    }
+
+    /// The calendar: how many days each economy step stands for.
+    pub fn calendar(&self) -> crate::calendar::Calendar {
+        crate::calendar::Calendar::new(&self.time)
     }
 }
 

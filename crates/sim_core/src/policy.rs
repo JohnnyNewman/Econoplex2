@@ -580,7 +580,7 @@ pub fn apply_orders(
                         firm.loans.push(crate::firms::Loan {
                             left: amount,
                             rate,
-                            days_left: days.max(1),
+                            days_left: days.max(1) as f32,
                         });
                     }
                 }
