@@ -493,8 +493,11 @@ pub fn decide(
     if window_days.iter().all(|&d| d <= 0.0) {
         return;
     }
-    // A rest lasts until the next day's choices.
+    // A rest lasts until the next day's choices: it restores for each day of
+    // work it skips, from this step on.
     let rest_until = clock.steps() + k as u64;
+    let rest_now = crate::env::work_days_this_step(&clock, &env, &params.time, false)
+        * params.needs.fatigue_rest_recovery;
     // The people choosing now: those free of a rest, and those at work, who
     // finish the batch under way and then go to what they chose.
     let idle: Vec<usize> = (0..store.len())
@@ -769,6 +772,9 @@ pub fn decide(
                     let mut rng = seed.agent_rng(clock.steps(), streams::DECIDE + 100, i);
                     store.activity[i] = Activity::Resting;
                     store.rest_until[i] = rest_until;
+                    // This step's rest (needs::sense has run already).
+                    let st = &mut store.state[i];
+                    st[state::FATIGUE] = (st[state::FATIGUE] - rest_now).max(0.0);
                     let c = towns.0[t].pos;
                     store.target[i] = (
                         c.0 + rng.random_range(-45.0..45.0f32),
@@ -819,6 +825,9 @@ pub fn decide(
                 None => {
                     store.activity[i] = Activity::Resting;
                     store.rest_until[i] = rest_until;
+                    // This step's rest (needs::sense has run already).
+                    let st = &mut store.state[i];
+                    st[state::FATIGUE] = (st[state::FATIGUE] - rest_now).max(0.0);
                     let c = towns.0[t].pos;
                     store.target[i] = (
                         c.0 + rng.random_range(-45.0..45.0f32),

@@ -58,6 +58,8 @@ pub fn settle(
     firm_finances(&mut towns, &mut store, &db, &params);
     crate::consumption::spend(&mut towns, &mut store, &db, &params, &env, clock.steps());
     let derived = derived_targets(&towns, &db, &params, &sites);
+    // Prices move once a day of time, by that day's calendar.
+    let pcal = cal.every(clock.steps_per_day_of_time());
     // Each good's price dynamics: its class's, or its own override.
     let dynamics: Option<Vec<crate::pricing::ClassParams>> =
         mp.price_classes.as_ref().map(|classes| {
@@ -70,7 +72,7 @@ pub fn settle(
                         .find(|o| o.0 == p.id)
                         .map(|o| o.1)
                         .unwrap_or(*classes.get(p.price_class()))
-                        .over(cal)
+                        .over(pcal)
                 })
                 .collect()
         });
@@ -111,7 +113,6 @@ pub fn settle(
     // Prices move once a day of time (as when a step was a day), by the
     // day's move.
     let price_day = clock.work_day_start();
-    let pcal = cal.every(clock.steps_per_day_of_time());
     if price_day {
         for (ti, town) in towns.0.iter_mut().enumerate() {
             let pop = town.residents.len().max(1) as f32;

@@ -79,6 +79,11 @@ impl ModelParams {
                 "time: steps_per_day, days_per_month and months_per_year must be at least 1".into(),
             ));
         }
+        if t.production_hours.is_nan() || t.production_hours <= 0.0 {
+            return Err(ConfigError(
+                "time: production_hours must be more than 0".into(),
+            ));
+        }
         Ok(())
     }
 

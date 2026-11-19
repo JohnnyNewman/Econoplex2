@@ -109,29 +109,42 @@ impl SimClock {
     pub fn every_months(&self, months: u32) -> bool {
         months > 0 && self.day_start() && self.tick.is_multiple_of(months as u64)
     }
-    /// Steps in a day of time (at least one): the pace of the slow processes
-    /// (wear, fuel, body, forgetting, ties fading), which run once a day as
-    /// they did when a step was a day.
+    /// The day of time step `step` of the simulated day falls in: the day is
+    /// cut into `days_per_month` equal stretches of hours, whatever the
+    /// step, so a day of time is the same span of game time at any step size.
+    fn day_of_time_at(&self, step: u32) -> u64 {
+        step as u64 * self.days_per_month.max(1) as u64 / self.steps_per_day.max(1) as u64
+    }
+    /// The first step of the day of time `d` (or `steps_per_day` past the last).
+    fn first_step_of(&self, d: u64) -> u32 {
+        let (dpm, spd) = (
+            self.days_per_month.max(1) as u64,
+            self.steps_per_day.max(1) as u64,
+        );
+        (d * spd).div_ceil(dpm).min(spd) as u32
+    }
+    /// Steps in the day of time this step is in (at least one): the pace of
+    /// the slow processes (wear, fuel, body, forgetting, ties fading), which
+    /// run once a day as they did when a step was a day.
     pub fn steps_per_day_of_time(&self) -> u32 {
-        self.calendar().steps(1.0).round().max(1.0) as u32
+        let d = self.day_of_time_at(self.step);
+        (self.first_step_of(d + 1) - self.first_step_of(d)).max(1)
     }
     /// On the first step of each day of time, the calendar of that day (its
     /// steps taken together); `None` on the other steps.
     pub fn day_of_time(&self) -> Option<crate::calendar::Calendar> {
-        let k = self.steps_per_day_of_time();
-        self.steps()
-            .is_multiple_of(k as u64)
-            .then(|| self.calendar().every(k))
+        self.work_day_start()
+            .then(|| self.calendar().every(self.steps_per_day_of_time()))
     }
-    /// Whether this step starts a working day: a day of time within the
-    /// simulated day (its steps counted from the day's first). People choose
-    /// their work then, once a day of time, as when a step was a day.
+    /// Whether this step starts a day of time within the simulated day.
+    /// People choose their work then, once a day of time, as when a step was
+    /// a day.
     pub fn work_day_start(&self) -> bool {
-        self.step.is_multiple_of(self.steps_per_day_of_time())
+        self.step == 0 || self.day_of_time_at(self.step) != self.day_of_time_at(self.step - 1)
     }
-    /// Whether this step ends a working day (the teams break up after it).
+    /// Whether this step ends a day of time (the teams break up after it).
     pub fn work_day_end(&self) -> bool {
-        (self.step + 1).is_multiple_of(self.steps_per_day_of_time()) || self.day_done()
+        self.day_done() || self.day_of_time_at(self.step + 1) != self.day_of_time_at(self.step)
     }
     /// Whether this step is the last of its day (a whole day has run).
     pub fn day_done(&self) -> bool {

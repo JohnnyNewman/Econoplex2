@@ -175,7 +175,8 @@ pub fn sense(
         match store.activity[i] {
             Activity::Resting => {
                 st[FATIGUE] = (st[FATIGUE] - rest_days * p.fatigue_rest_recovery).max(0.0);
-                if now >= store.rest_until[i] {
+                // The rest ends with the last step before the next choices.
+                if now + 1 >= store.rest_until[i] {
                     store.activity[i] = Activity::Idle;
                 }
             }

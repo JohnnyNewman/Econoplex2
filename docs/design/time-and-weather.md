@@ -41,10 +41,17 @@ Claude Doc: "Econoplex economy redesign: items, time, needs".
 | Cadence | What |
 | --- | --- |
 | every step | needs and eating, going back to the day's job, team assignment, production flows, pay, the market's use and spoilage, caravans, loans, the military's march and fights, deaths of the sick, the residents' list |
-| once per day of time (`SimClock::day_of_time()`, every `steps(1)` steps) | body (capacity, training, disuse), the household ladder's wear, fuel, cold and happiness, social ties fading, culture following neighbours, random contacts |
+| once per day of time (`SimClock::day_of_time()`, on its first step) | body (capacity, training, disuse), the household ladder's wear, fuel, cold and happiness, social ties fading, culture following neighbours, random contacts |
 | first step of each day of time (`SimClock::work_day_start`) | job choice (capacity, scoring, matching, pay); prices, scarcity caps and the market's purchases from workshops, by the day's move (run every step, gluts grew from 4% at 10 steps a day to 17% at 300; once a day they stay at 7-10% at 10, 24 and 300, 16 seeds over 30 years) |
 | first step of the simulated day (`env::day_start`) | ageing, births, partnering, hazards, starving counts, governors, metrics, history samples, goals, the ledger's year end |
 | every N months, on the first step (`SimClock::every_months(n)`) | trade rounds, organize, muster, raid plans, tribute, migration |
+
+A day of time is one of the `days_per_month` equal stretches of the
+simulated day's 24 hours (2.4 hours at 10 days a month), the same span of
+game time at any step size: a step belongs to the day of time its start
+falls in, so at 24 steps a day the days of time are two or three steps
+long, and ten of them make the day (rounding `steps(1)` gave twelve,
+twenty per cent more choices and places).
 
 The slow processes moved to once per day of time are those whose state
 changes only by a few hundredths a day: running them every step cost about a
@@ -55,11 +62,13 @@ third of a step's time and changed nothing measurable.
 - Work and production: the working days that fall in the step's hours
   (`work_days_this_step`), and inputs, nature and output flowing with them,
   so a day of steps does the same work at any `steps_per_day`.
-- Tiredness: work adds `fatigue_per_work_day` per working day done; rest and
-  idling recover per day of time in the part of each step not spent at work
-  (`AgentStore::busy`), so people on a team recover through the night.
-- Job choice, places and pay: once a day of time (every `steps(1)` steps,
-  `SimClock::work_day_start`), with that day's calendar; places count a day's
+- Tiredness: work adds `fatigue_per_work_day` per working day done; everyone
+  recovers `fatigue_idle_recovery` a day of time, at work or not, as when a
+  step was a day. A rest recovers `fatigue_rest_recovery` for each day of
+  work it skips, from the step it is chosen in (decide) to the last step
+  before the next choices, so it covers the same hours at any step size.
+- Job choice, places and pay: once a day of time
+  (`SimClock::work_day_start`), with that day's calendar; places count a day's
   inputs per worker. At `steps_per_day = days_per_month` (10) a step is a day
   of time and the economy runs as it did when a tick was an economy day. Every job starts out showing what it
   would pay at the starting prices (a rate that starts at nothing kept
@@ -89,6 +98,14 @@ time (`SimClock::work_day_end`; what is under way is
 kept: `Town::wip` carries the runs under way to the next team on the recipe,
 so work longer than a day is not lost) and everyone chooses again the next
 day of time. The sum over a day is the same at any step size.
+
+A step longer than `time.production_hours` (0.2 hours) is worked in slices
+of at most that long, each delivering its finished runs before the next, so
+what one trade makes reaches the next within the step as it would at a finer
+step. Without the slices a chain moved one stage a step: at 24 steps a day
+bread and flour came out about a quarter lower than at 120 or 300 (36 small
+seeds over two years). With them 24, 120 and 300 agree to about ten per cent
+on the bulk goods.
 
 ### Real time in the clients
 
@@ -141,8 +158,8 @@ What converts how (config units stay as written unless named):
 | ladder wear, fuel, cold damage, cold days | ladder.rs | `keep`, `flow`, `flow`, `whole_days` |
 | ladder `interval`, shopping size | ladder.rs, models.ron | days (7), as `steps(interval)` steps; units bought scale with the days |
 | expected temperatures over the year | ladder.rs | `days_per_year()` |
-| adaptive expectations | decision/expectations.rs | rate `share` |
-| excess-demand wage step | decision/wages.rs | step times days |
+| adaptive expectations | decision/expectations.rs | each run's pay weighs by the days of work it stands for (compounded), not by the step; a run cut into more pieces moves the expectation as far |
+| excess-demand wage step | decision/wages.rs | once a day of time, with the day's choices: unscaled |
 | culture memory | decision/culture.rs, social.rs | `steps(memory_days)` steps |
 | price classes: speeds, max daily move, memory | pricing.rs | times days; `months` |
 | legacy price adjust | market.rs | `flow` |

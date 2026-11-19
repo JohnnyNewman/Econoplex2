@@ -49,11 +49,10 @@ pub struct DecisionModels {
 
 impl DecisionModels {
     pub fn from_model_params(m: &crate::config::ModelParams) -> Self {
+        // Expectations learn once a run's pay is in, and wages move once a day
+        // of time (with the day's choices): neither counts steps, so neither
+        // is scaled to the step.
         let mut d = Self::from_params(&m.decision);
-        // One simulated day is a month of observations and of wage moves.
-        let cal = m.calendar();
-        d.expectations = expectations::build_for(&m.decision.expectations, cal);
-        d.wages = wages::build_for(&m.decision.wages, cal);
         d.migration = migration::build(
             &m.decision.migration,
             &m.migration,

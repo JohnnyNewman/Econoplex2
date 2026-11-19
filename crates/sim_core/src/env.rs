@@ -43,6 +43,10 @@ pub struct TimeParams {
     pub year_starts_at: f32,
     #[serde(default)]
     pub day_length: DayLength,
+    /// Longest slice of game hours production works in: a longer step is
+    /// worked in several slices, so what one trade makes reaches the next
+    /// within the step, as it would at a finer step.
+    pub production_hours: f32,
 }
 
 fn spring() -> f32 {
@@ -57,6 +61,7 @@ impl Default for TimeParams {
             months_per_year: 12,
             year_starts_at: spring(),
             day_length: DayLength::default(),
+            production_hours: 0.2,
         }
     }
 }

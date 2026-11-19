@@ -172,6 +172,7 @@ pub(super) fn settle_wages(
                 &mut store.pay_expect[wi],
                 c.recipe,
                 own / c.days,
+                c.days,
                 curiosity,
                 &*decision.expectations,
             );

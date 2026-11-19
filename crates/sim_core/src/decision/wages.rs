@@ -27,24 +27,6 @@ pub enum WageParams {
     },
 }
 
-/// The rule for a simulated day of `cal`: a month of daily steps.
-pub fn build_for(p: &WageParams, cal: crate::calendar::Calendar) -> Box<dyn WageAdjustment> {
-    match *p {
-        WageParams::ExcessDemand {
-            step,
-            target_fill,
-            min,
-            max,
-        } => Box::new(ExcessDemand {
-            step: cal.flow(step),
-            target_fill,
-            min,
-            max,
-        }),
-        WageParams::Fixed => Box::new(Fixed),
-    }
-}
-
 pub fn build(p: &WageParams) -> Box<dyn WageAdjustment> {
     match *p {
         WageParams::Fixed => Box::new(Fixed),

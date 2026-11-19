@@ -456,6 +456,8 @@
         months_per_year: 12,
         year_starts_at: 0.25, // spring equinox (0 = midwinter)
         day_length: (equinox_hours: 12.0, swing_hours: 4.0, twilight_hours: 2.0),
+        // Production works a longer step in slices of at most this many hours.
+        production_hours: 0.2,
     ),
     // A temperate climate: frosty winters, warm summers, wettest in autumn.
     // `Constant(temperature: 15.0)` for no seasons.
