@@ -128,6 +128,9 @@ impl Kit {
                 None,
             );
         }
+        // Grounding: darker wall feet and eaves (in the building's own frame,
+        // its ground is y = 0).
+        baked.occlude_from(0, 0.0);
         let h = meshes.add(baked.mesh());
         self.baked.insert(key, h.clone());
         h
@@ -143,6 +146,7 @@ impl Kit {
     ) -> Handle<Mesh> {
         let mut baked = Baked::default();
         for (at, parts) in houses {
+            let start = baked.pos.len();
             for (mesh, colour, offset, scale) in parts {
                 let part = Transform::from_translation(*offset).with_scale(*scale);
                 baked.add(
@@ -152,6 +156,8 @@ impl Kit {
                     None,
                 );
             }
+            // Grounding, above this house's own ground.
+            baked.occlude_from(start, at.translation.y);
         }
         meshes.add(baked.mesh())
     }

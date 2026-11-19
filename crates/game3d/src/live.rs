@@ -579,6 +579,7 @@ fn sync_scene(
     outlines: Option<Res<Outlines>>,
     world: Res<World3d>,
     mut homes: ResMut<TownHomes>,
+    mut footprints: Option<ResMut<crate::grounding::Footprints>>,
 ) {
     let (Some(mut kit), Some(outlines)) = (kit, outlines) else {
         return;
@@ -653,6 +654,12 @@ fn sync_scene(
                 style,
             ) {
                 shown.buildings.insert(b.id, e);
+                // Workplaces are drawn 1.5 times a house's size, and square.
+                if let Some(f) = footprints.as_deref_mut() {
+                    f.buildings
+                        .insert(b.id, (Vec2::new(spec.at.x, spec.at.z), 2.4));
+                    f.dirty = true;
+                }
             }
         }
     }
@@ -663,6 +670,11 @@ fn sync_scene(
         }
         keep
     });
+    if let Some(f) = footprints.as_deref_mut() {
+        let before = f.buildings.len();
+        f.buildings.retain(|id, _| alive.contains(id));
+        f.dirty |= f.buildings.len() != before;
+    }
 
     // Houses: a spiral around each town centre, one house per six residents.
     let taken: Vec<Vec2> = snap
@@ -724,6 +736,17 @@ fn sync_scene(
                     Vec2::new(door.x, door.z)
                 })
                 .collect();
+            if let Some(f) = footprints.as_deref_mut() {
+                if f.houses.len() < snap.towns.len() {
+                    f.houses.resize(snap.towns.len(), Vec::new());
+                }
+                f.houses[ti] = houses
+                    .list
+                    .iter()
+                    .map(|(h, _)| (Vec2::new(h.at.x, h.at.z), 0.8))
+                    .collect();
+                f.dirty = true;
+            }
             if let Some(e) = houses.drawn.take() {
                 commands.entity(e).despawn();
             }
