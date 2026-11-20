@@ -453,7 +453,7 @@ About 3–5 % of people with a trade change it in a year.
 
 8 seeds × 20 years, Trade against Free: population 1890 against 1793,
 starving 0.19 % against 0.40 %, glut 15 % against 5 %, masters 311 against 51.
-8 seeds × 30 years: population 2520, starving 0.16 %, food per head 5.5.
+8 seeds × 30 years after the food-yield tuning: population 2452, starving 0.15 %, food per head 5.3, end-of-winter reserve 7.0 months (8.5 under free choice; the band moves to 4.5-10.5).
 
 Findings:
 - Farmers stay farmers, so food piles up more.

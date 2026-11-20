@@ -269,7 +269,12 @@ pub fn settle(
                     })
                     .fold(f32::INFINITY, f32::min);
                 if cost.is_finite() {
-                    town.price[p] = town.price[p].max(cost.min(base * cap));
+                    // The floor moves the price no faster than its class may move.
+                    let floor = match &dynamics {
+                        Some(d) if old > 0.0 => cost.min(old * d[p].max_daily.max(0.0).exp()),
+                        _ => cost,
+                    };
+                    town.price[p] = town.price[p].max(floor.min(base * cap));
                 }
                 if old > 0.0 && town.price[p] > 0.0 {
                     town.price_vol.resize(3, Default::default());

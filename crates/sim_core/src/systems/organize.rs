@@ -111,7 +111,10 @@ pub fn organize(
             }
         };
         let desired: Option<(u32, Role, u64)> = match store.guild[i] {
-            Some(g) if age >= params.life.adult_age => {
+            Some(g)
+                if age >= params.life.adult_age
+                    && params.decision.attendance == crate::config::Attendance::Trade =>
+            {
                 // A trade is changed only on a trigger, and the change costs
                 // rank: the person starts again as a member.
                 let own = domain_pay[t][g.domain as usize];
