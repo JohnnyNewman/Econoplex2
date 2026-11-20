@@ -14,13 +14,13 @@
     ],
     recipes: [
         (id: "farm_grain", name: "Farm grain", skill: "farming", difficulty: 0.10,
-            outputs: [("grain", 4)], nature: Some("field"), duration: 1.0, max_team: 4,
+            outputs: [("grain", 4)], nature: Some("field"), duration: 1.5, max_team: 4,
             physique: [("endurance", 0.3), ("strength", 0.1)]),
         (id: "mill_flour", name: "Mill flour", skill: "milling", difficulty: 0.30,
-            inputs: [("grain", 3)], outputs: [("flour", 3)], building: Some("mill"), duration: 1.0,
+            inputs: [("grain", 3)], outputs: [("flour", 3)], building: Some("mill"), duration: 0.5,
             physique: [("strength", 0.2)]),
         (id: "bake_bread", name: "Bake bread", skill: "baking", difficulty: 0.40,
             inputs: [("flour", 2), ("wood", 1)], outputs: [("bread", 4)], building: Some("bakery"),
-            duration: 1.0, physique: [("dexterity", 0.1)]),
+            duration: 0.5, physique: [("dexterity", 0.1)]),
     ],
 )
