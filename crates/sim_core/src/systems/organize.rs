@@ -74,6 +74,18 @@ pub fn organize(
             v
         })
         .collect();
+    // Adults a recruiting trade can take in: it grows by at most
+    // `trade_growth` of its members a year (counted as at least ten, so a new
+    // trade can start), banked up to a year's worth.
+    let share = op.trade_growth * op.interval as f32 / dpy.max(1) as f32;
+    for (t, town) in towns.0.iter_mut().enumerate() {
+        town.intake.resize(nd, 0.0);
+        for (d, x) in town.intake.iter_mut().enumerate() {
+            let n = members[t][d].max(10) as f32;
+            *x = (*x + n * share).min((n * op.trade_growth).max(1.0));
+        }
+    }
+    let mut intake: Vec<Vec<f32>> = towns.0.iter().map(|t| t.intake.clone()).collect();
     // What each trade pays in each town (mean over its jobs that pay).
     let domain_pay: Vec<Vec<f32>> = towns
         .0
@@ -121,7 +133,10 @@ pub fn organize(
                 let rank_cost = 1.0 + (years_in(g.since) / op.master_years.max(1e-3)).min(1.0);
                 let recruiting = (0..nd)
                     .filter(|&d| {
-                        d != g.domain as usize && members[t][d] == 0 && vacancy[t][d] >= 1.0
+                        d != g.domain as usize
+                            && members[t][d] < op.new_trade_members
+                            && vacancy[t][d] >= 1.0
+                            && intake[t][d] >= 1.0
                     })
                     .max_by(|&a, &b| domain_pay[t][a].total_cmp(&domain_pay[t][b]))
                     .filter(|&d| domain_pay[t][d] >= (1.0 + op.switch_premium * rank_cost) * own);
@@ -139,6 +154,7 @@ pub fn organize(
                 match out_of_work.or(recruiting) {
                     Some(d) => {
                         vacancy[t][d] -= 1.0;
+                        intake[t][d] -= 1.0;
                         store.off_trade[i] = 0;
                         Some((d as u32, Role::Member, clock.tick))
                     }
@@ -254,5 +270,8 @@ pub fn organize(
             let dir = &db.domain_dirs[g.domain as usize];
             store.equip_vec[i] = dir.iter().map(|d| d * bonus).collect();
         }
+    }
+    for (town, left) in towns.0.iter_mut().zip(intake) {
+        town.intake = left.into_iter().map(|x| x.max(0.0)).collect();
     }
 }

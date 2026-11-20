@@ -354,6 +354,9 @@ pub struct Town {
     /// over about a month: a trade that is recruiting.
     #[serde(default)]
     pub vacancies: Vec<f32>,
+    /// Adults each trade may still take in from other trades (banked).
+    #[serde(default)]
+    pub intake: Vec<f32>,
     /// Daily rent each adult resident pays (see `decision::crowding`).
     #[serde(default)]
     pub rent: f32,
@@ -791,6 +794,7 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
             wage_factor: vec![1.0; db.recipes.len()],
             apprentice_share: vec![0.0; db.recipes.len()],
             vacancies: vec![0.0; db.domain_dirs.len()],
+            intake: vec![0.0; db.domain_dirs.len()],
             rent: 0.0,
             culture: spec.culture.clone().unwrap_or_default(),
         });

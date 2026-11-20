@@ -444,16 +444,20 @@ starts again as a member. There are two triggers:
   working outside the trade, or wanting work and finding none, the person moves
   to the trade they have been doing instead. A day of rest by choice does not
   count.
-- **A trade new to town.** A trade with no members that has had unfilled places
-  over the last month, and that pays at least
+- **A trade new to town.** A trade with fewer than `new_trade_members` (3)
+  members that has had unfilled places over the last month (`Town::vacancies`)
+  recruits adults from other trades who would earn at least
   1 + `switch_premium` × (1 + years in trade / `master_years`, at most 2) times
-  the person's own trade (`switch_premium` 0.5).
+  their own (`switch_premium` 0.5). It takes in at most `trade_growth` (0.1)
+  of its members a year, counted as at least ten (`Town::intake`, banked).
+  Without this a new trade cannot grow: only masters take apprentices, and a
+  new trade has none. On CI no town cast bronze in 8 years on any of 4 seeds.
 
-About 3–5 % of people with a trade change it in a year.
+About 3 % of people with a trade change it in a year.
 
-8 seeds × 20 years, Trade against Free: population 1890 against 1793,
+Before the food-yield tuning, 8 seeds × 20 years, Trade against Free: population 1890 against 1793,
 starving 0.19 % against 0.40 %, glut 15 % against 5 %, masters 311 against 51.
-8 seeds × 30 years after the food-yield tuning: population 2452, starving 0.15 %, food per head 5.3, end-of-winter reserve 7.0 months (8.5 under free choice; the band moves to 4.5-10.5).
+8 seeds × 30 years after the food-yield tuning: population 2696, starving 0.06 %, food per head 5.3, end-of-winter reserve 7.0 months (8.5 under free choice; the band moves to 4.5-10.5). 8 seeds × 20 years: population 1961, starving 0.10 %.
 
 Findings:
 - Farmers stay farmers, so food piles up more.

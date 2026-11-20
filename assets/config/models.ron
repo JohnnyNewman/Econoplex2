@@ -270,11 +270,13 @@
     // shared: each learner gets 1 / (1 + teaching_crowding x (learners - 1)).
     // Rounds every `interval` months.
     // A person changes trade only on a trigger: no work in their trade for
-    // switch_idle_years, or a trade with unfilled places that pays at least
+    // switch_idle_years, or a trade new to town (fewer than new_trade_members
+    // members, with unfilled places; it takes in at most trade_growth of its
+    // members a year, counted as at least ten) that pays at least
     // (1 + switch_premium x (1 + years in trade / master_years, at most 2)) times
     // their own. They start again as a member.
     organize: (interval: 2, guild_threshold: 0.55, apprentices_per_master: 3, master_years: 8.0, teaching_crowding: 0.3,
-        switch_idle_years: 1.0, switch_premium: 0.5),
+        switch_idle_years: 1.0, switch_premium: 0.5, trade_growth: 0.1, new_trade_members: 3),
 
     work: (work_exponent: 0.85, wage_share: 0.5),
 

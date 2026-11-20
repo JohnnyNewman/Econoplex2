@@ -188,6 +188,21 @@ pub struct OrganizeParams {
     /// their rank.
     #[serde(default = "switch_premium")]
     pub switch_premium: f32,
+    /// A trade new to town (fewer members than `new_trade_members`) with
+    /// unfilled places is recruiting: it takes in adults from other trades, at
+    /// most `trade_growth` of its members a year (counted as at least ten).
+    #[serde(default = "trade_growth")]
+    pub trade_growth: f32,
+    #[serde(default = "new_trade_members")]
+    pub new_trade_members: u32,
+}
+
+fn new_trade_members() -> u32 {
+    3
+}
+
+fn trade_growth() -> f32 {
+    0.1
 }
 
 fn switch_idle_years() -> f32 {
