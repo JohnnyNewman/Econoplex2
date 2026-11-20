@@ -23,10 +23,13 @@
 // a day) and 8.7 (300); the granary holds 2.5-2.7 months of it, the plan's
 // 2-3. Single seeds range from 3.0 to 13.6 months, but the band checks the
 // mean, so it is the measured means with 2 months either side.
+// Kept trades (2026-11-20, plan Phase 3): the mean falls to 7.0 here and 6.2 on
+// CI's Linux, since food workers no longer drift in and out of food work; the
+// band keeps 2 months below that.
 {
     "pop": (1500, 3200),
     "starve%": (0, 2.5),
     "food/cap": (2.0, 9.0),
     "div": (18, 32),
-    "reserve": (6.5, 10.5),
+    "reserve": (4.5, 10.5),
 }

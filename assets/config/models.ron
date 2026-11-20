@@ -106,6 +106,10 @@
         // lived there (fading over memory_days). Towns known less than min_known are
         // not weighed; estimates of pay and food are off by up to noise x (1 - known).
         knowledge: Limited(min_known: 0.1, trade_scale: 2.0, trade_known: 0.4, memory_days: 3650.0, noise: 0.5),
+        // Component: which jobs a person weighs each day. Trade: those with a trade
+        // work in it, taking other work as day labour only when their trade has no
+        // place for them (plan Phase 3). Free: every open job.
+        attendance: Trade,
     ),
 
     social: BoundedConfidence(
@@ -265,7 +269,14 @@
     // trade, and become masters after master_years in it. A teacher's lesson is
     // shared: each learner gets 1 / (1 + teaching_crowding x (learners - 1)).
     // Rounds every `interval` months.
-    organize: (interval: 2, guild_threshold: 0.55, apprentices_per_master: 3, master_years: 8.0, teaching_crowding: 0.3),
+    // A person changes trade only on a trigger: no work in their trade for
+    // switch_idle_years, or a trade new to town (fewer than new_trade_members
+    // members, with unfilled places; it takes in at most trade_growth of its
+    // members a year, counted as at least ten) that pays at least
+    // (1 + switch_premium x (1 + years in trade / master_years, at most 2)) times
+    // their own. They start again as a member.
+    organize: (interval: 2, guild_threshold: 0.55, apprentices_per_master: 3, master_years: 8.0, teaching_crowding: 0.3,
+        switch_idle_years: 1.0, switch_premium: 0.5, trade_growth: 0.1, new_trade_members: 3),
 
     work: (work_exponent: 0.85, wage_share: 0.5),
 

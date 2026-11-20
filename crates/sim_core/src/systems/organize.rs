@@ -51,9 +51,12 @@ pub fn organize(
     // Apprentice places per town and trade: each master may take
     // `apprentices_per_master` (a hard limit), less those already taken.
     let mut places = vec![vec![0i64; nd]; towns.0.len()];
+    // Members of each trade in each town: a trade with none is new there.
+    let mut members = vec![vec![0u32; nd]; towns.0.len()];
     for i in 0..store.len() {
         if let (true, Some(g)) = (store.alive[i], store.guild[i]) {
             let t = store.town[i] as usize;
+            members[t][g.domain as usize] += 1;
             places[t][g.domain as usize] += match g.role {
                 Role::Master => op.apprentices_per_master as i64,
                 Role::Apprentice => -1,
@@ -61,6 +64,28 @@ pub fn organize(
             };
         }
     }
+    // Places each trade is recruiting for, taken as people change trade.
+    let mut vacancy: Vec<Vec<f32>> = towns
+        .0
+        .iter()
+        .map(|town| {
+            let mut v = town.vacancies.clone();
+            v.resize(nd, 0.0);
+            v
+        })
+        .collect();
+    // Adults a recruiting trade can take in: it grows by at most
+    // `trade_growth` of its members a year (counted as at least ten, so a new
+    // trade can start), banked up to a year's worth.
+    let share = op.trade_growth * op.interval as f32 / dpy.max(1) as f32;
+    for (t, town) in towns.0.iter_mut().enumerate() {
+        town.intake.resize(nd, 0.0);
+        for (d, x) in town.intake.iter_mut().enumerate() {
+            let n = members[t][d].max(10) as f32;
+            *x = (*x + n * share).min((n * op.trade_growth).max(1.0));
+        }
+    }
+    let mut intake: Vec<Vec<f32>> = towns.0.iter().map(|t| t.intake.clone()).collect();
     // What each trade pays in each town (mean over its jobs that pay).
     let domain_pay: Vec<Vec<f32>> = towns
         .0
@@ -98,6 +123,44 @@ pub fn organize(
             }
         };
         let desired: Option<(u32, Role, u64)> = match store.guild[i] {
+            Some(g)
+                if age >= params.life.adult_age
+                    && params.decision.attendance == crate::config::Attendance::Trade =>
+            {
+                // A trade is changed only on a trigger, and the change costs
+                // rank: the person starts again as a member.
+                let own = domain_pay[t][g.domain as usize];
+                let rank_cost = 1.0 + (years_in(g.since) / op.master_years.max(1e-3)).min(1.0);
+                let recruiting = (0..nd)
+                    .filter(|&d| {
+                        d != g.domain as usize
+                            && members[t][d] < op.new_trade_members
+                            && vacancy[t][d] >= 1.0
+                            && intake[t][d] >= 1.0
+                    })
+                    .max_by(|&a, &b| domain_pay[t][a].total_cmp(&domain_pay[t][b]))
+                    .filter(|&d| domain_pay[t][d] >= (1.0 + op.switch_premium * rank_cost) * own);
+                let idle_years = store.off_trade[i] as f32 / dpy.max(1) as f32;
+                // Out of work in the trade: the work they have been doing
+                // instead, or else the best-paying trade that is recruiting.
+                let out_of_work = (idle_years >= op.switch_idle_years)
+                    .then(|| {
+                        store.last_recipe[i]
+                            .map(|r| db.recipes[r as usize].domain as usize)
+                            .filter(|&d| d != g.domain as usize)
+                            .or(recruiting)
+                    })
+                    .flatten();
+                match out_of_work.or(recruiting) {
+                    Some(d) => {
+                        vacancy[t][d] -= 1.0;
+                        intake[t][d] -= 1.0;
+                        store.off_trade[i] = 0;
+                        Some((d as u32, Role::Member, clock.tick))
+                    }
+                    None => Some((g.domain, rank(g.since), g.since)),
+                }
+            }
             Some(g) => Some((g.domain, rank(g.since), g.since)),
             None if age >= params.life.apprentice_age && age < params.life.adult_age => {
                 // Open places in town: the parent's trade first, then the trade
@@ -207,5 +270,8 @@ pub fn organize(
             let dir = &db.domain_dirs[g.domain as usize];
             store.equip_vec[i] = dir.iter().map(|d| d * bonus).collect();
         }
+    }
+    for (town, left) in towns.0.iter_mut().zip(intake) {
+        town.intake = left.into_iter().map(|x| x.max(0.0)).collect();
     }
 }

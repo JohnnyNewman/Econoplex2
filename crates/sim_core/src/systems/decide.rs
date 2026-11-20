@@ -702,9 +702,14 @@ pub fn decide(
                 }
                 let mut rng = seed.agent_rng(clock.steps(), streams::DECIDE, i);
                 let rng: &mut dyn rand::RngCore = &mut rng;
-                decision
-                    .choice
-                    .rank(*rest, &options, &store.mind[i], rng)
+                let trade = store.guild[i].map(|g| g.domain);
+                let domain = |id: u32| db.recipes[jobs[(id / 2) as usize] as usize].domain;
+                params
+                    .decision
+                    .attendance
+                    .rank(trade, options, domain, |o| {
+                        decision.choice.rank(*rest, o, &store.mind[i], rng)
+                    })
                     .into_iter()
                     .map(|id| Opt {
                         job: id / 2,
@@ -798,6 +803,21 @@ pub fn decide(
             }
         }
         decisions.apprentices.sort_unstable();
+        // Days outside one's trade: a trigger to change it (systems::organize).
+        // A day of rest by choice does not count; a day of other work, or of
+        // wanting work and finding none, does.
+        for (k, &i) in idle.iter().enumerate() {
+            let Some(g) = store.guild[i] else { continue };
+            let off = match store.job_today[i] {
+                Some((r, _)) => db.recipes[r as usize].domain != g.domain,
+                None => !lists[k].is_empty(),
+            };
+            store.off_trade[i] = if off {
+                store.off_trade[i].saturating_add(1)
+            } else {
+                0
+            };
+        }
 
         // Every 30 days every workplace reconsiders its share of apprentice
         // places, at the day's first choices (there are none at night).
@@ -825,10 +845,23 @@ pub fn decide(
         for (&i, (rest, job_scores)) in idle.iter().zip(&scores) {
             let t = store.town[i] as usize;
             let mut rng = seed.agent_rng(clock.steps(), streams::DECIDE, i);
+            // Under trade attendance, a person with a trade weighs its open
+            // jobs only, and any job when it has none open (day labour).
+            let trade = store.guild[i]
+                .map(|g| g.domain)
+                .filter(|_| params.decision.attendance == crate::config::Attendance::Trade);
+            let own: Vec<u32> = trade.map_or_else(Vec::new, |d| {
+                open_jobs[t]
+                    .iter()
+                    .copied()
+                    .filter(|&r| db.recipes[r as usize].domain == d)
+                    .collect()
+            });
+            let jobs: &[u32] = if own.is_empty() { &open_jobs[t] } else { &own };
             let choice = ctx.pick(
                 store,
                 i,
-                &open_jobs[t],
+                jobs,
                 |r| open(&slots_left, &capacity, t, r),
                 *rest,
                 |r| job_scores[slot_of[t][r as usize] as usize],
@@ -872,6 +905,30 @@ pub fn decide(
             if let Some((r, _)) = store.job_today[i] {
                 demand[store.town[i] as usize][r as usize] += 1.0;
             }
+            // Days of work outside one's trade (systems::organize).
+            if let Some(g) = store.guild[i] {
+                store.off_trade[i] = match store.job_today[i] {
+                    Some((r, _)) if db.recipes[r as usize].domain != g.domain => {
+                        store.off_trade[i].saturating_add(1)
+                    }
+                    _ => 0,
+                };
+            }
+        }
+    }
+
+    // Places each trade left unfilled today, averaged over about a month.
+    let nd = db.domain_dirs.len();
+    for (t, town) in towns.0.iter_mut().enumerate() {
+        let mut open = vec![0.0f32; nd];
+        for (r, m) in db.recipes.iter().enumerate() {
+            if m.builds.is_none() {
+                open[m.domain as usize] += capacity[t][r].clamp(0.0, places_start[t][r]);
+            }
+        }
+        town.vacancies.resize(nd, 0.0);
+        for (v, o) in town.vacancies.iter_mut().zip(open) {
+            *v += (o - *v) * cal.smoothing(30.0);
         }
     }
 

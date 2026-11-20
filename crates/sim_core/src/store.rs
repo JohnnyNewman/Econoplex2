@@ -105,6 +105,10 @@ pub struct AgentStore {
     /// a simulated day (teams break up at the day's end) and go back to it
     /// if their team broke up during the day.
     pub job_today: Vec<Option<(u32, bool)>>,
+    /// Days in a row the person worked outside their trade or found no work
+    /// at all (a trigger to change trade).
+    #[serde(default)]
+    pub off_trade: Vec<u32>,
 }
 
 /// Everything needed to create an agent.
@@ -178,6 +182,7 @@ impl AgentStore {
         self.owned.push(Vec::new());
         self.rest_until.push(0);
         self.job_today.push(None);
+        self.off_trade.push(0);
         idx
     }
 
