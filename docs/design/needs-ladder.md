@@ -453,7 +453,7 @@ About 3–5 % of people with a trade change it in a year.
 
 8 seeds × 20 years, Trade against Free: population 1890 against 1793,
 starving 0.19 % against 0.40 %, glut 15 % against 5 %, masters 311 against 51.
-8 seeds × 30 years: population 2599, starving 0.12 %, food per head 6.4.
+8 seeds × 30 years: population 2520, starving 0.16 %, food per head 5.5.
 
 Findings:
 - Farmers stay farmers, so food piles up more.

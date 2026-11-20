@@ -1196,7 +1196,8 @@ fn a_broke_town_raises_taxes_and_mints() {
     params.start = sim_core::start::StartParams::Scenario;
     params.market.starting_coins = 0.0;
     let mut s = Simulation::new(db, params, &scenario);
-    for _ in 0..15 {
+    // Thirty days: with trades kept, the treasury runs dry a little later.
+    for _ in 0..30 {
         s.step();
     }
     let broke: Vec<usize> = (0..4)
