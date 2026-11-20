@@ -154,10 +154,14 @@ of winter. Food then sits in four places:
 - **The firms:** they hold none with `firms: Treasury`.
 
 The health measure `reserve` (in `econoplex-sim`) is all of these together:
-8.5-8.7 months now, against 5-6 before. Its band is 3-14 months:
+8.5-8.7 months now, against 5-6 before. Of the plan's 2-3 months, the
+granary alone holds 2.5-2.7, so it meets the goal; the market's bread and the
+larders come on top.
 
-- below 3, a town would not reach the first harvest with a margin;
-- above 14, food rots in store.
+- **Per seed** (30 years): 3.0-13.1 months at 300 steps a day, 4.1-13.6 at
+  10. Even the leanest seed keeps about 3 months.
+- **Band:** the band checks the 8-seed mean, so it is set from the means:
+  6.5-10.5 months, the measured 8.5-8.7 with 2 months either side.
 
 ## Trade between towns
 
