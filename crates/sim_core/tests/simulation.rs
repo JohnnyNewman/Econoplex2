@@ -1023,12 +1023,13 @@ fn public_spending_pays_out_the_treasury_surplus() {
 #[test]
 fn a_government_order_is_delivered_and_lifts_a_glut() {
     // Scarce goods (cloth sells at its highest price in Greenvale): the order takes
-    // the town's output into public use until it is filled.
+    // the town's output into public use until it is filled (in four years: the
+    // weavers' trade grows by apprentices and newcomers, not overnight).
     let base = with_orders(8, &[], 2);
     let db = base.world.resource::<sim_core::Db>();
     let cloth = db.content.product("cloth").unwrap() as usize;
     let plank = db.content.product("plank").unwrap() as usize;
-    let s = with_orders(8, &["procure Greenvale cloth 100"], 2);
+    let s = with_orders(8, &["procure Greenvale cloth 100"], 4);
     let town = &s.world.resource::<sim_core::Towns>().0[1];
     assert_eq!(town.procured[cloth], 100.0);
     assert!(
@@ -1145,6 +1146,9 @@ fn a_hungry_town_subsidizes_food_then_winds_it_down() {
     let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
     // Calibrated with first-come jobs: skilled matching keeps this town fed.
     params.decision.matching = sim_core::decision::matching::MatchingParams::FirstCome;
+    // and free job choice: the ruler's rule is tested, not how fast trades
+    // follow it.
+    params.decision.attendance = sim_core::config::Attendance::Free;
     // The town starts without bread: no steady-state start refilling it.
     params.start = sim_core::start::StartParams::Scenario;
     scenario.seed = 4;
@@ -3055,8 +3059,15 @@ fn state_without_eras(s: &Simulation) -> String {
 }
 
 fn sim_steps(seed: u64, steps_per_day: u32) -> Simulation {
+    sim_steps_with(seed, steps_per_day, "Trade")
+}
+
+fn sim_steps_with(seed: u64, steps_per_day: u32, attendance: &str) -> Simulation {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
-    let sets = [("time.steps_per_day".to_string(), steps_per_day.to_string())];
+    let sets = [
+        ("time.steps_per_day".to_string(), steps_per_day.to_string()),
+        ("decision.attendance".to_string(), attendance.to_string()),
+    ];
     let (db, params, mut scenario) =
         sim_core::load_with(&AssetPaths::from_root(&root), &sets).unwrap();
     assert_eq!(params.time.steps_per_day, steps_per_day);
@@ -3089,8 +3100,10 @@ fn two_step_sizes_give_close_results() {
     // The economy should not depend much on how finely a day is cut: the
     // same seed run at 30 and 120 steps a day ends with about as many people
     // and about as much food sold.
+    // With free job choice: in towns of 60, kept trades make the run path
+    // dependent (who happened to apprentice where), which swamps the step size.
     let summary = |spd: u32| {
-        let mut s = sim_steps(2, spd);
+        let mut s = sim_steps_with(2, spd, "Free");
         run_years(&mut s, 3);
         let alive = s.world.resource::<sim_core::AgentStore>().alive_count() as f64;
         let food: f64 = s
@@ -3161,4 +3174,40 @@ fn goods_made_per_day_do_not_depend_on_the_step_size() {
             db.content.products[p].id
         );
     }
+}
+
+#[test]
+fn people_keep_their_trade() {
+    // Trades are kept (plan Phase 3): from year 2 to year 5, fewer than 5 % of
+    // those with a trade a year change it.
+    let mut s = full(3);
+    run_years(&mut s, 2);
+    let trades = |s: &Simulation| -> std::collections::HashMap<u32, u32> {
+        let store = s.world.resource::<sim_core::AgentStore>();
+        (0..store.len())
+            .filter(|&i| store.alive[i])
+            .filter_map(|i| store.guild[i].map(|g| (store.entity[i].index_u32(), g.domain)))
+            .collect()
+    };
+    let before = trades(&s);
+    run_years(&mut s, 3);
+    let after = trades(&s);
+    let (kept, changed) = before
+        .iter()
+        .fold((0, 0), |(k, c), (e, d)| match after.get(e) {
+            Some(x) if x == d => (k + 1, c),
+            Some(_) => (k, c + 1),
+            None => (k, c),
+        });
+    let per_year = changed as f32 / (kept + changed).max(1) as f32 / 3.0;
+    eprintln!(
+        "kept {kept}, changed {changed}: {:.1} % a year",
+        100.0 * per_year
+    );
+    assert!(kept > 100, "too few people kept a trade: {kept}");
+    assert!(
+        per_year < 0.05,
+        "{:.1} % changed trade a year",
+        100.0 * per_year
+    );
 }

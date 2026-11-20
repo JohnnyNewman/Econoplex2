@@ -429,3 +429,34 @@ apprentices learn faster each.
 
 8 seeds x 20 years: population 1583, starving 0.66 %. 8 seeds x 30 years:
 population 2076, starving 0.47 %, food per head 5.6, diversity 24.9.
+
+## Working in one's trade, and when to change it (plan Phase 3, steps 3 and 4)
+
+`decision.attendance: Trade` (the default; `Free` is the old choice). A person
+with a trade weighs only its open jobs against resting. They take other work as
+day labour only when every place in their trade is taken, or their trade has no
+job open. People with no trade weigh every open job.
+
+A trade is changed only on a trigger, and the change costs rank: the person
+starts again as a member. There are two triggers:
+
+- **Out of work in the trade.** After `organize.switch_idle_years` (1) of
+  working outside the trade, or wanting work and finding none, the person moves
+  to the trade they have been doing instead. A day of rest by choice does not
+  count.
+- **A trade new to town.** A trade with no members that has had unfilled places
+  over the last month, and that pays at least
+  1 + `switch_premium` × (1 + years in trade / `master_years`, at most 2) times
+  the person's own trade (`switch_premium` 0.5).
+
+About 3–5 % of people with a trade change it in a year.
+
+8 seeds × 20 years, Trade against Free: population 1890 against 1793,
+starving 0.19 % against 0.40 %, glut 15 % against 5 %, masters 311 against 51.
+8 seeds × 30 years: population 2599, starving 0.12 %, food per head 6.4.
+
+Findings:
+- Farmers stay farmers, so food piles up more.
+- Markets answer more slowly. A government order for 100 cloth takes four
+  years to fill instead of two.
+- In towns of 60, runs depend on who happened to apprentice where.

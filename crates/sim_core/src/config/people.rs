@@ -48,6 +48,49 @@ pub struct DecisionParams {
     /// Component: which towns agents know about, and how well.
     #[serde(default)]
     pub knowledge: crate::decision::knowledge::KnowledgeParams,
+    /// Which jobs a person weighs each day.
+    #[serde(default)]
+    pub attendance: Attendance,
+}
+
+/// `decision.attendance` in models.ron: which jobs a person weighs each day.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Attendance {
+    /// Every open job in town.
+    Free,
+    /// A person with a trade works in it: they weigh only its jobs (against
+    /// resting), and take other work as day labour only when every place in
+    /// their trade is taken or their trade has no job open. People with no
+    /// trade weigh every open job.
+    #[default]
+    Trade,
+}
+
+impl Attendance {
+    /// Ranks `options` (job ids with scores) for a person in trade `trade`
+    /// whose job `id` belongs to trade `domain(id)`; `rank` is the choice rule.
+    pub fn rank(
+        self,
+        trade: Option<u32>,
+        options: Vec<(u32, f32)>,
+        domain: impl Fn(u32) -> u32,
+        mut rank: impl FnMut(&[(u32, f32)]) -> Vec<u32>,
+    ) -> Vec<u32> {
+        let Some(d) = trade.filter(|_| self == Attendance::Trade) else {
+            return rank(&options);
+        };
+        let (own, other): (Vec<_>, Vec<_>) = options.into_iter().partition(|o| domain(o.0) == d);
+        if own.is_empty() {
+            // Nothing open in the trade today: day labour.
+            return rank(&other);
+        }
+        let mut list = rank(&own);
+        if !list.is_empty() {
+            // Day labour if the trade's places are all taken.
+            list.extend(rank(&other));
+        }
+        list
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -137,6 +180,22 @@ pub struct OrganizeParams {
     /// beside them: a teacher's lesson is shared, 1 / (1 + crowding x (n - 1)).
     #[serde(default = "teaching_crowding")]
     pub teaching_crowding: f32,
+    /// Years without work in their trade after which a person changes trade.
+    #[serde(default = "switch_idle_years")]
+    pub switch_idle_years: f32,
+    /// How much more a recruiting trade must pay than a person's own before
+    /// they change to it, for a new member; doubled for a master, who gives up
+    /// their rank.
+    #[serde(default = "switch_premium")]
+    pub switch_premium: f32,
+}
+
+fn switch_idle_years() -> f32 {
+    1.0
+}
+
+fn switch_premium() -> f32 {
+    0.5
 }
 
 fn apprentices_per_master() -> u32 {

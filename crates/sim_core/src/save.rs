@@ -597,6 +597,7 @@ pub fn restore(
     store.larder.resize(store.len(), Vec::new());
     store.lived_in.resize(store.len(), Vec::new());
     store.owned.resize(store.len(), Vec::new());
+    store.off_trade.resize(store.len(), 0);
     store.armour.resize(store.len(), None);
     store.shield.resize(store.len(), None);
     store.mount.resize(store.len(), None);
