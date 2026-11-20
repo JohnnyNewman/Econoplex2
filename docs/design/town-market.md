@@ -103,6 +103,14 @@ Each day, for every ordinary good:
   - Final goods aim for `target_per_capita` (0.3) × residents; food gets both,
     with `food_target_per_capita` (3) × residents.
   - Plus `cover_days` of what households buy, plus open government orders.
+  - Kit (weapons, armour, shields, mounts) aims instead for what the
+    government keeps in reserve: its stockpile order, or one piece per
+    soldier it means to keep plus the levy reserve (`kit_reserve`). It is the
+    stock the kit's makers stop at, so the price falls once the armory holds
+    it. Until 2026-11-19 kit aimed for the per-resident target (for a sword
+    about twenty times the reserve), and stayed dear while armories filled to the stop
+    (`glut_factor` × the reserve): over 8 seeds and 30 years swords fell from
+    365 to 172 with the change.
 - **Pressure** = (target − stock) / target, clamped to −1..1.
 - **Price** × exp(`price_adjust` (0.05) × pressure): at most about 5 % a day,
   within `min_price_factor` (0.2) and `max_price_factor` (5) × base price.

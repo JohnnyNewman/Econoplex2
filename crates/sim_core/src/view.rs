@@ -100,6 +100,11 @@ pub struct TownView {
     /// Tools and weapons in the armory: (product def, count).
     #[serde(default)]
     pub armory: Vec<(u32, u32)>,
+    /// Crop standing on the town's fields, as a share of a year's growth
+    /// (`farming.rs`): rises from spring, drops as it is reaped. 0 for a town
+    /// without fields.
+    #[serde(default)]
+    pub crops: f32,
 }
 
 /// What a person is doing, as a view sees it.
@@ -270,6 +275,48 @@ pub fn town_skills(world: &World, town: u16) -> TownSkills {
     TownSkills { level, lit }
 }
 
+/// Per town, the crop standing on its fields as a share of a year's growth
+/// (sum over its crop sites; the 3D view draws the fields by it).
+fn crops_by_town(world: &World) -> Vec<f32> {
+    let (Some(towns), Some(db), Some(params)) = (
+        world.get_resource::<Towns>(),
+        world.get_resource::<Db>(),
+        world.get_resource::<crate::world::Params>(),
+    ) else {
+        return Vec::new();
+    };
+    let crops = &params.farming.crops;
+    let is_crop: Vec<bool> = db
+        .content
+        .nature
+        .iter()
+        .map(|k| crops.contains(&k.id))
+        .collect();
+    let cal = params.calendar();
+    let year_days = cal.days() * cal.per_year as f32;
+    towns
+        .0
+        .iter()
+        .map(|t| {
+            let (mut standing, mut year) = (0.0, 0.0);
+            for &e in &t.nature_sites {
+                let Some(n) = world.get::<crate::components::NaturalResource>(e) else {
+                    continue;
+                };
+                if is_crop.get(n.kind as usize).copied().unwrap_or(false) {
+                    standing += n.amount;
+                    year += n.regrowth * year_days;
+                }
+            }
+            if year > 0.0 {
+                standing / year
+            } else {
+                0.0
+            }
+        })
+        .collect()
+}
+
 impl ViewSnapshot {
     /// Copy what a view needs out of the world. `seen` says how much of the
     /// event log and history the view already has; it is advanced past what is
@@ -278,6 +325,7 @@ impl ViewSnapshot {
         let clock = world.resource::<SimClock>();
         let needs = needs_by_town(world);
         let armories = armory_counts(world);
+        let crops = crops_by_town(world);
         let towns = world.resource::<Towns>();
         let db = world.resource::<Db>();
         let store = world.resource::<crate::AgentStore>();
@@ -361,6 +409,7 @@ impl ViewSnapshot {
                     cold_days: t.cold_days,
                     starving: t.starving,
                     armory: armories.get(ti).cloned().unwrap_or_default(),
+                    crops: crops.get(ti).copied().unwrap_or(0.0),
                     name: t.name.clone(),
                     pos: t.pos,
                     population: t.residents.len() as u32,

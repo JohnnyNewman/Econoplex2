@@ -80,6 +80,73 @@ fn biome_at(xz: vec2<f32>) -> vec4<f32> {
     return mix(top, bottom, f.y);
 }
 
+// Step 15: the share of the harvest in at the town nearest to `xz`
+// (fields.rs); with no towns, the calendar's (mid-autumn: all in).
+fn reaped_near(xz: vec2<f32>) -> f32 {
+    var best = 1e9;
+    var r = smoothstep(0.55, 0.7, env.fog.debug.y);
+    for (var k = 0u; k < min(u32(terrain.fields.x), 16u); k++) {
+        let d = distance(xz, terrain.towns[k].xy);
+        if d < best {
+            best = d;
+            r = terrain.towns[k].w;
+        }
+    }
+    return r;
+}
+
+// Step 15: one plot of the fields at `xz` on day `year` of the year (0
+// midwinter, 0.5 midsummer) with the share `reaped` of its town's harvest in.
+// Each 6x6 plot hashes to a crop (grain, a green crop, fallow), a row
+// direction, a small delay in the calendar and its turn in the harvest.
+fn field_colour(xz: vec2<f32>, year: f32, reaped: f32) -> vec3<f32> {
+    let cell = floor(xz / 6.0);
+    let kind = hash(cell);
+    let late = hash(cell + vec2(17.0, 3.0));
+    let turn = hash(cell + vec2(5.0, 29.0));
+    let local = fract(xz / 6.0);
+    // Rows 0.45 apart along x or z: 0 on a row, 1 between rows.
+    let along = select(local.x, local.y, late > 0.5) * 6.0 / 0.45;
+    let gap = smoothstep(0.2, 0.45, abs(fract(along) - 0.5));
+    let y = year + (late - 0.5) * 0.05;
+
+    let soil = vec3(0.36, 0.27, 0.19);
+    let ploughed = soil * (1.0 - 0.18 * gap);            // furrows
+    var c = ploughed;
+    if kind < 0.15 {
+        // Fallow: rough pasture all year.
+        c = vec3(0.40, 0.52, 0.24);
+    } else {
+        // Sprouts from early spring, rows close up by late spring.
+        let cover = smoothstep(0.16, 0.36, y);
+        var crop = vec3(0.30, 0.48, 0.16);
+        if kind < 0.6 {
+            // Grain: green, then gold through summer.
+            crop = mix(crop, vec3(0.78, 0.58, 0.20), smoothstep(0.4, 0.56, y));
+        } else {
+            // A green crop (flax, roots): stays green, darker; flax flowers
+            // blue for a few weeks in early summer.
+            crop = vec3(0.22, 0.40, 0.16);
+            let bloom = smoothstep(0.38, 0.42, y) * (1.0 - smoothstep(0.46, 0.5, y));
+            crop = mix(crop, vec3(0.42, 0.50, 0.78), bloom * step(kind, 0.75) * 0.7);
+        }
+        // Young rows show the soil between them; a full crop hides it, but
+        // for a faint shade along its rows.
+        crop *= 1.0 - 0.12 * gap;
+        c = mix(ploughed, crop, cover * mix(1.0 - gap, 1.0, cover * cover));
+        // Reaped plot by plot as the town takes its harvest in: stubble,
+        // ploughed again plot by plot in late autumn.
+        let stubble = mix(vec3(0.62, 0.52, 0.30), soil, 0.3 * gap);
+        let cut = step(turn, reaped) * step(0.45, y);
+        c = mix(c, stubble, cut);
+        let plough = step(turn, smoothstep(0.78, 0.92, y));
+        c = mix(c, ploughed, plough * cut);
+    }
+    // Plot edges: a thin grass strip.
+    let e = min(min(local.x, 1.0 - local.x), min(local.y, 1.0 - local.y)) * 6.0;
+    return mix(c, vec3(0.40, 0.55, 0.25), 1.0 - smoothstep(0.06, 0.2, e));
+}
+
 @fragment
 fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> FragmentOutput {
     var pbr = pbr_input_from_standard_material(in, is_front);
@@ -90,11 +157,8 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     // Painterly biomes: big soft patches from noise, two shades per biome.
     let k = noise(p.xz / 12.0) * 0.7 + noise(p.xz / 3.0) * 0.3;
     let meadow = mix(vec3(0.36, 0.55, 0.24), vec3(0.58, 0.68, 0.32), k);
-    // Fields: a patchwork, one crop per 6x6 plot (hash of the plot index).
-    let plot = hash(floor(p.xz / 6.0));
-    var field = vec3(0.86, 0.74, 0.34);                 // ripe grain
-    if plot < 0.33 { field = vec3(0.55, 0.68, 0.28); }  // young crop
-    else if plot < 0.66 { field = vec3(0.72, 0.58, 0.32); } // stubble
+    // Step 15: fields through the farming year, one crop per 6x6 plot.
+    let field = field_colour(p.xz, env.fog.debug.y, reaped_near(p.xz));
     let water_bed = vec3(0.30, 0.42, 0.40);
     let b = biome_at(p.xz);
     var albedo = meadow * b.r + field * b.g + water_bed * b.b;
@@ -107,7 +171,8 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     albedo = mix(albedo, rock, max(smoothstep(0.25, 0.45, slope), high * 0.8));
 
     // Step 11: the season and the weather (meadows and fields are foliage).
-    albedo = seasonal(albedo, n, p, 0.5 * (b.r + b.g) * (1.0 - smoothstep(0.25, 0.45, slope)), env.fog);
+    // Fields keep their own year (step 15): only the meadow is foliage here.
+    albedo = seasonal(albedo, n, p, 0.5 * b.r * (1.0 - smoothstep(0.25, 0.45, slope)), env.fog);
 
     // Culture overlay (M6): the land around each town takes the colour of its
     // culture, fading out toward the edge of its radius. Where two towns'

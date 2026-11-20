@@ -212,7 +212,14 @@ pub fn settle(
                     } else {
                         per_capita * pop
                     };
-                let target = wanted.max(1.0) + town.policy.ordered(p);
+                let target = if db.category(p as u32) == Category::Weapon {
+                    // Kit is wanted up to what the government keeps in
+                    // reserve, the stock its makers stop at
+                    // (`decide::target_stock`), not a stock per resident.
+                    super::decide::target_stock(&db, town, &params, p)
+                } else {
+                    wanted.max(1.0) + town.policy.ordered(p)
+                };
                 // With workshops as firms, the market buys from their stock what it
                 // wants, while the treasury can pay, and fills government orders.
                 if mp.firms.on()
