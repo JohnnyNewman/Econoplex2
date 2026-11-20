@@ -15,9 +15,18 @@
 // A change that is meant to move a result outside its band (for example the
 // food work, which should raise food per head well above 5 days) changes the
 // band in the same pull request, and says so in its description.
+//
+// Food yields (2026-11-19, docs/design/food-yields.md): 8 seeds x 30 years
+// give food per head 6.3 (10 steps a day) and 7.0 (300), inside the old band.
+// `reserve` is the food the towns hold as the year closes, at the end of
+// winter, in months of their people's food. The 8-seed mean is 8.5 (10 steps
+// a day) and 8.7 (300); the granary holds 2.5-2.7 months of it, the plan's
+// 2-3. Single seeds range from 3.0 to 13.6 months, but the band checks the
+// mean, so it is the measured means with 2 months either side.
 {
     "pop": (1500, 3200),
     "starve%": (0, 2.5),
     "food/cap": (2.0, 9.0),
     "div": (18, 32),
+    "reserve": (6.5, 10.5),
 }

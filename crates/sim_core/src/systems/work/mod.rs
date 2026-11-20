@@ -378,6 +378,8 @@ pub fn produce(
                 // Worker-days these runs took.
                 let days = n as f32 * team_days;
                 town.work_days[0] += days;
+                town.recipe_days_this_year.resize(db.recipes.len(), 0.0);
+                town.recipe_days_this_year[r as usize] += days;
                 let glut = m.builds.is_none()
                     && !m.outputs.is_empty()
                     && m.outputs.iter().all(|&(p, _)| {

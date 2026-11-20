@@ -59,18 +59,24 @@ struct Summary {
     happiness: f64,
     /// Kinds of goods a town made in the last five years (town mean).
     capability: f64,
+    /// Months of food per resident the towns hold as the year closes, at the
+    /// end of winter (market, granary, firms and larders).
+    reserve_months: f64,
+    /// Shares of last year's worker-days on the food chain and on farming.
+    food_work: f64,
+    farm_work: f64,
     ms_per_tick: f64,
 }
 
 /// The table's column names; health bands name metrics by these.
-pub const COLUMNS: [&str; 22] = [
+pub const COLUMNS: [&str; 25] = [
     "pop", "starve%", "food/cap", "div", "ECI rng", "spec", "masters", "swords", "wealth", "gini",
     "raids", "conq", "revolts", "ruled%", "moves", "glut%", "gwork%", "hh use", "in use", "happy",
-    "capab", "ms/day",
+    "capab", "reserve", "foodwk%", "farmwk%", "ms/day",
 ];
 
 impl Summary {
-    fn values(&self) -> [f64; 22] {
+    fn values(&self) -> [f64; 25] {
         [
             self.population,
             self.starving * 100.0,
@@ -93,6 +99,9 @@ impl Summary {
             self.input_use,
             self.happiness,
             self.capability,
+            self.reserve_months,
+            self.food_work * 100.0,
+            self.farm_work * 100.0,
             self.ms_per_tick,
         ]
     }
@@ -170,6 +179,16 @@ impl Summary {
             .sum::<f64>()
             / pop;
         s.capability = last.towns.iter().map(|t| t.capability as f64).sum::<f64>() / towns;
+        let per_head = |f: &dyn Fn(&sim_core::metrics::TownStats) -> f32| {
+            last.towns
+                .iter()
+                .map(|t| f(t) as f64 * t.population as f64)
+                .sum::<f64>()
+                / pop
+        };
+        s.reserve_months = per_head(&|t| t.reserve_months);
+        s.food_work = per_head(&|t| t.food_work_share);
+        s.farm_work = per_head(&|t| t.farm_work_share);
         s.wealth_gini = gini(
             &last
                 .towns
@@ -327,7 +346,7 @@ pub fn run(
     println!();
     let mut means = Vec::new();
     for c in 0..settings.len() {
-        let rows: Vec<[f64; 22]> = (0..jobs.len())
+        let rows: Vec<[f64; 25]> = (0..jobs.len())
             .filter(|&j| jobs[j].0 == c)
             .map(|j| results[j].values())
             .collect();
@@ -381,6 +400,9 @@ pub fn run(
             "input_use",
             "happiness",
             "capability",
+            "reserve_months",
+            "food_work",
+            "farm_work",
             "ms_per_tick",
         ];
         writeln!(
@@ -401,6 +423,8 @@ pub fn run(
             v[13] /= 100.0;
             v[15] /= 100.0;
             v[16] /= 100.0;
+            v[22] /= 100.0;
+            v[23] /= 100.0;
             row.extend(v.iter().map(|x| format!("{x:.4}")));
             writeln!(f, "{}", row.join(","))?;
         }
