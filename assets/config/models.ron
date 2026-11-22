@@ -278,7 +278,11 @@
     organize: (interval: 2, guild_threshold: 0.55, apprentices_per_master: 3, master_years: 8.0, teaching_crowding: 0.3,
         switch_idle_years: 1.0, switch_premium: 0.5, trade_growth: 0.1, new_trade_members: 3),
 
-    work: (work_exponent: 0.85, wage_share: 0.5),
+    // contribution: SkillPay: each member is paid by their own chance of doing
+    // the job right against the team's best (rank follows years, and skill
+    // with it); Skill: that also in the work rate (members ^ work_exponent);
+    // Heads: every member counts as one.
+    work: (work_exponent: 0.85, wage_share: 0.5, contribution: SkillPay),
 
     // Squads and raids. Soldiers are paid from the treasury, armed with longswords from
     // the armory, and learn Fighting by drilling. A town raids a weaker neighbor to

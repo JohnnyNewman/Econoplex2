@@ -3301,3 +3301,27 @@ fn people_keep_their_trade() {
         100.0 * per_year
     );
 }
+
+#[test]
+fn the_grown_population_starts_with_masters_and_apprentices() {
+    // The adults at the start have been in their trade since they came of
+    // age, so the old are masters from the first year and take apprentices.
+    use sim_core::store::Role;
+    let mut s = full(5);
+    run_years(&mut s, 1);
+    let store = s.world.resource::<sim_core::AgentStore>();
+    let count = |role: Role| {
+        (0..store.len())
+            .filter(|&i| store.alive[i] && store.guild[i].is_some_and(|g| g.role == role))
+            .count()
+    };
+    let (masters, members, apprentices) = (
+        count(Role::Master),
+        count(Role::Member),
+        count(Role::Apprentice),
+    );
+    eprintln!("masters {masters}, members {members}, apprentices {apprentices}");
+    assert!(masters > 50, "only {masters} masters after a year");
+    assert!(members > 0, "no members");
+    assert!(apprentices > 0, "no apprentices after a year");
+}

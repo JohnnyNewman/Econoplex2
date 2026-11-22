@@ -221,7 +221,7 @@ pub fn produce(
             for &w in &workers {
                 store.worked_today[w as usize] = Some(r);
             }
-            let rate = (workers.len() as f32).powf(params.work.work_exponent);
+            let rate = team_rate(store, &db, &models, &params, r, &workers);
             if worked > 0.0 {
                 for &w in &workers {
                     let st = &mut store.state[w as usize];
@@ -354,7 +354,7 @@ pub fn produce(
             let n = workers.len();
             // Days the team worked on it (a run's success or failure cheers or
             // annoys once, as a day's work did).
-            let rate_day = (n as f32).powf(params.work.work_exponent);
+            let rate_day = team_rate(store, &db, &models, &params, r, &workers);
             // Days each member worked for these runs.
             let team_days = task.batches as f32 * m.duration / rate_day;
             let uses = {
@@ -593,11 +593,18 @@ pub fn produce(
                     .filter(|w| parts.trainees.contains(w))
                     .collect();
                 let weight = (n as f32 - trainees.len() as f32 * (1.0 - aw)) / n as f32;
+                // Each member's share of the pay: their contribution, an
+                // apprentice's times `apprentice_wage`.
+                let shares: Vec<f32> = contributions(store, &db, &models, &params, r, &workers)
+                    .into_iter()
+                    .zip(&workers)
+                    .map(|(c, w)| if trainees.contains(w) { c * aw } else { c })
+                    .collect();
                 claims.push(Claim {
                     town: t,
                     recipe: r,
                     workers: workers.clone(),
-                    trainees,
+                    shares,
                     wage: (share * (value - input_cost)).max(0.0) * weight,
                     subsidy,
                     days,
@@ -619,7 +626,7 @@ pub fn produce(
                     town: t,
                     recipe: r,
                     workers: workers.clone(),
-                    trainees: Vec::new(),
+                    shares: vec![1.0; workers.len()],
                     wage: 0.0,
                     subsidy: 0.0,
                     days,
@@ -693,7 +700,7 @@ pub fn produce(
                     models.quality.step_quality(eff, m.difficulty),
                     task.input_quality,
                 );
-                let rate = (workers.len() as f32).powf(params.work.work_exponent);
+                let rate = team_rate(store, &db, &models, &params, task.recipe, &workers);
                 log.events.push(WorkEvent {
                     recipe: task.recipe,
                     town: task.town,
@@ -716,14 +723,7 @@ pub fn produce(
         }
     }
 
-    settle_wages(
-        claims,
-        &mut towns,
-        store,
-        &decision,
-        params.decision.matching.apprentice_wage(),
-        params.market.firms,
-    );
+    settle_wages(claims, &mut towns, store, &decision, params.market.firms);
 }
 
 /// A finished step's claim on its town market.
@@ -731,8 +731,8 @@ struct Claim {
     town: usize,
     recipe: u32,
     workers: Vec<u32>,
-    /// Workers paid as apprentices.
-    trainees: Vec<u32>,
+    /// Each worker's share of the pay, in `workers` order.
+    shares: Vec<f32>,
     wage: f32,
     subsidy: f32,
     /// Days the team worked on it.
@@ -776,6 +776,59 @@ fn team_skill(
         .sum::<f32>()
         / n as f32;
     (prof + pb) * sf
+}
+
+/// How much each member of a team counts (`work.contribution`): under
+/// SkillPay and Skill their own chance of doing recipe `r` right over the
+/// team's best; under Heads one each.
+pub(super) fn contributions(
+    store: &AgentStore,
+    db: &Db,
+    models: &Models,
+    params: &Params,
+    r: u32,
+    workers: &[u32],
+) -> Vec<f32> {
+    if params.work.contribution == crate::config::Contribution::Heads {
+        return vec![1.0; workers.len()];
+    }
+    let m = &db.recipes[r as usize];
+    let own: Vec<f32> = workers
+        .iter()
+        .map(|&w| {
+            let i = w as usize;
+            let cap = store.effective_cap(i);
+            let eff = (dot(&cap, &m.skill)
+                + physique_bonus(&store.phys[i], m, params.physique.weight))
+                * state_factor(&store.state[i], &params.needs);
+            models.success.probability(eff, m.difficulty)
+        })
+        .collect();
+    let best = own.iter().copied().fold(0.0f32, f32::max);
+    if best <= 1e-6 {
+        return vec![1.0; workers.len()];
+    }
+    own.iter().map(|c| (c / best).max(0.05)).collect()
+}
+
+/// A team's work rate per day: its members, each counted by their
+/// contribution, to the power `work_exponent`.
+pub(super) fn team_rate(
+    store: &AgentStore,
+    db: &Db,
+    models: &Models,
+    params: &Params,
+    r: u32,
+    workers: &[u32],
+) -> f32 {
+    let heads: f32 = if params.work.contribution == crate::config::Contribution::Skill {
+        contributions(store, db, models, params, r, workers)
+            .iter()
+            .sum()
+    } else {
+        workers.len() as f32
+    };
+    heads.max(1e-3).powf(params.work.work_exponent)
 }
 
 /// Days of practice one run gives its team (`rate` = n^work_exponent): its

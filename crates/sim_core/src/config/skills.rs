@@ -74,4 +74,26 @@ pub struct WorkParams {
     pub work_exponent: f32,
     /// Share of the output's market value paid to the workers.
     pub wage_share: f32,
+    /// How much each member of a team counts, in its work rate and its pay.
+    #[serde(default)]
+    pub contribution: Contribution,
+}
+
+/// `work.contribution` in models.ron: how much each member of a team counts.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Contribution {
+    /// Every member counts as one worker and is paid an equal share
+    /// (apprentices `apprentice_wage` of one).
+    Heads,
+    /// Every member counts as one worker in the team's work rate, and is paid
+    /// by their own chance of doing the job right against the team's best (an
+    /// apprentice's times `apprentice_wage`). Pay so rises with skill, and with
+    /// rank, which follows years in the trade.
+    #[default]
+    SkillPay,
+    /// As SkillPay, and each member also counts by that contribution in the
+    /// team's work rate: an apprentice at a third of the master's chance is a
+    /// third of a worker. (Costs about 12 % of the heads and, with today's
+    /// recipes, a third of the population: for fine-tuning.)
+    Skill,
 }

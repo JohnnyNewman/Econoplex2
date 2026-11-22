@@ -464,3 +464,28 @@ Findings:
 - Markets answer more slowly. A government order for 100 cloth takes four
   years to fill instead of two.
 - In towns of 60, runs depend on who happened to apprentice where.
+
+## Rank in output and pay (plan Phase 3, step 5)
+
+Rank follows years in the trade, and so does skill, so rank works through
+each worker's own skill rather than as a fixed bonus:
+
+- **Output.** A team's chance of success and the quality of its work come
+  from its pooled skill, which is set by its best member: a master raises them.
+- **Pay** (`work.contribution: SkillPay`, the default). Each member of a team
+  is paid by their own chance of doing the job right against the team's best.
+  An apprentice is paid that times `apprentice_wage`. `Heads` pays equal
+  shares.
+- **Work rate.** `Skill` would also count each member by that contribution in
+  the team's work rate, so a weak hand is part of a worker. It costs only
+  about 12 % of the heads, yet cuts population from 1950 to 1304 (8 seeds × 20
+  years) with today's recipes. It stays an option for fine-tuning.
+
+Bug fix from step 1: the grown population at the start is backdated to the
+day it came of age, but the day was unsigned and was cut off at day 0. So there
+were no masters, and no apprentice places, for the first 8 years.
+`GuildLink.since` is now signed.
+
+8 seeds × 20 years, SkillPay against Heads: population 1964 against 1979,
+starving 0.09 % against 0.04 %, gini 0.54 against 0.51. 8 seeds × 30 years:
+population 2611, starving 0.09 %, food per head 4.3, reserve 6.1 months.

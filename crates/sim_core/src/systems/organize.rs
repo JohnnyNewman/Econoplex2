@@ -112,8 +112,9 @@ pub fn organize(
 
         // --- trade and rank: a trade is kept; the young enter it as apprentices
         // into an open place; rank rises with years in it.
-        let years_in = |since: u64| (clock.tick.saturating_sub(since)) as f32 / dpy.max(1) as f32;
-        let rank = |since: u64| {
+        let now = clock.tick as i64;
+        let years_in = |since: i64| (now - since).max(0) as f32 / dpy.max(1) as f32;
+        let rank = |since: i64| {
             if age < params.life.adult_age {
                 Role::Apprentice
             } else if years_in(since) >= op.master_years {
@@ -122,7 +123,7 @@ pub fn organize(
                 Role::Member
             }
         };
-        let desired: Option<(u32, Role, u64)> = match store.guild[i] {
+        let desired: Option<(u32, Role, i64)> = match store.guild[i] {
             Some(g)
                 if age >= params.life.adult_age
                     && params.decision.attendance == crate::config::Attendance::Trade =>
@@ -156,7 +157,7 @@ pub fn organize(
                         vacancy[t][d] -= 1.0;
                         intake[t][d] -= 1.0;
                         store.off_trade[i] = 0;
-                        Some((d as u32, Role::Member, clock.tick))
+                        Some((d as u32, Role::Member, now))
                     }
                     None => Some((g.domain, rank(g.since), g.since)),
                 }
@@ -177,7 +178,7 @@ pub fn organize(
                 });
                 pick.map(|d| {
                     places[t][d as usize] -= 1;
-                    (d, Role::Apprentice, clock.tick)
+                    (d, Role::Apprentice, now)
                 })
             }
             None if age >= params.life.adult_age => {
@@ -190,10 +191,10 @@ pub fn organize(
                 (prof >= op.guild_threshold).then(|| {
                     let since = if clock.tick < dpy as u64 {
                         let adult_days =
-                            ((age - params.life.adult_age).max(0.0) * dpy as f32) as u64;
-                        clock.tick.saturating_sub(adult_days)
+                            ((age - params.life.adult_age).max(0.0) * dpy as f32) as i64;
+                        now - adult_days
                     } else {
-                        clock.tick
+                        now
                     };
                     (best, rank(since), since)
                 })
@@ -212,7 +213,7 @@ pub fn organize(
                         agent: i as u32,
                         org,
                         role,
-                        since_day: since,
+                        since_day: since.max(0) as u64,
                     })
                     .id();
                 store.guild[i] = Some(GuildLink {

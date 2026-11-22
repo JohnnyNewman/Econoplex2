@@ -60,6 +60,7 @@ pub fn assign(
     mut towns: ResMut<Towns>,
     db: Res<Db>,
     params: Res<Params>,
+    models: Res<crate::models::Models>,
     decisions: Res<Decisions>,
     clock: Res<SimClock>,
     seed: Res<SimSeed>,
@@ -184,7 +185,7 @@ pub fn assign(
         }
         for team in &trusted_teams(store, &agents, m.max_team, &mut place) {
             // A team's batch covers several runs of a short recipe.
-            let rate = (team.len() as f32).powf(params.work.work_exponent) * days;
+            let rate = super::team_rate(store, &db, &models, &params, r, team) * days;
             let mut batches = ((rate / m.duration).floor() as u32).max(1);
             let firms_on = params.market.firms.on();
             for &(p, q) in &m.inputs {
