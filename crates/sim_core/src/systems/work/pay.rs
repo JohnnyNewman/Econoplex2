@@ -64,7 +64,6 @@ pub(super) fn settle_wages(
     towns: &mut Towns,
     store: &mut AgentStore,
     decision: &crate::decision::DecisionModels,
-    apprentice_wage: f32,
     firms: crate::firms::FirmsParams,
 ) {
     let n_towns = towns.0.len();
@@ -148,8 +147,10 @@ pub(super) fn settle_wages(
         let mut to_share = crate::coin::Coin::from_coins(wage)
             + crate::coin::Coin::from_coins(subsidy)
             - crate::coin::Coin::from_coins(tax);
-        // Shares: 1 per regular worker, `apprentice_wage` per apprentice.
-        let shares = c.workers.len() as f32 - c.trainees.len() as f32 * (1.0 - apprentice_wage);
+        // Shares: each worker's contribution (`work.contribution`), an
+        // apprentice's times `apprentice_wage`. The public rate is what a full
+        // share earns.
+        let shares: f32 = c.shares.iter().sum();
         let each = (pay - tax) / shares.max(1e-6);
         let per_day = each / c.days;
         town.index_year.worker_days += shares * c.days;
@@ -157,13 +158,9 @@ pub(super) fn settle_wages(
         let smoothing = 1.0 - (1.0 - PAY_RATE_SMOOTHING).powi(c.runs.max(1) as i32);
         let rate = &mut town.pay_rate[c.recipe as usize];
         *rate += smoothing * (per_day - *rate);
-        for &w in &c.workers {
+        for (&w, &share) in c.workers.iter().zip(&c.shares) {
             let wi = w as usize;
-            let own = if c.trainees.contains(&w) {
-                each * apprentice_wage
-            } else {
-                each
-            };
+            let own = each * share;
             let own_coin = crate::coin::Coin::from_coins(own);
             store.wealth[wi] += own_coin;
             to_share -= own_coin;

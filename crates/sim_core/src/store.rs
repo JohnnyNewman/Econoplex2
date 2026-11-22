@@ -38,7 +38,8 @@ pub struct GuildLink {
     pub role: Role,
     /// Day the person entered this trade (rank rises with years in it).
     #[serde(default)]
-    pub since: u64,
+    /// Before the game began for the grown population at the start: negative.
+    pub since: i64,
 }
 
 #[derive(Resource, Default, serde::Serialize, serde::Deserialize)]
