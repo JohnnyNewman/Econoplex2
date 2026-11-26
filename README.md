@@ -62,6 +62,8 @@ cargo run --release -p sim_cli -- --embedding
 
 # The technology tree as a Mermaid flowchart (kept in docs/tech-tree.mmd; CI checks it is current)
 cargo run --release -p sim_cli -- --tech-tree > docs/tech-tree.mmd
+# The knowledge graph of recipe-skills (kept in docs/tech-graph.mmd; CI checks it is current)
+cargo run --release -p sim_cli -- --tech-graph > docs/tech-graph.mmd
 
 # The final state hash, for determinism checks
 cargo run --release -p sim_cli -- --years 5 --hash
@@ -200,6 +202,14 @@ earlier fixed 32-wide arrays), 7.8 ms at 40 and 9.0 ms at 64.
 
 The full chart is [docs/tech-tree.mmd](docs/tech-tree.mmd), written by
 `econoplex-sim --tech-tree` (GitHub draws it when you open the file).
+
+Each recipe is also a recipe-skill, one node of the knowledge graph
+([docs/tech-graph.mmd](docs/tech-graph.mmd), written by `econoplex-sim --tech-graph`).
+A recipe's `requires` lists the recipe-skills a person must know first: every entry must
+be met, and an entry that is a list is met by any one of its ids. Recipes that need
+nothing start the graph, and validation checks that every recipe can be learned from
+them. Nothing reads the graph yet: it is step 1 of [inventions](docs/design/inventions.md),
+where people will know recipe-skills, learn them from masters and invent new ones.
 
 The content (`assets/content/*.ron`) spans five eras: **wood and grain**, **stone,
 clay and cloth**, **bronze**, **iron and steel**, and **early industry**. Each file

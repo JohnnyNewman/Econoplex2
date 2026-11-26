@@ -1,4 +1,5 @@
-//! Content validation: broken references, cycles, unreachable products.
+//! Content validation: broken references, cycles, unreachable products, recipe-skills
+//! that cannot be learned.
 
 use crate::{dims, Category, Content};
 
@@ -47,6 +48,33 @@ pub fn reachable_with(c: &Content, nature: Option<&[bool]>) -> Vec<bool> {
 
 pub fn reachable(c: &Content) -> Vec<bool> {
     reachable_with(c, None)
+}
+
+/// Which recipe-skills can be learned at all: the fixpoint from the recipes with no
+/// `requires`, adding every recipe whose requirements are each met by a learnable one.
+/// A loop in `requires` leaves its members unlearnable. Unknown ids never count as met.
+pub fn learnable(c: &Content) -> Vec<bool> {
+    let mut known = vec![false; c.recipes.len()];
+    loop {
+        let mut changed = false;
+        for (i, rec) in c.recipes.iter().enumerate() {
+            if known[i] {
+                continue;
+            }
+            let met = rec.requires.iter().all(|req| {
+                req.options()
+                    .iter()
+                    .any(|id| c.recipe(id).is_some_and(|j| known[j as usize]))
+            });
+            if met {
+                known[i] = true;
+                changed = true;
+            }
+        }
+        if !changed {
+            return known;
+        }
+    }
 }
 
 pub fn validate(c: &Content) -> Report {
@@ -175,6 +203,41 @@ pub fn validate(c: &Content) -> Report {
         if rec.outputs.is_empty() {
             r.errors.push(format!("recipe `{}` has no outputs", rec.id));
         }
+        if rec.level == 0 {
+            r.errors.push(format!(
+                "recipe `{}` has level 0 (levels start at 1)",
+                rec.id
+            ));
+        }
+        for req in &rec.requires {
+            if req.options().is_empty() {
+                r.errors
+                    .push(format!("recipe `{}` has an empty `requires` entry", rec.id));
+            }
+            for id in req.options() {
+                if c.recipe(id).is_none() {
+                    r.errors.push(format!(
+                        "recipe `{}` requires unknown recipe `{id}`",
+                        rec.id
+                    ));
+                } else if *id == rec.id {
+                    r.errors
+                        .push(format!("recipe `{}` requires itself", rec.id));
+                }
+            }
+        }
+    }
+    if r.errors.is_empty() {
+        let known = learnable(c);
+        for (i, rec) in c.recipes.iter().enumerate() {
+            if !known[i] {
+                r.errors.push(format!(
+                    "recipe `{}` cannot be learned: its `requires` never get met from the \
+                     recipes that need nothing (a loop?)",
+                    rec.id
+                ));
+            }
+        }
     }
 
     for p in &c.products {
@@ -256,4 +319,107 @@ fn find_skill_cycle(c: &Content) -> Option<Vec<String>> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{Content, ContentFile, Requirement};
+
+    fn content(recipes: &str) -> Result<Content, crate::LoadError> {
+        let text = format!(
+            r#"(
+                skills: [(id: "craft", name: "Craft", domain: "craft")],
+                products: [(id: "thing", name: "Thing", category: Material, base_price: 1.0)],
+                recipes: [{recipes}],
+            )"#
+        );
+        let file: ContentFile = ron::from_str(&text).expect("test content parses");
+        Content::from_files(vec![file])
+    }
+
+    fn recipe(id: &str, requires: &str) -> String {
+        format!(
+            r#"(id: "{id}", name: "{id}", skill: "craft", difficulty: 0.1, outputs: [("thing", 1)],
+                duration: 1.0, requires: [{requires}]),"#
+        )
+    }
+
+    #[test]
+    fn requires_parses_single_ids_and_alternatives() {
+        let c = content(
+            &[
+                recipe("a", ""),
+                recipe("b", ""),
+                recipe("c", r#""a", ["a", "b"]"#),
+            ]
+            .concat(),
+        )
+        .expect("valid");
+        let r = &c.recipes[c.recipe("c").unwrap() as usize];
+        assert_eq!(r.level, 1);
+        assert_eq!(
+            r.requires,
+            vec![
+                Requirement::One("a".into()),
+                Requirement::AnyOf(vec!["a".into(), "b".into()])
+            ]
+        );
+    }
+
+    #[test]
+    fn an_alternative_route_is_enough() {
+        // `c` needs `a` or `d`; `d` is in a loop with `e`, but `a` can be learned.
+        let c = content(
+            &[
+                recipe("a", ""),
+                recipe("c", r#"["a", "d"]"#),
+                recipe("d", r#""e""#),
+                recipe("e", r#""d""#),
+            ]
+            .concat(),
+        );
+        let err = c.expect_err("the loop is invalid").to_string();
+        assert!(err.contains("`d` cannot be learned"), "{err}");
+        assert!(err.contains("`e` cannot be learned"), "{err}");
+        assert!(!err.contains("`c` cannot be learned"), "{err}");
+    }
+
+    #[test]
+    fn unknown_and_self_requirements_are_errors() {
+        let err = content(&[recipe("a", r#""nope""#), recipe("b", r#""b""#)].concat())
+            .expect_err("invalid")
+            .to_string();
+        assert!(err.contains("requires unknown recipe `nope`"), "{err}");
+        assert!(err.contains("`b` requires itself"), "{err}");
+    }
+
+    #[test]
+    fn an_override_without_requires_keeps_the_earlier_ones() {
+        let file = |recipes: String| -> ContentFile {
+            ron::from_str(&format!(
+                r#"(
+                    skills: [(id: "craft", name: "Craft", domain: "craft")],
+                    products: [(id: "thing", name: "Thing", category: Material, base_price: 1.0)],
+                    recipes: [{recipes}],
+                )"#
+            ))
+            .expect("test content parses")
+        };
+        let c = Content::from_files(vec![
+            file([recipe("a", ""), recipe("b", r#""a""#)].concat()),
+            file(recipe("b", "")),
+        ])
+        .expect("valid");
+        let b = &c.recipes[c.recipe("b").unwrap() as usize];
+        assert_eq!(b.requires, vec![Requirement::One("a".into())]);
+    }
+
+    #[test]
+    fn shipped_content_has_a_learnable_tech_graph() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/content");
+        let c = Content::load_dir(&dir).expect("shipped content is valid");
+        assert!(super::learnable(&c).iter().all(|&k| k));
+        assert!(c.recipes.iter().any(|r| r.requires.is_empty()));
+        assert!(c.recipes.iter().any(|r| !r.requires.is_empty()));
+    }
 }

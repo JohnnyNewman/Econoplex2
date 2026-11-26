@@ -34,6 +34,7 @@ struct Args {
     csv: Option<PathBuf>,
     embedding: bool,
     tech_tree: bool,
+    tech_graph: bool,
     hash: bool,
     quiet: bool,
     profile: bool,
@@ -70,6 +71,7 @@ fn parse_args() -> Args {
         csv: None,
         embedding: false,
         tech_tree: false,
+        tech_graph: false,
         hash: false,
         quiet: false,
         profile: false,
@@ -160,6 +162,7 @@ fn parse_args() -> Args {
             "--load" => a.load = Some(PathBuf::from(val())),
             "--embedding" => a.embedding = true,
             "--tech-tree" => a.tech_tree = true,
+            "--tech-graph" => a.tech_graph = true,
             "--hash" => a.hash = true,
             "--generate" => {
                 a.generate = Some(
@@ -195,6 +198,7 @@ fn parse_args() -> Args {
                      exits with an error when one is outside (CI runs this)\n\
                      --embedding    print the skill embedding (product space) report and exit\n\
                      --tech-tree    print the technology tree as a Mermaid flowchart and exit\n\
+                     --tech-graph   print the knowledge graph of recipe-skills as a Mermaid flowchart and exit\n\
                      --hash         print the final state hash (determinism check)\n\
                      --order D:O    give a player order on day D (repeatable), e.g. 0:school Greenvale smithing 20\n\
                                     orders: subsidy TOWN PRODUCT SHARE | school TOWN DOMAIN SEATS | school TOWN off\n\
@@ -289,6 +293,10 @@ fn main() {
     }
     if args.tech_tree {
         print!("{}", techtree::mermaid(&db));
+        return;
+    }
+    if args.tech_graph {
+        print!("{}", techtree::knowledge_mermaid(&db));
         return;
     }
     if let Some(s) = args.seed {
