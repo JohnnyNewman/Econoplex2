@@ -1172,7 +1172,8 @@ fn a_hungry_town_subsidizes_food_then_winds_it_down() {
     // Fed again: the hunger ends and, within a few years, the food subsidies are
     // wound down.
     let mut wound_down = false;
-    for year in 2..=8 {
+    // Up to twelve years: with the building materials the town recovers more slowly.
+    for year in 2..=12 {
         run_years(&mut s, 1);
         let m = s.world.resource::<sim_core::metrics::Metrics>();
         let starving = m.latest().unwrap().towns[3].starving;
