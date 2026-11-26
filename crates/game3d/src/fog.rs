@@ -58,7 +58,8 @@ pub struct FogUniform {
     /// height, z: height falloff (world units per e-fold), w: base height.
     pub params: Vec4,
     /// x: debug view; y: fraction of the year, 0 midwinter .. 0.5 midsummer
-    /// (the fields' calendar, fields.rs); zw unused.
+    /// (the fields' calendar, fields.rs); z: cloud cover 0..1 (cloud shadows,
+    /// fog.wesl); w unused.
     pub debug: Vec4,
     /// Step 11, the season and weather on the ground, for every material that
     /// carries the fog: x snow cover, y wetness, z autumn colour, w winter
@@ -179,7 +180,7 @@ fn update_fog_state(
             settings.falloff,
             settings.base,
         ),
-        debug: Vec4::new(settings.debug as f32, env.season, 0.0, 0.0),
+        debug: Vec4::new(settings.debug as f32, env.season, w.cloud, 0.0),
         ground: Vec4::new(env.ground.snow, env.ground.wet, env.autumn(), env.winter()),
         wind: Vec4::new(
             wind.x,
