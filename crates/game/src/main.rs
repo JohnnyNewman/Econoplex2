@@ -5,7 +5,7 @@
 //! real time a simulated day is about a step a second); the view attaches
 //! sprites to simulation entities and animates agents toward where they work.
 //!
-//! Controls: Space pause · 1-5 speed · WASD/arrows pan · mouse wheel zoom ·
+//! Controls: Space pause · 1-9 speed · WASD/arrows pan · mouse wheel zoom ·
 //! left click select agent · Esc deselect · F follow the selected person ·
 //! K colour by best skill (else by today's work) · P product space overlay ·
 //! E economy panel · Tab next town (the camera goes there) · F5 quicksave ·
@@ -19,6 +19,7 @@ mod hud;
 mod policy_ui;
 mod reports;
 mod saving;
+mod seasons;
 mod terrain_view;
 mod ui_compat;
 mod view;
@@ -26,11 +27,22 @@ mod view;
 use bevy::prelude::*;
 use sim_core::AssetPaths;
 
-/// Game speeds in simulated days per real second: 5 minutes a day (about an
-/// economy step a second at the default `time.steps_per_day`), 1 minute, 12
-/// seconds, then 1 and 4 days a second for letting the economy run. The
-/// fastest speeds run as many steps as a frame has time for.
-pub const SPEEDS: [f64; 5] = [1.0 / 300.0, 1.0 / 60.0, 1.0 / 12.0, 1.0, 4.0];
+/// Game speeds in simulated days per real second, as in the 3D client: 5
+/// minutes a day (about an economy step a second at the default
+/// `time.steps_per_day`), 1 minute, 12 seconds, then 1 to 120 days a second
+/// for letting the economy run. The fastest speeds run as many steps as a
+/// frame has time for.
+pub const SPEEDS: [f64; 9] = [
+    1.0 / 300.0,
+    1.0 / 60.0,
+    1.0 / 12.0,
+    1.0,
+    4.0,
+    12.0,
+    30.0,
+    60.0,
+    120.0,
+];
 
 /// `FixedUpdate` runs this often; each run takes the steps that are due.
 const FIXED_HZ: f64 = 60.0;
@@ -139,6 +151,8 @@ fn main() {
         .insert_resource(Selection::default())
         .insert_resource(view::Overlay::default())
         .insert_resource(view::Follow::default())
+        .insert_resource(seasons::FieldYear::default())
+        .insert_resource(seasons::WhyRings::default())
         .insert_resource(policy_ui::PolicyCursor::default())
         .insert_resource(policy_ui::Placing::default())
         .insert_resource(policy_ui::SentOrders::default())
@@ -160,6 +174,7 @@ fn main() {
                 hud::spawn_help.after(policy_ui::spawn_policy_panel),
                 economy_ui::spawn_economy_panel.after(hud::spawn_hud),
                 reports::spawn_reports,
+                seasons::spawn_night_veil,
             ),
         )
         .add_systems(
@@ -182,7 +197,25 @@ fn main() {
                 view::update_overlay_shade,
             ),
         )
-        .add_systems(Update, reports::update_reports.after(view::select_agent))
+        .add_systems(
+            Update,
+            reports::update_reports
+                .after(view::select_agent)
+                .after(seasons::update_field_year),
+        )
+        .add_systems(
+            Update,
+            (
+                (seasons::update_field_year, seasons::color_fields)
+                    .chain()
+                    .after(view::attach_nature_sprites),
+                seasons::tint_terrain,
+                seasons::update_night_veil,
+                seasons::draw_precipitation,
+                seasons::draw_harvest_rings,
+                seasons::draw_why_rings,
+            ),
+        )
         .add_systems(
             Update,
             (
@@ -259,6 +292,10 @@ fn controls(
         KeyCode::Digit3,
         KeyCode::Digit4,
         KeyCode::Digit5,
+        KeyCode::Digit6,
+        KeyCode::Digit7,
+        KeyCode::Digit8,
+        KeyCode::Digit9,
     ];
     for (i, k) in digits.iter().enumerate() {
         if keys.just_pressed(*k) {
