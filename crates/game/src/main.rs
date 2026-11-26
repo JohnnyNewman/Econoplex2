@@ -10,7 +10,8 @@
 //! K colour by best skill (else by today's work) · P product space overlay ·
 //! E economy panel · Tab next town (the camera goes there) · F5 quicksave ·
 //! F9 quickload · policy panel (bottom right) for the player's town
-//! · Y why · T town · H history · L event log · I person (reports.rs)
+//! · Y why · T town · H history charts · L event log · I person (reports.rs)
+//! · F2 hide all panels · the trade arrows carry caravans (economy_ui.rs)
 //! · the player's own battles are fought live, with orders (live_battle.rs)
 
 mod autorun;
@@ -163,6 +164,8 @@ fn main() {
         .insert_resource(policy_ui::SentOrders::default())
         .insert_resource(saving::Toast::default())
         .insert_resource(reports::Reports::default())
+        .insert_resource(hud::UiHidden::default())
+        .init_gizmo_group::<reports::ChartGizmos>()
         .insert_resource(battles::BattleScenes::default())
         .insert_resource(economy_ui::EconomyView::new(econ_town))
         .insert_resource(ClearColor(Color::srgb(0.08, 0.09, 0.08)))
@@ -179,6 +182,7 @@ fn main() {
                 hud::spawn_help.after(policy_ui::spawn_policy_panel),
                 economy_ui::spawn_economy_panel.after(hud::spawn_hud),
                 reports::spawn_reports,
+                reports::spawn_chart_camera,
                 seasons::spawn_night_veil,
                 live_battle::spawn_battle_panel,
             ),
@@ -205,9 +209,18 @@ fn main() {
         )
         .add_systems(
             Update,
-            reports::update_reports
-                .after(view::select_agent)
-                .after(seasons::update_field_year),
+            (
+                reports::update_reports
+                    .after(view::select_agent)
+                    .after(seasons::update_field_year),
+                reports::draw_charts.after(reports::update_reports),
+                hud::toggle_panels,
+            ),
+        )
+        .add_systems(
+            PostUpdate,
+            hud::hide_panels
+                .after(bevy::camera::visibility::VisibilitySystems::VisibilityPropagate),
         )
         .add_systems(
             Update,

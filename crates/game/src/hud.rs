@@ -30,7 +30,7 @@ pub struct RightColumn;
 pub struct HelpText;
 
 /// The full controls help (`F1`).
-pub const HELP: &str = "Space pause | 1-9 speed | WASD pan | wheel zoom\nclick select | Esc deselect | F follow | P product space\nK colour by best skill / today's work\nE economy | Tab next town | F5 save | F9 load\nY why | T town | H history | L log | I person\nC culture: red tradition, green faith, blue liberty\nF1 hide this help";
+pub const HELP: &str = "Space pause | 1-9 speed | WASD pan | wheel zoom\nclick select | Esc deselect | F follow | P product space\nK colour by best skill / today's work\nE economy | Tab next town | F5 save | F9 load\nY why | T town | H history | L log | I person\nC culture: red tradition, green faith, blue liberty\nF1 hide this help | F2 hide all panels";
 /// The one line it shows while folded.
 pub const HELP_FOLDED: &str = "F1 controls";
 
@@ -207,6 +207,39 @@ pub fn spawn_help(mut commands: Commands, column: Single<Entity, With<RightColum
 pub fn toggle_help(keys: Res<ButtonInput<KeyCode>>, mut help: Single<&mut Text, With<HelpText>>) {
     if keys.just_pressed(KeyCode::F1) {
         help.0 = if help.0 == HELP { HELP_FOLDED } else { HELP }.to_string();
+    }
+}
+
+/// `F2` hides every panel to look at the world, and shows them again.
+#[derive(Resource, Default)]
+pub struct UiHidden(pub bool);
+
+/// Flips [`UiHidden`] on `F2`. Showing the panels again marks the root nodes
+/// changed, so the visibility pass works their own visibility out afresh.
+pub fn toggle_panels(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut hidden: ResMut<UiHidden>,
+    mut roots: Query<&mut Visibility, (With<Node>, Without<ChildOf>)>,
+) {
+    if !keys.just_pressed(KeyCode::F2) {
+        return;
+    }
+    hidden.0 = !hidden.0;
+    if !hidden.0 {
+        for mut v in &mut roots {
+            v.set_changed();
+        }
+    }
+}
+
+/// While the panels are hidden, every UI node counts as invisible: not drawn
+/// and not clickable. It runs after the visibility pass, so each panel keeps
+/// its own `Visibility` and comes back as it was.
+pub fn hide_panels(hidden: Res<UiHidden>, mut nodes: Query<&mut InheritedVisibility, With<Node>>) {
+    if hidden.0 {
+        for mut v in &mut nodes {
+            v.set_if_neq(InheritedVisibility::HIDDEN);
+        }
     }
 }
 
@@ -527,5 +560,61 @@ pub fn update_legend(
         } else {
             Visibility::Inherited
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bevy::camera::visibility::{VisibilityPlugin, VisibilitySystems};
+
+    fn press_f2(app: &mut App) {
+        let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+        keys.release(KeyCode::F2);
+        keys.clear();
+        keys.press(KeyCode::F2);
+        app.update();
+        // No input plugin here to forget the press after the frame.
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .clear();
+    }
+
+    #[test]
+    fn f2_hides_every_panel_and_brings_each_back_as_it_was() {
+        let mut app = App::new();
+        // The visibility pass wants the mesh assets, though no mesh is here.
+        app.add_plugins((MinimalPlugins, AssetPlugin::default(), VisibilityPlugin))
+            .init_asset::<bevy::mesh::Mesh>()
+            .init_asset::<bevy::mesh::skinning::SkinnedMeshInverseBindposes>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .init_resource::<UiHidden>()
+            .add_systems(Update, toggle_panels)
+            .add_systems(
+                PostUpdate,
+                hide_panels.after(VisibilitySystems::VisibilityPropagate),
+            );
+        let shown = app.world_mut().spawn(Node::default()).id();
+        let child = app.world_mut().spawn(Node::default()).id();
+        app.world_mut().entity_mut(shown).add_child(child);
+        let closed = app
+            .world_mut()
+            .spawn((Node::default(), Visibility::Hidden))
+            .id();
+        app.update();
+        let seen = |app: &App, e: Entity| app.world().get::<InheritedVisibility>(e).unwrap().get();
+        assert!(seen(&app, shown) && seen(&app, child) && !seen(&app, closed));
+
+        press_f2(&mut app);
+        assert!(!seen(&app, shown) && !seen(&app, child) && !seen(&app, closed));
+        // A panel that opens while hidden stays hidden.
+        app.world_mut()
+            .entity_mut(closed)
+            .insert(Visibility::Inherited);
+        app.update();
+        assert!(!seen(&app, closed));
+
+        press_f2(&mut app);
+        assert!(seen(&app, shown) && seen(&app, child) && seen(&app, closed));
     }
 }

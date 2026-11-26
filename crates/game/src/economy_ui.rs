@@ -10,6 +10,7 @@
 //! carries.
 
 use crate::ui_compat::Interaction;
+use crate::view::WorldCamera;
 use bevy::prelude::*;
 use sim_core::goal::{MatchState, WinReason};
 use sim_core::ledger::{Flow, Group, Ledger};
@@ -136,7 +137,7 @@ pub fn economy_keys(
     towns: Res<Towns>,
     mut view: ResMut<EconomyView>,
     mut follow: ResMut<crate::view::Follow>,
-    mut camera: Single<&mut Transform, With<Camera2d>>,
+    mut camera: Single<&mut Transform, With<WorldCamera>>,
 ) {
     if keys.just_pressed(KeyCode::KeyE) {
         view.visible = !view.visible;
@@ -658,6 +659,7 @@ pub fn goal_text(
 /// Caravan routes as arrows: brighter and wider the more value they carry.
 pub fn draw_flows(
     mut gizmos: Gizmos,
+    time: Res<Time>,
     towns: Res<Towns>,
     overlay: Res<crate::view::Overlay>,
     mut labels: Query<(&FlowLabel, &mut Text2d, &mut Transform, &mut Visibility)>,
@@ -692,11 +694,33 @@ pub fn draw_flows(
             gizmos.line_2d(from + off, to + off, color);
         }
         gizmos.arrow_2d(to - dir * 30.0, to, color);
+        for at in caravans(from, to, w, time.elapsed_secs()) {
+            gizmos.circle_2d(at, 4.0, CARAVAN);
+        }
         let mid = (from + to) / 2.0 + side * 1.4;
         tf.translation = mid.extend(6.0);
         text.0 = format!("{v:.0}/day");
         *vis = Visibility::Inherited;
     }
+}
+
+/// The colour of the caravans moving along the flow arrows.
+const CARAVAN: Color = Color::srgb(1.0, 0.95, 0.8);
+
+/// Where the caravans on a route stand at time `secs`: evenly spaced along the
+/// arrow, all moving from the exporter to the importer. A route at the
+/// biggest flow carries seven, the smallest one.
+pub fn caravans(from: Vec2, to: Vec2, w: f32, secs: f32) -> Vec<Vec2> {
+    let n = 1 + (w.clamp(0.0, 1.0) * 6.0).round() as usize;
+    let len = from.distance(to).max(1.0);
+    // About 60 px per second, whatever the route length.
+    let travel = (secs * 60.0 / len).rem_euclid(1.0);
+    (0..n)
+        .map(|k| {
+            let f = (travel + k as f32 / n as f32).rem_euclid(1.0);
+            from.lerp(to, f)
+        })
+        .collect()
 }
 
 /// A ring per town showing the month's money: minted (violet), issued (green),
@@ -747,6 +771,25 @@ pub fn draw_money_rings(
         }
         if view.visible && view.town == t {
             gizmos.circle_2d(center, 118.0, Color::srgba(1.0, 1.0, 1.0, 0.5));
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn more_value_sends_more_caravans_and_they_move() {
+        let (from, to) = (Vec2::ZERO, Vec2::new(300.0, 0.0));
+        assert_eq!(caravans(from, to, 0.0, 0.0).len(), 1);
+        assert_eq!(caravans(from, to, 0.5, 0.0).len(), 4);
+        assert_eq!(caravans(from, to, 1.0, 0.0).len(), 7);
+        let before = caravans(from, to, 0.0, 0.0)[0];
+        let after = caravans(from, to, 0.0, 1.0)[0];
+        assert!((after.x - before.x - 60.0).abs() < 0.01, "{before} {after}");
+        for at in caravans(from, to, 1.0, 123.4) {
+            assert!(at.x >= 0.0 && at.x <= 300.0 && at.y == 0.0);
         }
     }
 }
