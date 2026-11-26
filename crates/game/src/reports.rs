@@ -2,13 +2,12 @@
 //! (docs/design/client-parity.md), one at a time in a panel in the middle of
 //! the screen.
 //!
-//! `Y` Why? for the town · `T` Town: weather, food security, needs, armory ·
+//! `Y` Why? for the town · `T` Town: weather, money, buildings, food
+//! security, needs, armory ·
 //! `H` History per town · `L` Event log · `I` Person (opens itself when you
 //! click someone). The same key again closes the report. Reports follow the
 //! economy panel's town (`Tab`) and the selected person, and are computed once
 //! per simulated day or when their subject changes, not every frame.
-//!
-//! Money (treasury, prices, wealth) is left out until integer coin lands.
 
 use crate::economy_ui::EconomyView;
 use crate::Selection;
@@ -162,7 +161,14 @@ pub fn update_reports(world: &mut World) {
     }
     world.resource_mut::<Reports>().made = Some(key);
     let text = match report {
-        Report::Why => why(world, town),
+        Report::Why => {
+            let (text, kinds) = why(world, town);
+            if let Some(mut rings) = world.get_resource_mut::<crate::seasons::WhyRings>() {
+                rings.town = town;
+                rings.kinds = kinds;
+            }
+            text
+        }
         Report::Town => town_report(world, town),
         Report::History => history(world),
         Report::Log => log(world),
@@ -205,9 +211,25 @@ fn footer(s: &mut String) {
 
 // ------------------------------------------------------------------ Why?
 
-fn why(world: &World, town: usize) -> String {
+/// The Why? report, and the building types its findings name (ringed on the
+/// map, seasons.rs).
+fn why(world: &World, town: usize) -> (String, Vec<String>) {
     let mut s = format!("WHY? {}   (Tab: next town)\n\n", town_name(world, town));
     let found = sim_core::explain::explain(world, town as u16);
+    let mut kinds = Vec::new();
+    fn named(f: &Finding, kinds: &mut Vec<String>) {
+        if let Some(k) = &f.building {
+            if !kinds.contains(k) {
+                kinds.push(k.clone());
+            }
+        }
+        for b in &f.because {
+            named(b, kinds);
+        }
+    }
+    for f in &found {
+        named(f, &mut kinds);
+    }
     if found.is_empty() {
         s.push_str("Nothing stands out: food, goods, treasury and people look fine.\n");
     }
@@ -215,8 +237,11 @@ fn why(world: &World, town: usize) -> String {
         finding(&mut s, f, 0);
     }
     s.push_str("\nRule-based: what is short, what stops it, where the money goes.\n");
+    if !kinds.is_empty() {
+        s.push_str("The buildings it names are ringed in red on the map.\n");
+    }
     footer(&mut s);
-    s
+    (s, kinds)
 }
 
 fn finding(s: &mut String, f: &Finding, depth: usize) {
@@ -282,6 +307,22 @@ fn town_report(world: &World, town: usize) -> String {
         footer(&mut s);
         return s;
     };
+    s.push_str(&format!(
+        "\n{} people, treasury {:.0}, mean wealth {:.1}\n",
+        t.population, t.treasury, t.mean_wealth
+    ));
+    s.push_str(&format!("Buildings: {}\n", building_counts(world, t)));
+    if let (Some(env), Some(year)) = (
+        world.get_resource::<sim_core::env::Environment>(),
+        world.get_resource::<crate::seasons::FieldYear>(),
+    ) {
+        s.push_str(&format!(
+            "Harvest: {:.0} % in; crop standing {:.0} % of a year's growth (peak {:.0} %)\n",
+            year.reaped(town, env.season) * 100.0,
+            year.crops.get(town).copied().unwrap_or(0.0) * 100.0,
+            year.peak.get(town).copied().unwrap_or(0.0) * 100.0
+        ));
+    }
     s.push_str("\nFood security\n");
     s.push_str(&format!("  food in stock      {:.0} days\n", t.food_days));
     s.push_str(&format!(
@@ -338,6 +379,30 @@ fn town_report(world: &World, town: usize) -> String {
     s
 }
 
+/// The town's buildings by type, most first: "3 × Workshop, 1 × Mill".
+fn building_counts(world: &World, t: &sim_core::view::TownView) -> String {
+    let db = world.resource::<Db>();
+    let mut kinds: Vec<(String, usize)> = Vec::new();
+    for b in &t.buildings {
+        let name = db
+            .content
+            .products
+            .iter()
+            .find(|p| p.id == b.kind)
+            .map_or(b.kind.clone(), |p| p.name.clone());
+        match kinds.iter_mut().find(|(k, _)| *k == name) {
+            Some((_, n)) => *n += 1,
+            None => kinds.push((name, 1)),
+        }
+    }
+    if kinds.is_empty() {
+        return "none".into();
+    }
+    kinds.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    let parts: Vec<String> = kinds.iter().map(|(k, n)| format!("{n} × {k}")).collect();
+    parts.join(", ")
+}
+
 fn bar(v: f32) -> String {
     let n = (v.clamp(0.0, 1.0) * 20.0).round() as usize;
     format!(
@@ -381,14 +446,19 @@ fn history(world: &World) -> String {
         return s;
     }
     type Series = fn(&sim_core::history::Sample) -> f32;
-    let series: [(&str, Series); 4] = [
+    let series: [(&str, Series); 7] = [
         ("people", |x| x.population as f32),
+        ("treasury", |x| x.treasury),
         ("food / resident", |x| x.food_per_capita),
+        ("mean wealth", |x| x.mean_wealth),
+        ("bread price", |x| x.bread_price),
         ("soldiers", |x| x.soldiers as f32),
         ("buildings", |x| x.buildings as f32),
     ];
+    // No blank line between series, so seven fit in the panel.
+    s.push('\n');
     for (name, f) in series {
-        s.push_str(&format!("\n{name}\n"));
+        s.push_str(&format!("{name}\n"));
         for (t, town) in towns.0.iter().enumerate() {
             let v: Vec<f32> = samples
                 .iter()
@@ -527,6 +597,50 @@ mod tests {
         assert_eq!(sparkline(&[1.0, 2.0, 3.0], 10), "_=#");
         assert_eq!(sparkline(&[5.0, 5.0], 10), "--");
         assert_eq!(sparkline(&[0.0, 1.0, 2.0, 3.0], 2), "_#");
+    }
+
+    fn world() -> World {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let (db, params, mut scenario) =
+            sim_core::load(&sim_core::AssetPaths::from_root(&root)).unwrap();
+        for t in &mut scenario.towns {
+            t.population = 40;
+        }
+        let mut world = World::new();
+        sim_core::world::setup(&mut world, db, params, &scenario);
+        sim_core::add_schedules(&mut world);
+        world
+    }
+
+    #[test]
+    fn the_town_and_history_reports_show_money_and_buildings() {
+        let mut w = world();
+        for _ in 0..40 {
+            sim_core::run_day(&mut w);
+        }
+        w.insert_resource(crate::seasons::FieldYear::default());
+        let town = town_report(&w, 0);
+        assert!(town.contains("Harvest: "), "{town}");
+        assert!(town.contains("treasury"), "{town}");
+        assert!(town.contains("mean wealth"), "{town}");
+        assert!(
+            town.contains("Buildings: ") && town.contains(" × "),
+            "{town}"
+        );
+        let hist = history(&w);
+        for series in ["treasury", "mean wealth", "bread price"] {
+            assert!(hist.contains(series), "{hist}");
+        }
+        assert!(hist.lines().count() <= MAX_LINES, "{hist}");
+    }
+
+    #[test]
+    fn roads_join_the_towns() {
+        let w = world();
+        let terrain = w.resource::<sim_core::terrain::Terrain>();
+        let towns: Vec<(f32, f32)> = w.resource::<Towns>().0.iter().map(|t| t.pos).collect();
+        let cells = crate::terrain_view::road_cells(terrain, &towns);
+        assert!(cells.len() > towns.len(), "{} road cells", cells.len());
     }
 
     #[test]

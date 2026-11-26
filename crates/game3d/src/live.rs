@@ -18,7 +18,10 @@
 //!
 //! Keys: `Space` pause, `,` / `.` slower / faster.
 
-use crate::buildings::{spawn_building, spawn_houses, BuildingSpec, HouseSpec, Kit, Style};
+use crate::buildings::{
+    building_root, chimney, house_chimney, spawn_building, spawn_houses, spawn_site, BuildingSpec,
+    HouseSpec, Kit, Style,
+};
 use crate::env::{Ground, SimEnv, Weather};
 use crate::outline::Outlines;
 use crate::toon::ToonMaterial;
@@ -525,6 +528,9 @@ struct Shown {
     houses: Vec<TownHouses>,
     /// Per town: the style it is drawn in (era and wealth tier).
     styles: Vec<Option<Style>>,
+    /// Building sites, by (town, building kind): the entity and the eighth
+    /// of progress it shows.
+    sites: HashMap<(usize, String), (Entity, u32)>,
 }
 
 /// Per town: the doors of its houses (3D x, z), in the order the houses
@@ -580,6 +586,7 @@ fn sync_scene(
     world: Res<World3d>,
     mut homes: ResMut<TownHomes>,
     mut footprints: Option<ResMut<crate::grounding::Footprints>>,
+    mut chimneys: ResMut<crate::smoke::Chimneys>,
 ) {
     let (Some(mut kit), Some(outlines)) = (kit, outlines) else {
         return;
@@ -643,6 +650,7 @@ fn sync_scene(
                 kind: b.kind.clone(),
                 at: ground(b.pos),
                 seed: (b.id as u32).wrapping_mul(2_654_435_761) >> 8 ^ ti as u32,
+                id: b.id,
             };
             let style = shown.styles[ti].unwrap_or_default();
             if let Some(e) = spawn_building(
@@ -654,6 +662,12 @@ fn sync_scene(
                 style,
             ) {
                 shown.buildings.insert(b.id, e);
+                // Its chimney, if it has one (smoke.rs: it smokes while it works).
+                if let Some((top, dark)) = chimney(&b.kind) {
+                    let at = building_root(spec.at, spec.seed).transform_point(top);
+                    chimneys.buildings.insert(b.id, (ti, at, dark));
+                    chimneys.dirty = true;
+                }
                 // Workplaces are drawn 1.5 times a house's size, and square.
                 if let Some(f) = footprints.as_deref_mut() {
                     f.buildings
@@ -675,12 +689,65 @@ fn sync_scene(
         f.buildings.retain(|id, _| alive.contains(id));
         f.dirty |= f.buildings.len() != before;
     }
+    let before = chimneys.buildings.len();
+    chimneys.buildings.retain(|id, _| alive.contains(id));
+    chimneys.dirty |= chimneys.buildings.len() != before;
+
+    // Building sites: the walls rise inside a scaffold as the work goes on;
+    // the finished building takes over above.
+    let mut open = Vec::new();
+    for (ti, town) in snap.towns.iter().enumerate() {
+        for site in &town.sites {
+            let key = (ti, site.kind.clone());
+            let step = (site.progress * 8.0).floor().clamp(0.0, 7.0) as u32;
+            open.push(key.clone());
+            if shown.sites.get(&key).is_some_and(|&(_, s)| s == step) {
+                continue;
+            }
+            if let Some((e, _)) = shown.sites.remove(&key) {
+                commands.entity(e).despawn();
+            }
+            let seed = site.kind.bytes().fold(ti as u32 * 977, |h, b| {
+                h.wrapping_mul(31).wrapping_add(b as u32)
+            });
+            let spec = BuildingSpec {
+                kind: site.kind.clone(),
+                at: ground(site.pos),
+                seed,
+                id: 0,
+            };
+            let style = shown.styles[ti].unwrap_or_default();
+            let e = spawn_site(
+                &mut commands,
+                &mut kit,
+                &mut meshes,
+                &outlines,
+                &spec,
+                style,
+                site.progress,
+            );
+            shown.sites.insert(key, (e, step));
+        }
+    }
+    shown.sites.retain(|key, (e, _)| {
+        let keep = open.contains(key);
+        if !keep {
+            commands.entity(*e).despawn();
+        }
+        keep
+    });
 
     // Houses: a spiral around each town centre, one house per six residents.
     let taken: Vec<Vec2> = snap
         .towns
         .iter()
-        .flat_map(|t| t.buildings.iter().map(|b| Vec2::new(b.pos.0, b.pos.1)))
+        .flat_map(|t| {
+            t.buildings
+                .iter()
+                .map(|b| b.pos)
+                .chain(t.sites.iter().map(|s| s.pos))
+                .map(|p| Vec2::new(p.0, p.1))
+        })
         .collect();
     for (ti, town) in snap.towns.iter().enumerate() {
         let want = houses_for(town.population) as usize;
@@ -747,6 +814,19 @@ fn sync_scene(
                     .collect();
                 f.dirty = true;
             }
+            // The houses' chimneys (smoke.rs).
+            if chimneys.houses.len() < snap.towns.len() {
+                chimneys.houses.resize(snap.towns.len(), Vec::new());
+            }
+            chimneys.houses[ti] = match house_chimney(style) {
+                Some(top) => houses
+                    .list
+                    .iter()
+                    .map(|(h, _)| h.at + h.rot * top)
+                    .collect(),
+                None => Vec::new(),
+            };
+            chimneys.dirty = true;
             if let Some(e) = houses.drawn.take() {
                 commands.entity(e).despawn();
             }

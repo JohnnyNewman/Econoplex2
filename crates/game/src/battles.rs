@@ -9,10 +9,11 @@
 //! was destroyed fades. The scene stays a few seconds after the end, with the
 //! outcome written above the field, then clears.
 //!
-//! Live battles with orders (the player's own) are fought in the 3D client.
+//! A battle the player's own town fights is live instead (live_battle.rs):
+//! its squads are drawn here the same way, from the battle's current frame.
 
 use bevy::prelude::*;
-use sim_core::battle::{BattleLog, Replay, SquadState};
+use sim_core::battle::{BattleLog, Replay, ReplaySquad, SquadState};
 use sim_core::Towns;
 
 /// Battle seconds shown per real second.
@@ -112,6 +113,71 @@ pub fn squad_at(r: &Replay, k: usize, t: f32) -> Option<(Vec2, u16, SquadState)>
     Some((pos, if u < 0.5 { sa.2 } else { sb.2 }, state))
 }
 
+/// Draw one battlefield: its outline, and a block per squad where `squad`
+/// says it stands (metres on the field), sized by the fighters standing.
+#[allow(clippy::too_many_arguments)]
+pub fn draw_field(
+    gizmos: &mut Gizmos,
+    now: f32,
+    at: (f32, f32),
+    facing: (f32, f32),
+    field: (f32, f32),
+    squads: &[ReplaySquad],
+    squad: impl Fn(usize) -> Option<(Vec2, u16, SquadState)>,
+    outline: Color,
+) {
+    let centre = Vec2::new(at.0, at.1);
+    // The field's +x points from the attackers to the defenders.
+    let x = Vec2::new(facing.0, facing.1).normalize_or(Vec2::X);
+    let y = x.perp();
+    let to_map = |p: Vec2| centre + (x * (p.x - 0.5 * field.0) + y * (p.y - 0.5 * field.1)) * SCALE;
+    let corners = [
+        Vec2::ZERO,
+        Vec2::new(field.0, 0.0),
+        Vec2::new(field.0, field.1),
+        Vec2::new(0.0, field.1),
+    ]
+    .map(to_map);
+    for k in 0..4 {
+        gizmos.line_2d(corners[k], corners[(k + 1) % 4], outline);
+    }
+    for (k, sq) in squads.iter().enumerate() {
+        let Some((p, standing, state)) = squad(k) else {
+            continue;
+        };
+        let base = if sq.side == 0 { ATTACKER } else { DEFENDER };
+        let alpha = match state {
+            SquadState::Fighting => 1.0,
+            // Routing squads blink.
+            SquadState::Routing => 0.4 + 0.6 * (now * 8.0).sin().abs(),
+            SquadState::Fled | SquadState::Destroyed => 0.2,
+        };
+        let colour = base.with_alpha(alpha);
+        let side = 6.0 + (standing as f32).sqrt() * 2.5;
+        let at = to_map(p);
+        gizmos.rect_2d(
+            Isometry2d::new(at, Rot2::IDENTITY),
+            Vec2::splat(side),
+            colour,
+        );
+        // A filled look: a smaller block inside.
+        if standing > 0 {
+            gizmos.rect_2d(
+                Isometry2d::new(at, Rot2::IDENTITY),
+                Vec2::splat(side * 0.5),
+                colour,
+            );
+        }
+        if sq.mounted {
+            gizmos.rect_2d(
+                Isometry2d::new(at, Rot2::IDENTITY),
+                Vec2::splat(side + 4.0),
+                colour,
+            );
+        }
+    }
+}
+
 /// Draw every scene, and write the outcome once a battle is over.
 pub fn draw_battles(
     mut gizmos: Gizmos,
@@ -124,61 +190,16 @@ pub fn draw_battles(
         let r = &s.replay;
         let t = (now - s.start) * PLAYBACK;
         let over = (now - s.start) >= duration(r);
-        let centre = Vec2::new(r.at.0, r.at.1);
-        // The field's +x points from the attackers to the defenders.
-        let x = Vec2::new(r.facing.0, r.facing.1).normalize_or(Vec2::X);
-        let y = x.perp();
-        let to_map =
-            |p: Vec2| centre + (x * (p.x - 0.5 * r.field.0) + y * (p.y - 0.5 * r.field.1)) * SCALE;
-        let corners = [
-            Vec2::ZERO,
-            Vec2::new(r.field.0, 0.0),
-            Vec2::new(r.field.0, r.field.1),
-            Vec2::new(0.0, r.field.1),
-        ]
-        .map(to_map);
-        for k in 0..4 {
-            gizmos.line_2d(
-                corners[k],
-                corners[(k + 1) % 4],
-                Color::srgba(1.0, 0.9, 0.6, 0.35),
-            );
-        }
-        for (k, squad) in r.squads.iter().enumerate() {
-            let Some((p, standing, state)) = squad_at(r, k, t) else {
-                continue;
-            };
-            let base = if squad.side == 0 { ATTACKER } else { DEFENDER };
-            let alpha = match state {
-                SquadState::Fighting => 1.0,
-                // Routing squads blink.
-                SquadState::Routing => 0.4 + 0.6 * (now * 8.0).sin().abs(),
-                SquadState::Fled | SquadState::Destroyed => 0.2,
-            };
-            let colour = base.with_alpha(alpha);
-            let side = 6.0 + (standing as f32).sqrt() * 2.5;
-            let at = to_map(p);
-            gizmos.rect_2d(
-                Isometry2d::new(at, Rot2::IDENTITY),
-                Vec2::splat(side),
-                colour,
-            );
-            // A filled look: a smaller block inside.
-            if standing > 0 {
-                gizmos.rect_2d(
-                    Isometry2d::new(at, Rot2::IDENTITY),
-                    Vec2::splat(side * 0.5),
-                    colour,
-                );
-            }
-            if squad.mounted {
-                gizmos.rect_2d(
-                    Isometry2d::new(at, Rot2::IDENTITY),
-                    Vec2::splat(side + 4.0),
-                    colour,
-                );
-            }
-        }
+        draw_field(
+            &mut gizmos,
+            now,
+            r.at,
+            r.facing,
+            r.field,
+            &r.squads,
+            |k| squad_at(r, k, t),
+            Color::srgba(1.0, 0.9, 0.6, 0.35),
+        );
         if over {
             if let Ok(mut text) = labels.get_mut(s.label) {
                 let outcome = match r.winner {

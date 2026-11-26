@@ -509,8 +509,14 @@ impl Town {
 
     /// Where the next constructed building goes: rings outside the starting ones.
     pub fn next_building_pos(&self) -> (f32, f32) {
-        let ring = (self.built / 8) as f32;
-        let a = (self.built % 8) as f32 / 8.0 * std::f32::consts::TAU + 0.39 * (ring + 1.0);
+        self.building_pos(self.built)
+    }
+
+    /// Where the town's building number `n` goes (a ring of eight around
+    /// the centre, then the next ring further out).
+    pub fn building_pos(&self, n: u32) -> (f32, f32) {
+        let ring = (n / 8) as f32;
+        let a = (n % 8) as f32 / 8.0 * std::f32::consts::TAU + 0.39 * (ring + 1.0);
         let r = 105.0 + 30.0 * ring;
         (self.pos.0 + r * a.cos(), self.pos.1 + r * a.sin())
     }

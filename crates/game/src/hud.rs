@@ -30,12 +30,24 @@ pub struct RightColumn;
 pub struct HelpText;
 
 /// The full controls help (`F1`).
-pub const HELP: &str = "Space pause | 1-5 speed | WASD pan | wheel zoom\nclick select | Esc deselect | P product space\nE economy | Tab next town | F5 save | F9 load\nY why | T town | H history | L log | I person\nC culture: red tradition, green faith, blue liberty\nF1 hide this help";
+pub const HELP: &str = "Space pause | 1-9 speed | WASD pan | wheel zoom\nclick select | Esc deselect | F follow | P product space\nK colour by best skill / today's work\nE economy | Tab next town | F5 save | F9 load\nY why | T town | H history | L log | I person\nC culture: red tradition, green faith, blue liberty\nF1 hide this help";
 /// The one line it shows while folded.
 pub const HELP_FOLDED: &str = "F1 controls";
 
 #[derive(Component)]
 pub struct LegendRoot;
+
+/// The legend's title, which says which colouring `K` has chosen.
+#[derive(Component)]
+pub struct LegendTitle;
+
+/// The legend's activity rows, shown only while people are coloured by what
+/// they do today.
+#[derive(Component)]
+pub struct LegendActivity;
+
+const BY_WORK: &str = "Work today (K: best skill)";
+const BY_SKILL: &str = "Best skill domain (K: work today)";
 
 const PANEL: Color = Color::srgba(0.0, 0.0, 0.0, 0.6);
 
@@ -134,7 +146,7 @@ pub fn spawn_hud(mut commands: Commands, db: Res<Db>) {
             LegendRoot,
         ))
         .with_children(|p| {
-            p.spawn((Text::new("Best skill domain"), font(13.0)));
+            p.spawn((Text::new(BY_WORK), font(13.0), LegendTitle));
             let n = db.content.domains.len();
             for (d, name) in db.content.domains.iter().enumerate() {
                 p.spawn((
@@ -146,8 +158,21 @@ pub fn spawn_hud(mut commands: Commands, db: Res<Db>) {
             p.spawn((
                 Text::new("## child"),
                 font(13.0),
-                TextColor(Color::srgb(0.75, 0.75, 0.75)),
+                TextColor(crate::view::CHILD),
             ));
+            for (name, c) in [
+                ("idle", crate::view::IDLE),
+                ("resting", crate::view::RESTING),
+                ("soldier", crate::view::SOLDIER),
+                ("captive", crate::view::CAPTIVE),
+            ] {
+                p.spawn((
+                    Text::new(format!("## {name}")),
+                    font(13.0),
+                    TextColor(c),
+                    LegendActivity,
+                ));
+            }
         });
 }
 
@@ -202,8 +227,13 @@ pub fn update_hud(
         Res<sim_core::world::ScenarioSpec>,
         Res<sim_core::goal::MatchState>,
     ),
+    weather: (
+        Option<Res<sim_core::env::Environment>>,
+        Res<crate::economy_ui::EconomyView>,
+    ),
 ) {
     let (scenario, state) = goal;
+    let (env, economy) = weather;
     let goal_amount = scenario.0.goal.as_ref().map(|g| g.amount);
     let mut s = format!(
         "ECONOPLEX   year {}  {} {:02}:00   {}{}\npopulation {}\n",
@@ -214,6 +244,9 @@ pub fn update_hud(
         sim_core::calendar::speed_label(SPEEDS[control.speed] as f32),
         store.alive_count()
     );
+    if let (Some(env), Some(town)) = (env, towns.0.get(economy.town)) {
+        s.push_str(&weather_line(&env, economy.town, &town.name));
+    }
     let latest = metrics.latest();
     // The goal column only shows when the scenario sets a goal.
     s.push_str(if goal_amount.is_some() {
@@ -328,6 +361,38 @@ pub fn update_hud(
     text.0 = s;
 }
 
+/// The weather at the economy panel's town, in one line.
+fn weather_line(env: &sim_core::env::Environment, t: usize, name: &str) -> String {
+    let l = env.at(t);
+    let w = l.weather;
+    let sky = if w.precip >= 0.05 {
+        if w.snow_fraction() > 0.5 {
+            "snow"
+        } else {
+            "rain"
+        }
+    } else if w.cloud > 0.6 {
+        "overcast"
+    } else if w.cloud > 0.25 {
+        "cloudy"
+    } else {
+        "clear"
+    };
+    let mut s = format!(
+        "{name}: {:.0} C, {sky}, wind {:.0} m/s",
+        w.temperature,
+        w.wind_speed()
+    );
+    if l.ground.snow > 0.05 {
+        s.push_str(&format!(", snow cover {:.0} %", l.ground.snow * 100.0));
+    }
+    if crate::seasons::ice(l.day_mean_c) > 0.5 {
+        s.push_str(", rivers frozen");
+    }
+    s.push('\n');
+    s
+}
+
 fn bar(v: f32) -> String {
     let n = (v.clamp(0.0, 1.0) * 10.0).round() as usize;
     format!("[{}{}] {:.2}", "#".repeat(n), ".".repeat(10 - n), v)
@@ -435,13 +500,32 @@ pub fn update_inspector(
 
 /// The legend is static; this keeps it hidden while the product space overlay explains colors itself.
 pub fn update_legend(
-    mut legend: Single<&mut Visibility, With<LegendRoot>>,
+    mut legend: Single<&mut Visibility, (With<LegendRoot>, Without<LegendActivity>)>,
+    mut title: Single<&mut Text, With<LegendTitle>>,
+    mut rows: Query<&mut Visibility, With<LegendActivity>>,
     overlay: Res<crate::view::Overlay>,
     economy: Res<crate::economy_ui::EconomyView>,
 ) {
-    **legend = if overlay.product_space || overlay.culture || economy.visible {
-        Visibility::Hidden
+    legend.set_if_neq(
+        if overlay.product_space || overlay.culture || economy.visible {
+            Visibility::Hidden
+        } else {
+            Visibility::Inherited
+        },
+    );
+    let want = if overlay.best_skill {
+        BY_SKILL
     } else {
-        Visibility::Inherited
+        BY_WORK
     };
+    if title.0 != want {
+        title.0 = want.to_string();
+    }
+    for mut v in &mut rows {
+        v.set_if_neq(if overlay.best_skill {
+            Visibility::Hidden
+        } else {
+            Visibility::Inherited
+        });
+    }
 }

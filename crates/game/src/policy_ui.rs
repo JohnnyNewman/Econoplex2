@@ -26,6 +26,56 @@ pub struct PolicyCursor {
 #[derive(Resource, Default)]
 pub struct Placing(pub Option<u32>);
 
+/// What became of an order the panel sent.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Fate {
+    /// Still in the queue (the next simulated day applies it).
+    Waiting,
+    Applied,
+    /// The simulation dropped it (a building in the river, a town gone).
+    Rejected,
+}
+
+/// The orders the panel sent, newest first, and what became of them (as the
+/// 3D client's "sent" list).
+#[derive(Resource, Default)]
+pub struct SentOrders(pub Vec<(u64, Order, Fate)>);
+
+/// How many sent orders the panel lists.
+const SENT_SHOWN: usize = 4;
+
+impl SentOrders {
+    /// Queue `order` and remember it.
+    pub fn send(&mut self, queue: &mut OrderQueue, tick: u64, order: Order) {
+        queue.pending.push(order.clone());
+        self.0.insert(0, (tick, order, Fate::Waiting));
+        self.0.truncate(SENT_SHOWN);
+    }
+}
+
+/// An order sent at `tick` has left the queue once it is no longer pending:
+/// applied if the log has it from then on, rejected if not.
+pub fn fate(tick: u64, order: &Order, queue: &OrderQueue) -> Fate {
+    if queue.pending.contains(order) {
+        return Fate::Waiting;
+    }
+    let logged = queue
+        .log
+        .iter()
+        .rev()
+        .take_while(|(t, _)| *t >= tick)
+        .any(|(_, o)| o == order);
+    if logged {
+        Fate::Applied
+    } else {
+        Fate::Rejected
+    }
+}
+
+/// One line of the sent-orders list.
+#[derive(Component)]
+pub struct SentLine(usize);
+
 #[derive(Component, Clone, Copy, Debug)]
 pub enum Action {
     SubsidyProduct(i32),
@@ -235,6 +285,18 @@ pub fn spawn_policy_panel(
                 button(r, "place", Action::Place);
                 value(r, Field::Commissions, 90.0);
             });
+            p.spawn((Text::new("Sent orders"), font.clone()));
+            for k in 0..SENT_SHOWN {
+                p.spawn((
+                    Text::new(""),
+                    TextFont {
+                        font_size: FontSize::Px(11.0),
+                        ..default()
+                    },
+                    TextColor(Color::srgb(0.7, 0.7, 0.7)),
+                    SentLine(k),
+                ));
+            }
         })
         .id();
     commands.entity(*column).add_child(panel);
@@ -247,6 +309,8 @@ pub fn policy_buttons(
     mut cursor: ResMut<PolicyCursor>,
     mut queue: ResMut<OrderQueue>,
     mut placing: ResMut<Placing>,
+    mut sent: ResMut<SentOrders>,
+    clock: Res<sim_core::SimClock>,
     player: Res<PlayerTown>,
     towns: Res<Towns>,
     params: Res<sim_core::world::Params>,
@@ -413,7 +477,9 @@ pub fn policy_buttons(
                         },
                     }),
                 };
-                queue.pending.extend(order);
+                if let Some(order) = order {
+                    sent.send(&mut queue, clock.tick, order);
+                }
             }
         }
     }
@@ -570,6 +636,8 @@ pub fn place_building(
     buttons: Query<&Interaction, With<Button>>,
     mut placing: ResMut<Placing>,
     mut queue: ResMut<OrderQueue>,
+    mut sent: ResMut<SentOrders>,
+    clock: Res<sim_core::SimClock>,
     player: Res<PlayerTown>,
     terrain: Res<sim_core::terrain::Terrain>,
 ) {
@@ -594,12 +662,107 @@ pub fn place_building(
     if !terrain.buildable((world.x, world.y)) {
         return;
     }
-    queue.pending.push(Order::Build {
+    let order = Order::Build {
         town,
         building,
         pos: Some((world.x, world.y)),
-    });
+    };
+    sent.send(&mut queue, clock.tick, order);
     placing.0 = None;
+}
+
+/// The order in a few words, for the sent list.
+fn order_text(order: &Order, db: &Db, towns: &Towns) -> String {
+    let product = |p: u32| {
+        db.content
+            .products
+            .get(p as usize)
+            .map_or("?".to_string(), |d| d.name.to_lowercase())
+    };
+    let domain = |d: u32| {
+        db.content
+            .domains
+            .get(d as usize)
+            .cloned()
+            .unwrap_or_default()
+    };
+    let rate = |r: Option<f32>| r.map_or("default".to_string(), |r| format!("{r:.2}"));
+    match order {
+        Order::Subsidy {
+            product: p, share, ..
+        } => {
+            format!("subsidy {} {:.0}%", product(*p), share * 100.0)
+        }
+        Order::School { school, .. } => match school {
+            Some(s) => format!("school {} {} seats", domain(s.domain), s.seats),
+            None => "school closed".into(),
+        },
+        Order::Immigration { policy, .. } => format!("immigration {policy:?}").to_lowercase(),
+        Order::Charter { domain: d, on, .. } => {
+            format!("charter {} {}", domain(*d), if *on { "on" } else { "off" })
+        }
+        Order::Army { share, .. } => format!("army {}", rate(*share)),
+        Order::War { war, .. } => format!("war {war:?}").to_lowercase(),
+        Order::Raid { target, .. } => format!(
+            "raid {}",
+            towns
+                .0
+                .get(*target as usize)
+                .map_or("?", |t| t.name.as_str())
+        ),
+        Order::Build { building, .. } => format!("build {}", product(*building)),
+        Order::Mint { minting, .. } => format!("mint {minting:?}").to_lowercase(),
+        Order::Tax { tax, rate: r, .. } => format!("{tax:?} tax {}", rate(*r)).to_lowercase(),
+        Order::Wages { share, .. } => format!("wages {}", rate(*share)),
+        Order::Spending { rate: r, .. } => format!("spending {}", rate(*r)),
+        Order::Procure {
+            product: p, amount, ..
+        } => format!("order {amount:.0} {}", product(*p)),
+        other => format!("{other:?}"),
+    }
+}
+
+/// The sent-orders list: date, order and what became of it; rejected ones
+/// in red.
+pub fn update_sent_orders(
+    mut sent: ResMut<SentOrders>,
+    queue: Res<OrderQueue>,
+    clock: Res<sim_core::SimClock>,
+    towns: Res<Towns>,
+    db: Res<Db>,
+    mut lines: Query<(&mut Text, &mut TextColor, &SentLine)>,
+) {
+    for (tick, order, f) in &mut sent.0 {
+        if *f == Fate::Waiting {
+            *f = fate(*tick, order, &queue);
+        }
+    }
+    for (mut text, mut color, line) in &mut lines {
+        let (want, c) = match sent.0.get(line.0) {
+            Some((tick, order, f)) => (
+                format!(
+                    "{}  {}  {}",
+                    sim_core::calendar::date(*tick, clock.months_per_year),
+                    order_text(order, &db, &towns),
+                    match f {
+                        Fate::Waiting => "waiting",
+                        Fate::Applied => "applied",
+                        Fate::Rejected => "REJECTED",
+                    }
+                ),
+                match f {
+                    Fate::Rejected => Color::srgb(1.0, 0.45, 0.4),
+                    Fate::Waiting => Color::srgb(0.85, 0.85, 0.6),
+                    Fate::Applied => Color::srgb(0.7, 0.7, 0.7),
+                },
+            ),
+            None => (String::new(), Color::srgb(0.7, 0.7, 0.7)),
+        };
+        if text.0 != want {
+            text.0 = want;
+        }
+        color.set_if_neq(TextColor(c));
+    }
 }
 
 /// Clicks every policy-panel button the way Bevy's picking does (a pointer
@@ -625,6 +788,7 @@ mod tests {
             .spawn((Node::default(), crate::hud::RightColumn));
         app.insert_resource(PolicyCursor::default())
             .insert_resource(Placing::default())
+            .insert_resource(SentOrders::default())
             .add_systems(Startup, spawn_policy_panel)
             .add_systems(PreUpdate, crate::ui_compat::update_interaction)
             .add_systems(Update, policy_buttons);
@@ -686,6 +850,27 @@ mod tests {
             .world_mut()
             .query_filtered::<(Entity, &Action), With<Button>>();
         q.iter(app.world()).map(|(e, a)| (e, *a)).collect()
+    }
+
+    #[test]
+    fn a_sent_order_waits_then_is_applied_or_rejected() {
+        let order = Order::War {
+            town: 0,
+            war: War::Defend,
+        };
+        let mut queue = OrderQueue::default();
+        let mut sent = SentOrders::default();
+        sent.send(&mut queue, 5, order.clone());
+        assert_eq!(fate(5, &order, &queue), Fate::Waiting);
+        // The day applies it and logs it.
+        queue.pending.clear();
+        queue.log.push((5, order.clone()));
+        assert_eq!(fate(5, &order, &queue), Fate::Applied);
+        // An order dropped by the day is not in the log.
+        let dropped = Order::Raid { town: 0, target: 1 };
+        assert_eq!(fate(5, &dropped, &queue), Fate::Rejected);
+        // The same order applied before it was sent does not count.
+        assert_eq!(fate(6, &order, &queue), Fate::Rejected);
     }
 
     #[test]
