@@ -3284,37 +3284,49 @@ fn goods_made_per_day_do_not_depend_on_the_step_size() {
 #[test]
 fn people_keep_their_trade() {
     // Trades are kept (plan Phase 3): from year 2 to year 5, fewer than 5 % of
-    // those with a trade a year change it.
-    let mut s = full(3);
-    run_years(&mut s, 2);
-    let trades = |s: &Simulation| -> std::collections::HashMap<u32, u32> {
-        let store = s.world.resource::<sim_core::AgentStore>();
-        (0..store.len())
-            .filter(|&i| store.alive[i])
-            .filter_map(|i| store.guild[i].map(|g| (store.entity[i].index_u32(), g.domain)))
-            .collect()
-    };
-    let before = trades(&s);
-    run_years(&mut s, 3);
-    let after = trades(&s);
-    let (kept, changed) = before
-        .iter()
-        .fold((0, 0), |(k, c), (e, d)| match after.get(e) {
-            Some(x) if x == d => (k + 1, c),
-            Some(_) => (k, c + 1),
-            None => (k, c),
-        });
-    let per_year = changed as f32 / (kept + changed).max(1) as f32 / 3.0;
+    // those with a trade a year change it. One seed's wars and migrations
+    // move its rate by a couple of points, so four seeds are averaged.
+    let rates: Vec<(usize, f32)> = std::thread::scope(|sc| {
+        let hs: Vec<_> = (1..5)
+            .map(|seed| {
+                sc.spawn(move || {
+                    let mut s = full(seed);
+                    run_years(&mut s, 2);
+                    let trades = |s: &Simulation| -> std::collections::HashMap<u32, u32> {
+                        let store = s.world.resource::<sim_core::AgentStore>();
+                        (0..store.len())
+                            .filter(|&i| store.alive[i])
+                            .filter_map(|i| {
+                                store.guild[i].map(|g| (store.entity[i].index_u32(), g.domain))
+                            })
+                            .collect()
+                    };
+                    let before = trades(&s);
+                    run_years(&mut s, 3);
+                    let after = trades(&s);
+                    let (kept, changed) = before.iter().fold((0, 0), |(k, c), (e, d)| match after
+                        .get(e)
+                    {
+                        Some(x) if x == d => (k + 1, c),
+                        Some(_) => (k, c + 1),
+                        None => (k, c),
+                    });
+                    let per_year = changed as f32 / (kept + changed).max(1) as f32 / 3.0;
+                    (kept, per_year)
+                })
+            })
+            .collect();
+        hs.into_iter().map(|h| h.join().unwrap()).collect()
+    });
+    let mean = rates.iter().map(|r| r.1).sum::<f32>() / rates.len() as f32;
     eprintln!(
-        "kept {kept}, changed {changed}: {:.1} % a year",
-        100.0 * per_year
+        "kept and yearly change per seed: {rates:?}, mean {:.1} %",
+        100.0 * mean
     );
-    assert!(kept > 100, "too few people kept a trade: {kept}");
-    assert!(
-        per_year < 0.05,
-        "{:.1} % changed trade a year",
-        100.0 * per_year
-    );
+    for &(kept, _) in &rates {
+        assert!(kept > 100, "too few people kept a trade: {kept}");
+    }
+    assert!(mean < 0.05, "{:.1} % changed trade a year", 100.0 * mean);
 }
 
 #[test]
