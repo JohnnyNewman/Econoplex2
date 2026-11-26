@@ -128,16 +128,23 @@ pub fn spawn_economy_panel(
     }
 }
 
+/// `E` shows or hides the panel; `Tab` moves it to the next town and centres
+/// the camera there (as "Look at" in the 3D client), letting go of a followed
+/// person.
 pub fn economy_keys(
     keys: Res<ButtonInput<KeyCode>>,
     towns: Res<Towns>,
     mut view: ResMut<EconomyView>,
+    mut follow: ResMut<crate::view::Follow>,
+    mut camera: Single<&mut Transform, With<Camera2d>>,
 ) {
     if keys.just_pressed(KeyCode::KeyE) {
         view.visible = !view.visible;
     }
     if keys.just_pressed(KeyCode::Tab) && !towns.0.is_empty() {
         view.town = (view.town + 1) % towns.0.len();
+        follow.0 = false;
+        crate::view::look_at(&mut camera, towns.0[view.town].pos);
     }
 }
 

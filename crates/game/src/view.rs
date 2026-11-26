@@ -17,6 +17,42 @@ pub struct Overlay {
     /// Culture overlay (`C`, as `V` in the 3D client): people in the colour of
     /// their own culture, towns ringed in theirs.
     pub culture: bool,
+    /// `K`: colour people by their best skill domain instead of by what they
+    /// do today.
+    pub best_skill: bool,
+}
+
+/// `F`: the camera follows the selected person. Panning lets go.
+#[derive(Resource, Default)]
+pub struct Follow(pub bool);
+
+/// People's colours by what they do, as in the 3D client (crowd.rs): workers
+/// in the colour of the domain they work in today, the rest by activity.
+pub const IDLE: Color = Color::srgb(0.86, 0.82, 0.74);
+pub const RESTING: Color = Color::srgb(0.55, 0.58, 0.70);
+pub const SOLDIER: Color = Color::srgb(0.85, 0.16, 0.13);
+pub const CAPTIVE: Color = Color::srgb(0.42, 0.42, 0.45);
+pub const CHILD: Color = Color::srgb(0.75, 0.75, 0.75);
+
+/// The colour of what agent `i` does today: the skill domain of the recipe
+/// they work at (or worked at earlier today), else their activity.
+pub fn activity_color(store: &AgentStore, db: &Db, tasks: &Query<&Task>, i: usize) -> Color {
+    let n = db.domain_dirs.len();
+    let recipe = match store.activity[i] {
+        Activity::Working(e) => tasks.get(e).ok().map(|t| t.recipe),
+        _ => None,
+    }
+    .or(store.worked_today[i]);
+    if let Some(r) = recipe {
+        return domain_color(db.recipes[r as usize].domain as usize, n, 0.9);
+    }
+    match store.activity[i] {
+        Activity::Child => CHILD,
+        Activity::Resting => RESTING,
+        Activity::Soldier => SOLDIER,
+        Activity::Captive => CAPTIVE,
+        Activity::Idle | Activity::Working(_) => IDLE,
+    }
 }
 
 /// A culture (the first three ideological axes: tradition, faith, liberty,
@@ -249,6 +285,7 @@ pub fn animate_agents(
     terrain: Res<sim_core::terrain::Terrain>,
     towns: Res<Towns>,
     overlay: Res<Overlay>,
+    tasks: Query<&Task>,
     mut agents: Query<(&Agent, &mut Transform, &mut Sprite), With<AgentSprite>>,
 ) {
     let dt = time.delta_secs();
@@ -268,15 +305,17 @@ pub fn animate_agents(
 
         let child = store.age_years(i, clock.months_per_year) < params.life.adult_age;
         let selected = selection.0 == Some(a.idx);
-        let (d, strength) = dominant_domain(&db, &store.cap[i]);
         sprite.color = if selected {
             Color::WHITE
         } else if overlay.culture {
             culture_color(&store.mind[i][sim_data::dims::mind::IDEOLOGY_START..])
         } else if child {
-            Color::srgb(0.75, 0.75, 0.75)
-        } else {
+            CHILD
+        } else if overlay.best_skill {
+            let (d, strength) = dominant_domain(&db, &store.cap[i]);
             domain_color(d, n, strength)
+        } else {
+            activity_color(&store, &db, &tasks, i)
         };
         let size = if selected {
             10.0
@@ -493,6 +532,7 @@ pub fn camera_controls(
     keys: Res<ButtonInput<KeyCode>>,
     scroll: Res<AccumulatedMouseScroll>,
     time: Res<Time>,
+    mut follow: ResMut<Follow>,
     mut camera: Single<&mut Transform, With<Camera2d>>,
 ) {
     let mut dir = Vec2::ZERO;
@@ -508,12 +548,43 @@ pub fn camera_controls(
     if keys.any_pressed([KeyCode::KeyD, KeyCode::ArrowRight]) {
         dir.x += 1.0;
     }
+    if dir != Vec2::ZERO {
+        follow.0 = false;
+    }
     let zoom = camera.scale.x;
     camera.translation += (dir * 600.0 * zoom * time.delta_secs()).extend(0.0);
     if scroll.delta.y != 0.0 {
         let z = (zoom * (1.0 - 0.1 * scroll.delta.y.signum())).clamp(0.2, 5.0);
         camera.scale = Vec3::new(z, z, 1.0);
     }
+}
+
+/// `F` turns following on and off; while on, the camera stays on the selected
+/// person.
+pub fn follow_selected(
+    keys: Res<ButtonInput<KeyCode>>,
+    selection: Res<Selection>,
+    mut follow: ResMut<Follow>,
+    agents: Query<(&Agent, &Transform), Without<Camera2d>>,
+    mut camera: Single<&mut Transform, (With<Camera2d>, Without<Agent>)>,
+) {
+    if keys.just_pressed(KeyCode::KeyF) {
+        follow.0 = !follow.0 && selection.0.is_some();
+    }
+    let Some(id) = selection.0.filter(|_| follow.0) else {
+        follow.0 = false;
+        return;
+    };
+    if let Some((_, tf)) = agents.iter().find(|(a, _)| a.idx == id) {
+        camera.translation.x = tf.translation.x;
+        camera.translation.y = tf.translation.y;
+    }
+}
+
+/// Centre the camera on a town.
+pub fn look_at(camera: &mut Transform, pos: (f32, f32)) {
+    camera.translation.x = pos.0;
+    camera.translation.y = pos.1;
 }
 
 pub fn select_agent(
