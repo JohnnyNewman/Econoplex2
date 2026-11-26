@@ -1,7 +1,7 @@
 //! Command-line options for the game, mainly for scripted runs:
 //!
 //! ```text
-//! econoplex [--load FILE] [--speed 1-5] [--shot FILE [--shot-day N] [--exit]]
+//! econoplex [--load FILE] [--speed 1-9] [--shot FILE [--shot-day N] [--exit]]
 //!           [--town NAME] [--camera X Y] [--zoom F] [--no-economy] [--product-space]
 //!           [--report why|town|history|log|person] [--select ID] [--culture]
 //! ```
@@ -55,7 +55,7 @@ pub fn parse() -> GameArgs {
         match arg.as_str() {
             "--load" => a.load = Some(PathBuf::from(val())),
             "--speed" => {
-                let s: usize = val().parse().unwrap_or_else(|_| die("--speed expects 1-5"));
+                let s: usize = val().parse().unwrap_or_else(|_| die("--speed expects 1-9"));
                 a.speed = Some(s.clamp(1, crate::SPEEDS.len()) - 1);
             }
             "--shot" => a.shot = Some(PathBuf::from(val())),
@@ -104,7 +104,7 @@ pub fn parse() -> GameArgs {
                 println!(
                     "econoplex: the Econoplex game\n\n\
                      --load FILE      start from a saved game\n\
-                     --speed N        start at speed N (1-5)\n\
+                     --speed N        start at speed N (1-9)\n\
                      --shot FILE      save a PNG screenshot once the game reaches --shot-day\n\
                      --shot-day N     simulated day (month) of the screenshot (default: at once)\n\
                      --exit           quit after the screenshot

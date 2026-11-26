@@ -12,8 +12,8 @@ the 3D client shows or lets the player do that the 2D client does not.
 Purely visual effects (shaders, outlines, bloom, fog, grass, figure
 animation) are left out unless they carry information.
 
-Group 1 of the recommended order is done (2026-11-26, rows marked
-*same (group 1)*).
+Groups 1 to 3 of the recommended order are done (2026-11-26, rows marked
+*same (group 1)* or *same (groups 2–3)*).
 
 The first round (2026-11-15) closed these gaps with the 2D reports panel:
 the Why? view, the person details, food security and town needs, weather in
@@ -36,17 +36,17 @@ the end of this note).
 
 | Feature | 3D file(s) | 2D status | Effort | How to show it in 2D |
 |---|---|---|---|---|
-| Nine speeds, up to 120 days a second (`,` / `.`) | live.rs | partial: five speeds, up to 4 days a second | S | Add speeds 6–9 to `SPEEDS`. The step budget per frame already keeps the view responsive. |
-| Day and night: the sun, the moon and the town lights show the hour, and people go home to rest | env.rs, sky.rs, lights.rs, crowd.rs | partial: the HUD shows the hour, and people walk to their targets | S | Darken the map at night by the sun's height, and colour resting people blue-grey (see People). |
+| Nine speeds, up to 120 days a second (`,` / `.`) | live.rs | same (groups 2–3): nine speeds, keys `1`–`9`, as in the 3D client | | |
+| Day and night: the sun, the moon and the town lights show the hour, and people go home to rest | env.rs, sky.rs, lights.rs, crowd.rs | same (groups 2–3): a dark veil from dusk to dawn (with an hour of twilight) at speeds up to 12 s a day, and resting people blue-grey | | |
 
 ### Weather, seasons and the land
 
 | Feature | 3D file(s) | 2D status | Effort | How to show it in 2D |
 |---|---|---|---|---|
-| Weather on the map: rain, snow, clouds and wind | env.rs, precip.rs, sky.rs | partial: only as text in the `T` report | S | Add a weather line to the HUD, and draw a few streaks or flakes over the camera view in rain or snow. |
-| Ground state: snow cover, wetness and autumn colour | env.rs, terrain.rs | missing | S | Tint the terrain image by season and snow cover, the same values the 3D client reads from `Environment`. |
-| Fields through the farming year, and how much of each town's harvest is in (`TownView::crops` against the year's peak) | fields.rs | missing | M | Colour field sites by crop stage (ploughed, green, gold, stubble). Show "harvest in: n %" in the `T` report and as a ring on the town. |
-| Ice on rivers in deep winter | water.rs | missing (rivers are drawn, ice is not) | S | Draw river cells pale while the temperature is below freezing. |
+| Weather on the map: rain, snow, clouds and wind | env.rs, precip.rs, sky.rs | same (groups 2–3): a weather line in the HUD for the economy panel's town, and rain or snow over the view by the weather of the town nearest its centre, slanted by the wind | | |
+| Ground state: snow cover, wetness and autumn colour | env.rs, terrain.rs | same (groups 2–3): the terrain image is tinted by the season, and each cell by its nearest town's snow cover and wet ground (seasons.rs) | | |
+| Fields through the farming year, and how much of each town's harvest is in (`TownView::crops` against the year's peak) | fields.rs | same (groups 2–3): field and flax sites go ploughed, green, gold and stubble, reaped nearest the town first; `T` shows the harvest in, and a gold arc around the town shows it from late summer | | |
+| Ice on rivers in deep winter | water.rs | same (groups 2–3): rivers and fords turn pale as the nearest town's day falls below freezing; the HUD says when they are frozen | | |
 | Weather and season set by hand for a look (`Y` / `U`, `--weather`, `--season`) | env.rs | missing | S | Low value for testing. Leave it out, or add the same flags. |
 
 ### Map
@@ -55,7 +55,7 @@ the end of this note).
 |---|---|---|---|---|
 | Roads between towns (`Terrain::path`) | roads.rs | same (group 1): road cells are brown in the terrain image (terrain_view.rs) | | |
 | Caravans driving along the roads, more of them for more trade | roads.rs, overlay.rs | partial: flow arrows show volume, nothing moves | S | Move dots along the flow arrows, more of them for more value. |
-| Rings around the buildings a Why? finding names | overlay.rs (`draw_why`), ui.rs | partial: findings appear as text in `Y` | S | Draw a pulsing ring around those building sprites while `Y` is open. |
+| Rings around the buildings a Why? finding names | overlay.rs (`draw_why`), ui.rs | same (groups 2–3): with `Y` open, those buildings pulse in red | | |
 | "Look at" a town or a person moves the camera there | ui.rs, inspect.rs, camera.rs | same (group 1): `Tab` centres the camera on the next town; `F` goes to the selected person | | |
 | Follow the selected person with the camera | inspect.rs | same (group 1): `F` follows them, and panning lets go | | |
 | Hide all panels to look at the world (`H`) | ui.rs | missing (`H` is history) | S | Add an `F2` toggle for the HUD columns. |
@@ -127,14 +127,14 @@ the end of this note).
    - roads;
    - the sent-orders list;
    - building counts in `T`.
-2. **Seasons and harvest (S–M):**
+2. **Seasons and harvest (S–M), done (groups 2–3):**
    - season and snow tint;
    - field crop stages and harvest %;
    - river ice;
    - a weather line and rain or snow over the map.
 
    Farming and fuel follow these.
-3. **Speeds 6–9 and Why? rings (S).**
+3. **Speeds 6–9 and Why? rings (S), done (groups 2–3).**
 4. **Live battles (L, then M):**
    - the clock hold in the 2D loop;
    - then the battle panel with squad orders.

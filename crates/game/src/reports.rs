@@ -161,7 +161,14 @@ pub fn update_reports(world: &mut World) {
     }
     world.resource_mut::<Reports>().made = Some(key);
     let text = match report {
-        Report::Why => why(world, town),
+        Report::Why => {
+            let (text, kinds) = why(world, town);
+            if let Some(mut rings) = world.get_resource_mut::<crate::seasons::WhyRings>() {
+                rings.town = town;
+                rings.kinds = kinds;
+            }
+            text
+        }
         Report::Town => town_report(world, town),
         Report::History => history(world),
         Report::Log => log(world),
@@ -204,9 +211,25 @@ fn footer(s: &mut String) {
 
 // ------------------------------------------------------------------ Why?
 
-fn why(world: &World, town: usize) -> String {
+/// The Why? report, and the building types its findings name (ringed on the
+/// map, seasons.rs).
+fn why(world: &World, town: usize) -> (String, Vec<String>) {
     let mut s = format!("WHY? {}   (Tab: next town)\n\n", town_name(world, town));
     let found = sim_core::explain::explain(world, town as u16);
+    let mut kinds = Vec::new();
+    fn named(f: &Finding, kinds: &mut Vec<String>) {
+        if let Some(k) = &f.building {
+            if !kinds.contains(k) {
+                kinds.push(k.clone());
+            }
+        }
+        for b in &f.because {
+            named(b, kinds);
+        }
+    }
+    for f in &found {
+        named(f, &mut kinds);
+    }
     if found.is_empty() {
         s.push_str("Nothing stands out: food, goods, treasury and people look fine.\n");
     }
@@ -214,8 +237,11 @@ fn why(world: &World, town: usize) -> String {
         finding(&mut s, f, 0);
     }
     s.push_str("\nRule-based: what is short, what stops it, where the money goes.\n");
+    if !kinds.is_empty() {
+        s.push_str("The buildings it names are ringed in red on the map.\n");
+    }
     footer(&mut s);
-    s
+    (s, kinds)
 }
 
 fn finding(s: &mut String, f: &Finding, depth: usize) {
@@ -286,6 +312,17 @@ fn town_report(world: &World, town: usize) -> String {
         t.population, t.treasury, t.mean_wealth
     ));
     s.push_str(&format!("Buildings: {}\n", building_counts(world, t)));
+    if let (Some(env), Some(year)) = (
+        world.get_resource::<sim_core::env::Environment>(),
+        world.get_resource::<crate::seasons::FieldYear>(),
+    ) {
+        s.push_str(&format!(
+            "Harvest: {:.0} % in; crop standing {:.0} % of a year's growth (peak {:.0} %)\n",
+            year.reaped(town, env.season) * 100.0,
+            year.crops.get(town).copied().unwrap_or(0.0) * 100.0,
+            year.peak.get(town).copied().unwrap_or(0.0) * 100.0
+        ));
+    }
     s.push_str("\nFood security\n");
     s.push_str(&format!("  food in stock      {:.0} days\n", t.food_days));
     s.push_str(&format!(
@@ -581,7 +618,9 @@ mod tests {
         for _ in 0..40 {
             sim_core::run_day(&mut w);
         }
+        w.insert_resource(crate::seasons::FieldYear::default());
         let town = town_report(&w, 0);
+        assert!(town.contains("Harvest: "), "{town}");
         assert!(town.contains("treasury"), "{town}");
         assert!(town.contains("mean wealth"), "{town}");
         assert!(

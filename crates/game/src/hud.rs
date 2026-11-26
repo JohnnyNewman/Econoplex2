@@ -30,7 +30,7 @@ pub struct RightColumn;
 pub struct HelpText;
 
 /// The full controls help (`F1`).
-pub const HELP: &str = "Space pause | 1-5 speed | WASD pan | wheel zoom\nclick select | Esc deselect | F follow | P product space\nK colour by best skill / today's work\nE economy | Tab next town | F5 save | F9 load\nY why | T town | H history | L log | I person\nC culture: red tradition, green faith, blue liberty\nF1 hide this help";
+pub const HELP: &str = "Space pause | 1-9 speed | WASD pan | wheel zoom\nclick select | Esc deselect | F follow | P product space\nK colour by best skill / today's work\nE economy | Tab next town | F5 save | F9 load\nY why | T town | H history | L log | I person\nC culture: red tradition, green faith, blue liberty\nF1 hide this help";
 /// The one line it shows while folded.
 pub const HELP_FOLDED: &str = "F1 controls";
 
@@ -227,8 +227,13 @@ pub fn update_hud(
         Res<sim_core::world::ScenarioSpec>,
         Res<sim_core::goal::MatchState>,
     ),
+    weather: (
+        Option<Res<sim_core::env::Environment>>,
+        Res<crate::economy_ui::EconomyView>,
+    ),
 ) {
     let (scenario, state) = goal;
+    let (env, economy) = weather;
     let goal_amount = scenario.0.goal.as_ref().map(|g| g.amount);
     let mut s = format!(
         "ECONOPLEX   year {}  {} {:02}:00   {}{}\npopulation {}\n",
@@ -239,6 +244,9 @@ pub fn update_hud(
         sim_core::calendar::speed_label(SPEEDS[control.speed] as f32),
         store.alive_count()
     );
+    if let (Some(env), Some(town)) = (env, towns.0.get(economy.town)) {
+        s.push_str(&weather_line(&env, economy.town, &town.name));
+    }
     let latest = metrics.latest();
     // The goal column only shows when the scenario sets a goal.
     s.push_str(if goal_amount.is_some() {
@@ -351,6 +359,38 @@ pub fn update_hud(
         ));
     }
     text.0 = s;
+}
+
+/// The weather at the economy panel's town, in one line.
+fn weather_line(env: &sim_core::env::Environment, t: usize, name: &str) -> String {
+    let l = env.at(t);
+    let w = l.weather;
+    let sky = if w.precip >= 0.05 {
+        if w.snow_fraction() > 0.5 {
+            "snow"
+        } else {
+            "rain"
+        }
+    } else if w.cloud > 0.6 {
+        "overcast"
+    } else if w.cloud > 0.25 {
+        "cloudy"
+    } else {
+        "clear"
+    };
+    let mut s = format!(
+        "{name}: {:.0} C, {sky}, wind {:.0} m/s",
+        w.temperature,
+        w.wind_speed()
+    );
+    if l.ground.snow > 0.05 {
+        s.push_str(&format!(", snow cover {:.0} %", l.ground.snow * 100.0));
+    }
+    if crate::seasons::ice(l.day_mean_c) > 0.5 {
+        s.push_str(", rivers frozen");
+    }
+    s.push('\n');
+    s
 }
 
 fn bar(v: f32) -> String {
