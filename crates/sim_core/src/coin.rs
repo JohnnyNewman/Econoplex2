@@ -8,10 +8,20 @@
 //! Prices and rates stay fractional. A payment is worked out as a fraction,
 //! turned into a `Coin` once with [`Coin::from_coins`], and that same amount
 //! is taken from the payer and given to the payee.
+//!
+//! Each town issues its own coin (`Town::coin_value` is what one is worth in
+//! the common unit coins are exchanged by), so an amount means the coin of
+//! the town that holds it; other towns' coin a town holds is kept apart, by
+//! issuer (`Town::foreign`).
 
 use serde::{Deserialize, Serialize};
 use std::iter::Sum;
 use std::ops::{Add, AddAssign, Neg, Sub, SubAssign};
+
+/// `amount` of a coin worth `from` (in the common unit) in a coin worth `to`.
+pub fn exchange(amount: f32, from: f32, to: f32) -> f32 {
+    amount * from / to.max(1e-6)
+}
 
 /// Units in one coin.
 pub const UNITS: i64 = 1_000_000;
@@ -103,6 +113,13 @@ impl Sum for Coin {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn exchange_goes_through_the_common_unit() {
+        // Ten coins worth 2 each buy twenty coins worth 1, and back.
+        assert_eq!(exchange(10.0, 2.0, 1.0), 20.0);
+        assert_eq!(exchange(20.0, 1.0, 2.0), 10.0);
+    }
 
     #[test]
     fn amounts_round_to_the_nearest_unit_and_read_back() {
