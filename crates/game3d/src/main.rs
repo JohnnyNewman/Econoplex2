@@ -43,6 +43,7 @@ mod precip;
 mod render_scale;
 mod roads;
 mod sky;
+mod smoke;
 mod terrain;
 mod toon;
 mod ui;
@@ -333,6 +334,7 @@ fn main() {
         water::WaterPlugin,
         grounding::GroundingPlugin,
         fields::FieldsPlugin,
+        smoke::SmokePlugin,
         battles::BattlesPlugin,
     ))
     .insert_resource(env_override)
@@ -343,7 +345,15 @@ fn main() {
     .add_systems(PreStartup, apply_outline_start)
     .insert_resource(overlay)
     .add_systems(Startup, setup)
-    .add_systems(Update, (shoot, quit_after_secs, hud::update_help))
+    .add_systems(
+        Update,
+        (
+            shoot,
+            quit_after_secs,
+            hud::update_help,
+            buildings::turn_sails,
+        ),
+    )
     .run();
 }
 
