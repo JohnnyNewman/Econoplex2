@@ -30,6 +30,7 @@ mod crowd_compute;
 mod env;
 mod fields;
 mod fog;
+mod grading;
 mod grounding;
 mod hud;
 mod inspect;
@@ -335,6 +336,7 @@ fn main() {
         grounding::GroundingPlugin,
         fields::FieldsPlugin,
         smoke::SmokePlugin,
+        grading::GradingPlugin,
         battles::BattlesPlugin,
     ))
     .insert_resource(env_override)
