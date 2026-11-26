@@ -141,12 +141,6 @@ pub struct MarketParams {
     /// target (at most `max_load` units), so piles flow to shortages.
     #[serde(default)]
     pub caravans: Caravans,
-    /// A town buys from caravans only with the coin it holds above this many
-    /// simulated days (months) of its recent wage bill: it keeps what it needs
-    /// to pay its own workers, whose work is what it sells. Food is bought
-    /// with whatever it holds.
-    #[serde(default)]
-    pub import_reserve_days: f32,
     /// Fraction of price lost per unit traded per 1000 units of road (transport cost).
     pub transport_cost: f32,
     /// Yearly tax on each agent's wealth above `tax_free_wealth`, paid to the town
