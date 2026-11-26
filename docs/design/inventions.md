@@ -6,8 +6,8 @@ Design note, agreed in discussion with Nils on 2026-11-26. No code yet.
 
 Recipes are not all known from the start. They are discovered by people, passed on by
 apprenticeship and schooling, kept secret by guilds, and lost when the last person who
-knows them dies. This gives the tree a time axis that comes from the agents, not from eras
-(eras stay a label). The tree should eventually reach light-fantasy, steampunk-like technology.
+knows them dies. This gives the tech graph a time axis that comes from the agents, not from eras
+(eras stay a label). The graph should eventually reach light-fantasy, steampunk-like technology.
 
 ## Core idea
 
@@ -25,7 +25,7 @@ and still has to practise.
 ### Recipe-skills
 
 A recipe-skill is one way of making a good, at one level, for example `forged_longsword_3`.
-It corresponds 1-to-1 to one recipe and one node of the tree. Recipes to goods are many-to-1:
+It corresponds 1-to-1 to one recipe and one node of the tech graph. Recipes to goods are many-to-1:
 the same good can be made in different ways, for example
 
 | Good | Ways (recipe-skills) |
@@ -48,7 +48,25 @@ Each recipe-skill names the recipe-skills it builds on, in the content:
  difficulty: 2.4, invent_difficulty: 3.0, ...)
 ```
 
-This is the existing skill DAG (`SkillDef.prereqs`) made fine grained. The embedding in
+### A graph, not a tree
+
+A node can have several ancestors, and a node can be reached by different routes. So
+`requires` is a list of groups: the person needs every group, and within a group any one
+member is enough:
+
+```ron
+// steel 1 needs iron working, and either a bloomery or a crucible route
+(id: "steel_1", output: "steel", level: 1,
+ requires: [["iron_smithing_2"], ["bloomery_iron_2", "crucible_melting_1"]], ...)
+```
+
+A plain list of single names (`["a", "b"]`) means "a and b", as above. The `requires` links
+alone must not loop back on themselves, or the nodes in the loop could never be learned
+first. Loops through goods are fine and already exist (iron tools make iron); validation
+checks that every node can be reached from the starting knowledge.
+
+This is the existing skill graph (`SkillDef.prereqs`, which already allows several parents)
+made fine grained. The embedding in
 `sim_data/src/embed.rs` already maps any number of skills into a fixed number of
 capability dimensions (closure vectors, NMF when there are more skills than dimensions,
 `embedding.dims` in models.ron). So hundreds of recipe-skills do not grow the capability vector.
@@ -58,7 +76,7 @@ level 3, with pattern welding and with spears.
 
 ### Frontier
 
-A person's frontier is every recipe-skill they do not know whose `requires` they all know.
+A person's frontier is every recipe-skill they do not know whose `requires` they meet.
 The frontier only changes when the person learns something, so it is cached per person and
 recomputed on learning.
 
@@ -68,7 +86,7 @@ flowchart LR
         S1[steel_1]
         L1[forged_longsword_1] --> L2[forged_longsword_2]
     end
-    subgraph frontier["Frontier (all requires known)"]
+    subgraph frontier["Frontier (requires met)"]
         L3[forged_longsword_3]
     end
     subgraph hidden["Beyond the frontier"]
@@ -137,7 +155,7 @@ differ by seed.
 
 ## What the player sees
 
-The tree starts hidden. A node becomes visible to the player, permanently, the first time any
+The graph starts hidden. A node becomes visible to the player, permanently, the first time any
 of the player's people knows it: by inventing it, or by learning it from an immigrant or a
 captured smith. Open: whether the frontier of visible nodes is shown as "being worked on".
 
@@ -150,11 +168,11 @@ is cached. The nightly pass checks at most `max_checks` related items per workin
 ## Build steps
 
 1. Content: recipe-skills with output good, level and `requires` (several ways per good); split today's recipes into level 1
-   recipe-skills; validation (every node reachable, no cycles)
+   recipe-skills; validation (every node reachable from the start set)
 2. Knowledge bits per person, starting profiles, gating job choice by knowledge (save format)
 3. Apprenticeship and migration carry knowledge; loss on death; town knowledge = union of residents
 4. Nightly invention check with context factors; event log
-5. Player reveal and the hidden tree in the UI
+5. Player reveal and the hidden graph in the UI
 6. Schools and guild secrets
 7. New levels and new items toward the steampunk end; writing and libraries
 
