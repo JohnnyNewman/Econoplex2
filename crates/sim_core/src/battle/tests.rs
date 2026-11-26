@@ -41,6 +41,25 @@ fn same_seed_same_battle() {
     assert_eq!(run(7), run(7));
 }
 
+/// Equal armies on an open field win about half the time each, at any size:
+/// neither the side nor the order the squads move in decides the fight.
+#[test]
+fn equal_armies_win_about_half_the_time() {
+    for lineup in [
+        "swordsmen*30 vs swordsmen*30",
+        "swordsmen*400 vs swordsmen*400",
+        "spearmen*400 vs spearmen*400",
+        "cavalry*200 vs cavalry*200",
+        "swordsmen*40,swordsmen*40,swordsmen*40 vs swordsmen*40,swordsmen*40,swordsmen*40",
+    ] {
+        let (att, def) = wins(lineup, 100);
+        assert!(
+            (35..=65).contains(&att) && att + def >= 90,
+            "{lineup}: attackers won {att}, defenders {def} of 100"
+        );
+    }
+}
+
 #[test]
 fn spear_wall_stops_a_charge() {
     let (att, def) = wins("cavalry*20 vs spearmen*30", 20);
