@@ -3,7 +3,7 @@
 // Every quad of the mesh is one puff. Its four vertices hold the chimney top
 // (the position), which corner they are (the UV, -1..1) and the puff's
 // traits (the colour: r how dark, g a random seed, b its slot in the plume
-// 0..1, a 1 for a workplace, 0 for a hearth). The vertex shader gives each
+// 0..1, a how much smoke: 0 for a hearth, else the workplace's load 0..1). The vertex shader gives each
 // puff an age that runs from 0 to 1 over a few seconds and starts again:
 // young puffs sit small and dense on the chimney, old ones have risen,
 // grown, drifted with the wind and faded.
@@ -38,7 +38,7 @@ fn vertex(vertex_in: Vertex) -> SmokeOut {
     c = v.color;
     let dark = c.r;
     let seed = c.g;
-    let workplace = c.a;
+    let workplace = step(0.001, c.a);
     let f = env.fog;
     let t = globals.time;
 
@@ -66,10 +66,10 @@ fn vertex(vertex_in: Vertex) -> SmokeOut {
     out.world = world;
     out.seed = seed;
 
-    // How much smoke: a workplace at work smokes fully; a hearth a thin wisp
-    // in summer (cooking) and fully in autumn and winter (heating).
+    // How much smoke: a workplace by how busy it is; a hearth a thin wisp in
+    // summer (cooking) and fully in autumn and winter (heating).
     let cold = clamp(f.ground.w + 0.7 * f.ground.z, 0.0, 1.0);
-    let amount = mix(0.3 + 0.7 * cold, 1.0, workplace);
+    let amount = mix(0.3 + 0.7 * cold, 0.35 + 0.65 * c.a, workplace);
     // Fade in at the chimney, out as it thins.
     out.alpha = min(amount * smoothstep(0.0, 0.04, age) * pow(1.0 - age, 0.8) * 1.4, 0.9);
 

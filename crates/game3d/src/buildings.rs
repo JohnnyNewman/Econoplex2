@@ -720,15 +720,16 @@ pub const SAIL_HUB: Vec3 = Vec3::new(0.0, 2.0, 0.78);
 /// A mill's sails, turning about their hub (life.rs).
 #[derive(Component)]
 pub struct Sails {
-    /// The mill's id in the sim: they turn while it works.
+    /// The mill's id in the sim: they turn while it is in use.
     pub id: u64,
     /// Angle now (radians) and speed (radians a second).
     pub angle: f32,
     pub speed: f32,
 }
 
-/// Turn the mills' sails: while the mill works, faster in a stronger wind;
-/// they come to a stop slowly when it doesn't. A handful of mills, so the
+/// Turn the mills' sails: by how busy the mill has been lately
+/// (`BuildingView::load`), faster in a stronger wind; they come to a stop
+/// slowly when it stands idle. A handful of mills, so the
 /// CPU turns them (one transform each per frame).
 pub fn turn_sails(
     time: Res<Time>,
@@ -739,18 +740,18 @@ pub fn turn_sails(
     if sails.is_empty() {
         return;
     }
-    let working: std::collections::HashSet<u64> = live
+    let load: HashMap<u64, f32> = live
         .iter()
         .flat_map(|l| l.snapshot.towns.iter())
         .flat_map(|t| t.buildings.iter())
-        .filter(|b| b.progress.is_some())
-        .map(|b| b.id)
+        .map(|b| (b.id, b.load))
         .collect();
     let wind = (env.weather.wind.length() / 15.0).min(1.0);
     let dt = time.delta_secs();
     for (mut s, mut tf) in &mut sails {
-        let target = if working.contains(&s.id) {
-            sail_speed(wind)
+        let busy = load.get(&s.id).copied().unwrap_or(0.0);
+        let target = if busy > 0.05 {
+            sail_speed(wind) * (0.4 + 0.6 * busy.min(1.0))
         } else {
             0.0
         };

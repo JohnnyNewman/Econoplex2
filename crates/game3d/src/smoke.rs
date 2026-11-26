@@ -2,22 +2,24 @@
 //!
 //! Smoke rises from the chimneys of the two-storey houses (hearths: a thin
 //! pale wisp in summer, more in autumn and winter, when every house heats)
-//! and from workplaces with a chimney while they work (bakeries pale,
-//! smithies and furnaces dark and thick).
+//! and from workplaces with a chimney as busy as they have been lately
+//! (`BuildingView::load`, a month's average: steady at any hour and game
+//! speed): bakeries pale, smithies and furnaces dark and thick.
 //!
 //! Like rain (precip.rs), the smoke is one mesh of small quads per town whose
 //! vertices never move on the CPU: each quad is one puff, and all its four
 //! vertices hold the chimney top (the position), which corner they are (the
 //! UV) and the puff's traits (the colour: how dark, a random seed, its slot
-//! in the plume, hearth or workplace). The vertex shader
+//! in the plume, and how much smoke: 0 for a hearth, which follows the
+//! season, else the workplace's load). The vertex shader
 //! (`assets/shaders/smoke.wesl`) lifts each puff from the chimney over a few
 //! seconds, grows it, drifts it with the wind and fades it out, then starts
 //! it again at the top: a plume of a few puffs at different ages.
 //!
 //! Wind, season and daylight come from the shared buffer (`fog::FOG_BUFFER`)
 //! and the time from Bevy's globals, so the material never changes. A town's
-//! mesh is built again only when its chimneys change or a workplace starts or
-//! stops (a few times a day).
+//! mesh is built again only when its chimneys change or a workplace's load
+//! moves by a tenth.
 
 use crate::fog::FOG_BUFFER;
 use crate::live::LiveSim;
@@ -83,13 +85,13 @@ pub struct Chimneys {
     pub dirty: bool,
 }
 
-/// One plume: where it rises, how dark (0..1), and whether it is a
-/// workplace's (always full) or a hearth's (by the season).
+/// One plume: where it rises, how dark (0..1), and how much smoke: 0 for a
+/// hearth (the shader follows the season), else a workplace's load (0..1).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Plume {
     pub at: Vec3,
     pub dark: f32,
-    pub workplace: bool,
+    pub amount: f32,
 }
 
 /// The mesh for a town's plumes: `PUFFS` quads each, see the module doc.
@@ -103,12 +105,7 @@ pub fn smoke_mesh(plumes: &[Plume]) -> Mesh {
         // A seed from the chimney's place: steady across rebuilds.
         let seed = (p.at.x * 12.9898 + p.at.z * 78.233).sin().abs() * 43758.547 % 1.0;
         for k in 0..PUFFS {
-            let data = [
-                p.dark,
-                seed,
-                k as f32 / PUFFS as f32,
-                if p.workplace { 1.0 } else { 0.0 },
-            ];
+            let data = [p.dark, seed, k as f32 / PUFFS as f32, p.amount];
             for c in [[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]] {
                 pos.push(p.at.to_array());
                 uv.push(c);
@@ -127,8 +124,9 @@ pub fn smoke_mesh(plumes: &[Plume]) -> Mesh {
     mesh
 }
 
-/// The plumes of every town: all hearths, and the workplaces at work.
-pub fn plumes(chimneys: &Chimneys, working: &HashMap<u64, bool>, towns: usize) -> Vec<Vec<Plume>> {
+/// The plumes of every town: all hearths, and the workplaces in use (their
+/// load, by tenths: a workplace barely used doesn't smoke).
+pub fn plumes(chimneys: &Chimneys, load: &HashMap<u64, f32>, towns: usize) -> Vec<Vec<Plume>> {
     let mut out: Vec<Vec<Plume>> = (0..towns.max(chimneys.houses.len()))
         .map(|t| {
             chimneys
@@ -139,7 +137,7 @@ pub fn plumes(chimneys: &Chimneys, working: &HashMap<u64, bool>, towns: usize) -
                         .map(|&at| Plume {
                             at,
                             dark: 0.0,
-                            workplace: false,
+                            amount: 0.0,
                         })
                         .collect()
                 })
@@ -150,12 +148,9 @@ pub fn plumes(chimneys: &Chimneys, working: &HashMap<u64, bool>, towns: usize) -
     ids.sort();
     for id in ids {
         let (t, at, dark) = chimneys.buildings[id];
-        if working.get(id).copied().unwrap_or(false) && t < out.len() {
-            out[t].push(Plume {
-                at,
-                dark,
-                workplace: true,
-            });
+        let amount = (load.get(id).copied().unwrap_or(0.0) * 10.0).round() / 10.0;
+        if amount > 0.0 && t < out.len() {
+            out[t].push(Plume { at, dark, amount });
         }
     }
     out
@@ -184,13 +179,13 @@ fn update_smoke(
     }
     last.0 = Some(tick);
     chimneys.dirty = false;
-    let working: HashMap<u64, bool> = live
+    let load: HashMap<u64, f32> = live
         .snapshot
         .towns
         .iter()
-        .flat_map(|t| t.buildings.iter().map(|b| (b.id, b.progress.is_some())))
+        .flat_map(|t| t.buildings.iter().map(|b| (b.id, b.load)))
         .collect();
-    let now = plumes(&chimneys, &working, live.snapshot.towns.len());
+    let now = plumes(&chimneys, &load, live.snapshot.towns.len());
     let material = material
         .get_or_insert_with(|| materials.add(SmokeMaterial { env: FOG_BUFFER }))
         .clone();
@@ -237,7 +232,7 @@ mod tests {
         let p = Plume {
             at: Vec3::new(1.0, 2.0, 3.0),
             dark: 0.5,
-            workplace: true,
+            amount: 1.0,
         };
         let m = smoke_mesh(&[p, p]);
         assert_eq!(m.count_vertices(), 2 * PUFFS * 4);
@@ -245,17 +240,17 @@ mod tests {
     }
 
     #[test]
-    fn workplaces_smoke_only_while_they_work() {
+    fn workplaces_smoke_by_how_busy_they_are() {
         let mut c = Chimneys {
             houses: vec![vec![Vec3::ZERO]],
             ..default()
         };
         c.buildings.insert(7, (0, Vec3::X, 1.0));
         c.buildings.insert(8, (0, Vec3::Y, 0.2));
-        let working = HashMap::from([(7, true), (8, false)]);
-        let p = plumes(&c, &working, 1);
+        let load = HashMap::from([(7, 0.62), (8, 0.02)]);
+        let p = plumes(&c, &load, 1);
         assert_eq!(p[0].len(), 2);
-        assert!(p[0].iter().any(|q| q.workplace && q.at == Vec3::X));
+        assert!(p[0].iter().any(|q| q.amount == 0.6 && q.at == Vec3::X));
         assert!(!p[0].iter().any(|q| q.at == Vec3::Y));
     }
 }

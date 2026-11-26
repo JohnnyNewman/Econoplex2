@@ -32,6 +32,11 @@ pub struct BuildingView {
     /// market when the bar fills, and the rest carries on.
     #[serde(default)]
     pub progress: Option<f32>,
+    /// How busy buildings of this kind in this town have been lately: the
+    /// share of their places in use, averaged over about a month
+    /// (`Town::building_load`). Steady whatever the hour, unlike `progress`.
+    #[serde(default)]
+    pub load: f32,
 }
 
 /// A town's government levers, with the defaults from models.ron filled in.
@@ -506,6 +511,7 @@ impl ViewSnapshot {
                                 .filter(|b| b.0 == ti as u16 && b.1 == def && b.2 == pos)
                                 .map(|b| b.3)
                                 .reduce(f32::max),
+                            load: t.building_load.get(def as usize).copied().unwrap_or(0.0),
                         })
                         .collect(),
                     ruler: t.ruler,
@@ -815,6 +821,37 @@ mod tests {
         let before = s.state_hash();
         let _ = town_skills(&s.world, 0);
         assert_eq!(before, s.state_hash());
+    }
+
+    #[test]
+    fn workplaces_show_their_work_during_the_working_day() {
+        let mut s = sim();
+        let mut seen = Seen::default();
+        for _ in 0..30 {
+            s.step();
+        }
+        // Over a day, some step finds workplaces with a run under way.
+        let spd = s.world.resource::<crate::world::SimClock>().steps_per_day;
+        let mut most = 0;
+        for _ in 0..spd {
+            s.step_tick();
+            let snap = ViewSnapshot::capture(&s.world, &mut seen);
+            let working = snap
+                .towns
+                .iter()
+                .flat_map(|t| t.buildings.iter())
+                .filter(|b| b.progress.is_some())
+                .count();
+            most = most.max(working);
+        }
+        assert!(most > 0);
+        // At any hour, busy workplaces show how busy they have been lately.
+        let snap = ViewSnapshot::capture(&s.world, &mut seen);
+        assert!(snap
+            .towns
+            .iter()
+            .flat_map(|t| t.buildings.iter())
+            .any(|b| b.load > 0.05));
     }
 
     #[test]

@@ -9,9 +9,11 @@ Smoke rises from:
 
 - **Hearths:** the chimneys of the two-storey houses (the richest tier). It's
   a thin pale wisp in summer (cooking), full in autumn and winter (heating).
-- **Workplaces with a chimney, while they work** (`BuildingView::progress`
-  is set): bakery pale, kiln grey, smithy, machine shop and furnace dark and
-  thick.
+- **Workplaces with a chimney, by how busy they have been lately**
+  (`BuildingView::load`, the share of their places in use averaged over
+  about a month, so it holds steady at any hour and game speed): bakery
+  pale, kiln grey, smithy, machine shop and furnace dark and thick. One used
+  less than a twentieth of the time doesn't smoke.
 
 It works the way rain does (step 11). Each town has one mesh of small quads,
 one per puff, six puffs a plume. A puff's four vertices all hold:
@@ -20,7 +22,7 @@ one per puff, six puffs a plume. A puff's four vertices all hold:
 | --- | --- |
 | position | the chimney top (world) |
 | UV | which corner, −1..1 |
-| colour | r how dark, g a random seed, b its slot in the plume 0..1, a workplace 1 / hearth 0 |
+| colour | r how dark, g a random seed, b its slot in the plume 0..1, a how much smoke (0 a hearth, else the workplace's load) |
 
 The vertex shader gives each puff an **age** that runs from 0 to 1 over 5–7
 seconds and starts again: `fract(time / life + slot + seed)`. Since the
@@ -29,22 +31,29 @@ a puff:
 
 - rises 2.4–3.4 units;
 - drifts with the wind (`fog.wind`), more the higher it gets (`age^1.4`);
-- grows from 0.1 to 0.6 units;
-- fades in over the first 8 % and out as `(1 − age)^1.6`;
+- grows from 0.15 to 0.8 units (half again for dark smoke);
+- fades in over the first 4 % and out as `(1 − age)^0.8`;
 - turns paler as it thins.
 
 The quad faces the camera (the view's right and up vectors). The fragment
 shader draws a soft disc with a lumpy edge, fogged like everything else.
 Daylight (the sun's height), season and wind come from the shared buffer,
 and time from Bevy's globals. The material never changes. A town's mesh is
-rebuilt only when its chimneys change, or when a workplace starts or stops.
+rebuilt only when its chimneys change, or when a workplace's load moves by a
+tenth.
+
+Why load rather than "a run under way" (`progress`)? Work happens only in
+working hours, and at fast game speeds the view mostly gets the snapshot at
+the end of each day, at night. Driven by `progress`, workplaces would almost
+never smoke.
 
 ## Mill sails (`buildings.rs`, `turn_sails`)
 
-A mill's sails are their own entity, a child of the mill at the hub. While
-the mill works they turn, slowly in a calm and about a turn in two seconds
-in a gale (`sail_speed`). When it stops they run down slowly. There are only
-a handful of mills, so the CPU turns them: one transform each per frame.
+A mill's sails are their own entity, a child of the mill at the hub. They
+turn by how busy the mill has been lately (its load), slowly in a calm and
+about a turn in two seconds in a gale (`sail_speed`). When it stands idle
+they run down slowly. There are only a handful of mills, so the CPU turns
+them: one transform each per frame.
 
 ## Building sites (`buildings.rs`, `spawn_site`)
 
