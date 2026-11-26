@@ -57,7 +57,7 @@ jobs:
           }
 
   health:
-    name: health bands (8 seeds, 30 years)
+    name: health bands (16 seeds, 30 years)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -68,5 +68,5 @@ jobs:
       - name: Default run stays inside its health bands
         run: >
           cargo run --release --locked -p sim_cli --
-          --years 30 --seeds 8 --quiet
+          --years 30 --seeds 16 --quiet
           --bands assets/config/health_bands.ron
