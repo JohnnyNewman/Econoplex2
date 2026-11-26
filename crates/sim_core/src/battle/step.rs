@@ -35,15 +35,19 @@ impl Battle {
                 if self.squads[i].contacts.contains(&j) {
                     continue;
                 }
-                // New contact: the faster one charges, the longer weapon gets free blows.
+                // New contact: the faster one charges (both, if they run into
+                // each other as fast), the longer weapon gets free blows.
                 if i < j {
                     self.event(EventKind::Contact { by: i, with: j });
-                    let (a, b) = if self.squads[i].speed >= self.squads[j].speed {
-                        (i, j)
+                    let (si, sj) = (self.squads[i].speed, self.squads[j].speed);
+                    if (si - sj).abs() < 0.1 {
+                        self.charge(i, j);
+                        self.charge(j, i);
+                    } else if si > sj {
+                        self.charge(i, j);
                     } else {
-                        (j, i)
-                    };
-                    self.charge(a, b);
+                        self.charge(j, i);
+                    }
                 }
                 let (ri, rj) = (self.squads[i].spec.kit.reach, self.squads[j].spec.kit.reach);
                 let t = (ri - rj).abs() / self.params.close_speed.max(1e-3);
@@ -196,8 +200,18 @@ impl Battle {
             self.step_toward(i, target, run, None);
             return;
         }
-        // Locked in melee: no moving.
+        // Locked in melee. Two foot squads stay pressed together as their
+        // ranks thin, so the fight goes on instead of breaking off and
+        // starting again as a new charge. Riders, and men on foot facing
+        // them, hold their ground: when the melee opens, the riders ride in
+        // again, a new charge.
         if !s.contacts.is_empty() {
+            let pressed =
+                |j: &usize| !mounted && !self.squads[*j].spec.kit.mounted && s.contacts.contains(j);
+            if let Some(j) = s.primary.filter(pressed) {
+                self.step_toward(i, self.squads[j].spec.pos, walk, Some(j));
+                self.squads[i].speed = 0.0;
+            }
             return;
         }
         let goal: Option<(f32, f32, Option<usize>)> = match s.order {
@@ -296,7 +310,15 @@ impl Battle {
         } else {
             step = step.min(d);
         }
-        if d < 1e-3 || step <= 0.0 {
+        if d < 1e-3 {
+            return;
+        }
+        if step <= 0.0 {
+            // Already at the enemy's edge, because the enemy closed the gap
+            // first this step: it was still advancing, not standing braced.
+            if target.is_some() {
+                self.squads[i].speed = speed;
+            }
             return;
         }
         let mut pos = (from.0 + dx / d * step, from.1 + dy / d * step);
@@ -313,8 +335,10 @@ impl Battle {
         }
         let moved = ((pos.0 - from.0).powi(2) + (pos.1 - from.1).powi(2)).sqrt();
         self.squads[i].spec.pos = pos;
-        // A squad that moved at all hits at the pace it was moving.
-        self.squads[i].speed = if moved > 1e-3 { speed } else { 0.0 };
+        // A squad that moved at all hits at the pace it was moving, and so
+        // does one that found the enemy at its edge after a last sliver.
+        let at_edge = target.is_some_and(|j| self.gap(i, j) <= 0.51);
+        self.squads[i].speed = if moved > 1e-3 || at_edge { speed } else { 0.0 };
     }
 
     /// True if the wall stands between two squads.
