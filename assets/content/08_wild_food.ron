@@ -1,7 +1,9 @@
 // Wild food: hunting and fishing. Food from the land without fields, mills or
 // bakeries, so a town with game or fish can eat beside bread. The grounds regrow
 // slowly: a hunting ground feeds about 25 people, a fishing water about 30, so wild
-// food adds to bread rather than replacing it.
+// food adds to bread rather than replacing it. The scenario gives a town one of each
+// at most (about a tenth of its food): with a third of the food from the wild, a
+// town's farmers drift into other trades for years (people_keep_their_trade).
 //
 // Per worker-day (team discount included): hunting about 1.4 food, fishing about
 // 1.6, against about 2.1 for the whole bread chain (docs/design/food-yields.md).

@@ -230,9 +230,9 @@ breweries bricks, the blast furnace bricks, cut stone and iron, and the mills
 machine parts. The scenario spreads the resources:
 
 - Ironhold: iron ore, coal, stone, a little game
-- Greenvale: sheep, flax, clay, fish, a little game
-- Timberwick: tin, clay, game, fish
-- Brassmoor: copper, silver, stone, game, fish
+- Greenvale: sheep, flax, clay, a little fish and game
+- Timberwick: tin, clay, a little fish and game
+- Brassmoor: copper, silver, stone, a little fish and game
 
 No town can cast bronze alone, so caravans carry ore and metal between towns.
 Products name their `era`. A town counts as having reached an era once that era's
