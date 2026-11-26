@@ -19,20 +19,32 @@ Every person has two separate things:
 | **Capability** | how well the person works | the existing capability vector | practice, diffusion, forgetting (as today) |
 
 A person can only work on a recipe-skill they know. How well they do it still follows from
-their capability, as it does today. So whoever invents "iron longsword 3" is not good at it yet
+their capability, as it does today. So whoever invents "forged longsword 3" is not good at it yet
 and still has to practise.
 
 ### Recipe-skills
 
-A recipe-skill is one item at one level, for example `iron_longsword_3`. It corresponds 1-to-1 to
-one recipe and one node of the tree. The levels of an item make the same good. Each higher level
-raises the quality you can reach, saves inputs or time, or does more than one of these.
+A recipe-skill is one way of making a good, at one level, for example `forged_longsword_3`.
+It corresponds 1-to-1 to one recipe and one node of the tree. Recipes to goods are many-to-1:
+the same good can be made in different ways, for example
+
+| Good | Ways (recipe-skills) |
+| --- | --- |
+| iron | bloomery iron (charcoal, small batches), blast furnace iron (coke, bricks, large batches) |
+| longsword | forged longsword, pattern-welded longsword (more work, higher quality) |
+| bread | hearth bread, oven bread |
+
+Different ways can need different inputs, buildings and skills, so a town picks the way that
+fits what it knows and holds, and a new way can make an old one obsolete without removing it.
+Levels are successive improvements of one way: each higher level raises the quality you can
+reach, saves inputs or time, or does more than one of these. A new way usually builds on an
+older way of making the same good plus knowledge from another trade.
 
 Each recipe-skill names the recipe-skills it builds on, in the content:
 
 ```ron
-(id: "iron_longsword_3", item: "longsword", level: 3,
- requires: ["iron_longsword_2", "steel_1"],
+(id: "forged_longsword_3", output: "longsword", level: 3,
+ requires: ["forged_longsword_2", "steel_1"],
  difficulty: 2.4, invent_difficulty: 3.0, ...)
 ```
 
@@ -41,8 +53,8 @@ This is the existing skill DAG (`SkillDef.prereqs`) made fine grained. The embed
 capability dimensions (closure vectors, NMF when there are more skills than dimensions,
 `embedding.dims` in models.ron). So hundreds of recipe-skills do not grow the capability vector.
 Each recipe-skill gets its vector `v` from that embedding. Practice along `v` raises the
-capability that neighbouring recipe-skills share, so being good at longsword 2 helps with
-longsword 3 and with spears.
+capability that neighbouring recipe-skills share, so being good at forged longsword 2 helps with
+level 3, with pattern welding and with spears.
 
 ### Frontier
 
@@ -54,17 +66,23 @@ recomputed on learning.
 flowchart LR
     subgraph known["Known (bits set)"]
         S1[steel_1]
-        L1[iron_longsword_1] --> L2[iron_longsword_2]
+        L1[forged_longsword_1] --> L2[forged_longsword_2]
     end
     subgraph frontier["Frontier (all requires known)"]
-        L3[iron_longsword_3]
+        L3[forged_longsword_3]
     end
     subgraph hidden["Beyond the frontier"]
-        L4[iron_longsword_4]
+        L4[forged_longsword_4]
+        P1[pattern_welded_longsword_1]
     end
     L2 --> L3
     S1 --> L3
     L3 --> L4
+    L3 --> P1
+    P1 --> G((longsword))
+    L3 --> G
+    L2 --> G
+    L1 --> G
 ```
 
 ## Dreaming: the nightly invention check
@@ -131,7 +149,7 @@ is cached. The nightly pass checks at most `max_checks` related items per workin
 
 ## Build steps
 
-1. Content: recipe-skills with item, level and `requires`; split today's recipes into level 1
+1. Content: recipe-skills with output good, level and `requires` (several ways per good); split today's recipes into level 1
    recipe-skills; validation (every node reachable, no cycles)
 2. Knowledge bits per person, starting profiles, gating job choice by knowledge (save format)
 3. Apprenticeship and migration carry knowledge; loss on death; town knowledge = union of residents
