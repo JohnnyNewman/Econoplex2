@@ -105,7 +105,7 @@ impl Battle {
         };
         let x = p.skill_slope * (si.eff - def);
         let chance = (2.0 * p.base_hit / (1.0 + (-x).exp())).min(0.95) * (1.0 - shield);
-        let damage = (si.spec.kit.damage + extra) * (1.0 - st.spec.kit.armour);
+        let damage = si.spec.kit.blow(extra, &st.spec.kit.armour);
         let n = n.round() as u32;
         for _ in 0..n {
             if self.rng.random::<f32>() < chance {
@@ -177,7 +177,7 @@ impl Battle {
             .clamp(0.0, 0.95)
             * (1.0 - st.spec.kit.shield)
             * (1.0 - cover);
-        let damage = s.spec.kit.shot_damage * (1.0 - st.spec.kit.armour);
+        let damage = s.spec.kit.shot(&st.spec.kit.armour);
         self.squads[i].arrows -= n;
         self.squads[i].engaged = true;
         for _ in 0..n {
