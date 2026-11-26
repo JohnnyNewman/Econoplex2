@@ -220,7 +220,16 @@ pub struct Town {
     pub stock: Vec<f32>,
     pub quality: Vec<f32>,
     pub price: Vec<f32>,
+    /// In the town's own coin (each town issues its own: `coin_value`).
     pub treasury: crate::coin::Coin,
+    /// What one of this town's coins is worth in the common unit that coins
+    /// are exchanged by (1 at the start).
+    #[serde(default = "one")]
+    pub coin_value: f32,
+    /// Other towns' coin this town holds, by issuing town: paid to it in
+    /// trade, and spendable only on that town's goods or exchanged.
+    #[serde(default)]
+    pub foreign: Vec<crate::coin::Coin>,
     /// All the coin this town's mints have struck, to the unit.
     #[serde(default)]
     pub minted: crate::coin::Coin,
@@ -459,6 +468,20 @@ pub struct MoveCounters {
 }
 
 impl Town {
+    /// How much of town `issuer`'s coin this town holds.
+    pub fn holds(&self, issuer: usize) -> crate::coin::Coin {
+        self.foreign.get(issuer).copied().unwrap_or_default()
+    }
+
+    /// Adds `amount` of town `issuer`'s coin to what this town holds
+    /// (negative: takes it away).
+    pub fn hold(&mut self, issuer: usize, amount: crate::coin::Coin) {
+        if self.foreign.len() <= issuer {
+            self.foreign.resize(issuer + 1, crate::coin::Coin::ZERO);
+        }
+        self.foreign[issuer] += amount;
+    }
+
     /// Open government orders that take food, or what food is made from (grain,
     /// flour, wood for the ovens), while the town holds less food per resident
     /// than its market aims for. Orders are never capped; this is the warning.
@@ -795,6 +818,8 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
             credit_defaults: 0.0,
             money_per_capita: 0.0,
             debts: Vec::new(),
+            coin_value: 1.0,
+            foreign: Vec::new(),
             goods_today: Vec::new(),
             goods_use: Vec::new(),
             wage_factor: vec![1.0; db.recipes.len()],
@@ -937,4 +962,8 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
         ..Default::default()
     });
     world.insert_resource(crate::metrics::Metrics::default());
+}
+
+fn one() -> f32 {
+    1.0
 }

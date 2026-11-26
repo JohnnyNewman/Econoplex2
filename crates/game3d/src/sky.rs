@@ -426,7 +426,9 @@ pub fn sky_light(sun: Vec3, moon: Vec3, phase: f32, cloud: f32, precip: f32) -> 
     let full = 1.0 - (phase - 0.5).abs() * 2.0; // 1 full, 0 new
     let night = crate::env::smooth(-0.04, -0.16, sun.y);
     let moon_light = night * (0.25 + 0.75 * full) * crate::env::smooth(-0.05, 0.15, moon.y);
-    let dim = 1.0 - 0.75 * cloud - 0.15 * precip;
+    // Broken cloud shades the land in patches (cloud shadows, fog.wesl); the
+    // sun dims everywhere as the sky closes up.
+    let dim = 1.0 - 0.75 * cloud * cloud - 0.15 * precip;
     let sun_rgb = sun_color(sun) / 6.0;
     let (dir, illuminance, color) = if day > 0.0 || moon_light <= 0.0 {
         (
