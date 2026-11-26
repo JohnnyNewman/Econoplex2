@@ -221,6 +221,20 @@ pub fn generate(scenario: &mut Scenario, spec: &GenSpec, nature: &[(String, f32)
             ford_cost: 2.5,
         });
     }
+    // Towns by a river can fish in it.
+    if nature.iter().any(|n| n.0 == "fishing_water") {
+        for t in towns.iter_mut() {
+            let near = rivers
+                .iter()
+                .any(|r| distance_to_polyline(t.position, &r.points) < RIVER_FISHING_DISTANCE);
+            if near {
+                match t.nature.iter_mut().find(|n| n.0 == "fishing_water") {
+                    Some(n) => n.1 = n.1.max(2),
+                    None => t.nature.push(("fishing_water".to_string(), 2)),
+                }
+            }
+        }
+    }
     // The player's town keeps its place if named; else the first town.
     if scenario.player.is_some() {
         scenario.player = towns.first().map(|t| t.name.clone());
@@ -233,6 +247,27 @@ pub fn generate(scenario: &mut Scenario, spec: &GenSpec, nature: &[(String, f32)
         hill_scale: 260.0,
         rivers,
     });
+}
+
+/// A town this close to a river (map units) gets fishing water on it.
+const RIVER_FISHING_DISTANCE: f32 = 250.0;
+
+/// Shortest distance from `p` to a polyline.
+fn distance_to_polyline(p: (f32, f32), pts: &[(f32, f32)]) -> f32 {
+    pts.windows(2)
+        .map(|w| {
+            let (a, b) = (w[0], w[1]);
+            let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+            let len2 = dx * dx + dy * dy;
+            let t = if len2 > 0.0 {
+                (((p.0 - a.0) * dx + (p.1 - a.1) * dy) / len2).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            let (x, y) = (a.0 + t * dx, a.1 + t * dy);
+            ((p.0 - x).powi(2) + (p.1 - y).powi(2)).sqrt()
+        })
+        .fold(f32::INFINITY, f32::min)
 }
 
 /// How common each kind of nature site is, for the generator: fields and forests
@@ -249,6 +284,9 @@ pub fn nature_kinds(db: &crate::db::Db) -> Vec<(String, f32)> {
                 "quarry" | "ore_vein" | "coal_seam" => 0.45,
                 "copper_vein" | "tin_vein" => 0.35,
                 "silver_vein" => 0.2,
+                "hunting_ground" => 0.7,
+                // Lakes and the coast; towns by a river get fishing as well (see `generate`).
+                "fishing_water" => 0.3,
                 _ => 0.4,
             };
             (n.id.clone(), common)
@@ -414,5 +452,41 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn towns_by_a_river_can_fish() {
+        let mut kinds = nature();
+        kinds.push(("fishing_water".into(), 0.0));
+        let mut by_river = 0;
+        for seed in 0..20 {
+            let mut s = world(seed);
+            s.towns.clear();
+            generate(&mut s, &GenSpec::default(), &kinds);
+            let rivers = &s.terrain.as_ref().expect("generated terrain").rivers;
+            for t in &s.towns {
+                let near = rivers
+                    .iter()
+                    .any(|r| distance_to_polyline(t.position, &r.points) < RIVER_FISHING_DISTANCE);
+                let fish = t
+                    .nature
+                    .iter()
+                    .find(|n| n.0 == "fishing_water")
+                    .map_or(0, |n| n.1);
+                if near {
+                    by_river += 1;
+                    assert!(fish >= 2, "{} is by a river but cannot fish", t.name);
+                }
+            }
+        }
+        assert!(by_river > 0, "no town was ever near a river");
+    }
+
+    #[test]
+    fn distance_to_a_polyline() {
+        let line = [(0.0, 0.0), (10.0, 0.0), (10.0, 10.0)];
+        assert_eq!(distance_to_polyline((5.0, 3.0), &line), 3.0);
+        assert_eq!(distance_to_polyline((13.0, 5.0), &line), 3.0);
+        assert_eq!(distance_to_polyline((-4.0, 3.0), &line), 5.0);
     }
 }

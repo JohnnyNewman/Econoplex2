@@ -5,6 +5,8 @@ flowchart LR
     p_bakery[["Bakery"]]
     p_furnace[["Furnace"]]
     p_smithy[["Smithy"]]
+    p_meat["Game meat"]
+    p_fish["Fish"]
     p_grain(["Grain"])
     p_flour["Flour"]
     p_bread["Bread"]
@@ -90,13 +92,17 @@ flowchart LR
     n_tin_vein{{"Tin vein"}}
     n_silver_vein{{"Silver vein"}}
     n_coal_seam{{"Coal seam"}}
+    n_hunting_ground{{"Hunting ground"}}
+    n_fishing_water{{"Fishing water"}}
   end
   n_clay_pit --> p_clay
   n_coal_seam --> p_coal
   n_copper_vein --> p_copper_ore
   n_field --> p_grain
+  n_fishing_water --> p_fish
   n_flax_field --> p_flax
   n_forest --> p_wood
+  n_hunting_ground --> p_meat
   n_ore_vein --> p_ore
   n_pasture --> p_horse
   n_pasture --> p_wool

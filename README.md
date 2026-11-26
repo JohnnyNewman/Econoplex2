@@ -218,6 +218,7 @@ adds skills, goods, workplaces, recipes and natural resources:
 | File | Adds |
 | --- | --- |
 | `05_nature.ron` | quarries, clay pits, pastures, flax fields, copper, tin and silver veins, coal seams |
+| `08_wild_food.ron` | hunting grounds and fishing waters; hunting (game meat) and fishing (fish) as food beside bread |
 | `12_husbandry_textiles.ron` | wool and flax to yarn, cloth and clothes (weaving shed); ale (brewery) |
 | `15_masonry.ron` | stone and cut stone (mason's yard), clay, pots and bricks (kiln), chisels |
 | `35_bronze.ron` | copper and tin smelting, bronze casting, bronze spears |
@@ -228,10 +229,10 @@ Each era's buildings are made from the eras before it. Kilns need stone and clay
 breweries bricks, the blast furnace bricks, cut stone and iron, and the mills
 machine parts. The scenario spreads the resources:
 
-- Ironhold: iron ore, coal, stone
-- Greenvale: sheep, flax, clay
-- Timberwick: tin, clay
-- Brassmoor: copper, silver, stone
+- Ironhold: iron ore, coal, stone, a little game
+- Greenvale: sheep, flax, clay, fish, a little game
+- Timberwick: tin, clay, game, fish
+- Brassmoor: copper, silver, stone, game, fish
 
 No town can cast bronze alone, so caravans carry ore and metal between towns.
 Products name their `era`. A town counts as having reached an era once that era's

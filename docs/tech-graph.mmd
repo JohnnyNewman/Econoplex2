@@ -1,5 +1,9 @@
 flowchart LR
-  subgraph d0["agriculture"]
+  subgraph d0["foraging"]
+    r_hunt_game(["Hunt game"])
+    r_catch_fish(["Catch fish"])
+  end
+  subgraph d1["agriculture"]
     r_farm_grain(["Farm grain"])
     r_mill_flour["Mill flour"]
     r_shear_sheep(["Shear sheep"])
@@ -7,11 +11,11 @@ flowchart LR
     r_clear_field(["Clear field"])
     r_breed_horses["Breed horses"]
   end
-  subgraph d1["food"]
+  subgraph d2["food"]
     r_bake_bread["Bake bread"]
     r_brew_ale["Brew ale"]
   end
-  subgraph d2["textiles"]
+  subgraph d3["textiles"]
     r_spin_wool["Spin wool"]
     r_spin_flax["Spin flax"]
     r_weave_cloth["Weave cloth"]
@@ -20,32 +24,32 @@ flowchart LR
     r_mill_spin["Spin yarn by machine"]
     r_mill_weave["Weave cloth by machine"]
   end
-  subgraph d3["masonry"]
+  subgraph d4["masonry"]
     r_quarry_stone(["Quarry stone"])
     r_cut_stone["Cut stone"]
     r_dig_clay(["Dig clay"])
     r_throw_pots["Throw pots"]
     r_fire_bricks["Fire bricks"]
   end
-  subgraph d4["forestry"]
+  subgraph d5["forestry"]
     r_chop_wood(["Chop wood"])
     r_burn_charcoal["Burn charcoal"]
     r_plant_woodlot["Plant woodlot"]
   end
-  subgraph d5["woodworking"]
+  subgraph d6["woodworking"]
     r_saw_planks["Saw planks"]
     r_carve_hilt["Carve hilt"]
     r_make_bow["Make bow"]
     r_make_shield["Make shield"]
   end
-  subgraph d6["mining"]
+  subgraph d7["mining"]
     r_mine_ore(["Mine ore"])
     r_mine_copper(["Mine copper"])
     r_mine_tin(["Mine tin"])
     r_mine_coal["Mine coal"]
     r_mine_silver["Mine silver"]
   end
-  subgraph d7["metallurgy"]
+  subgraph d8["metallurgy"]
     r_smelt_iron["Smelt iron"]
     r_make_steel["Make steel"]
     r_smelt_copper["Smelt copper"]
@@ -56,7 +60,7 @@ flowchart LR
     r_blast_steel["Blast steel"]
     r_refine_silver["Refine silver"]
   end
-  subgraph d8["smithing"]
+  subgraph d9["smithing"]
     r_forge_shears["Forge shears"]
     r_forge_chisel["Forge chisel"]
     r_forge_hammer["Forge hammer"]
@@ -79,7 +83,7 @@ flowchart LR
     r_strike_copper_coins["Strike copper coins"]
     r_strike_coins["Strike iron coins"]
   end
-  subgraph d9["construction"]
+  subgraph d10["construction"]
     r_build_weaving_shed["Build weaving shed"]
     r_build_brewery["Build brewery"]
     r_build_masons_yard["Build mason's yard"]
@@ -96,7 +100,7 @@ flowchart LR
     r_build_textile_mill["Build textile mill"]
     r_build_mint["Build mint"]
   end
-  subgraph d11["engineering"]
+  subgraph d12["engineering"]
     r_make_machine_parts["Make machine parts"]
     r_roll_flour["Roll flour"]
   end
@@ -242,3 +246,4 @@ flowchart LR
   style d9 fill:#e6dcef,stroke:#888
   style d10 fill:#e8f0d8,stroke:#888
   style d11 fill:#efe3d3,stroke:#888
+  style d12 fill:#f3dcc4,stroke:#888
