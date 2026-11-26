@@ -83,6 +83,32 @@ an average. The kit table also holds:
 - **weight**, which feeds fatigue;
 - **mass**, for charges: a horse and rider is about 600 kg, a man about 80 kg.
 
+**Damage types.** The soldier model uses the same split as the squad model,
+from the content's `fight` values (PR #178):
+
+- **A blow and a shot have a type.** A weapon's melee `damage_type` and its
+  missile `shot_type` are each `Pierce`, `Slash` or `Blunt`. Spears, lances
+  and arrows pierce, swords slash, clubs and maces are blunt. Fists are blunt.
+- **Armour stops each type by its own share:**
+  `armour: (pierce, slash, blunt)`. Layers multiply per type, as in
+  `Kit::from_gear`.
+- **The damage of a hit** is the sum over types of damage_t × (1 − armour_t),
+  as in `Kit::blow` and `Kit::shot`. A charge's extra damage splits in the same
+  shares as the blow.
+
+The squad model has to average a squad's weapons into one share per type. The
+soldier model needs no average: each soldier's blow carries their own
+weapon's type and lands on one target's own armour. Each kit-table entry holds:
+
+- `damage: [pierce, slash, blunt]`, with one non-zero entry for a single weapon;
+- `shot_damage` in the same form;
+- `armour` per type.
+
+Phase 4 of a substep takes the striker's damage and the target's armour from
+the kit table, so per-type damage costs three multiplications and no more
+lookups. The tests in the squad model ("mail turns swords better than spears",
+"blunt beats slash against plate") also run on the soldier model.
+
 **Fatigue.** This is new, because the squad model has none. It rises each
 second by:
 
