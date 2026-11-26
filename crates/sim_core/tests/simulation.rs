@@ -1169,11 +1169,23 @@ fn a_hungry_town_subsidizes_food_then_winds_it_down() {
         decided(&s, 3, "food is short"),
         "no food decision while hungry"
     );
-    // Fed again: the hunger ends and, within a few years, the food subsidies are
-    // wound down.
+    // Fed again (relief bread keeps the market stocked, so the test is of the
+    // ruler's rule, not of whether this town's farms recover): the hunger ends
+    // and within a few years the food subsidies are wound down.
+    let bread = s
+        .world
+        .resource::<sim_core::Db>()
+        .content
+        .product("bread")
+        .unwrap() as usize;
     let mut wound_down = false;
-    // Up to twelve years: with the building materials the town recovers more slowly.
-    for year in 2..=12 {
+    for year in 2..=8 {
+        {
+            let mut towns = s.world.resource_mut::<sim_core::Towns>();
+            let town = &mut towns.0[3];
+            let relief = 40.0 * town.residents.len() as f32;
+            town.stock[bread] = town.stock[bread].max(relief);
+        }
         run_years(&mut s, 1);
         let m = s.world.resource::<sim_core::metrics::Metrics>();
         let starving = m.latest().unwrap().towns[3].starving;
