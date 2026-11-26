@@ -1,0 +1,244 @@
+flowchart LR
+  subgraph d0["agriculture"]
+    r_farm_grain(["Farm grain"])
+    r_mill_flour["Mill flour"]
+    r_shear_sheep(["Shear sheep"])
+    r_harvest_flax["Harvest flax"]
+    r_clear_field(["Clear field"])
+    r_breed_horses["Breed horses"]
+  end
+  subgraph d1["food"]
+    r_bake_bread["Bake bread"]
+    r_brew_ale["Brew ale"]
+  end
+  subgraph d2["textiles"]
+    r_spin_wool["Spin wool"]
+    r_spin_flax["Spin flax"]
+    r_weave_cloth["Weave cloth"]
+    r_sew_clothes["Sew clothes"]
+    r_sew_padded_coat["Sew padded coat"]
+    r_mill_spin["Spin yarn by machine"]
+    r_mill_weave["Weave cloth by machine"]
+  end
+  subgraph d3["masonry"]
+    r_quarry_stone(["Quarry stone"])
+    r_cut_stone["Cut stone"]
+    r_dig_clay(["Dig clay"])
+    r_throw_pots["Throw pots"]
+    r_fire_bricks["Fire bricks"]
+  end
+  subgraph d4["forestry"]
+    r_chop_wood(["Chop wood"])
+    r_burn_charcoal["Burn charcoal"]
+    r_plant_woodlot["Plant woodlot"]
+  end
+  subgraph d5["woodworking"]
+    r_saw_planks["Saw planks"]
+    r_carve_hilt["Carve hilt"]
+    r_make_bow["Make bow"]
+    r_make_shield["Make shield"]
+  end
+  subgraph d6["mining"]
+    r_mine_ore(["Mine ore"])
+    r_mine_copper(["Mine copper"])
+    r_mine_tin(["Mine tin"])
+    r_mine_coal["Mine coal"]
+    r_mine_silver["Mine silver"]
+  end
+  subgraph d7["metallurgy"]
+    r_smelt_iron["Smelt iron"]
+    r_make_steel["Make steel"]
+    r_smelt_copper["Smelt copper"]
+    r_smelt_tin["Smelt tin"]
+    r_cast_bronze["Cast bronze"]
+    r_bake_coke["Bake coke"]
+    r_blast_iron["Blast iron"]
+    r_blast_steel["Blast steel"]
+    r_refine_silver["Refine silver"]
+  end
+  subgraph d8["smithing"]
+    r_forge_shears["Forge shears"]
+    r_forge_chisel["Forge chisel"]
+    r_forge_hammer["Forge hammer"]
+    r_forge_pickaxe["Forge pickaxe"]
+    r_forge_axe["Forge axe"]
+    r_forge_sickle["Forge sickle"]
+    r_forge_iron_blade["Forge iron blade"]
+    r_forge_steel_blade["Forge steel blade"]
+    r_temper_blade["Temper blade"]
+    r_grind_blade["Grind blade"]
+    r_assemble_longsword_1["Assemble iron longsword"]
+    r_assemble_longsword_2["Assemble steel longsword"]
+    r_assemble_longsword_3["Assemble fine longsword"]
+    r_make_bronze_spear["Make bronze spear"]
+    r_make_iron_spear["Make iron spear"]
+    r_make_lance["Make lance"]
+    r_make_mail["Make mail shirt"]
+    r_forge_plough["Forge plough"]
+    r_strike_silver_coins["Strike silver coins"]
+    r_strike_copper_coins["Strike copper coins"]
+    r_strike_coins["Strike iron coins"]
+  end
+  subgraph d9["construction"]
+    r_build_weaving_shed["Build weaving shed"]
+    r_build_brewery["Build brewery"]
+    r_build_masons_yard["Build mason's yard"]
+    r_build_kiln["Build kiln"]
+    r_build_workshop["Build workshop"]
+    r_build_mill["Build mill"]
+    r_build_bakery["Build bakery"]
+    r_build_furnace["Build furnace"]
+    r_build_smithy["Build smithy"]
+    r_build_stable["Build stable"]
+    r_build_blast_furnace["Build blast furnace"]
+    r_build_machine_shop["Build machine shop"]
+    r_build_roller_mill["Build roller mill"]
+    r_build_textile_mill["Build textile mill"]
+    r_build_mint["Build mint"]
+  end
+  subgraph d11["engineering"]
+    r_make_machine_parts["Make machine parts"]
+    r_roll_flour["Roll flour"]
+  end
+  r_farm_grain --> r_mill_flour
+  r_mill_flour --> r_bake_bread
+  r_farm_grain --> r_harvest_flax
+  r_shear_sheep --> r_spin_wool
+  r_harvest_flax --> r_spin_flax
+  or_weave_cloth_0((or))
+  r_spin_wool -.-> or_weave_cloth_0
+  r_spin_flax -.-> or_weave_cloth_0
+  or_weave_cloth_0 --> r_weave_cloth
+  r_weave_cloth --> r_sew_clothes
+  r_farm_grain --> r_brew_ale
+  r_throw_pots --> r_brew_ale
+  r_forge_sickle --> r_forge_shears
+  r_build_workshop --> r_build_weaving_shed
+  r_weave_cloth --> r_build_weaving_shed
+  r_build_workshop --> r_build_brewery
+  r_fire_bricks --> r_build_brewery
+  r_quarry_stone --> r_cut_stone
+  r_dig_clay --> r_throw_pots
+  r_throw_pots --> r_fire_bricks
+  r_burn_charcoal --> r_fire_bricks
+  r_forge_hammer --> r_forge_chisel
+  r_build_workshop --> r_build_masons_yard
+  r_cut_stone --> r_build_masons_yard
+  r_build_workshop --> r_build_kiln
+  r_throw_pots --> r_build_kiln
+  r_chop_wood --> r_burn_charcoal
+  r_chop_wood --> r_saw_planks
+  r_saw_planks --> r_carve_hilt
+  r_mine_ore --> r_smelt_iron
+  r_burn_charcoal --> r_smelt_iron
+  r_smelt_iron --> r_make_steel
+  r_forge_sickle --> r_forge_hammer
+  r_saw_planks --> r_forge_hammer
+  r_forge_hammer --> r_forge_pickaxe
+  r_forge_sickle --> r_forge_axe
+  r_saw_planks --> r_forge_axe
+  r_smelt_iron --> r_forge_sickle
+  r_forge_sickle --> r_forge_iron_blade
+  r_forge_iron_blade --> r_forge_steel_blade
+  r_make_steel --> r_forge_steel_blade
+  r_forge_steel_blade --> r_temper_blade
+  r_forge_iron_blade --> r_grind_blade
+  r_forge_iron_blade --> r_assemble_longsword_1
+  r_carve_hilt --> r_assemble_longsword_1
+  r_assemble_longsword_1 --> r_assemble_longsword_2
+  r_forge_steel_blade --> r_assemble_longsword_2
+  r_assemble_longsword_2 --> r_assemble_longsword_3
+  r_temper_blade --> r_assemble_longsword_3
+  r_grind_blade --> r_assemble_longsword_3
+  r_mine_copper --> r_smelt_copper
+  r_burn_charcoal --> r_smelt_copper
+  r_mine_tin --> r_smelt_tin
+  r_burn_charcoal --> r_smelt_tin
+  r_smelt_copper --> r_cast_bronze
+  r_smelt_tin --> r_cast_bronze
+  r_cast_bronze --> r_make_bronze_spear
+  r_saw_planks --> r_make_bronze_spear
+  r_saw_planks --> r_build_workshop
+  r_build_workshop --> r_build_mill
+  r_build_workshop --> r_build_bakery
+  r_build_workshop --> r_build_furnace
+  r_build_workshop --> r_build_smithy
+  r_chop_wood --> r_plant_woodlot
+  r_smelt_iron --> r_make_iron_spear
+  or_make_iron_spear_1((or))
+  r_make_bronze_spear -.-> or_make_iron_spear_1
+  r_forge_iron_blade -.-> or_make_iron_spear_1
+  or_make_iron_spear_1 --> r_make_iron_spear
+  or_make_lance_0((or))
+  r_make_iron_spear -.-> or_make_lance_0
+  r_make_bronze_spear -.-> or_make_lance_0
+  or_make_lance_0 --> r_make_lance
+  r_breed_horses --> r_make_lance
+  r_saw_planks --> r_make_bow
+  r_saw_planks --> r_make_shield
+  r_sew_clothes --> r_sew_padded_coat
+  r_forge_hammer --> r_make_mail
+  r_shear_sheep --> r_breed_horses
+  r_build_workshop --> r_build_stable
+  r_mine_ore --> r_mine_coal
+  r_mine_coal --> r_bake_coke
+  r_burn_charcoal --> r_bake_coke
+  r_smelt_iron --> r_blast_iron
+  r_bake_coke --> r_blast_iron
+  r_blast_iron --> r_blast_steel
+  r_make_steel --> r_blast_steel
+  r_blast_iron --> r_make_machine_parts
+  r_forge_hammer --> r_make_machine_parts
+  r_saw_planks --> r_make_machine_parts
+  r_forge_axe --> r_forge_plough
+  r_farm_grain --> r_forge_plough
+  r_mill_flour --> r_roll_flour
+  r_make_machine_parts --> r_roll_flour
+  or_mill_spin_0((or))
+  r_spin_wool -.-> or_mill_spin_0
+  r_spin_flax -.-> or_mill_spin_0
+  or_mill_spin_0 --> r_mill_spin
+  r_make_machine_parts --> r_mill_spin
+  r_weave_cloth --> r_mill_weave
+  r_make_machine_parts --> r_mill_weave
+  r_build_furnace --> r_build_blast_furnace
+  r_fire_bricks --> r_build_blast_furnace
+  r_cut_stone --> r_build_blast_furnace
+  r_smelt_iron --> r_build_blast_furnace
+  r_build_smithy --> r_build_machine_shop
+  r_make_machine_parts --> r_build_machine_shop
+  r_build_mill --> r_build_roller_mill
+  r_make_machine_parts --> r_build_roller_mill
+  r_build_weaving_shed --> r_build_textile_mill
+  r_make_machine_parts --> r_build_textile_mill
+  or_mine_silver_0((or))
+  r_mine_ore -.-> or_mine_silver_0
+  r_mine_copper -.-> or_mine_silver_0
+  r_mine_tin -.-> or_mine_silver_0
+  or_mine_silver_0 --> r_mine_silver
+  r_mine_silver --> r_refine_silver
+  or_refine_silver_1((or))
+  r_smelt_iron -.-> or_refine_silver_1
+  r_smelt_copper -.-> or_refine_silver_1
+  r_smelt_tin -.-> or_refine_silver_1
+  or_refine_silver_1 --> r_refine_silver
+  r_build_furnace --> r_build_mint
+  r_refine_silver --> r_build_mint
+  r_refine_silver --> r_strike_silver_coins
+  r_forge_hammer --> r_strike_silver_coins
+  r_strike_silver_coins --> r_strike_copper_coins
+  r_smelt_copper --> r_strike_copper_coins
+  r_strike_silver_coins --> r_strike_coins
+  r_smelt_iron --> r_strike_coins
+  style d0 fill:#e8f0d8,stroke:#888
+  style d1 fill:#efe3d3,stroke:#888
+  style d2 fill:#f3dcc4,stroke:#888
+  style d3 fill:#dde3ea,stroke:#888
+  style d4 fill:#e6dcef,stroke:#888
+  style d5 fill:#e8f0d8,stroke:#888
+  style d6 fill:#efe3d3,stroke:#888
+  style d7 fill:#f3dcc4,stroke:#888
+  style d8 fill:#dde3ea,stroke:#888
+  style d9 fill:#e6dcef,stroke:#888
+  style d10 fill:#e8f0d8,stroke:#888
+  style d11 fill:#efe3d3,stroke:#888

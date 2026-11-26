@@ -257,10 +257,41 @@ pub struct RecipeDef {
     /// Physical demands by physique dimension name (weights; sum should stay below 1).
     #[serde(default)]
     pub physique: Vec<(String, f32)>,
+    /// Level of this way of making its outputs: 1 for the first, higher levels improve it
+    /// (see docs/design/inventions.md). Each recipe is one recipe-skill, one node of the tech graph.
+    #[serde(default = "default_level")]
+    pub level: u32,
+    /// Recipe-skills a person must know before they can learn or invent this one. Every
+    /// entry must be met; an entry is one recipe id, or a list of ids of which any one is enough.
+    /// Empty: known from the start of the tech graph.
+    #[serde(default)]
+    pub requires: Vec<Requirement>,
 }
 
 fn default_team() -> u32 {
     3
+}
+
+fn default_level() -> u32 {
+    1
+}
+
+/// One entry of [`RecipeDef::requires`]: `"a"` needs recipe `a`; `["a", "b"]` needs `a` or `b`.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum Requirement {
+    One(String),
+    AnyOf(Vec<String>),
+}
+
+impl Requirement {
+    /// The recipe ids of which any one meets this requirement.
+    pub fn options(&self) -> &[String] {
+        match self {
+            Requirement::One(id) => std::slice::from_ref(id),
+            Requirement::AnyOf(ids) => ids,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]

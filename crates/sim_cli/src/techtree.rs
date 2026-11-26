@@ -90,3 +90,61 @@ pub fn mermaid(db: &Db) -> String {
     let _ = writeln!(out, "  style land fill:#e3efe6,stroke:#888");
     out
 }
+
+/// `--tech-graph`: the knowledge graph of recipe-skills as a Mermaid flowchart
+/// (docs/design/inventions.md). Recipes are grouped by the domain of their skill; an
+/// arrow runs from each recipe-skill to the ones that require it. A requirement with
+/// alternatives goes through a small "or" node. Recipes that need nothing are the start
+/// of the graph and drawn round.
+pub fn knowledge_mermaid(db: &Db) -> String {
+    let c = &db.content;
+    let rid = |id: &str| format!("r_{id}");
+    let mut out = String::from("flowchart LR\n");
+    for (d, domain) in c.domains.iter().enumerate() {
+        let recipes: Vec<_> = c
+            .recipes
+            .iter()
+            .filter(|r| {
+                c.skill(&r.skill)
+                    .is_some_and(|s| c.skills[s as usize].domain == *domain)
+            })
+            .collect();
+        if recipes.is_empty() {
+            continue;
+        }
+        let _ = writeln!(out, "  subgraph d{d}[\"{domain}\"]");
+        for r in recipes {
+            let label = if r.level > 1 {
+                format!("{} {}", r.name, r.level)
+            } else {
+                r.name.clone()
+            };
+            if r.requires.is_empty() {
+                let _ = writeln!(out, "    {}([\"{label}\"])", rid(&r.id));
+            } else {
+                let _ = writeln!(out, "    {}[\"{label}\"]", rid(&r.id));
+            }
+        }
+        let _ = writeln!(out, "  end");
+    }
+    for r in &c.recipes {
+        for (k, req) in r.requires.iter().enumerate() {
+            let opts = req.options();
+            if opts.len() == 1 {
+                let _ = writeln!(out, "  {} --> {}", rid(&opts[0]), rid(&r.id));
+            } else {
+                let or = format!("or_{}_{k}", r.id);
+                let _ = writeln!(out, "  {or}((or))");
+                for o in opts {
+                    let _ = writeln!(out, "  {} -.-> {or}", rid(o));
+                }
+                let _ = writeln!(out, "  {or} --> {}", rid(&r.id));
+            }
+        }
+    }
+    for d in 0..c.domains.len() {
+        let fill = ["#e8f0d8", "#efe3d3", "#f3dcc4", "#dde3ea", "#e6dcef"][d % 5];
+        let _ = writeln!(out, "  style d{d} fill:{fill},stroke:#888");
+    }
+    out
+}
