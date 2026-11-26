@@ -109,24 +109,64 @@ pub struct ProductDef {
     pub fight: Option<FightDef>,
 }
 
+/// How a blow or a shot hurts: a point, an edge or a weight. Armour stops
+/// each kind by its own share.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Deserialize, serde::Serialize)]
+pub enum DamageType {
+    #[default]
+    Pierce,
+    Slash,
+    Blunt,
+}
+
+impl DamageType {
+    pub const ALL: [DamageType; 3] = [DamageType::Pierce, DamageType::Slash, DamageType::Blunt];
+
+    /// Position in per-type arrays such as [`Resist::shares`].
+    pub fn index(self) -> usize {
+        self as usize
+    }
+}
+
+/// The share of a hit's damage a piece of armour stops, per damage type.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Deserialize)]
+#[serde(default)]
+pub struct Resist {
+    pub pierce: f32,
+    pub slash: f32,
+    pub blunt: f32,
+}
+
+impl Resist {
+    /// The shares in [`DamageType`] order.
+    pub fn shares(&self) -> [f32; 3] {
+        [self.pierce, self.slash, self.blunt]
+    }
+}
+
 /// What an item does in a squad battle (`sim_core::battle`). Every field is 0
 /// unless given, so a shield lists only `shield` and a horse only `mounted`.
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(default)]
 pub struct FightDef {
-    /// Melee: reach in metres, health taken per hit (a person has 1), strikes
-    /// per second, and the share of strikes lost once an enemy is inside the reach.
+    /// Melee: reach in metres, health taken per hit (a person has 1), the kind
+    /// of damage (required with damage), strikes per second, and the share of
+    /// strikes lost once an enemy is inside the reach.
     pub reach: f32,
     pub damage: f32,
+    pub damage_type: Option<DamageType>,
     pub strike_rate: f32,
     pub close_penalty: f32,
-    /// Shooting: range in metres, shots per second, health per hit, arrows carried.
+    /// Shooting: range in metres, shots per second, health per hit, the kind
+    /// of damage (Pierce unless given), arrows carried.
     pub range: f32,
     pub shot_rate: f32,
     pub shot_damage: f32,
+    pub shot_type: DamageType,
     pub arrows: u32,
-    /// Share of a hit's damage stopped, and share of arrows a shield stops.
-    pub armour: f32,
+    /// Share of a hit's damage stopped, per damage type, and share of arrows
+    /// a shield stops.
+    pub armour: Resist,
     pub shield: f32,
     /// A mount: its rider fights mounted.
     pub mounted: bool,

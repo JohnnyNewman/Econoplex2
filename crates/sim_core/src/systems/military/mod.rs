@@ -111,8 +111,8 @@ pub fn military(
                 .filter(|&&i| store.activity[i as usize] != Activity::Child)
                 .count();
             // Keep enough in the treasury for a month of pay.
-            let affordable =
-                (town.treasury.coins().max(0.0) / (mp.soldier_pay * 30.0).max(1e-6)) as usize;
+            let affordable = (town.spendable(&params.market) / (mp.soldier_pay * 30.0).max(1e-6))
+                .min(usize::MAX as f32) as usize;
             let share = if town.ruler.is_some() {
                 mp.vassal_soldier_share
             } else {
@@ -220,7 +220,7 @@ pub fn military(
         let marching: &[u32] = town.raid.as_ref().map_or(&[], |r| &r.soldiers);
         for &s in &town.squad {
             let i = s as usize;
-            let pay = cal.flow(mp.soldier_pay).min(town.treasury.coins().max(0.0));
+            let pay = cal.flow(mp.soldier_pay).min(town.spendable(&params.market));
             town.treasury -= crate::coin::Coin::from_coins(pay);
             town.ledger.add(crate::ledger::Flow::SoldierPay, pay);
             store.wealth[i] += crate::coin::Coin::from_coins(pay);

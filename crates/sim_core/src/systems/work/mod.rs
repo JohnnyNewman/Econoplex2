@@ -275,7 +275,7 @@ pub fn produce(
                                 town.firms[k].cash.coins().max(0.0)
                                     + params.market.firms.credit_room(&town.firms[k])
                             }
-                            None => town.treasury.coins().max(0.0),
+                            None => town.spendable(&params.market),
                         };
                         f = f.min(cash / (per_run * full).max(1e-9));
                     }
@@ -449,7 +449,7 @@ pub fn produce(
                         let cat = db.category(p);
                         if cat.is_item() {
                             let pay = (town.price[pi] * q * (0.5 + quality))
-                                .min(town.treasury.coins().max(0.0));
+                                .min(town.spendable(&params.market));
                             town.treasury -= crate::coin::Coin::from_coins(pay);
                             town.ledger.add(crate::ledger::Flow::MarketPurchases, pay);
                             town.firms[fi].cash += crate::coin::Coin::from_coins(pay);
@@ -723,7 +723,7 @@ pub fn produce(
         }
     }
 
-    settle_wages(claims, &mut towns, store, &decision, params.market.firms);
+    settle_wages(claims, &mut towns, store, &decision, &params.market);
 }
 
 /// A finished step's claim on its town market.

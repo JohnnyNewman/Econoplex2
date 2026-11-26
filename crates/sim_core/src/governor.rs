@@ -43,6 +43,13 @@ pub struct GovernorState {
     pub price_ratio: Vec<f32>,
     /// Checks in a row with the treasury low (for minting).
     pub broke_checks: u32,
+    /// Smoothed prices of what households buy, against base prices, and
+    /// their level at the governor's first look (the fiscal rule when the
+    /// town issues its own coin).
+    #[serde(default)]
+    pub prices: f32,
+    #[serde(default)]
+    pub prices_start: f32,
     /// Food made and eaten per day (food value), averaged over about a year,
     /// and the running totals they were last taken from (the food forecast).
     #[serde(default)]
@@ -145,6 +152,8 @@ pub fn govern(
             st.food = food;
             st.treasury = treasury;
             st.idle = idle;
+            st.prices = 0.0;
+            st.prices_start = 0.0;
         }
         st.food += a * (food - st.food);
         // Food made and eaten, from the town's goods flows.
@@ -172,6 +181,29 @@ pub fn govern(
         for p in 0..np {
             let r = town.price[p] / db.base_price[p].max(1e-6);
             st.price_ratio[p] += a * (r - st.price_ratio[p]);
+        }
+        // What households buy, weighted by how much: goods by daily use,
+        // foods by what is eaten.
+        let (mut w, mut sum) = (0.0f32, 0.0f32);
+        for p in 0..np {
+            let use_p = town.goods_use.get(p).copied().unwrap_or(0.0)
+                + if db.is_food[p] {
+                    st.food_eaten / db.foods.len().max(1) as f32
+                } else {
+                    0.0
+                };
+            if use_p > 0.0 {
+                w += use_p;
+                sum += use_p * st.price_ratio[p];
+            }
+        }
+        if w > 0.0 {
+            let level = sum / w;
+            if st.prices_start <= 0.0 {
+                st.prices_start = level;
+                st.prices = level;
+            }
+            st.prices += a * (level - st.prices);
         }
     }
 
@@ -382,7 +414,28 @@ pub fn govern(
         };
         let low = gp.treasury_low * personality.thrift;
         let high = gp.treasury_high * personality.thrift;
-        if st.treasury < low {
+        // When the town issues its own coin its treasury can't run dry; the
+        // limit is trust, which the governor reads in prices: it taxes more
+        // when what households buy costs more than it did, and less when it
+        // costs no more.
+        let issues = mp.treasury == crate::config::Treasury::Issues;
+        let (short, flush, why_short, why_flush) = if issues {
+            let start = st.prices_start.max(1e-3);
+            (
+                st.prices > gp.prices_high * start,
+                st.prices < gp.prices_low * start,
+                "prices rising",
+                "prices steady",
+            )
+        } else {
+            (
+                st.treasury < low,
+                st.treasury > high,
+                "treasury low",
+                "treasury full",
+            )
+        };
+        if short {
             st.broke_checks += 1;
             if wealth_tax < params.policy.max_wealth_tax {
                 let rate = (wealth_tax + gp.tax_step).min(params.policy.max_wealth_tax);
@@ -392,7 +445,7 @@ pub fn govern(
                         tax: Tax::Wealth,
                         rate: Some(rate),
                     },
-                    format!("raised the wealth tax to {rate:.2}/yr: treasury low"),
+                    format!("raised the wealth tax to {rate:.2}/yr: {why_short}"),
                 ));
             } else if params.market.firms.on()
                 && p.profit_tax.unwrap_or(default_profit_tax) < gp.max_profit_tax
@@ -406,7 +459,7 @@ pub fn govern(
                         rate: Some(rate),
                     },
                     format!(
-                        "raised the profit tax to {:.0}%: treasury low, wealth tax at its cap",
+                        "raised the profit tax to {:.0}%: {why_short}, wealth tax at its cap",
                         rate * 100.0
                     ),
                 ));
@@ -419,12 +472,12 @@ pub fn govern(
                         rate: Some(rate),
                     },
                     format!(
-                        "raised the income tax to {:.0}%: treasury low, wealth tax at its cap",
+                        "raised the income tax to {:.0}%: {why_short}, wealth tax at its cap",
                         rate * 100.0
                     ),
                 ));
             }
-            if st.broke_checks >= gp.mint_after_checks && p.minting != Minting::On {
+            if !issues && st.broke_checks >= gp.mint_after_checks && p.minting != Minting::On {
                 orders.push((
                     Order::Mint {
                         town: tid,
@@ -445,7 +498,7 @@ pub fn govern(
                 ));
             }
         }
-        if st.treasury > high {
+        if flush {
             if params.market.firms.on()
                 && p.profit_tax.unwrap_or(default_profit_tax) > default_profit_tax
             {
@@ -458,7 +511,7 @@ pub fn govern(
                         rate: Some(rate),
                     },
                     format!(
-                        "lowered the profit tax to {:.0}%: treasury full",
+                        "lowered the profit tax to {:.0}%: {why_flush}",
                         rate * 100.0
                     ),
                 ));
@@ -471,7 +524,7 @@ pub fn govern(
                         rate: Some(rate),
                     },
                     format!(
-                        "lowered the income tax to {:.0}%: treasury full",
+                        "lowered the income tax to {:.0}%: {why_flush}",
                         rate * 100.0
                     ),
                 ));
@@ -483,7 +536,7 @@ pub fn govern(
                         tax: Tax::Wealth,
                         rate: Some(rate),
                     },
-                    format!("lowered the wealth tax to {rate:.2}/yr: treasury full"),
+                    format!("lowered the wealth tax to {rate:.2}/yr: {why_flush}"),
                 ));
             }
             let spending = p.public_spending.unwrap_or(mp.public_spending);
@@ -498,7 +551,7 @@ pub fn govern(
                     format!("raised spending to {rate:.1}/yr of the surplus: treasury full"),
                 ));
             }
-        } else if p.public_spending.is_some_and(|s| s > mp.public_spending) && st.treasury < low {
+        } else if p.public_spending.is_some_and(|s| s > mp.public_spending) && short {
             orders.push((
                 Order::Spending {
                     town: tid,

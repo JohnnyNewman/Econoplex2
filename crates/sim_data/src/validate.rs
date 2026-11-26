@@ -109,7 +109,8 @@ pub fn validate(c: &Content) -> Report {
             }
         }
         if let Some(f) = &p.fight {
-            let shares = [f.close_penalty, f.armour, f.shield];
+            let resist = f.armour.shares();
+            let shares = [f.close_penalty, resist[0], resist[1], resist[2], f.shield];
             let amounts = [
                 f.reach,
                 f.damage,
@@ -123,6 +124,12 @@ pub fn validate(c: &Content) -> Report {
             {
                 r.errors.push(format!(
                     "product `{}` has fight values out of range (shares 0..1, amounts at least 0)",
+                    p.id
+                ));
+            }
+            if f.damage > 0.0 && f.damage_type.is_none() {
+                r.errors.push(format!(
+                    "product `{}` has melee damage but no damage_type (Pierce, Slash or Blunt)",
                     p.id
                 ));
             }
