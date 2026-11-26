@@ -30,6 +30,8 @@ pub struct BuildingSpec {
     pub at: Vec3,
     /// A stable number for small variations (rotation, colour).
     pub seed: u32,
+    /// The sim's id of the building (mill sails turn while it works).
+    pub id: u64,
 }
 
 /// Meshes and materials shared by all buildings (a resource, so buildings can
@@ -277,18 +279,7 @@ fn parts(kit: &Kit, kind: &str) -> Vec<Part> {
                 Vec3::new(0.0, 2.6, 0.0),
                 Vec3::new(1.6, 0.8, 1.6),
             ),
-            (
-                cube(),
-                "sail",
-                Vec3::new(0.0, 2.0, 0.78),
-                Vec3::new(0.25, 3.0, 0.05),
-            ),
-            (
-                cube(),
-                "sail",
-                Vec3::new(0.0, 2.0, 0.78),
-                Vec3::new(3.0, 0.25, 0.05),
-            ),
+            // The sails are their own entity, so they can turn (`sails`).
         ],
         // Bakery: cosy box, red roof, chimney.
         "bakery" => vec![
@@ -681,12 +672,7 @@ pub fn spawn_building(
     if b.kind == "field_plot" || b.kind == "woodlot" {
         return None;
     }
-    // Oriented a little differently each; workplaces are drawn 1.5 times the
-    // size of a house, so they stand out.
-    let rot = Quat::from_rotation_y((b.seed % 8) as f32 * std::f32::consts::FRAC_PI_4);
-    let root = Transform::from_translation(b.at)
-        .with_rotation(rot)
-        .with_scale(Vec3::splat(1.5));
+    let root = building_root(b.at, b.seed);
     let mut parts: Vec<Part> = parts(kit, &b.kind)
         .into_iter()
         .map(|(m, c, o, s)| (m, style.restyle(c, b.seed), o, s))
@@ -698,7 +684,207 @@ pub fn spawn_building(
             parts.extend(windows(kit, body, 1));
         }
     }
-    Some(kit.spawn_baked(commands, meshes, outlines, root, &parts))
+    let e = kit.spawn_baked(commands, meshes, outlines, root, &parts);
+    if b.kind == "mill" {
+        let sails = kit.bake(meshes, &sails(kit));
+        commands.entity(e).with_children(|c| {
+            c.spawn((
+                Sails {
+                    id: b.id,
+                    angle: (b.seed % 90) as f32 / 90.0,
+                    speed: 0.0,
+                },
+                Transform::from_translation(SAIL_HUB),
+                Mesh3d(sails.clone()),
+                MeshMaterial3d(kit.white.clone()),
+            ))
+            .with_child(outlines.hull(sails));
+        });
+    }
+    Some(e)
+}
+
+/// Where a workplace stands and how it is turned: oriented a little
+/// differently each, and drawn 1.5 times the size of a house so it stands
+/// out.
+pub fn building_root(at: Vec3, seed: u32) -> Transform {
+    let rot = Quat::from_rotation_y((seed % 8) as f32 * std::f32::consts::FRAC_PI_4);
+    Transform::from_translation(at)
+        .with_rotation(rot)
+        .with_scale(Vec3::splat(1.5))
+}
+
+/// The hub of a mill's sails, in the mill's own frame.
+pub const SAIL_HUB: Vec3 = Vec3::new(0.0, 2.0, 0.78);
+
+/// A mill's sails, turning about their hub (life.rs).
+#[derive(Component)]
+pub struct Sails {
+    /// The mill's id in the sim: they turn while it works.
+    pub id: u64,
+    /// Angle now (radians) and speed (radians a second).
+    pub angle: f32,
+    pub speed: f32,
+}
+
+/// Turn the mills' sails: while the mill works, faster in a stronger wind;
+/// they come to a stop slowly when it doesn't. A handful of mills, so the
+/// CPU turns them (one transform each per frame).
+pub fn turn_sails(
+    time: Res<Time>,
+    live: Option<Res<crate::live::LiveSim>>,
+    env: Res<crate::env::Environment>,
+    mut sails: Query<(&mut Sails, &mut Transform)>,
+) {
+    if sails.is_empty() {
+        return;
+    }
+    let working: std::collections::HashSet<u64> = live
+        .iter()
+        .flat_map(|l| l.snapshot.towns.iter())
+        .flat_map(|t| t.buildings.iter())
+        .filter(|b| b.progress.is_some())
+        .map(|b| b.id)
+        .collect();
+    let wind = (env.weather.wind.length() / 15.0).min(1.0);
+    let dt = time.delta_secs();
+    for (mut s, mut tf) in &mut sails {
+        let target = if working.contains(&s.id) {
+            sail_speed(wind)
+        } else {
+            0.0
+        };
+        s.speed += (target - s.speed) * (dt * 0.5).min(1.0);
+        if s.speed > 1e-3 {
+            s.angle = (s.angle + s.speed * dt) % std::f32::consts::TAU;
+            tf.rotation = Quat::from_rotation_z(s.angle);
+        }
+    }
+}
+
+/// How fast working sails turn (radians a second) in a wind of strength
+/// `wind` (0 calm .. 1 gale): slowly in a calm, about a turn in two seconds
+/// in a gale.
+pub fn sail_speed(wind: f32) -> f32 {
+    0.5 + 2.5 * wind.clamp(0.0, 1.0)
+}
+
+/// The sails: two crossed bars around the hub.
+fn sails(kit: &Kit) -> Vec<Part> {
+    vec![
+        (
+            kit.cube.clone(),
+            "sail",
+            Vec3::ZERO,
+            Vec3::new(0.25, 3.0, 0.05),
+        ),
+        (
+            kit.cube.clone(),
+            "sail",
+            Vec3::ZERO,
+            Vec3::new(3.0, 0.25, 0.05),
+        ),
+    ]
+}
+
+/// The top of a workplace's chimney in its own frame, and how dark its smoke
+/// is (0 a hearth's pale grey .. 1 a furnace's black). `None`: no chimney.
+pub fn chimney(kind: &str) -> Option<(Vec3, f32)> {
+    match kind {
+        "bakery" => Some((Vec3::new(0.45, 2.15, -0.5), 0.2)),
+        "furnace" | "blast_furnace" => Some((Vec3::new(0.4, 3.2, 0.4), 1.0)),
+        "smithy" => Some((Vec3::new(-0.6, 2.2, 0.5), 0.7)),
+        "kiln" => Some((Vec3::new(0.0, 1.6, 0.0), 0.5)),
+        "machine_shop" | "roller_mill" => Some((Vec3::new(0.8, 3.2, 1.0), 0.8)),
+        _ => None,
+    }
+}
+
+/// The top of a house's chimney in its own frame (only the two-storey houses
+/// of the richest tier have one).
+pub fn house_chimney(style: Style) -> Option<Vec3> {
+    (style.tier >= 2).then_some(Vec3::new(0.3, 2.2, 0.3))
+}
+
+/// Spawn a building site: the building's walls risen to `progress` (0..1)
+/// inside a timber scaffold, its roof on once nearly done, and a pile of
+/// timber and stone beside it. Baked like a building, one variant per
+/// eighth of progress.
+pub fn spawn_site(
+    commands: &mut Commands,
+    kit: &mut Kit,
+    meshes: &mut Assets<Mesh>,
+    outlines: &Outlines,
+    b: &BuildingSpec,
+    style: Style,
+    progress: f32,
+) -> Entity {
+    let p = (progress * 8.0).floor().clamp(0.0, 7.0) / 8.0;
+    let all: Vec<Part> = parts(kit, &b.kind)
+        .into_iter()
+        .map(|(m, c, o, s)| (m, style.restyle(c, b.seed), o, s))
+        .collect();
+    let (body_mesh, body_colour, body_at, body) = all[0].clone();
+    // The walls, risen so far (at least a course of them).
+    let high = body.y * p.max(0.1);
+    let mut parts: Vec<Part> = vec![(
+        body_mesh,
+        body_colour,
+        Vec3::new(body_at.x, high / 2.0, body_at.z),
+        Vec3::new(body.x, high, body.z),
+    )];
+    if p >= 0.85 {
+        parts.extend(all.into_iter().skip(1));
+    }
+    // The scaffold: four poles a little out from the walls and boards around
+    // them every half unit, up to just above the walls so far.
+    let (hx, hz) = (body.x / 2.0 + 0.15, body.z / 2.0 + 0.15);
+    let top = body.y + 0.5;
+    for (x, z) in [(-hx, -hz), (hx, -hz), (hx, hz), (-hx, hz)] {
+        parts.push((
+            kit.cube.clone(),
+            "timber",
+            Vec3::new(body_at.x + x, top / 2.0, body_at.z + z),
+            Vec3::new(0.08, top, 0.08),
+        ));
+    }
+    let mut y = 0.5;
+    while y <= high + 0.5 {
+        for (at, size) in [
+            (Vec3::new(0.0, y, -hz), Vec3::new(2.0 * hx, 0.05, 0.12)),
+            (Vec3::new(0.0, y, hz), Vec3::new(2.0 * hx, 0.05, 0.12)),
+            (Vec3::new(-hx, y, 0.0), Vec3::new(0.12, 0.05, 2.0 * hz)),
+            (Vec3::new(hx, y, 0.0), Vec3::new(0.12, 0.05, 2.0 * hz)),
+        ] {
+            parts.push((
+                kit.cube.clone(),
+                "timber",
+                at + Vec3::new(body_at.x, 0.0, body_at.z),
+                size,
+            ));
+        }
+        y += 0.5;
+    }
+    // Materials waiting beside it.
+    parts.push((
+        kit.cube.clone(),
+        "timber",
+        Vec3::new(hx + 0.5, 0.1, 0.2),
+        Vec3::new(0.5, 0.2, 0.9),
+    ));
+    parts.push((
+        kit.cube.clone(),
+        "stone",
+        Vec3::new(hx + 0.45, 0.15, -0.5),
+        Vec3::new(0.4, 0.3, 0.4),
+    ));
+    kit.spawn_baked(
+        commands,
+        meshes,
+        outlines,
+        building_root(b.at, b.seed),
+        &parts,
+    )
 }
 
 #[cfg(test)]
