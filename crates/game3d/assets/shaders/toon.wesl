@@ -12,7 +12,7 @@ import bevy_pbr::render::{
 };
 // Paths relative to this file: shaders/toon_lighting.wesl and shaders/fog.wesl.
 import super::toon_lighting::{Toon, toon_params, toon_terms};
-import super::fog::{Fog, apply_fog, seasonal};
+import super::fog::{Fog, apply_fog, seasonal, cloud_shadow};
 import super::lights::{Env, lamp_term, town_glow};
 
 // Our uniform block (struct `Toon` in toon_lighting.wesl, `ToonUniform` in
@@ -34,7 +34,9 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         return out;
     }
 
-    let t = toon_terms(pbr, toon_params(toon));
+    var params = toon_params(toon);
+    params.sky = cloud_shadow(pbr.world_position.xyz, env.fog); // step 17
+    let t = toon_terms(pbr, params);
     // Step 11: snow on what faces up, autumn and winter colours on foliage.
     let albedo = seasonal(pbr.material.base_color.rgb, pbr.N, pbr.world_position.xyz, toon.rim.z, env.fog);
 

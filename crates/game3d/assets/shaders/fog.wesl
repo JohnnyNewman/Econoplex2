@@ -4,7 +4,7 @@
 // with the lit colour and the fragment's world position, after lighting and
 // before tonemapping.
 
-import bevy_pbr::render::mesh_view_bindings::view;
+import bevy_pbr::render::mesh_view_bindings::{view, globals};
 
 // Matches `FogUniform` in src/fog.rs.
 struct Fog {
@@ -13,7 +13,7 @@ struct Fog {
     sun_color: vec4<f32>, // rgb: colour toward the sun; a: glow strength
     params: vec4<f32>,    // x: distance density, y: height density at base,
                           // z: height falloff, w: base height
-    debug: vec4<f32>,     // x: debug view, y: fraction of the year (0 midwinter)
+    debug: vec4<f32>,     // x: debug view, y: fraction of the year (0 midwinter), z: cloud cover 0..1
     ground: vec4<f32>,    // step 11: x snow cover, y wet, z autumn, w winter
     wind: vec4<f32>,      // step 11: xy wind direction, z strength 0..1, w spring
 };
@@ -80,6 +80,37 @@ fn seasonal(albedo: vec3<f32>, n: vec3<f32>, p: vec3<f32>, foliage: f32, fog: Fo
     let snow = smoothstep(0.0, 0.25, g.x * 1.25 - edge - (1.0 - up)) * step(-0.5, p.y);
     c = mix(c, vec3<f32>(0.92, 0.94, 0.98), snow);
     return c;
+}
+
+// ---------------------------------------------------------------- step 17
+// Cloud shadows: the share of the sun that reaches `p` through the clouds
+// (1 clear .. 0.3 under a cloud). The clouds are a deck of fractal noise 40
+// units up that drifts with the wind; a point's shadow is the cloud where
+// the ray toward the sun meets the deck. Patches only for broken cloud: an
+// overcast sky dims the sun everywhere instead (sky.rs, `sky_light`).
+fn cloud_shadow(p: vec3<f32>, fog: Fog) -> f32 {
+    let cover = fog.debug.z;
+    let s = fog.sun_dir.xyz;
+    if cover < 0.02 || s.y < 0.02 {
+        return 1.0;
+    }
+    let deck = p.xz + s.xz / max(s.y, 0.2) * (40.0 - p.y);
+    // The wind (unit direction, strength 0..1) moves the deck, 0.5-3 units a second.
+    let drift = fog.wind.xy * (0.5 + 2.5 * fog.wind.z) * globals.time;
+    let q = (deck - drift) / 26.0;
+    var n = 0.0;
+    var a = 0.5;
+    var x = q;
+    for (var i = 0; i < 3; i++) {
+        n += a * season_noise(x);
+        x = x * 2.03 + vec2<f32>(5.2, 1.3);
+        a *= 0.5;
+    }
+    n /= 0.875;
+    // More cover: a lower threshold, so more of the noise counts as cloud.
+    let threshold = mix(0.75, 0.3, cover);
+    let cloud = smoothstep(threshold, threshold + 0.15, n) * (1.0 - smoothstep(0.8, 1.0, cover));
+    return 1.0 - 0.7 * cloud;
 }
 
 // The two parts of the fog and its colour, kept for the debug views.
