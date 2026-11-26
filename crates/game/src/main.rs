@@ -11,11 +11,13 @@
 //! E economy panel · Tab next town (the camera goes there) · F5 quicksave ·
 //! F9 quickload · policy panel (bottom right) for the player's town
 //! · Y why · T town · H history · L event log · I person (reports.rs)
+//! · the player's own battles are fought live, with orders (live_battle.rs)
 
 mod autorun;
 mod battles;
 mod economy_ui;
 mod hud;
+mod live_battle;
 mod policy_ui;
 mod reports;
 mod saving;
@@ -153,6 +155,9 @@ fn main() {
         .insert_resource(view::Follow::default())
         .insert_resource(seasons::FieldYear::default())
         .insert_resource(seasons::WhyRings::default())
+        .insert_resource(live_battle::LiveBattle::default())
+        // The player's own battles wait for the player (live_battle.rs).
+        .insert_resource(sim_core::systems::military::LiveBattles(true))
         .insert_resource(policy_ui::PolicyCursor::default())
         .insert_resource(policy_ui::Placing::default())
         .insert_resource(policy_ui::SentOrders::default())
@@ -175,6 +180,7 @@ fn main() {
                 economy_ui::spawn_economy_panel.after(hud::spawn_hud),
                 reports::spawn_reports,
                 seasons::spawn_night_veil,
+                live_battle::spawn_battle_panel,
             ),
         )
         .add_systems(
@@ -232,6 +238,14 @@ fn main() {
         .add_systems(
             Update,
             (
+                live_battle::draw_live_battle,
+                live_battle::battle_buttons,
+                live_battle::update_battle_panel.after(live_battle::battle_buttons),
+            ),
+        )
+        .add_systems(
+            Update,
+            (
                 controls,
                 saving::quicksave_keys,
                 autorun::autoshot,
@@ -258,6 +272,13 @@ fn main() {
 
 /// Run the economy steps due at the game speed since the last fixed update.
 fn run_sim_tick(world: &mut World) {
+    // A battle waiting for the player holds the economy's clock; it runs in
+    // real time instead (live_battle.rs).
+    let paused = world.resource::<SimControl>().paused;
+    if live_battle::run(world, (1.0 / FIXED_HZ) as f32, paused) {
+        world.resource_mut::<SimControl>().due = 0.0;
+        return;
+    }
     let spd = world.resource::<sim_core::SimClock>().steps_per_day.max(1) as f64;
     let mut control = world.resource_mut::<SimControl>();
     if control.paused {

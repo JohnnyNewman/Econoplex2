@@ -12,8 +12,8 @@ the 3D client shows or lets the player do that the 2D client does not.
 Purely visual effects (shaders, outlines, bloom, fog, grass, figure
 animation) are left out unless they carry information.
 
-Groups 1 to 3 of the recommended order are done (2026-11-26, rows marked
-*same (group 1)* or *same (groups 2–3)*).
+Groups 1 to 4 of the recommended order are done (2026-11-26, rows marked
+*same (group 1)*, *same (groups 2–3)* or *same (group 4)*).
 
 The first round (2026-11-15) closed these gaps with the 2D reports panel:
 the Why? view, the person details, food security and town needs, weather in
@@ -80,8 +80,8 @@ the end of this note).
 
 | Feature | 3D file(s) | 2D status | Effort | How to show it in 2D |
 |---|---|---|---|---|
-| **Live battles** for the player's town: the simulation holds its clock while the battle runs in real time | battles.rs, live.rs (`war::order_live_battle`) | missing (2D only replays battles afterwards) | L | Run the same hold in the 2D sim loop: when a live battle waits, step it in real time instead of the economy. Draw the squad blocks of battles.rs live. |
-| Squad orders in a live battle (own judgment, hold, withdraw, or attack or shoot at a named enemy squad), fighters left, squad state, "Look at the field", "Fight it out" | battles.rs (`battle_panel`) | missing | M (after the hold) | A battle panel in the right column, with one row per squad and buttons. Most of the panel code can follow policy_ui.rs. |
+| **Live battles** for the player's town: the simulation holds its clock while the battle runs in real time | battles.rs, live.rs (`war::order_live_battle`) | same (group 4): the 2D sim loop holds the economy while the battle waits and steps it 6 battle seconds a second (unless paused), through the sim's own calls (live_battle.rs); the squads are drawn live with battles.rs | | |
+| Squad orders in a live battle (own judgment, hold, withdraw, or attack or shoot at a named enemy squad), fighters left, squad state, "Look at the field", "Fight it out" | battles.rs (`battle_panel`) | same (group 4): a battle panel at the top, one row per squad with its fighters left, state and morale, and order buttons for the player's fighting squads | | |
 | Armies on the move: soldiers walk to their squad's goal in dark red, captives apart | crowd.rs | partial (group 1): soldiers are red and captives grey; no flag at the squad's goal yet | S | Draw a squad's goal as a small flag. |
 | Battle replays beside the defending town | battles.rs | same (blocks per squad, 2D battles.rs) | | |
 
@@ -135,7 +135,7 @@ the end of this note).
 
    Farming and fuel follow these.
 3. **Speeds 6–9 and Why? rings (S), done (groups 2–3).**
-4. **Live battles (L, then M):**
+4. **Live battles (L, then M), done (group 4):**
    - the clock hold in the 2D loop;
    - then the battle panel with squad orders.
 
