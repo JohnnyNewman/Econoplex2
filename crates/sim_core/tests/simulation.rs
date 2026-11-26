@@ -2867,39 +2867,58 @@ fn stockpile_targets_follow_the_seasons() {
     // Grain is reaped once a year and firewood burned in winter: their
     // stockpiles should be fullest before the lean months, not all year.
     // How seasonal a town's wood is depends on its trades (charcoal burners
-    // and bakers use wood all year, households burn more in winter): from
-    // 0.25 to 0.96 at its lowest over seeds and towns. So the check is that
-    // the stockpiles follow the seasons where the town's use does, in the
-    // most seasonal town.
+    // and bakers use wood all year, households burn more in winter), and so
+    // on the seed's whole path, raids included: the most seasonal town's
+    // lowest month for wood went from 0.25 to 0.60 over seeds 11-22, and one
+    // seed moved from 0.25 to 0.60 when battles changed. So the check is over
+    // eight seeds: in each, the most seasonal town's target peaks at 1, and
+    // the median over seeds of its lowest month is well below a flat 1.
+    // Measured median for seeds 11-18: wood 0.43 before and 0.40 after the
+    // battle fix (PR 175), grain 0.25 (its floor) in both.
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
-    let sets = sim_core::read_preset(&root.join("config/presets/new_economy.ron")).unwrap();
-    let (db, params, mut scenario) =
-        sim_core::load_with(&AssetPaths::from_root(&root), &sets).unwrap();
-    scenario.seed = 17;
-    let mut s = Simulation::new(db, params, &scenario);
-    run_years(&mut s, 3);
-    let db = s.world.resource::<sim_core::Db>();
-    let np = db.content.products.len();
-    let grain = db.content.product("grain").unwrap() as usize;
-    let wood = db.content.product("wood").unwrap() as usize;
-    let towns = &s.world.resource::<sim_core::Towns>().0;
-    for g in [grain, wood] {
-        let by_town: Vec<Vec<f32>> = towns
-            .iter()
-            .map(|town| {
-                (0..12)
-                    .map(|m| sim_core::granary::season_scale(town, np, m)[g])
-                    .collect()
+    let lows: Vec<[(f32, f32); 2]> = std::thread::scope(|sc| {
+        let hs: Vec<_> = (11..19u64)
+            .map(|seed| {
+                let root = root.clone();
+                sc.spawn(move || {
+                    let sets = sim_core::read_preset(&root.join("config/presets/new_economy.ron"))
+                        .unwrap();
+                    let (db, params, mut scenario) =
+                        sim_core::load_with(&AssetPaths::from_root(&root), &sets).unwrap();
+                    scenario.seed = seed;
+                    let mut s = Simulation::new(db, params, &scenario);
+                    run_years(&mut s, 3);
+                    let db = s.world.resource::<sim_core::Db>();
+                    let np = db.content.products.len();
+                    let towns = &s.world.resource::<sim_core::Towns>().0;
+                    ["grain", "wood"].map(|id| {
+                        let g = db.content.product(id).unwrap() as usize;
+                        // The most seasonal town: its lowest month, and its peak.
+                        towns
+                            .iter()
+                            .map(|town| {
+                                let v: Vec<f32> = (0..12)
+                                    .map(|m| sim_core::granary::season_scale(town, np, m)[g])
+                                    .collect();
+                                let lo = v.iter().copied().fold(1.0f32, f32::min);
+                                let hi = v.iter().copied().fold(0.0f32, f32::max);
+                                (lo, hi)
+                            })
+                            .min_by(|a, b| a.0.total_cmp(&b.0))
+                            .unwrap()
+                    })
+                })
             })
             .collect();
-        let lo = |v: &Vec<f32>| v.iter().copied().fold(1.0f32, f32::min);
-        let v = by_town
-            .iter()
-            .min_by(|a, b| lo(a).total_cmp(&lo(b)))
-            .unwrap();
-        eprintln!("{} {v:?}", db.content.products[g].id);
-        let hi = v.iter().copied().fold(0.0f32, f32::max);
-        assert!(hi > 0.99 && lo(v) < 0.6, "{v:?}");
+        hs.into_iter().map(|h| h.join().unwrap()).collect()
+    });
+    for (k, id) in ["grain", "wood"].iter().enumerate() {
+        let mut lo: Vec<f32> = lows.iter().map(|l| l[k].0).collect();
+        eprintln!("{id}: lowest month of the most seasonal town per seed {lo:?}");
+        assert!(lows.iter().all(|l| l[k].1 > 0.99), "{id}: {lows:?}");
+        lo.sort_by(f32::total_cmp);
+        let median = (lo[3] + lo[4]) / 2.0;
+        assert!(median < 0.55, "{id}: median lowest month {median}");
     }
 }
 
