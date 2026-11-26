@@ -32,6 +32,11 @@ pub struct BuildingView {
     /// market when the bar fills, and the rest carries on.
     #[serde(default)]
     pub progress: Option<f32>,
+    /// How busy buildings of this kind in this town have been lately: the
+    /// share of their places in use, averaged over about a month
+    /// (`Town::building_load`). Steady whatever the hour, unlike `progress`.
+    #[serde(default)]
+    pub load: f32,
 }
 
 /// A town's government levers, with the defaults from models.ron filled in.
@@ -105,6 +110,21 @@ pub struct TownView {
     /// without fields.
     #[serde(default)]
     pub crops: f32,
+    /// Buildings being put up, with how far along they are.
+    #[serde(default)]
+    pub sites: Vec<SiteView>,
+}
+
+/// A building being put up (a construction recipe under way).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SiteView {
+    /// Product id of the building, e.g. "mill".
+    pub kind: String,
+    /// Map position: where it will stand once done (the order's place, or
+    /// the town's next building place).
+    pub pos: (f32, f32),
+    /// Work done, 0..1.
+    pub progress: f32,
 }
 
 /// What a person is doing, as a view sees it.
@@ -317,6 +337,69 @@ fn crops_by_town(world: &World) -> Vec<f32> {
         .collect()
 }
 
+/// Per town, its building sites: each construction recipe with work under
+/// way (left by the last team, `Town::wip`, or a team on it now). A site
+/// stands where the building will: the place its order gave, else the
+/// town's next building places in turn.
+fn sites_by_town(world: &World) -> Vec<Vec<SiteView>> {
+    let (Some(towns), Some(db)) = (world.get_resource::<Towns>(), world.get_resource::<Db>())
+    else {
+        return Vec::new();
+    };
+    let mut work: Vec<Vec<f32>> = towns
+        .0
+        .iter()
+        .map(|t| {
+            let mut w = t.wip.clone();
+            w.resize(db.recipes.len(), 0.0);
+            w
+        })
+        .collect();
+    if let Some(mut q) = world.try_query::<&crate::components::Task>() {
+        for t in q.iter(world) {
+            if let Some(w) = work
+                .get_mut(t.town as usize)
+                .and_then(|w| w.get_mut(t.recipe as usize))
+            {
+                *w += t.progress;
+            }
+        }
+    }
+    towns
+        .0
+        .iter()
+        .zip(&work)
+        .map(|(town, w)| {
+            let mut next = town.built;
+            db.recipes
+                .iter()
+                .zip(w)
+                .filter_map(|(m, &done)| {
+                    let b = m.builds?;
+                    if done <= 1e-4 {
+                        return None;
+                    }
+                    let ordered = town
+                        .policy
+                        .commissions
+                        .iter()
+                        .find(|c| c.building == b)
+                        .and_then(|c| c.pos);
+                    let pos = ordered.unwrap_or_else(|| {
+                        next += 1;
+                        town.building_pos(next - 1)
+                    });
+                    Some(SiteView {
+                        kind: db.content.products[b as usize].id.clone(),
+                        pos,
+                        progress: done.clamp(0.0, 1.0),
+                    })
+                })
+                .collect()
+        })
+        .collect()
+}
+
 impl ViewSnapshot {
     /// Copy what a view needs out of the world. `seen` says how much of the
     /// event log and history the view already has; it is advanced past what is
@@ -326,6 +409,7 @@ impl ViewSnapshot {
         let needs = needs_by_town(world);
         let armories = armory_counts(world);
         let crops = crops_by_town(world);
+        let sites = sites_by_town(world);
         let towns = world.resource::<Towns>();
         let db = world.resource::<Db>();
         let store = world.resource::<crate::AgentStore>();
@@ -410,6 +494,7 @@ impl ViewSnapshot {
                     starving: t.starving,
                     armory: armories.get(ti).cloned().unwrap_or_default(),
                     crops: crops.get(ti).copied().unwrap_or(0.0),
+                    sites: sites.get(ti).cloned().unwrap_or_default(),
                     name: t.name.clone(),
                     pos: t.pos,
                     population: t.residents.len() as u32,
@@ -426,6 +511,7 @@ impl ViewSnapshot {
                                 .filter(|b| b.0 == ti as u16 && b.1 == def && b.2 == pos)
                                 .map(|b| b.3)
                                 .reduce(f32::max),
+                            load: t.building_load.get(def as usize).copied().unwrap_or(0.0),
                         })
                         .collect(),
                     ruler: t.ruler,
@@ -735,6 +821,37 @@ mod tests {
         let before = s.state_hash();
         let _ = town_skills(&s.world, 0);
         assert_eq!(before, s.state_hash());
+    }
+
+    #[test]
+    fn workplaces_show_their_work_during_the_working_day() {
+        let mut s = sim();
+        let mut seen = Seen::default();
+        for _ in 0..30 {
+            s.step();
+        }
+        // Over a day, some step finds workplaces with a run under way.
+        let spd = s.world.resource::<crate::world::SimClock>().steps_per_day;
+        let mut most = 0;
+        for _ in 0..spd {
+            s.step_tick();
+            let snap = ViewSnapshot::capture(&s.world, &mut seen);
+            let working = snap
+                .towns
+                .iter()
+                .flat_map(|t| t.buildings.iter())
+                .filter(|b| b.progress.is_some())
+                .count();
+            most = most.max(working);
+        }
+        assert!(most > 0);
+        // At any hour, busy workplaces show how busy they have been lately.
+        let snap = ViewSnapshot::capture(&s.world, &mut seen);
+        assert!(snap
+            .towns
+            .iter()
+            .flat_map(|t| t.buildings.iter())
+            .any(|b| b.load > 0.05));
     }
 
     #[test]
