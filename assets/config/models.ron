@@ -240,6 +240,10 @@
         // mint (content/60_money.ron), which a town builds and works while its
         // treasury holds less than `mint_below_per_capita` per resident.
         starting_coins: 1000.0,
+        // Issues: each town issues its own coin, so its treasury pays its own
+        // people in full and may go below zero (trust, not the till, is the
+        // limit). Holds: it pays only what it holds.
+        treasury: Issues,
         mint_below_per_capita: 3.0,
         // Money-supply rule: the mint (auto) also strikes coin while the town's
         // whole money stock per resident is below this (0: off).
@@ -276,7 +280,7 @@
     // (1 + switch_premium x (1 + years in trade / master_years, at most 2)) times
     // their own. They start again as a member.
     organize: (interval: 2, guild_threshold: 0.55, apprentices_per_master: 3, master_years: 8.0, teaching_crowding: 0.3,
-        switch_idle_years: 1.0, switch_premium: 0.5, trade_growth: 0.1, new_trade_members: 3),
+        switch_idle_years: 2.0, switch_premium: 0.5, trade_growth: 0.1, new_trade_members: 3),
 
     // contribution: SkillPay: each member is paid by their own chance of doing
     // the job right against the team's best (rank follows years, and skill
@@ -428,6 +432,10 @@
         max_subsidized: 3,
         treasury_low: 1.0,       // per resident
         treasury_high: 2.4,      // below the market's 3.0 reserve, above which surplus is paid out
+        // With the town issuing its own coin: taxes rise once what households
+        // buy costs 1.3x what it did at the start, and fall below 1.1x.
+        prices_high: 1.3,
+        prices_low: 1.1,
         tax_step: 0.25,
         income_tax_step: 0.05,
         max_income_tax: 0.25,

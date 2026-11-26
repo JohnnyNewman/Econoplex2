@@ -544,6 +544,16 @@ impl Town {
         (self.pos.0 + r * a.cos(), self.pos.1 + r * a.sin())
     }
 
+    /// What the treasury can pay its own people and its own market today:
+    /// everything if the town issues its coin (`market.treasury`), else what
+    /// it holds.
+    pub fn spendable(&self, mp: &crate::config::MarketParams) -> f32 {
+        match mp.treasury {
+            crate::config::Treasury::Issues => f32::INFINITY,
+            crate::config::Treasury::Holds => self.treasury.coins().max(0.0),
+        }
+    }
+
     /// Whether the town wants new coin: by policy, or on automatic while its
     /// treasury holds less than `mint_below_per_capita` per resident.
     pub fn mint_wanted(&self, mp: &crate::config::MarketParams) -> bool {

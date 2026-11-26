@@ -161,6 +161,9 @@ pub struct MarketParams {
     /// Coins each town starts with in its treasury.
     #[serde(default = "default_starting_coins")]
     pub starting_coins: f32,
+    /// Whether a treasury can pay out more of its own coin than it holds.
+    #[serde(default)]
+    pub treasury: Treasury,
     /// A town on automatic minting builds a mint and strikes coin while its treasury
     /// holds less than this per resident.
     #[serde(default = "default_mint_below")]
@@ -198,4 +201,18 @@ pub enum Caravans {
     Balance {
         max_load: f32,
     },
+}
+
+/// `market.treasury` in models.ron: what a treasury can pay in its own coin.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Treasury {
+    /// Only what it holds: an empty treasury pays no wages.
+    Holds,
+    /// The town issues its own coin, so its treasury pays its own people
+    /// (wages, subsidies, soldiers, schooling, its own market's purchases)
+    /// in full and may go below zero. What limits it is trust: more coin
+    /// in people's hands raises prices, and the coin falls abroad. Paying
+    /// other towns still takes coin it holds.
+    #[default]
+    Issues,
 }

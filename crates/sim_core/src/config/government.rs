@@ -78,6 +78,13 @@ pub struct GovernorParams {
     /// spending rises.
     pub treasury_low: f32,
     pub treasury_high: f32,
+    /// When the town issues its own coin: taxes rise once what households
+    /// buy costs `prices_high` times what it did at the start, and fall
+    /// below `prices_low` times.
+    #[serde(default = "prices_high")]
+    pub prices_high: f32,
+    #[serde(default = "prices_low")]
+    pub prices_low: f32,
     pub tax_step: f32,
     pub income_tax_step: f32,
     pub max_income_tax: f32,
@@ -144,6 +151,8 @@ impl Default for GovernorParams {
             max_subsidized: 3,
             treasury_low: 1.0,
             treasury_high: 2.4,
+            prices_high: prices_high(),
+            prices_low: prices_low(),
             tax_step: 0.25,
             income_tax_step: 0.05,
             max_income_tax: 0.25,
@@ -180,4 +189,12 @@ impl Default for GovernorParams {
             ],
         }
     }
+}
+
+fn prices_high() -> f32 {
+    1.3
+}
+
+fn prices_low() -> f32 {
+    1.1
 }

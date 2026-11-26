@@ -148,8 +148,8 @@ pub fn learn(
         else {
             continue;
         };
-        let affordable =
-            (town.treasury.coins().max(0.0) / cal.flow(pp.school_fee).max(1e-6)) as u32;
+        let affordable = (town.spendable(&params.market) / cal.flow(pp.school_fee).max(1e-6))
+            .min(u32::MAX as f32) as u32;
         let seats = school.seats.min(affordable) as usize;
         let pupils: Vec<usize> = town
             .residents
