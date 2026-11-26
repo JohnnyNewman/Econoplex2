@@ -226,6 +226,9 @@
         // Balance(max_load): the seller's surplus over its target, up to what the
         // buyer lacks of its target, at most max_load.
         caravans: Balance(max_load: 400.0),
+        // A town buys from caravans only with the coin it holds above this many
+        // months of its recent wage bill; food it buys with whatever it holds.
+        import_reserve_days: 1.0,
         // Per 1000 units of road: the straight road between neighbors is about 900.
         transport_cost: 0.28,
         // Money circulates: wages come out of the town treasury, which is refilled by

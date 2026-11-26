@@ -396,7 +396,13 @@ pub fn settle(
                             surplus.min(lack).min(max_load).max(0.0)
                         }
                     };
-                    let amount = load.min(towns.0[b].treasury.coins().max(0.0) / pb).floor();
+                    // The buyer keeps a month of wages back for all but food:
+                    // spending its last coin on imports stops its own work, and
+                    // with it what it sells.
+                    let reserve = mp.import_reserve_days
+                        * towns.0[b].ledger.monthly[Flow::Wages as usize].max(0.0);
+                    let budget = (towns.0[b].treasury.coins() - reserve).max(0.0);
+                    let amount = load.min(budget / pb).floor();
                     if amount < 1.0 {
                         continue;
                     }
