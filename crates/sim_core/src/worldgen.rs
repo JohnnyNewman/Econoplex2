@@ -221,17 +221,20 @@ pub fn generate(scenario: &mut Scenario, spec: &GenSpec, nature: &[(String, f32)
             ford_cost: 2.5,
         });
     }
-    // Towns by a river can fish in it.
-    if nature.iter().any(|n| n.0 == "fishing_water") {
-        for t in towns.iter_mut() {
-            let near = rivers
-                .iter()
-                .any(|r| distance_to_polyline(t.position, &r.points) < RIVER_FISHING_DISTANCE);
-            if near {
-                match t.nature.iter_mut().find(|n| n.0 == "fishing_water") {
-                    Some(n) => n.1 = n.1.max(2),
-                    None => t.nature.push(("fishing_water".to_string(), 2)),
-                }
+    // Towns by a river can fish in it. Wild food stays a supplement: at most one
+    // hunting ground and one fishing water a town (with more, a town gets a third
+    // of its food from the wild and its farmers drift into other trades).
+    let can_fish = nature.iter().any(|n| n.0 == "fishing_water");
+    for t in towns.iter_mut() {
+        let near = rivers
+            .iter()
+            .any(|r| distance_to_polyline(t.position, &r.points) < RIVER_FISHING_DISTANCE);
+        if can_fish && near && !t.nature.iter().any(|n| n.0 == "fishing_water") {
+            t.nature.push(("fishing_water".to_string(), 1));
+        }
+        for n in t.nature.iter_mut() {
+            if WILD_FOOD.contains(&n.0.as_str()) {
+                n.1 = n.1.min(1);
             }
         }
     }
@@ -251,6 +254,9 @@ pub fn generate(scenario: &mut Scenario, spec: &GenSpec, nature: &[(String, f32)
 
 /// A town this close to a river (map units) gets fishing water on it.
 const RIVER_FISHING_DISTANCE: f32 = 250.0;
+
+/// Nature sites a generated town has at most one of.
+const WILD_FOOD: [&str; 2] = ["hunting_ground", "fishing_water"];
 
 /// Shortest distance from `p` to a polyline.
 fn distance_to_polyline(p: (f32, f32), pts: &[(f32, f32)]) -> f32 {
@@ -457,7 +463,7 @@ mod tests {
     #[test]
     fn towns_by_a_river_can_fish() {
         let mut kinds = nature();
-        kinds.push(("fishing_water".into(), 0.0));
+        kinds.push(("fishing_water".into(), 0.5));
         let mut by_river = 0;
         for seed in 0..20 {
             let mut s = world(seed);
@@ -473,9 +479,10 @@ mod tests {
                     .iter()
                     .find(|n| n.0 == "fishing_water")
                     .map_or(0, |n| n.1);
+                assert!(fish <= 1, "{} has {fish} fishing waters", t.name);
                 if near {
                     by_river += 1;
-                    assert!(fish >= 2, "{} is by a river but cannot fish", t.name);
+                    assert!(fish == 1, "{} is by a river but cannot fish", t.name);
                 }
             }
         }
