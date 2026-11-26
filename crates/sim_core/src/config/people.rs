@@ -206,7 +206,7 @@ fn trade_growth() -> f32 {
 }
 
 fn switch_idle_years() -> f32 {
-    1.0
+    2.0
 }
 
 fn switch_premium() -> f32 {

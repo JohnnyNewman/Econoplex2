@@ -251,7 +251,7 @@ pub fn assign(
                         town.firms[f].cash.coins().max(0.0)
                             + params.market.firms.credit_room(&town.firms[f])
                     }
-                    None => town.treasury.coins(),
+                    None => town.spendable(&params.market),
                 };
                 if per_batch > 0.0 {
                     batches = batches.min((cash.max(0.0) / per_batch).floor() as u32);

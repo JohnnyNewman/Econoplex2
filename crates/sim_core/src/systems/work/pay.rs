@@ -64,8 +64,9 @@ pub(super) fn settle_wages(
     towns: &mut Towns,
     store: &mut AgentStore,
     decision: &crate::decision::DecisionModels,
-    firms: crate::firms::FirmsParams,
+    mp: &crate::config::MarketParams,
 ) {
+    let firms = mp.firms;
     let n_towns = towns.0.len();
     let reserve_days = match firms {
         crate::firms::FirmsParams::Workshops { reserve_days, .. } => reserve_days,
@@ -105,7 +106,7 @@ pub(super) fn settle_wages(
         .iter()
         .zip(&owed)
         .map(|(town, &(w, sub))| {
-            let budget = town.treasury.coins().max(0.0);
+            let budget = town.spendable(mp);
             let rw = if w > 0.0 { (budget / w).min(1.0) } else { 0.0 };
             let left = (budget - w * rw).max(0.0);
             let rs = if sub > 0.0 {
