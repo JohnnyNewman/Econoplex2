@@ -10,6 +10,7 @@
 //! writes a PNG screenshot and, with `--exit`, quits. Used to make the README and PR
 //! screenshots.
 
+use crate::view::WorldCamera;
 use crate::SimControl;
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{save_to_disk, Screenshot};
@@ -127,7 +128,7 @@ pub fn parse() -> GameArgs {
 /// Apply the camera and panel options once the view has been set up.
 pub fn apply_view_args(
     args: Res<GameArgs>,
-    mut camera: Single<&mut Transform, With<Camera2d>>,
+    mut camera: Single<&mut Transform, With<WorldCamera>>,
     mut economy: ResMut<crate::economy_ui::EconomyView>,
     mut overlay: ResMut<crate::view::Overlay>,
 ) {

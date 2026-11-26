@@ -6,6 +6,7 @@
 //! the map where it should go (Esc cancels).
 
 use crate::ui_compat::{Button, Interaction};
+use crate::view::WorldCamera;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use sim_core::policy::{Immigration, Minting, Order, OrderQueue, PlayerTown, School, Tax, War};
@@ -632,7 +633,7 @@ pub fn place_building(
     mouse: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
     window: Single<&Window, With<PrimaryWindow>>,
-    camera: Single<(&Camera, &GlobalTransform), With<Camera2d>>,
+    camera: Single<(&Camera, &GlobalTransform), With<WorldCamera>>,
     buttons: Query<&Interaction, With<Button>>,
     mut placing: ResMut<Placing>,
     mut queue: ResMut<OrderQueue>,

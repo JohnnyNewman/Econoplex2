@@ -387,6 +387,27 @@ mod tests {
     }
 
     #[test]
+    fn an_override_without_requires_keeps_the_earlier_ones() {
+        let file = |recipes: String| -> ContentFile {
+            ron::from_str(&format!(
+                r#"(
+                    skills: [(id: "craft", name: "Craft", domain: "craft")],
+                    products: [(id: "thing", name: "Thing", category: Material, base_price: 1.0)],
+                    recipes: [{recipes}],
+                )"#
+            ))
+            .expect("test content parses")
+        };
+        let c = Content::from_files(vec![
+            file([recipe("a", ""), recipe("b", r#""a""#)].concat()),
+            file(recipe("b", "")),
+        ])
+        .expect("valid");
+        let b = &c.recipes[c.recipe("b").unwrap() as usize];
+        assert_eq!(b.requires, vec![Requirement::One("a".into())]);
+    }
+
+    #[test]
     fn shipped_content_has_a_learnable_tech_graph() {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/content");
         let c = Content::load_dir(&dir).expect("shipped content is valid");

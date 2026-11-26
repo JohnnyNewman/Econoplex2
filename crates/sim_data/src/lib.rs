@@ -95,7 +95,15 @@ impl Content {
         for f in files {
             merge(&mut c.skills, f.skills, |s| &s.id);
             merge(&mut c.products, f.products, |s| &s.id);
-            merge(&mut c.recipes, f.recipes, |s| &s.id);
+            // An override that leaves out `requires` keeps the earlier entry's, so a
+            // file that only changes a recipe's costs does not cut it out of the tech graph.
+            let mut recipes = f.recipes;
+            for r in recipes.iter_mut().filter(|r| r.requires.is_empty()) {
+                if let Some(old) = c.recipes.iter().find(|o| o.id == r.id) {
+                    r.requires = old.requires.clone();
+                }
+            }
+            merge(&mut c.recipes, recipes, |s| &s.id);
             merge(&mut c.nature, f.nature, |s| &s.id);
             if !f.eras.is_empty() {
                 c.eras = f.eras;

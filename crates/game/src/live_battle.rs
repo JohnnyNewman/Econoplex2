@@ -17,6 +17,7 @@
 //! at the field" moves the camera there; "Fight it out" settles it at once.
 
 use crate::ui_compat::Interaction;
+use crate::view::WorldCamera;
 use bevy::prelude::*;
 use sim_core::battle::{LiveView, Order, SquadState};
 use sim_core::systems::military as war;
@@ -336,7 +337,7 @@ pub fn battle_buttons(
     mut buttons: Query<(&Interaction, &BattleAction, &mut BackgroundColor), Changed<Interaction>>,
     mut live: ResMut<LiveBattle>,
     mut follow: ResMut<crate::view::Follow>,
-    mut camera: Single<&mut Transform, With<Camera2d>>,
+    mut camera: Single<&mut Transform, With<WorldCamera>>,
 ) {
     for (interaction, action, mut colour) in &mut buttons {
         match interaction {

@@ -8,6 +8,7 @@ flowchart LR
     r_mill_flour["Mill flour"]
     r_shear_sheep(["Shear sheep"])
     r_harvest_flax["Harvest flax"]
+    r_bind_thatch["Bind thatch"]
     r_clear_field(["Clear field"])
     r_breed_horses["Breed horses"]
   end
@@ -30,6 +31,10 @@ flowchart LR
     r_dig_clay(["Dig clay"])
     r_throw_pots["Throw pots"]
     r_fire_bricks["Fire bricks"]
+    r_dig_sand(["Dig sand"])
+    r_burn_lime["Burn lime"]
+    r_mix_mortar["Mix mortar"]
+    r_fire_tiles["Fire roof tiles"]
   end
   subgraph d5["forestry"]
     r_chop_wood(["Chop wood"])
@@ -37,6 +42,7 @@ flowchart LR
     r_plant_woodlot["Plant woodlot"]
   end
   subgraph d6["woodworking"]
+    r_hew_beams["Hew beams"]
     r_saw_planks["Saw planks"]
     r_carve_hilt["Carve hilt"]
     r_make_bow["Make bow"]
@@ -63,6 +69,7 @@ flowchart LR
   subgraph d9["smithing"]
     r_forge_shears["Forge shears"]
     r_forge_chisel["Forge chisel"]
+    r_forge_nails["Forge nails"]
     r_forge_hammer["Forge hammer"]
     r_forge_pickaxe["Forge pickaxe"]
     r_forge_axe["Forge axe"]
@@ -130,6 +137,14 @@ flowchart LR
   r_cut_stone --> r_build_masons_yard
   r_build_workshop --> r_build_kiln
   r_throw_pots --> r_build_kiln
+  r_farm_grain --> r_bind_thatch
+  r_chop_wood --> r_hew_beams
+  r_quarry_stone --> r_burn_lime
+  r_burn_charcoal --> r_burn_lime
+  r_burn_lime --> r_mix_mortar
+  r_dig_sand --> r_mix_mortar
+  r_fire_bricks --> r_fire_tiles
+  r_forge_sickle --> r_forge_nails
   r_chop_wood --> r_burn_charcoal
   r_chop_wood --> r_saw_planks
   r_saw_planks --> r_carve_hilt

@@ -14,6 +14,9 @@ flowchart LR
     p_flax(["Flax"])
     p_stone(["Stone"])
     p_clay(["Clay"])
+    p_straw(["Straw"])
+    p_thatch["Thatch"]
+    p_beam["Beam"]
     p_wood(["Wood"])
     p_plank["Plank"]
     p_charcoal["Charcoal"]
@@ -36,6 +39,10 @@ flowchart LR
     p_brick["Brick"]
     p_masons_yard[["Mason's yard"]]
     p_kiln[["Kiln"]]
+    p_sand(["Sand"])
+    p_lime["Lime"]
+    p_mortar["Mortar"]
+    p_roof_tile["Roof tile"]
     p_bow["Bow"]
     p_shield["Shield"]
     p_padded_coat["Padded coat"]
@@ -55,6 +62,7 @@ flowchart LR
   subgraph era3["3 Iron and steel"]
     p_sickle["Sickle"]
     p_chisel["Chisel"]
+    p_nails["Nails"]
     p_axe["Axe"]
     p_iron["Iron"]
     p_steel["Steel"]
@@ -99,6 +107,7 @@ flowchart LR
   n_coal_seam --> p_coal
   n_copper_vein --> p_copper_ore
   n_field --> p_grain
+  n_field --> p_straw
   n_fishing_water --> p_fish
   n_flax_field --> p_flax
   n_forest --> p_wood
@@ -106,9 +115,22 @@ flowchart LR
   n_ore_vein --> p_ore
   n_pasture --> p_horse
   n_pasture --> p_wool
+  n_quarry --> p_sand
   n_quarry --> p_stone
   n_silver_vein --> p_silver_ore
   n_tin_vein --> p_tin_ore
+  p_beam --> p_bakery
+  p_beam --> p_brewery
+  p_beam --> p_furnace
+  p_beam --> p_kiln
+  p_beam --> p_machine_shop
+  p_beam --> p_masons_yard
+  p_beam --> p_mill
+  p_beam --> p_mint
+  p_beam --> p_smithy
+  p_beam --> p_stable
+  p_beam --> p_weaving_shed
+  p_beam --> p_workshop
   p_brick --> p_blast_furnace
   p_brick --> p_brewery
   p_brick --> p_machine_shop
@@ -119,6 +141,7 @@ flowchart LR
   p_clay --> p_brick
   p_clay --> p_kiln
   p_clay --> p_pot
+  p_clay --> p_roof_tile
   p_cloth --> p_clothes
   p_cloth --> p_padded_coat
   p_coal --> p_coke
@@ -150,16 +173,29 @@ flowchart LR
   p_iron --> p_machine_parts
   p_iron --> p_machine_shop
   p_iron --> p_mail
+  p_iron --> p_nails
   p_iron --> p_pickaxe
   p_iron --> p_plough
   p_iron --> p_sickle
   p_iron --> p_smithy
   p_iron --> p_steel
   p_iron_blade --> p_longsword_1
+  p_lime --> p_mortar
   p_machine_parts --> p_roller_mill
   p_machine_parts --> p_textile_mill
+  p_mortar --> p_blast_furnace
+  p_mortar --> p_brewery
+  p_mortar --> p_machine_shop
+  p_mortar --> p_roller_mill
+  p_mortar --> p_textile_mill
+  p_nails --> p_machine_shop
   p_ore --> p_iron
   p_pot --> p_ale
+  p_roof_tile --> p_brewery
+  p_roof_tile --> p_machine_shop
+  p_roof_tile --> p_roller_mill
+  p_roof_tile --> p_textile_mill
+  p_sand --> p_mortar
   p_sharp_blade --> p_longsword_3
   p_silver --> p_coin
   p_silver_ore --> p_silver
@@ -169,7 +205,15 @@ flowchart LR
   p_steel_blade --> p_tempered_blade
   p_stone --> p_cut_stone
   p_stone --> p_kiln
+  p_stone --> p_lime
+  p_straw --> p_thatch
   p_tempered_blade --> p_sharp_blade
+  p_thatch --> p_bakery
+  p_thatch --> p_masons_yard
+  p_thatch --> p_mill
+  p_thatch --> p_stable
+  p_thatch --> p_weaving_shed
+  p_thatch --> p_workshop
   p_tin --> p_bronze
   p_tin_ore --> p_tin
   p_wool --> p_yarn
@@ -179,9 +223,12 @@ flowchart LR
   p_brewery -.-> p_ale
   p_kiln -.-> p_brick
   p_kiln -.-> p_coke
+  p_kiln -.-> p_lime
   p_kiln -.-> p_pot
+  p_kiln -.-> p_roof_tile
   p_machine_shop -.-> p_machine_parts
   p_masons_yard -.-> p_cut_stone
+  p_masons_yard -.-> p_mortar
   p_mint -.-> p_coin
   p_roller_mill -.-> p_flour
   p_stable -.-> p_horse

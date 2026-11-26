@@ -133,7 +133,7 @@ pub fn update_skill_labels(
     towns: Res<Towns>,
     store: Res<AgentStore>,
     selection: Res<crate::Selection>,
-    camera: Single<&Transform, (With<Camera2d>, Without<SkillLabel>)>,
+    camera: Single<&Transform, (With<WorldCamera>, Without<SkillLabel>)>,
     mut labels: Query<(&SkillLabel, &mut Transform, &mut Visibility, &mut TextColor)>,
 ) {
     let center = camera.translation.truncate();
@@ -186,8 +186,18 @@ pub fn dominant_domain(db: &Db, cap: &sim_data::dims::CapVec) -> (usize, f32) {
     (best.0, (best.1 / 1.5).clamp(0.0, 1.0))
 }
 
+/// The camera that looks at the world (the history charts have their own,
+/// reports.rs). The panels belong to it.
+#[derive(Component)]
+pub struct WorldCamera;
+
 pub fn spawn_camera(mut commands: Commands) {
-    commands.spawn((Camera2d, Transform::from_scale(Vec3::new(1.6, 1.6, 1.0))));
+    commands.spawn((
+        Camera2d,
+        Transform::from_scale(Vec3::new(1.6, 1.6, 1.0)),
+        IsDefaultUiCamera,
+        WorldCamera,
+    ));
 }
 
 /// Sprites and labels for buildings, including ones constructed during play.
@@ -374,7 +384,7 @@ pub fn draw_world(
     selection: Res<Selection>,
     overlay: Res<Overlay>,
     nature: Query<(&NaturalResource, &Pos)>,
-    camera: Single<&Transform, With<Camera2d>>,
+    camera: Single<&Transform, With<WorldCamera>>,
 ) {
     if overlay.product_space {
         draw_product_space(
@@ -533,7 +543,7 @@ pub fn camera_controls(
     scroll: Res<AccumulatedMouseScroll>,
     time: Res<Time>,
     mut follow: ResMut<Follow>,
-    mut camera: Single<&mut Transform, With<Camera2d>>,
+    mut camera: Single<&mut Transform, With<WorldCamera>>,
 ) {
     let mut dir = Vec2::ZERO;
     if keys.any_pressed([KeyCode::KeyW, KeyCode::ArrowUp]) {
@@ -566,7 +576,7 @@ pub fn follow_selected(
     selection: Res<Selection>,
     mut follow: ResMut<Follow>,
     agents: Query<(&Agent, &Transform), Without<Camera2d>>,
-    mut camera: Single<&mut Transform, (With<Camera2d>, Without<Agent>)>,
+    mut camera: Single<&mut Transform, (With<WorldCamera>, Without<Agent>)>,
 ) {
     if keys.just_pressed(KeyCode::KeyF) {
         follow.0 = !follow.0 && selection.0.is_some();
@@ -590,7 +600,7 @@ pub fn look_at(camera: &mut Transform, pos: (f32, f32)) {
 pub fn select_agent(
     mouse: Res<ButtonInput<MouseButton>>,
     window: Single<&Window, With<PrimaryWindow>>,
-    camera: Single<(&Camera, &GlobalTransform), With<Camera2d>>,
+    camera: Single<(&Camera, &GlobalTransform), With<WorldCamera>>,
     agents: Query<(&Agent, &Transform), With<AgentSprite>>,
     buttons: Query<&Interaction, With<Button>>,
     placing: Res<crate::policy_ui::Placing>,

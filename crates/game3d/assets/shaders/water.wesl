@@ -11,7 +11,7 @@ import bevy_pbr::render::{
     mesh_view_bindings::{view, globals},
 };
 import super::toon_lighting::{ToonParams, toon_terms};
-import super::fog::{Fog, apply_fog};
+import super::fog::{Fog, apply_fog, cloud_shadow};
 import super::lights::{Env, lamp_term};
 
 // Matches `WaterUniform` in src/water.rs.
@@ -166,7 +166,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     albedo = mix(albedo, vec3<f32>(0.80, 0.87, 0.92), ice);
 
     // Lit like everything else (toon ramp, sun shadows), plus nearby lamps.
-    let params = ToonParams(vec3<f32>(0.42, 0.48, 0.85), 0.4, 0.28, 0.62, 0.05, 0.0, 3.0);
+    let params = ToonParams(vec3<f32>(0.42, 0.48, 0.85), 0.4, 0.28, 0.62, 0.05, 0.0, 3.0, cloud_shadow(p, env.fog));
     let tt = toon_terms(pbr, params);
     var lamps = vec3<f32>(0.0);
     for (var i = 0u; i < u32(env.lamps_info.x); i++) {

@@ -1,0 +1,51 @@
+// Building materials (plan Phase 4, batch 5): straw and thatch, beams, lime,
+// sand and mortar, roof tiles and nails. The buildings that use them are
+// re-costed in 90_building_costs.ron, so this file and that one can change or
+// go on their own. Glass waits for houses.
+(
+    products: [
+        // A by-product of the grain harvest (see the farm_grain override below).
+        (id: "straw",     name: "Straw",     category: Raw,      base_price: 0.3),
+        (id: "thatch",    name: "Thatch",    category: Material, base_price: 1.0),
+        // Squared timber for frames and roofs.
+        (id: "beam",      name: "Beam",      category: Material, base_price: 4.0),
+        (id: "sand",      name: "Sand",      category: Raw,      era: 1, base_price: 0.5),
+        (id: "lime",      name: "Lime",      category: Material, era: 1, base_price: 3.0),
+        (id: "mortar",    name: "Mortar",    category: Material, era: 1, base_price: 2.0),
+        (id: "roof_tile", name: "Roof tile", category: Material, era: 1, base_price: 1.5),
+        (id: "nails",     name: "Nails",     category: Material, era: 3, base_price: 1.5),
+    ],
+    recipes: [
+        // Overrides farm_grain in 10_agriculture.ron: the harvest also gives straw.
+        (id: "farm_grain", name: "Farm grain", skill: "farming", difficulty: 0.10,
+            outputs: [("grain", 4), ("straw", 1)], nature: Some("field"), duration: 1.5, max_team: 4,
+            physique: [("endurance", 0.3), ("strength", 0.1)]),
+        (id: "bind_thatch", name: "Bind thatch", skill: "farming", difficulty: 0.10,
+            requires: ["farm_grain"],
+            inputs: [("straw", 3)], outputs: [("thatch", 1)], duration: 0.25, max_team: 2,
+            physique: [("dexterity", 0.2)]),
+        (id: "hew_beams", name: "Hew beams", skill: "carpentry", difficulty: 0.25,
+            requires: ["chop_wood"],
+            inputs: [("wood", 2)], outputs: [("beam", 1)], building: Some("workshop"),
+            duration: 0.5, max_team: 2, physique: [("strength", 0.3), ("dexterity", 0.1)]),
+        (id: "dig_sand", name: "Dig sand", skill: "quarrying", difficulty: 0.10,
+            outputs: [("sand", 4)], nature: Some("quarry"), duration: 1.0, max_team: 4,
+            physique: [("endurance", 0.3)]),
+        (id: "burn_lime", name: "Burn lime", skill: "brickmaking", difficulty: 0.35,
+            requires: ["quarry_stone", "burn_charcoal"],
+            inputs: [("stone", 3), ("charcoal", 1)], outputs: [("lime", 2)], building: Some("kiln"),
+            duration: 1.0, physique: [("endurance", 0.2)]),
+        (id: "mix_mortar", name: "Mix mortar", skill: "stonecutting", difficulty: 0.20,
+            requires: ["burn_lime", "dig_sand"],
+            inputs: [("lime", 1), ("sand", 2)], outputs: [("mortar", 2)], building: Some("masons_yard"),
+            duration: 0.5, physique: [("strength", 0.2)]),
+        (id: "fire_tiles", name: "Fire roof tiles", skill: "brickmaking", difficulty: 0.40,
+            requires: ["fire_bricks"],
+            inputs: [("clay", 3), ("charcoal", 1)], outputs: [("roof_tile", 4)], building: Some("kiln"),
+            duration: 1.0, physique: [("dexterity", 0.2), ("endurance", 0.1)]),
+        (id: "forge_nails", name: "Forge nails", skill: "smithing", difficulty: 0.25,
+            requires: ["forge_sickle"],
+            inputs: [("iron", 1)], outputs: [("nails", 12)], building: Some("smithy"),
+            duration: 0.5, max_team: 2, physique: [("dexterity", 0.2)]),
+    ],
+)

@@ -4,16 +4,18 @@
 //!
 //! `Y` Why? for the town · `T` Town: weather, money, buildings, food
 //! security, needs, armory ·
-//! `H` History per town · `L` Event log · `I` Person (opens itself when you
+//! `H` History per town, as line charts · `L` Event log · `I` Person (opens itself when you
 //! click someone). The same key again closes the report. Reports follow the
 //! economy panel's town (`Tab`) and the selected person, and are computed once
 //! per simulated day or when their subject changes, not every frame.
 
 use crate::economy_ui::EconomyView;
 use crate::Selection;
+use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
+use bevy::ui::UiGlobalTransform;
 use sim_core::explain::Finding;
-use sim_core::history::History;
+use sim_core::history::{History, Sample};
 use sim_core::{Db, SimClock, Towns};
 
 /// Which report is open.
@@ -106,6 +108,47 @@ pub fn spawn_reports(mut commands: Commands) {
                 TextColor(Color::srgb(0.92, 0.92, 0.92)),
                 ReportText,
             ));
+            p.spawn((Text::default(), ChartLegend));
+            p.spawn((
+                Node {
+                    display: Display::None,
+                    flex_wrap: FlexWrap::Wrap,
+                    column_gap: Val::Px(8.0),
+                    row_gap: Val::Px(4.0),
+                    width: Val::Px(584.0),
+                    margin: UiRect::top(Val::Px(6.0)),
+                    ..default()
+                },
+                ChartGrid,
+            ))
+            .with_children(|g| {
+                for (i, (name, _)) in SERIES.iter().enumerate() {
+                    g.spawn(Node {
+                        flex_direction: FlexDirection::Column,
+                        width: Val::Px(288.0),
+                        ..default()
+                    })
+                    .with_children(|c| {
+                        c.spawn((
+                            Text::new(*name),
+                            TextFont {
+                                font_size: FontSize::Px(12.0),
+                                ..default()
+                            },
+                            TextColor(Color::srgb(0.8, 0.8, 0.8)),
+                            ChartTitle(i),
+                        ));
+                        c.spawn((
+                            Node {
+                                height: Val::Px(84.0),
+                                ..default()
+                            },
+                            BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.05)),
+                            ChartArea(i),
+                        ));
+                    });
+                }
+            });
         });
 }
 
@@ -170,10 +213,17 @@ pub fn update_reports(world: &mut World) {
             text
         }
         Report::Town => town_report(world, town),
-        Report::History => history(world),
+        Report::History => {
+            let view = history(world, town);
+            show_charts(world, Some(&view));
+            view.text
+        }
         Report::Log => log(world),
         Report::Person => person(world, selected),
     };
+    if report != Report::History {
+        show_charts(world, None);
+    }
     let text = fit(&text, MAX_LINES);
     let mut texts = world.query_filtered::<&mut Text, With<ReportText>>();
     for mut t in texts.iter_mut(world) {
@@ -415,67 +465,275 @@ fn bar(v: f32) -> String {
 
 // ------------------------------------------------------------------ History
 
-/// One character per value, low to high.
-const SPARKS: [char; 8] = ['_', '.', ':', '-', '=', '+', '*', '#'];
+/// How many monthly samples a chart shows per town.
+const CHART_SAMPLES: usize = 36;
 
-/// The last `n` values as a sparkline, scaled to their own range.
-pub fn sparkline(values: &[f32], n: usize) -> String {
-    let v = &values[values.len().saturating_sub(n)..];
-    let (lo, hi) = v
+type Series = fn(&Sample) -> f32;
+
+/// The seven history series, as in the 3D client's chart.
+const SERIES: [(&str, Series); 7] = [
+    ("people", |x| x.population as f32),
+    ("treasury", |x| x.treasury),
+    ("food / resident", |x| x.food_per_capita),
+    ("mean wealth", |x| x.mean_wealth),
+    ("bread price", |x| x.bread_price),
+    ("soldiers", |x| x.soldiers as f32),
+    ("buildings", |x| x.buildings as f32),
+];
+
+/// The render layer the history charts are drawn on, which only the chart
+/// camera sees.
+const CHART_LAYER: usize = 1;
+
+/// A second camera for the history charts. It renders after the world camera
+/// and its panels, so the lines sit on top of the report panel; its world
+/// units are screen pixels.
+#[derive(Component)]
+pub struct ChartCamera;
+
+/// The gizmos of the history charts, on [`CHART_LAYER`].
+#[derive(Default, Reflect, GizmoConfigGroup)]
+pub struct ChartGizmos;
+
+/// The cells of the history charts, shown while `H` is open.
+#[derive(Component)]
+pub struct ChartGrid;
+
+/// The town names in their chart colours.
+#[derive(Component)]
+pub struct ChartLegend;
+
+/// The title of chart `i`: series name, range, the selected town's value.
+#[derive(Component)]
+pub struct ChartTitle(usize);
+
+/// The plot area of chart `i`, which [`draw_charts`] fills.
+#[derive(Component)]
+pub struct ChartArea(usize);
+
+pub fn spawn_chart_camera(mut commands: Commands, mut store: ResMut<GizmoConfigStore>) {
+    commands.spawn((
+        Camera2d,
+        Camera {
+            order: 1,
+            clear_color: ClearColorConfig::None,
+            ..default()
+        },
+        RenderLayers::layer(CHART_LAYER),
+        ChartCamera,
+    ));
+    let (config, _) = store.config_mut::<ChartGizmos>();
+    config.render_layers = RenderLayers::layer(CHART_LAYER);
+    config.line.width = 1.5;
+}
+
+/// A town's colour in the charts: evenly spaced hues.
+pub fn town_color(town: usize, towns: usize) -> Color {
+    Color::hsl(30.0 + 360.0 * town as f32 / towns.max(1) as f32, 0.75, 0.62)
+}
+
+/// Each town's last `n` values of one series, and the range they share.
+pub fn chart_series(
+    samples: &[Sample],
+    towns: usize,
+    f: Series,
+    n: usize,
+) -> (Vec<Vec<f32>>, f32, f32) {
+    let mut per_town: Vec<Vec<f32>> = (0..towns)
+        .map(|t| {
+            samples
+                .iter()
+                .filter(|x| x.town as usize == t)
+                .map(f)
+                .collect()
+        })
+        .collect();
+    for v in &mut per_town {
+        v.drain(..v.len().saturating_sub(n));
+    }
+    let (lo, hi) = per_town
         .iter()
+        .flatten()
         .fold((f32::MAX, f32::MIN), |(lo, hi), &x| (lo.min(x), hi.max(x)));
-    v.iter()
-        .map(|&x| {
-            let k = if hi > lo {
-                ((x - lo) / (hi - lo) * 7.0).round() as usize
-            } else {
-                3
-            };
-            SPARKS[k.min(7)]
+    if lo > hi {
+        return (per_town, 0.0, 0.0);
+    }
+    (per_town, lo, hi)
+}
+
+/// The points of a line in `rect`, spread over `n` monthly slots so every
+/// town's last sample sits at the right edge. A flat range draws mid-height.
+pub fn plot(values: &[f32], lo: f32, hi: f32, n: usize, rect: Rect) -> Vec<Vec2> {
+    let start = n.saturating_sub(values.len());
+    let step = rect.width() / n.saturating_sub(1).max(1) as f32;
+    values
+        .iter()
+        .enumerate()
+        .map(|(i, &v)| {
+            let y = if hi > lo { (v - lo) / (hi - lo) } else { 0.5 };
+            Vec2::new(
+                rect.min.x + (start + i) as f32 * step,
+                rect.min.y + y * rect.height(),
+            )
         })
         .collect()
 }
 
-fn history(world: &World) -> String {
+/// A value short enough for a chart title.
+fn num(v: f32) -> String {
+    if v.abs() >= 100.0 {
+        format!("{v:.0}")
+    } else {
+        format!("{v:.1}")
+    }
+}
+
+/// What the history report shows besides the charts.
+struct HistoryView {
+    text: String,
+    titles: Vec<String>,
+    /// Each town's name, colour and whether it is the selected one.
+    legend: Vec<(String, Color, bool)>,
+}
+
+fn history(world: &World, town: usize) -> HistoryView {
     let towns = world.resource::<Towns>();
     let samples = &world.resource::<History>().samples;
-    let mut s = String::from("HISTORY   monthly, the last 36 samples per town\n");
+    let mut text = format!(
+        "HISTORY   monthly, the last {CHART_SAMPLES} samples per town\n\
+         Bold: {} (Tab for the next town)\n",
+        town_name(world, town)
+    );
     if samples.is_empty() {
-        s.push_str("\nThe first samples come after a month.\n");
-        footer(&mut s);
-        return s;
+        text.push_str("\nThe first samples come after a month.\n");
     }
-    type Series = fn(&sim_core::history::Sample) -> f32;
-    let series: [(&str, Series); 7] = [
-        ("people", |x| x.population as f32),
-        ("treasury", |x| x.treasury),
-        ("food / resident", |x| x.food_per_capita),
-        ("mean wealth", |x| x.mean_wealth),
-        ("bread price", |x| x.bread_price),
-        ("soldiers", |x| x.soldiers as f32),
-        ("buildings", |x| x.buildings as f32),
-    ];
-    // No blank line between series, so seven fit in the panel.
-    s.push('\n');
-    for (name, f) in series {
-        s.push_str(&format!("{name}\n"));
-        for (t, town) in towns.0.iter().enumerate() {
-            let v: Vec<f32> = samples
-                .iter()
-                .filter(|x| x.town as usize == t)
-                .map(f)
-                .collect();
-            let Some(last) = v.last() else { continue };
-            s.push_str(&format!(
-                "  {:<11} {:<36} {:.1}\n",
-                town.name,
-                sparkline(&v, 36),
-                last
-            ));
+    footer(&mut text);
+    let titles = SERIES
+        .iter()
+        .map(|&(name, f)| {
+            let (series, lo, hi) = chart_series(samples, towns.0.len(), f, CHART_SAMPLES);
+            match series.get(town).and_then(|v| v.last()) {
+                Some(&last) => format!("{name}   {} to {}   now {}", num(lo), num(hi), num(last)),
+                None => name.to_string(),
+            }
+        })
+        .collect();
+    let legend = towns
+        .0
+        .iter()
+        .enumerate()
+        .map(|(t, x)| (x.name.clone(), town_color(t, towns.0.len()), t == town))
+        .collect();
+    HistoryView {
+        text,
+        titles,
+        legend,
+    }
+}
+
+/// Shows the chart cells for the history report and hides them for the
+/// others; fills their titles and the legend.
+fn show_charts(world: &mut World, view: Option<&HistoryView>) {
+    let display = if view.is_some() {
+        Display::Flex
+    } else {
+        Display::None
+    };
+    let mut grids = world.query_filtered::<&mut Node, With<ChartGrid>>();
+    for mut node in grids.iter_mut(world) {
+        if node.display != display {
+            node.display = display;
         }
     }
-    footer(&mut s);
-    s
+    let Some(view) = view else { return };
+    let mut titles = world.query::<(&ChartTitle, &mut Text)>();
+    for (title, mut text) in titles.iter_mut(world) {
+        let want = &view.titles[title.0];
+        if &text.0 != want {
+            text.0 = want.clone();
+        }
+    }
+    let legends: Vec<Entity> = world
+        .query_filtered::<Entity, With<ChartLegend>>()
+        .iter(world)
+        .collect();
+    for legend in legends {
+        let mut entity = world.entity_mut(legend);
+        entity.despawn_related::<Children>();
+        entity.with_children(|p| {
+            for (name, color, bold) in &view.legend {
+                let name = if *bold {
+                    format!("[{name}]   ")
+                } else {
+                    format!("{name}   ")
+                };
+                p.spawn((
+                    TextSpan::new(name),
+                    TextFont {
+                        font_size: FontSize::Px(13.0),
+                        ..default()
+                    },
+                    TextColor(*color),
+                ));
+            }
+        });
+    }
+}
+
+/// The history charts: one line per town in each cell, the economy panel's
+/// town in bold and drawn last, on top.
+pub fn draw_charts(
+    mut gizmos: Gizmos<ChartGizmos>,
+    reports: Res<Reports>,
+    history: Res<History>,
+    towns: Res<Towns>,
+    view: Res<EconomyView>,
+    camera: Single<(&Camera, &GlobalTransform), With<ChartCamera>>,
+    areas: Query<(
+        &ChartArea,
+        &ComputedNode,
+        &UiGlobalTransform,
+        &InheritedVisibility,
+    )>,
+) {
+    if reports.open != Some(Report::History) {
+        return;
+    }
+    let (camera, at) = *camera;
+    let n = towns.0.len();
+    for (area, node, tf, visible) in &areas {
+        if !visible.get() || node.is_empty() {
+            continue;
+        }
+        // UI positions are physical pixels from the top left; the camera
+        // wants logical ones.
+        let scale = node.inverse_scale_factor();
+        let center = tf.translation * scale;
+        let half = node.size() * scale / 2.0 - Vec2::splat(6.0);
+        let (Ok(a), Ok(b)) = (
+            camera.viewport_to_world_2d(at, center - half),
+            camera.viewport_to_world_2d(at, center + half),
+        ) else {
+            continue;
+        };
+        let rect = Rect::from_corners(a, b);
+        let (series, lo, hi) = chart_series(&history.samples, n, SERIES[area.0].1, CHART_SAMPLES);
+        let bold = view.town;
+        for (t, values) in series.iter().enumerate() {
+            if t == bold || values.len() < 2 {
+                continue;
+            }
+            let points = plot(values, lo, hi, CHART_SAMPLES, rect);
+            gizmos.linestrip_2d(points, town_color(t, n).with_alpha(0.6));
+        }
+        if let Some(values) = series.get(bold).filter(|v| v.len() >= 2) {
+            let points = plot(values, lo, hi, CHART_SAMPLES, rect);
+            for dy in [-1.0, 0.0, 1.0] {
+                let off = Vec2::new(0.0, dy);
+                gizmos.linestrip_2d(points.iter().map(|&p| p + off), town_color(bold, n));
+            }
+        }
+    }
 }
 
 // ------------------------------------------------------------------ Log
@@ -592,11 +850,39 @@ fn person(world: &World, selected: Option<u32>) -> String {
 mod tests {
     use super::*;
 
+    fn sample(town: u16, population: u32) -> Sample {
+        Sample {
+            tick: 0,
+            town,
+            population,
+            food_per_capita: 0.0,
+            treasury: 0.0,
+            mean_wealth: 0.0,
+            soldiers: 0,
+            buildings: 0,
+            starving: 0,
+            bread_price: 0.0,
+            ruler: None,
+        }
+    }
+
     #[test]
-    fn sparklines_span_their_own_range() {
-        assert_eq!(sparkline(&[1.0, 2.0, 3.0], 10), "_=#");
-        assert_eq!(sparkline(&[5.0, 5.0], 10), "--");
-        assert_eq!(sparkline(&[0.0, 1.0, 2.0, 3.0], 2), "_#");
+    fn charts_share_a_range_and_end_at_the_right_edge() {
+        let samples: Vec<Sample> = (0..5)
+            .flat_map(|k| [sample(0, 10 + k), sample(1, 40)])
+            .collect();
+        let (series, lo, hi) = chart_series(&samples, 2, SERIES[0].1, 3);
+        assert_eq!(series, vec![vec![12.0, 13.0, 14.0], vec![40.0; 3]]);
+        assert_eq!((lo, hi), (12.0, 40.0));
+        let rect = Rect::new(0.0, 0.0, 100.0, 50.0);
+        let points = plot(&[12.0, 40.0], lo, hi, 3, rect);
+        assert_eq!(points, vec![Vec2::new(50.0, 0.0), Vec2::new(100.0, 50.0)]);
+        assert_eq!(
+            plot(&[5.0], 5.0, 5.0, 3, rect),
+            vec![Vec2::new(100.0, 25.0)]
+        );
+        let (empty, lo, hi) = chart_series(&[], 2, SERIES[0].1, 3);
+        assert_eq!((empty.len(), lo, hi), (2, 0.0, 0.0));
     }
 
     fn world() -> World {
@@ -627,11 +913,16 @@ mod tests {
             town.contains("Buildings: ") && town.contains(" × "),
             "{town}"
         );
-        let hist = history(&w);
-        for series in ["treasury", "mean wealth", "bread price"] {
-            assert!(hist.contains(series), "{hist}");
+        let hist = history(&w, 0);
+        assert_eq!(hist.titles.len(), 7);
+        for (title, series) in hist.titles.iter().zip(["people", "treasury"]) {
+            assert!(
+                title.starts_with(series) && title.contains(" now "),
+                "{title}"
+            );
         }
-        assert!(hist.lines().count() <= MAX_LINES, "{hist}");
+        assert!(hist.legend[0].2 && !hist.legend[1].2, "{:?}", hist.legend);
+        assert!(hist.text.contains("Bold: "), "{}", hist.text);
     }
 
     #[test]
