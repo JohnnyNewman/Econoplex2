@@ -584,7 +584,10 @@ mod tests {
         let town = town_report(&w, 0);
         assert!(town.contains("treasury"), "{town}");
         assert!(town.contains("mean wealth"), "{town}");
-        assert!(town.contains("Buildings: ") && town.contains(" × "), "{town}");
+        assert!(
+            town.contains("Buildings: ") && town.contains(" × "),
+            "{town}"
+        );
         let hist = history(&w);
         for series in ["treasury", "mean wealth", "bread price"] {
             assert!(hist.contains(series), "{hist}");
