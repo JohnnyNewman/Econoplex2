@@ -12,8 +12,10 @@ the 3D client shows or lets the player do that the 2D client does not.
 Purely visual effects (shaders, outlines, bloom, fog, grass, figure
 animation) are left out unless they carry information.
 
-Groups 1 to 4 of the recommended order are done (2026-11-26, rows marked
-*same (group 1)*, *same (groups 2–3)* or *same (group 4)*).
+Groups 1 to 5 of the recommended order are done (2026-11-26, rows marked
+*same (group 1)*, *same (groups 2–3)*, *same (group 4)* or *same (group 5)*),
+so the 2D client now shows what the 3D one does, apart from the rows still
+marked *partial* or *missing*. The other direction is a separate package.
 
 The first round (2026-11-15) closed these gaps with the 2D reports panel:
 the Why? view, the person details, food security and town needs, weather in
@@ -54,11 +56,11 @@ the end of this note).
 | Feature | 3D file(s) | 2D status | Effort | How to show it in 2D |
 |---|---|---|---|---|
 | Roads between towns (`Terrain::path`) | roads.rs | same (group 1): road cells are brown in the terrain image (terrain_view.rs) | | |
-| Caravans driving along the roads, more of them for more trade | roads.rs, overlay.rs | partial: flow arrows show volume, nothing moves | S | Move dots along the flow arrows, more of them for more value. |
+| Caravans driving along the roads, more of them for more trade | roads.rs, overlay.rs | same (group 5): caravans move as dots along the flow arrows, from one on the smallest route to seven on the biggest (economy_ui.rs) | | |
 | Rings around the buildings a Why? finding names | overlay.rs (`draw_why`), ui.rs | same (groups 2–3): with `Y` open, those buildings pulse in red | | |
 | "Look at" a town or a person moves the camera there | ui.rs, inspect.rs, camera.rs | same (group 1): `Tab` centres the camera on the next town; `F` goes to the selected person | | |
 | Follow the selected person with the camera | inspect.rs | same (group 1): `F` follows them, and panning lets go | | |
-| Hide all panels to look at the world (`H`) | ui.rs | missing (`H` is history) | S | Add an `F2` toggle for the HUD columns. |
+| Hide all panels to look at the world (`H`) | ui.rs | same (group 5): `F2`, since `H` is history; every panel comes back as it was (hud.rs) | | |
 
 ### People
 
@@ -91,7 +93,7 @@ the end of this note).
 |---|---|---|---|---|
 | Town panel: population, treasury, ruler, buildings by type, market stock and price | ui.rs | same (group 1): `T` lists the buildings by type (n × type); the HUD shows the ruler, the economy panel the goods | | |
 | Money in the reports: treasury, mean wealth, bread price | ui.rs (Town, History) | same (group 1): `T` shows treasury and mean wealth, `H` treasury, mean wealth and bread price | | |
-| History as line charts with seven series, the selected town in bold | ui.rs (`chart`) | partial: the same seven series, as text sparklines (group 1) | M | Draw line charts with gizmos in the report panel. |
+| History as line charts with seven series, the selected town in bold | ui.rs (`chart`) | same (group 5): `H` shows the seven series as line charts, one line per town in its colour over a shared range, the economy panel's town in bold and on top; gizmos drawn by a second camera above the panels (reports.rs) | | |
 | Weather details: temperature, sky, wind and ground | ui.rs | same (`T`) | | |
 | Food security and needs | ui.rs | same (`T`) | | |
 | Product space per town | ui.rs, overlay.rs | partial: 2D shows it for the selected person or the population | S | Add a town mode that follows `Tab`. |
@@ -142,7 +144,8 @@ the end of this note).
    This is the largest gap and the only one that changes how the 2D client
    runs the simulation.
 5. **Line charts for history (M), caravans moving along the arrows (S), and
-   the hide-UI and follow toggles (S).**
+   the hide-UI and follow toggles (S), done (group 1 for follow, group 5 for
+   the rest).**
 6. **The other direction:** bring the 2D-only levers, economy panel, skills
    inspector and quicksave to the 3D client. That is a separate package.
 
@@ -157,6 +160,6 @@ once per simulated day (or when its subject changes), not every frame.
 | --- | --- |
 | `Y` | Why? for the town |
 | `T` | Town: weather and season, people and money, buildings by type, food security, needs, armory |
-| `H` | History: population, treasury, food per resident, mean wealth, bread price, soldiers, buildings per town |
+| `H` | History as line charts: population, treasury, food per resident, mean wealth, bread price, soldiers, buildings, one line per town |
 | `L` | Event log, newest first |
 | `I` | Person: needs, larder, household goods, equipment, household (opens itself when you click someone) |
