@@ -6,8 +6,10 @@
 //! sprites to simulation entities and animates agents toward where they work.
 //!
 //! Controls: Space pause · 1-5 speed · WASD/arrows pan · mouse wheel zoom ·
-//! left click select agent · Esc deselect · P product space overlay ·
-//! E economy panel · Tab next town · F5 quicksave · F9 quickload · policy panel (bottom right) for the player's town
+//! left click select agent · Esc deselect · F follow the selected person ·
+//! K colour by best skill (else by today's work) · P product space overlay ·
+//! E economy panel · Tab next town (the camera goes there) · F5 quicksave ·
+//! F9 quickload · policy panel (bottom right) for the player's town
 //! · Y why · T town · H history · L event log · I person (reports.rs)
 
 mod autorun;
@@ -136,8 +138,10 @@ fn main() {
         .insert_resource(autorun::ShotState::default())
         .insert_resource(Selection::default())
         .insert_resource(view::Overlay::default())
+        .insert_resource(view::Follow::default())
         .insert_resource(policy_ui::PolicyCursor::default())
         .insert_resource(policy_ui::Placing::default())
+        .insert_resource(policy_ui::SentOrders::default())
         .insert_resource(saving::Toast::default())
         .insert_resource(reports::Reports::default())
         .insert_resource(battles::BattleScenes::default())
@@ -179,6 +183,15 @@ fn main() {
             ),
         )
         .add_systems(Update, reports::update_reports.after(view::select_agent))
+        .add_systems(
+            Update,
+            (
+                view::follow_selected.after(view::animate_agents),
+                policy_ui::update_sent_orders
+                    .after(policy_ui::policy_buttons)
+                    .after(policy_ui::place_building),
+            ),
+        )
         .add_systems(
             Update,
             (battles::start_battles, battles::draw_battles).chain(),
@@ -260,5 +273,8 @@ fn controls(
     }
     if keys.just_pressed(KeyCode::KeyC) {
         overlay.culture = !overlay.culture;
+    }
+    if keys.just_pressed(KeyCode::KeyK) {
+        overlay.best_skill = !overlay.best_skill;
     }
 }

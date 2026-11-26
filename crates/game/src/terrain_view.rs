@@ -1,18 +1,42 @@
-//! The ground under the towns: hills and rivers drawn from the simulation's
-//! terrain grid, one pixel per cell.
+//! The ground under the towns: hills, rivers and the roads between towns,
+//! drawn from the simulation's terrain grid, one pixel per cell.
 
 use bevy::asset::RenderAssetUsages;
 use bevy::image::ImageSampler;
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use sim_core::terrain::Terrain;
+use sim_core::Towns;
+use std::collections::HashSet;
+
+/// The cells a road crosses: the cheapest path from each town to every other
+/// town it has a road to (`Terrain::path`, as the 3D client's roads).
+pub fn road_cells(terrain: &Terrain, towns: &[(f32, f32)]) -> HashSet<usize> {
+    let mut cells = HashSet::new();
+    for (a, &from) in towns.iter().enumerate() {
+        for b in 0..towns.len() {
+            if a == b || !terrain.road(a, b).is_finite() {
+                continue;
+            }
+            for p in terrain.path(from, b) {
+                if let Some(c) = terrain.cell_at(p) {
+                    cells.insert(c);
+                }
+            }
+        }
+    }
+    cells
+}
 
 pub fn spawn_terrain(
     mut commands: Commands,
     terrain: Res<Terrain>,
+    towns: Res<Towns>,
     mut images: ResMut<Assets<Image>>,
 ) {
     let (w, h) = (terrain.width, terrain.height);
+    let pos: Vec<(f32, f32)> = towns.0.iter().map(|t| t.pos).collect();
+    let roads = road_cells(&terrain, &pos);
     let mut data = Vec::with_capacity(w * h * 4);
     // Image rows run top to bottom, the grid's bottom to top.
     for j in (0..h).rev() {
@@ -22,6 +46,8 @@ pub fn spawn_terrain(
                 [70, 92, 96] // ford
             } else if terrain.water[c] {
                 [32, 62, 104]
+            } else if roads.contains(&c) {
+                [96, 78, 52] // road
             } else {
                 // Hills are lighter and browner the harder they are to cross.
                 let hill = ((terrain.cost[c] - 1.0) / 1.5).clamp(0.0, 1.0);

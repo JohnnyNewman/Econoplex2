@@ -12,6 +12,9 @@ the 3D client shows or lets the player do that the 2D client does not.
 Purely visual effects (shaders, outlines, bloom, fog, grass, figure
 animation) are left out unless they carry information.
 
+Group 1 of the recommended order is done (2026-11-26, rows marked
+*same (group 1)*).
+
 The first round (2026-11-15) closed these gaps with the 2D reports panel:
 the Why? view, the person details, food security and town needs, weather in
 text, history, the event log, battle replays and the culture overlay (see
@@ -50,18 +53,18 @@ the end of this note).
 
 | Feature | 3D file(s) | 2D status | Effort | How to show it in 2D |
 |---|---|---|---|---|
-| Roads between towns (`Terrain::path`) | roads.rs | missing | S | Draw road cells into the terrain image as a brown layer. |
+| Roads between towns (`Terrain::path`) | roads.rs | same (group 1): road cells are brown in the terrain image (terrain_view.rs) | | |
 | Caravans driving along the roads, more of them for more trade | roads.rs, overlay.rs | partial: flow arrows show volume, nothing moves | S | Move dots along the flow arrows, more of them for more value. |
 | Rings around the buildings a Why? finding names | overlay.rs (`draw_why`), ui.rs | partial: findings appear as text in `Y` | S | Draw a pulsing ring around those building sprites while `Y` is open. |
-| "Look at" a town or a person moves the camera there | ui.rs, inspect.rs, camera.rs | partial: `Tab` changes the panel's town, not the camera, and `--town` works only at start | S | `Tab` also centres the camera on the town. A key centres on the selected person. |
-| Follow the selected person with the camera | inspect.rs | missing | S | Add a follow toggle that keeps the camera on the person's sprite. |
+| "Look at" a town or a person moves the camera there | ui.rs, inspect.rs, camera.rs | same (group 1): `Tab` centres the camera on the next town; `F` goes to the selected person | | |
+| Follow the selected person with the camera | inspect.rs | same (group 1): `F` follows them, and panning lets go | | |
 | Hide all panels to look at the world (`H`) | ui.rs | missing (`H` is history) | S | Add an `F2` toggle for the HUD columns. |
 
 ### People
 
 | Feature | 3D file(s) | 2D status | Effort | How to show it in 2D |
 |---|---|---|---|---|
-| Colour by what a person does today: the domain worked at, soldiers dark red, idle light, resting blue-grey, children small and pale | crowd.rs | partial: coloured by best skill domain, children grey | S | Colour by `Activity` and today's work, as the 3D client does. Keep best skill as an option (`K`). |
+| Colour by what a person does today: the domain worked at, soldiers dark red, idle light, resting blue-grey, children small and pale | crowd.rs | same (group 1): coloured by today's work and activity; `K` switches to the best skill domain, and the legend follows | | |
 | Household members as buttons that select them | ui.rs (`person_window`) | partial: a line to the partner, members listed in `I` as text | S | Keys in `I` to step to partner, parents and children, or click the listed id. |
 | Guild and rank in the person panel | missing in 3D too | 2D has it (inspector) | S | See "What the 2D client shows that the 3D one lacks". |
 
@@ -71,7 +74,7 @@ the end of this note).
 |---|---|---|---|---|
 | Govern any selected town, not only the player's | ui.rs | partial: the policy panel governs only `PlayerTown` | S | Let the policy panel follow the economy panel's town, perhaps behind a sandbox flag. |
 | Commission a building and let the town choose the site | ui.rs | partial: 2D places it on the map by click | S | Add a "Commission" button beside "Place". |
-| Sent orders with their dates, rejected orders in red, and commissions waiting | ui.rs | missing | S | Add a short list at the foot of the policy panel. |
+| Sent orders with their dates, rejected orders in red, and commissions waiting | ui.rs | same (group 1): the policy panel lists the last four orders sent, each waiting, applied or rejected (in red); commissions waiting were already shown | | |
 
 ### War
 
@@ -79,16 +82,16 @@ the end of this note).
 |---|---|---|---|---|
 | **Live battles** for the player's town: the simulation holds its clock while the battle runs in real time | battles.rs, live.rs (`war::order_live_battle`) | missing (2D only replays battles afterwards) | L | Run the same hold in the 2D sim loop: when a live battle waits, step it in real time instead of the economy. Draw the squad blocks of battles.rs live. |
 | Squad orders in a live battle (own judgment, hold, withdraw, or attack or shoot at a named enemy squad), fighters left, squad state, "Look at the field", "Fight it out" | battles.rs (`battle_panel`) | missing | M (after the hold) | A battle panel in the right column, with one row per squad and buttons. Most of the panel code can follow policy_ui.rs. |
-| Armies on the move: soldiers walk to their squad's goal in dark red, captives apart | crowd.rs | partial: soldiers walk but look like workers | S | Colour soldiers red and captives grey, and draw a squad's goal as a small flag. |
+| Armies on the move: soldiers walk to their squad's goal in dark red, captives apart | crowd.rs | partial (group 1): soldiers are red and captives grey; no flag at the squad's goal yet | S | Draw a squad's goal as a small flag. |
 | Battle replays beside the defending town | battles.rs | same (blocks per squad, 2D battles.rs) | | |
 
 ### Town information
 
 | Feature | 3D file(s) | 2D status | Effort | How to show it in 2D |
 |---|---|---|---|---|
-| Town panel: population, treasury, ruler, buildings by type, market stock and price | ui.rs | partial: the HUD shows population and ruler, the economy panel shows goods; there are no building counts | S | Add a "buildings" line (n × type) to the `T` report. |
-| Money in the reports: treasury, mean wealth, bread price | ui.rs (Town, History) | missing in the reports, which left money out until integer coin | S | Integer coin has landed (`sim_core::coin`). Add treasury and wealth to `T`, and treasury, mean wealth and bread price to `H`. |
-| History as line charts with seven series, the selected town in bold | ui.rs (`chart`) | partial: text sparklines, four series | S (series), M (charts) | First add the three money series as sparklines, then draw line charts with gizmos in the report panel. |
+| Town panel: population, treasury, ruler, buildings by type, market stock and price | ui.rs | same (group 1): `T` lists the buildings by type (n × type); the HUD shows the ruler, the economy panel the goods | | |
+| Money in the reports: treasury, mean wealth, bread price | ui.rs (Town, History) | same (group 1): `T` shows treasury and mean wealth, `H` treasury, mean wealth and bread price | | |
+| History as line charts with seven series, the selected town in bold | ui.rs (`chart`) | partial: the same seven series, as text sparklines (group 1) | M | Draw line charts with gizmos in the report panel. |
 | Weather details: temperature, sky, wind and ground | ui.rs | same (`T`) | | |
 | Food security and needs | ui.rs | same (`T`) | | |
 | Product space per town | ui.rs, overlay.rs | partial: 2D shows it for the selected person or the population | S | Add a town mode that follows `Tab`. |
@@ -117,7 +120,7 @@ the end of this note).
 
 ## Recommended order
 
-1. **Quick wins for testing (S):**
+1. **Quick wins for testing (S), done (group 1):**
    - money in the `T` and `H` reports;
    - people coloured by activity, with soldiers in red;
    - the camera follows `Tab` and the selected person;
@@ -153,7 +156,7 @@ once per simulated day (or when its subject changes), not every frame.
 | Key | Report |
 | --- | --- |
 | `Y` | Why? for the town |
-| `T` | Town: weather and season, food security, needs, armory |
-| `H` | History: population, food per resident, soldiers, buildings per town |
+| `T` | Town: weather and season, people and money, buildings by type, food security, needs, armory |
+| `H` | History: population, treasury, food per resident, mean wealth, bread price, soldiers, buildings per town |
 | `L` | Event log, newest first |
 | `I` | Person: needs, larder, household goods, equipment, household (opens itself when you click someone) |
