@@ -26,7 +26,7 @@ struct Toon {
 
 // The ramp parameters out of the uniform block.
 fn toon_params(t: Toon) -> ToonParams {
-    return ToonParams(t.shadow_tint.rgb, t.ramp.x, t.ramp.y, t.ramp.z, t.ramp.w, t.rim.x, t.rim.y);
+    return ToonParams(t.shadow_tint.rgb, t.ramp.x, t.ramp.y, t.ramp.z, t.ramp.w, t.rim.x, t.rim.y, 1.0);
 }
 
 struct ToonParams {
@@ -37,6 +37,7 @@ struct ToonParams {
     softness: f32,          // half-width of a band edge
     rim_strength: f32,      // step 05: how bright the rim light is (0 = off)
     rim_power: f32,         // step 05: higher = thinner rim
+    sky: f32,               // step 17: share of the sun through the clouds (fog.wesl, cloud_shadow)
 };
 
 // The intermediate values, so callers can show them as debug views.
@@ -76,7 +77,8 @@ fn toon_terms(pbr: PbrInput, p: ToonParams) -> ToonTerms {
         ), pbr.world_position);
         t.shadow = fetch_directional_shadow(0u, pbr.world_position, pbr.world_normal, view_z, pbr.frag_coord.xy);
     }
-    let lit = t.ramp * smoothstep(0.35, 0.65, t.shadow);
+    // Step 17: a passing cloud takes part of the sun (a soft shadow).
+    let lit = t.ramp * smoothstep(0.35, 0.65, t.shadow) * p.sky;
 
     // Shadow side: ambient light tinted cool. Lit side: plus the sun. Same
     // units as Bevy's PBR (sun / pi, times the camera exposure).
@@ -90,7 +92,7 @@ fn toon_terms(pbr: PbrInput, p: ToonParams) -> ToonTerms {
     let v = normalize(view.world_position - pbr.world_position.xyz);
     t.ndv = max(dot(n, v), 0.0);
     t.fresnel = pow(1.0 - t.ndv, p.rim_power);
-    let rim = t.fresnel * smoothstep(-0.2, 0.4, t.ndl) * p.rim_strength;
+    let rim = t.fresnel * smoothstep(-0.2, 0.4, t.ndl) * p.rim_strength * p.sky;
 
     t.light = (ambient + sunlight * (lit + rim)) * view.exposure;
     return t;

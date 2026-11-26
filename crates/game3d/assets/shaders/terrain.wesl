@@ -13,7 +13,7 @@ import bevy_pbr::render::{
     pbr_functions::{apply_pbr_lighting, main_pass_post_lighting_processing},
 };
 import super::toon_lighting::{Toon, toon_params, toon_terms};
-import super::fog::{Fog, apply_fog, seasonal};
+import super::fog::{Fog, apply_fog, seasonal, cloud_shadow};
 import super::lights::{Env, lamp_term};
 // The uniform block, the textures and the height helpers, shared with the
 // shadow pass (terrain_prepass.wesl).
@@ -197,7 +197,9 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
 
     // Lighting: the shared toon lighting of step 02 (or PBR with the M key).
     let tp = terrain.toon;
-    let t = toon_terms(pbr, toon_params(tp));
+    var params = toon_params(tp);
+    params.sky = cloud_shadow(p, env.fog);              // step 17
+    let t = toon_terms(pbr, params);
     // Step 12: pools of light round the lamps and fires near the camera.
     var lamps = vec3<f32>(0.0);
     for (var i = 0u; i < u32(env.lamps_info.x); i++) {

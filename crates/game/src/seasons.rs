@@ -19,6 +19,7 @@
 
 use crate::reports::{Report, Reports};
 use crate::terrain_view::{Cell, TerrainLook};
+use crate::view::WorldCamera;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use sim_core::components::{NaturalResource, Pos, Product, Structure, TownId};
@@ -363,7 +364,7 @@ pub fn draw_precipitation(
     env: Option<Res<Environment>>,
     towns: Res<Towns>,
     window: Single<&Window, With<PrimaryWindow>>,
-    camera: Single<&Transform, With<Camera2d>>,
+    camera: Single<&Transform, With<WorldCamera>>,
 ) {
     let Some(env) = env else { return };
     let centre = camera.translation.truncate();

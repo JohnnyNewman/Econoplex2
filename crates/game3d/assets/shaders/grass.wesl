@@ -17,7 +17,7 @@ import bevy_pbr::render::{
     pbr_functions::main_pass_post_lighting_processing,
 };
 import super::toon_lighting::{Toon, toon_params, toon_terms};
-import super::fog::{Fog, apply_fog, seasonal};
+import super::fog::{Fog, apply_fog, seasonal, cloud_shadow};
 import super::lights::Env;
 
 // One blade; matches the 8 floats per blade written in src/nature.rs.
@@ -103,7 +103,9 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     // Step 11: seasons; snow settles on the tips (the normal tilts up along the blade).
     let albedo = seasonal(mix(root, tip, h), vec3<f32>(0.0, h, 0.0), in.world_position.xyz, 0.5, env.fog);
 
-    let t = toon_terms(pbr, toon_params(grass.toon));
+    var params = toon_params(grass.toon);
+    params.sky = cloud_shadow(in.world_position.xyz, env.fog); // step 17
+    let t = toon_terms(pbr, params);
     var out: FragmentOutput;
     if u32(grass.params.z) == 1u {
         out.color = vec4<f32>(vec3<f32>(h), 1.0);            // debug: height along the blade
