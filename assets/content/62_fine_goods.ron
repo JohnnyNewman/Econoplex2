@@ -1,0 +1,49 @@
+// Fine goods (plan Phase 4, higher needs): what people buy for esteem once
+// they are fed, warm and housed. Woad dye and dyed cloth for fine clothes, and
+// jewellery from silver or bronze. Its own file, so it can change or go on its
+// own. Taverns, festivals and schooling come later.
+(
+    skills: [
+        (id: "dyeing",        name: "Dyeing",        domain: "textiles", prereqs: ["weaving"]),
+        (id: "jewellery",     name: "Jewellery",     domain: "smithing", prereqs: ["smithing"]),
+    ],
+    products: [
+        // Grown on the flax fields.
+        (id: "woad",        name: "Woad",        category: Raw,      era: 1, base_price: 1.5),
+        (id: "dye",         name: "Dye",         category: Material, era: 1, base_price: 4.0),
+        (id: "dyed_cloth",  name: "Dyed cloth",  category: Material, era: 1, base_price: 16.0),
+        // As warm as plain clothes, and they show.
+        (id: "fine_clothes", name: "Fine clothes", category: Material, era: 1, base_price: 45.0,
+            household: Some((life_days: 240.0,
+                serves: [(need: Warmth, amount: 3.0, by: Wear), (need: Esteem, amount: 0.4, by: Own)]))),
+        (id: "jewellery",   name: "Jewellery",   category: Material, era: 2, base_price: 30.0,
+            household: Some((life_days: 3000.0,
+                serves: [(need: Esteem, amount: 0.4, by: Own)]))),
+    ],
+    recipes: [
+        (id: "grow_woad", name: "Grow woad", skill: "flax_growing", difficulty: 0.15,
+            requires: ["harvest_flax"],
+            outputs: [("woad", 3)], nature: Some("flax_field"), duration: 1.0, max_team: 3,
+            physique: [("endurance", 0.3)]),
+        (id: "make_dye", name: "Make dye", skill: "dyeing", difficulty: 0.30,
+            requires: ["grow_woad", "weave_cloth"],
+            inputs: [("woad", 3)], outputs: [("dye", 2)], building: Some("weaving_shed"),
+            duration: 1.0, physique: [("dexterity", 0.2)]),
+        (id: "dye_cloth", name: "Dye cloth", skill: "dyeing", difficulty: 0.40,
+            requires: ["make_dye"],
+            inputs: [("cloth", 1), ("dye", 1)], outputs: [("dyed_cloth", 1)], building: Some("weaving_shed"),
+            duration: 0.5, physique: [("dexterity", 0.2), ("perception", 0.1)]),
+        (id: "sew_fine_clothes", name: "Sew fine clothes", skill: "tailoring", difficulty: 0.65,
+            requires: ["sew_clothes", "dye_cloth"],
+            inputs: [("dyed_cloth", 2)], outputs: [("fine_clothes", 1)], building: Some("workshop"),
+            duration: 1.5, max_team: 2, physique: [("dexterity", 0.4)]),
+        (id: "make_silver_jewellery", name: "Make silver jewellery", skill: "jewellery", difficulty: 0.55,
+            requires: ["refine_silver"],
+            inputs: [("silver", 1)], outputs: [("jewellery", 3)], building: Some("smithy"),
+            duration: 1.5, max_team: 2, physique: [("dexterity", 0.4), ("perception", 0.2)]),
+        (id: "make_bronze_jewellery", name: "Make bronze jewellery", skill: "jewellery", difficulty: 0.45,
+            requires: ["cast_bronze"],
+            inputs: [("bronze", 1)], outputs: [("jewellery", 1)], building: Some("smithy"),
+            duration: 1.0, max_team: 2, physique: [("dexterity", 0.4)]),
+    ],
+)

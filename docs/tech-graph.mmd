@@ -11,6 +11,7 @@ flowchart LR
     r_bind_thatch["Bind thatch"]
     r_clear_field(["Clear field"])
     r_breed_horses["Breed horses"]
+    r_grow_woad["Grow woad"]
   end
   subgraph d2["food"]
     r_bake_bread["Bake bread"]
@@ -24,6 +25,9 @@ flowchart LR
     r_sew_padded_coat["Sew padded coat"]
     r_mill_spin["Spin yarn by machine"]
     r_mill_weave["Weave cloth by machine"]
+    r_make_dye["Make dye"]
+    r_dye_cloth["Dye cloth"]
+    r_sew_fine_clothes["Sew fine clothes"]
   end
   subgraph d4["masonry"]
     r_quarry_stone(["Quarry stone"])
@@ -99,6 +103,8 @@ flowchart LR
     r_strike_silver_coins["Strike silver coins"]
     r_strike_copper_coins["Strike copper coins"]
     r_strike_coins["Strike iron coins"]
+    r_make_silver_jewellery["Make silver jewellery"]
+    r_make_bronze_jewellery["Make bronze jewellery"]
   end
   subgraph d10["construction"]
     r_build_weaving_shed["Build weaving shed"]
@@ -284,6 +290,14 @@ flowchart LR
   r_smelt_copper --> r_strike_copper_coins
   r_strike_silver_coins --> r_strike_coins
   r_smelt_iron --> r_strike_coins
+  r_harvest_flax --> r_grow_woad
+  r_grow_woad --> r_make_dye
+  r_weave_cloth --> r_make_dye
+  r_make_dye --> r_dye_cloth
+  r_sew_clothes --> r_sew_fine_clothes
+  r_dye_cloth --> r_sew_fine_clothes
+  r_refine_silver --> r_make_silver_jewellery
+  r_cast_bronze --> r_make_bronze_jewellery
   style d0 fill:#e8f0d8,stroke:#888
   style d1 fill:#efe3d3,stroke:#888
   style d2 fill:#f3dcc4,stroke:#888

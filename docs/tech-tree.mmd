@@ -52,6 +52,10 @@ flowchart LR
     p_padded_coat["Padded coat"]
     p_furniture["Furniture"]
     p_barrel["Barrel"]
+    p_woad(["Woad"])
+    p_dye["Dye"]
+    p_dyed_cloth["Dyed cloth"]
+    p_fine_clothes["Fine clothes"]
   end
   subgraph era2["2 Bronze"]
     p_shears["Shears"]
@@ -65,6 +69,7 @@ flowchart LR
     p_silver["Silver"]
     p_mint[["Mint"]]
     p_coin(("Coin"))
+    p_jewellery["Jewellery"]
   end
   subgraph era3["3 Iron and steel"]
     p_sickle["Sickle"]
@@ -123,6 +128,7 @@ flowchart LR
   n_field --> p_straw
   n_fishing_water --> p_fish
   n_flax_field --> p_flax
+  n_flax_field --> p_woad
   n_forest --> p_wood
   n_hunting_ground --> p_meat
   n_ore_vein --> p_ore
@@ -155,6 +161,7 @@ flowchart LR
   p_brick --> p_textile_mill
   p_bronze --> p_bronze_scale
   p_bronze --> p_bronze_spear
+  p_bronze --> p_jewellery
   p_bronze --> p_shears
   p_clay --> p_brick
   p_clay --> p_kiln
@@ -162,6 +169,7 @@ flowchart LR
   p_clay --> p_roof_tile
   p_cloth --> p_bronze_scale
   p_cloth --> p_clothes
+  p_cloth --> p_dyed_cloth
   p_cloth --> p_padded_coat
   p_cloth --> p_plate
   p_coal --> p_coke
@@ -175,6 +183,8 @@ flowchart LR
   p_cut_stone --> p_roller_mill
   p_cut_stone --> p_stone_house
   p_cut_stone --> p_textile_mill
+  p_dye --> p_dyed_cloth
+  p_dyed_cloth --> p_fine_clothes
   p_flax --> p_yarn
   p_flour --> p_bread
   p_grain --> p_ale
@@ -225,6 +235,7 @@ flowchart LR
   p_sand --> p_mortar
   p_sharp_blade --> p_longsword_3
   p_silver --> p_coin
+  p_silver --> p_jewellery
   p_silver_ore --> p_silver
   p_steel --> p_crossbow
   p_steel --> p_machine_parts
@@ -251,6 +262,7 @@ flowchart LR
   p_tool_handle --> p_hammer
   p_tool_handle --> p_pickaxe
   p_tool_handle --> p_plough
+  p_woad --> p_dye
   p_wool --> p_yarn
   p_yarn --> p_cloth
   p_blast_furnace -.-> p_iron
@@ -270,6 +282,8 @@ flowchart LR
   p_textile_mill -.-> p_cloth
   p_textile_mill -.-> p_yarn
   p_weaving_shed -.-> p_cloth
+  p_weaving_shed -.-> p_dye
+  p_weaving_shed -.-> p_dyed_cloth
   p_weaving_shed -.-> p_yarn
   note["Wood, planks and charcoal feed many recipes, and the starter workshops, mills, bakeries, furnaces and smithies host most of them; those arrows are left out"]
   style era0 fill:#e8f0d8,stroke:#888

@@ -758,11 +758,31 @@ fn a_match_is_won_by_the_first_town_to_reach_the_goal() {
 #[test]
 fn a_town_short_of_money_builds_a_mint_and_strikes_coin() {
     use sim_core::ledger::Flow;
-    let mut s = full(42);
+    // Minting is for a treasury that pays only what it holds (one that issues
+    // its own coin has no use for a mint's coin yet).
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    params.market.treasury = sim_core::config::Treasury::Holds;
+    scenario.seed = 42;
+    let mut s = Simulation::new(db, params, &scenario);
     // Ironhold has ore and a furnace; ordered to mint, it builds a mint and works it.
     s.order("mint Ironhold on").unwrap();
     s.order("build Ironhold mint").unwrap();
-    run_years(&mut s, 5);
+    // Up to eight years: cut stone is imported, and builders are in demand
+    // (on Linux the mint was not up after five once the fine goods came).
+    let mint_def = s
+        .world
+        .resource::<sim_core::Db>()
+        .content
+        .product("mint")
+        .unwrap();
+    for _ in 0..8 {
+        run_years(&mut s, 1);
+        let t = &s.world.resource::<sim_core::Towns>().0[0];
+        if t.building_count(mint_def) >= 1 && t.ledger.total[Flow::Minted as usize] > 0.0 {
+            break;
+        }
+    }
     let db = s.world.resource::<sim_core::Db>();
     let mint = db.content.product("mint").unwrap();
     let towns = s.world.resource::<sim_core::Towns>();
@@ -2641,25 +2661,29 @@ fn a_granary_fills_from_a_full_market_and_feeds_a_hungry_one() {
         "the granary took some food"
     );
     check_goods(&s);
-    // Empty the market: the granary releases food into it.
+    // Keep the market empty for a day (what the day makes is taken away step
+    // by step): the granary releases food into it.
     let before = sim_core::granary::held(
         &s.world.resource::<sim_core::Towns>().0[1],
         s.world.resource::<sim_core::Db>(),
     );
-    {
-        let foods: Vec<u32> = s
-            .world
-            .resource::<sim_core::Db>()
-            .foods
-            .iter()
-            .map(|f| f.0)
-            .collect();
-        let mut towns = s.world.resource_mut::<sim_core::Towns>();
-        for f in foods {
-            towns.0[1].stock[f as usize] = 0.0;
+    let foods: Vec<u32> = s
+        .world
+        .resource::<sim_core::Db>()
+        .foods
+        .iter()
+        .map(|f| f.0)
+        .collect();
+    let spd = s.world.resource::<sim_core::SimClock>().steps_per_day;
+    for _ in 0..spd {
+        {
+            let mut towns = s.world.resource_mut::<sim_core::Towns>();
+            for &f in &foods {
+                towns.0[1].stock[f as usize] = 0.0;
+            }
         }
+        s.step_tick();
     }
-    s.step();
     let after = sim_core::granary::held(
         &s.world.resource::<sim_core::Towns>().0[1],
         s.world.resource::<sim_core::Db>(),
