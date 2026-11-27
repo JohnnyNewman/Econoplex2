@@ -90,3 +90,15 @@ so it takes part and gains the most.
 Frame rates in these runs swing between about 85 and 150 fps from one run to
 the next, as the laptop throttles. Compare GPU pass times, not fps.
 
+
+## Dynamic resolution
+
+The render scale now follows the frame time by default (`render_scale.rs`,
+`AutoScale`). Frames clearly slower than 60 a second step the 3D view down by
+0.05 a second, to 0.6 at the least. Frames that keep up try a step up after a
+few seconds, waiting twice as long after a try that didn't hold. It only
+watches while the window has the focus: a covered window on vsync was slowed
+to 5 to 10 fps by the system in a test, which would have dragged the scale to
+its floor. It's off with `--render-scale F` (a fixed scale), `--no-auto-scale`,
+`--shot` and `--fps`, so screenshots and measurements stay at full resolution.
+Each change logs `render scale …`.
