@@ -25,6 +25,21 @@ fn main() {
         }
         println!("year {y}");
         for (t, town) in towns.0.iter().enumerate() {
+            let db = sim.world.resource::<sim_core::Db>();
+            let houses: Vec<String> = town
+                .houses
+                .iter()
+                .enumerate()
+                .filter(|&(_, &n)| n > 0)
+                .map(|(p, n)| format!("{n} {}", db.content.products[p].id))
+                .collect();
+            println!(
+                "  {:<11} people {}, houses [{}], shelter {:.2}",
+                town.name,
+                town.residents.len(),
+                houses.join(", "),
+                town.shelter(db)
+            );
             let held: Vec<String> = town
                 .foreign
                 .iter()

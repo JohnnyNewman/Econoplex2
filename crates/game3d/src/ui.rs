@@ -134,6 +134,20 @@ fn panels(
                 ui.label("treasury");
                 ui.label(format!("{:.0} of its own coin", town.treasury));
                 ui.end_row();
+                if !town.houses.is_empty() {
+                    ui.label("houses");
+                    let list: Vec<String> = town
+                        .houses
+                        .iter()
+                        .map(|(k, n)| format!("{n} {k}"))
+                        .collect();
+                    ui.label(format!(
+                        "{} (shelter {:.0}%)",
+                        list.join(", "),
+                        town.shelter * 100.0
+                    ));
+                    ui.end_row();
+                }
                 ui.label("coin worth");
                 ui.label(format!("{:.2} (1 = the average coin)", town.coin_value));
                 ui.end_row();

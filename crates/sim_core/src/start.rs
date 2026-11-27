@@ -196,6 +196,25 @@ pub fn households(
     }
 }
 
+/// Each town starts with its people housed: enough of the starter house (the
+/// first house marked `starter`) for its residents and a tenth more.
+pub fn houses(towns: &mut crate::world::Towns, db: &Db) {
+    let Some((p, (room, _))) = db
+        .house
+        .iter()
+        .enumerate()
+        .find(|(p, h)| h.is_some() && db.content.products[*p].starter)
+        .map(|(p, h)| (p, h.unwrap()))
+    else {
+        return;
+    };
+    for town in towns.0.iter_mut() {
+        town.houses.resize(db.content.products.len(), 0);
+        let need = (town.residents.len() as f32 * 1.1 / room.max(1) as f32).ceil() as u32;
+        town.houses[p] = town.houses[p].max(need);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

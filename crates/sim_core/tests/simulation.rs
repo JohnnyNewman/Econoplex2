@@ -1764,26 +1764,34 @@ fn town_cultures_come_from_their_people_and_draw_those_who_fit() {
 fn households_only_move_to_towns_they_know() {
     use sim_core::decision::knowledge::KnowledgeParams;
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    // Two seeds, three years: few households move, so one seed is noisy.
     let run = |knowledge: KnowledgeParams| {
-        let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
-        scenario.seed = 5;
-        params.migration.consider = 0.5;
-        params.migration.min_gain = 0.1;
-        params.decision.knowledge = knowledge;
-        let mut s = Simulation::new(db, params, &scenario);
-        run_years(&mut s, 2);
-        let m = s.world.resource::<sim_core::metrics::Metrics>();
-        let moved: u32 = m
-            .years
-            .iter()
-            .flat_map(|y| &y.towns)
-            .map(|t| t.moves.arrived)
-            .sum();
-        let store = s.world.resource::<sim_core::AgentStore>();
-        let remembered = (0..store.len())
-            .filter(|&i| !store.lived_in[i].is_empty())
-            .count();
-        (moved, remembered)
+        let mut moved_all = 0;
+        let mut remembered_all = 0;
+        for seed in [5, 6] {
+            let (db, mut params, mut scenario) =
+                sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+            scenario.seed = seed;
+            params.migration.consider = 0.5;
+            params.migration.min_gain = 0.1;
+            params.decision.knowledge = knowledge.clone();
+            let mut s = Simulation::new(db, params, &scenario);
+            run_years(&mut s, 3);
+            let m = s.world.resource::<sim_core::metrics::Metrics>();
+            let moved: u32 = m
+                .years
+                .iter()
+                .flat_map(|y| &y.towns)
+                .map(|t| t.moves.arrived)
+                .sum();
+            let store = s.world.resource::<sim_core::AgentStore>();
+            let remembered = (0..store.len())
+                .filter(|&i| !store.lived_in[i].is_empty())
+                .count();
+            moved_all += moved;
+            remembered_all += remembered;
+        }
+        (moved_all, remembered_all)
     };
     // Knowing every town, people move, and movers remember their old home.
     let (all, remembered) = run(KnowledgeParams::All);
