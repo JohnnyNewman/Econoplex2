@@ -84,6 +84,8 @@ impl SoldierBattle {
             cooldown,
             arrows,
             quiet: quiets,
+            side: sides,
+            nav,
             fallen,
             broke,
             ..
@@ -91,7 +93,7 @@ impl SoldierBattle {
         let sp = &p.soldiers;
         let hurts = &mut hurts[..n];
         let states = &mut states[..n];
-        let (squad, kit, plans) = (&squad[..n], &kit[..n], &plans[..n]);
+        let (squad, kit, plans, sides) = (&squad[..n], &kit[..n], &plans[..n], &sides[..n]);
         let (restrained, health) = (&mut restrained[..n], &mut health[..n]);
         let (pos, vel, facing) = (&mut pos[..n], &mut vel[..n], &mut facing[..n]);
         let (target, fatigues) = (&mut target[..n], &mut fatigue[..n]);
@@ -143,6 +145,12 @@ impl SoldierBattle {
                     let half = p.breach_width * 0.5;
                     let mid = field.height * 0.5;
                     to.y = to.y.clamp(mid - half, mid + half);
+                }
+            }
+            // Nobody walks into a building: out of it, along its wall.
+            if let Some(nav) = nav.as_deref() {
+                if nav.any_near(to) || nav.any_near(from) {
+                    to = nav.resolve(from, to, k.body, sides[i]);
                 }
             }
             pos[i] = to;

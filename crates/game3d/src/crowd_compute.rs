@@ -60,6 +60,9 @@ pub struct WalkParams {
     pub grid: Vec4,
     /// Terrain: texels across and deep.
     pub dims: Vec4,
+    /// The wall map (grounding.rs): x, z of its first corner and its size
+    /// along x and z; a size of 0 for none.
+    pub walls: Vec4,
 }
 
 /// Everything the compute pass needs, mirrored into the render world.
@@ -69,6 +72,8 @@ pub struct CrowdCompute {
     pub people: Handle<ShaderBuffer>,
     pub targets: Handle<ShaderBuffer>,
     pub heights: Handle<Image>,
+    /// How far each spot is from a wall (grounding.rs).
+    pub walls: Handle<Image>,
     pub params: WalkParams,
 }
 
@@ -95,6 +100,7 @@ fn init_pipeline(
                 storage_buffer_read_only_sized(false, None),
                 texture_2d(TextureSampleType::Float { filterable: false }),
                 uniform_buffer::<WalkParams>(false),
+                texture_2d(TextureSampleType::Float { filterable: false }),
             ),
         ),
     );
@@ -123,10 +129,11 @@ fn prepare_bind_group(
     let (Some(crowd), Some(pipeline)) = (crowd, pipeline) else {
         return;
     };
-    let (Some(people), Some(targets), Some(heights)) = (
+    let (Some(people), Some(targets), Some(heights), Some(walls)) = (
         buffers.get(&crowd.people),
         buffers.get(&crowd.targets),
         images.get(&crowd.heights),
+        images.get(&crowd.walls),
     ) else {
         return;
     };
@@ -140,6 +147,7 @@ fn prepare_bind_group(
             targets.buffer.as_entire_binding(),
             &heights.texture_view,
             &params,
+            &walls.texture_view,
         )),
     );
     commands.insert_resource(WalkBindGroup(group, crowd.params.count));

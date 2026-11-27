@@ -17,7 +17,7 @@
         (id: "silver",     name: "Silver",     category: Material, era: 2, base_price: 40.0,
             household: Some((life_days: 3000.0,
                 serves: [(need: Esteem, amount: 0.5, by: Own)]))),
-        (id: "mint", name: "Mint", category: Building, era: 2, base_price: 400.0, slots: 4),
+        (id: "mint", name: "Mint", category: Building, era: 2, base_price: 400.0, slots: 4, footprint: Some((27.0, 27.0))),
         (id: "coin", name: "Coin", category: Material, era: 2, base_price: 1.0, coin: 1.0),
     ],
     recipes: [

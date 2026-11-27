@@ -138,6 +138,19 @@ pub struct ProductDef {
     /// them (1 = fully). Houses are counted per town, not placed one by one.
     #[serde(default)]
     pub house: Option<HouseDef>,
+    /// A workplace (a building that is not land or a house): the ground it
+    /// stands on, map units, across its front and from front to back. Its
+    /// front faces the town centre (`sim_core::layout`); soldiers and
+    /// walkers keep out of it, and the views draw it this size.
+    #[serde(default)]
+    pub footprint: Option<(f32, f32)>,
+}
+
+impl ProductDef {
+    /// A building that is a workplace: neither land nor a house.
+    pub fn workplace(&self) -> bool {
+        self.category == Category::Building && self.opens.is_none() && self.house.is_none()
+    }
 }
 
 /// A house: people it holds, and how well it shelters them (0..1).

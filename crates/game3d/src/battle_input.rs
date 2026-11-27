@@ -436,6 +436,10 @@ fn draw_battle_controls(
     }
     let flat = Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2);
     for (_, g) in &ghosts {
+        // The way the front goes, round the town's buildings.
+        if g.path.len() > 2 {
+            gizmos.linestrip(g.path.iter().map(|&p| at(p)), GHOST.with_alpha(0.5));
+        }
         for &s in &g.slots {
             gizmos
                 .circle(Isometry3d::new(at(s), flat), 0.06, GHOST)

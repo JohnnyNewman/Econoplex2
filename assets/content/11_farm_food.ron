@@ -38,9 +38,9 @@
                 serves: [(need: Growth, amount: 0.1, by: Consume)]))),
         (id: "garden_plot", name: "Garden plot", category: Building, base_price: 80.0, opens: Some("garden")),
         (id: "orchard_plot", name: "Orchard",    category: Building, base_price: 200.0, opens: Some("orchard")),
-        (id: "dairy",       name: "Dairy",       category: Building, era: 1, base_price: 200.0, slots: 10),
-        (id: "smokehouse",  name: "Smokehouse",  category: Building, era: 1, base_price: 180.0, slots: 10),
-        (id: "saltern",     name: "Saltern",     category: Building, era: 1, base_price: 220.0, slots: 8),
+        (id: "dairy",       name: "Dairy",       category: Building, era: 1, base_price: 200.0, slots: 10, footprint: Some((24.0, 24.0))),
+        (id: "smokehouse",  name: "Smokehouse",  category: Building, era: 1, base_price: 180.0, slots: 10, footprint: Some((24.0, 24.0))),
+        (id: "saltern",     name: "Saltern",     category: Building, era: 1, base_price: 220.0, slots: 8, footprint: Some((24.0, 24.0))),
     ],
     recipes: [
         (id: "milk_cows", name: "Milk cows", skill: "herding", difficulty: 0.15,

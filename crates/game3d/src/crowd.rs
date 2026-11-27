@@ -547,8 +547,8 @@ pub fn spots_of(
 
 /// The door of the house person number `k` of the snapshot lives in: their
 /// household (`PeopleView::home`, the one who keeps it) has one house of the
-/// town, so a family shares it. Before the houses stand, a spot on the
-/// houses' spiral.
+/// town, so a family shares it. Before the houses are drawn, the door of
+/// that house as the town's layout puts it.
 fn home_at(snap: &sim_core::view::ViewSnapshot, homes: &crate::live::TownHomes, k: usize) -> Vec2 {
     let id = snap.people.id[k];
     let keeper = snap.people.home.get(k).copied().unwrap_or(id);
@@ -558,20 +558,35 @@ fn home_at(snap: &sim_core::view::ViewSnapshot, homes: &crate::live::TownHomes, 
     }
     snap.towns
         .get(ti)
-        .map_or(Vec2::ZERO, |t| home_of(keeper, t.pos, ti, t.population))
+        .map_or(Vec2::ZERO, |t| home_of(keeper, t))
 }
 
-/// A house of the town for this person: a spot on the spiral the houses
-/// stand on (live.rs), picked by their id, in 3D x, z.
-fn home_of(id: u32, town_pos: (f32, f32), town_index: usize, population: u32) -> Vec2 {
-    let n = crate::live::houses_for(population).max(1);
-    let k = (unit(id, 7) * n as f32) as u32;
-    let a = k as f32 * 2.399_963 + town_index as f32;
-    let r = 1.8 + (k as f32).sqrt() * 1.05 + 0.6;
-    Vec2::new(
-        town_pos.0 / SCALE + r * a.cos(),
-        -town_pos.1 / SCALE - r * a.sin(),
-    )
+/// A house of `town` for this person, picked by their id: its door (a step
+/// in front of it, as live.rs puts the doors), in 3D x, z; the town centre
+/// if it has no houses.
+fn home_of(id: u32, town: &sim_core::view::TownView) -> Vec2 {
+    let centre = Vec2::new(town.pos.0, -town.pos.1) / SCALE;
+    let spots = &town.layout.houses;
+    if spots.is_empty() {
+        return centre;
+    }
+    let h = spots[(unit(id, 7) * spots.len() as f32) as usize % spots.len()];
+    let at = Vec2::new(h.pos.0, -h.pos.1) / SCALE;
+    at + 0.9 * Vec2::new(h.angle.sin(), h.angle.cos())
+}
+
+/// How far a walker keeps from a wall, map units (walk.wesl has it in 3D
+/// units, `RADIUS`).
+const WALKER: f32 = 2.5;
+
+/// `goal` (3D x, z) moved out of whatever stands there.
+fn clear_of(shapes: &sim_core::battle::Shapes, goal: Vec2) -> Vec2 {
+    let p = sim_core::battle::V2::new(goal.x * SCALE, -goal.y * SCALE);
+    if !shapes.any_near(p) {
+        return goal;
+    }
+    let q = shapes.push_out(p, WALKER, 0);
+    Vec2::new(q.x, -q.y) / SCALE
 }
 
 /// Added to a person's motion while they carry a bundle (people.wesl).
@@ -633,7 +648,11 @@ fn update_targets(
     mut crowd: Query<(&mut Mesh3d, &mut Visibility)>,
     overlay: Res<crate::overlay::Overlay>,
     clock: Res<crate::sky::SkyClock>,
-    homes: Res<crate::live::TownHomes>,
+    (homes, contact): (
+        Res<crate::live::TownHomes>,
+        Option<Res<crate::grounding::ContactMap>>,
+    ),
+    mut walls: Local<(Option<u64>, Vec<sim_core::battle::Shapes>)>,
     mut last: Local<Vec<[f32; 8]>>,
 ) {
     let (Some(mut handles), Some(terrain)) = (handles, terrain) else {
@@ -655,6 +674,12 @@ fn update_targets(
         if new_tick {
             slots.tick = Some(snap.tick);
             slots.assign(&people.id);
+        }
+        // The towns' buildings and houses, to keep goals out of (a worker
+        // waits at their workplace's wall).
+        if walls.0 != Some(snap.tick) {
+            walls.0 = Some(snap.tick);
+            walls.1 = snap.towns.iter().map(|t| t.layout.shapes()).collect();
         }
         // Outgrown: bigger buffers and mesh (everyone reappears at their goal).
         if slots.next > handles.capacity {
@@ -681,7 +706,10 @@ fn update_targets(
                 .towns
                 .get(ti)
                 .map_or(work, |t| Vec2::new(t.pos.0, -t.pos.1) / SCALE);
-            let plan = day_plan(id, doing, clock.hour, work, home, centre);
+            let mut plan = day_plan(id, doing, clock.hour, work, home, centre);
+            if let Some(shapes) = walls.1.get(ti) {
+                plan.goal = clear_of(shapes, plan.goal);
+            }
             let (mut rgb, size) = look(doing, snap.domains);
             // Clothes by wealth (soldiers and captives keep their colours).
             if matches!(doing, Doing::Working(_) | Doing::Idle | Doing::Resting) {
@@ -728,6 +756,9 @@ fn update_targets(
         people: handles.people.clone(),
         targets: handles.targets.clone(),
         heights: terrain.heights.clone(),
+        walls: contact
+            .as_ref()
+            .map_or(terrain.heights.clone(), |c| c.walls.clone()),
         params: WalkParams {
             dt: time.delta_secs().min(0.1),
             walk: WALK,
@@ -735,6 +766,7 @@ fn update_targets(
             pad: 0,
             grid: terrain.grid,
             dims: terrain.dims,
+            walls: contact.as_ref().map_or(Vec4::ZERO, |c| c.rect),
         },
     });
 }

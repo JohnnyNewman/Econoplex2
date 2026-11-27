@@ -50,7 +50,7 @@
         (id: "horse", name: "Horse", category: Weapon, era: 2, base_price: 120.0, kg: 0.0,
             equip: Some((domain: "military", bonus: 0.0, durability: 400, slot: Some("mount"))),
             fight: Some((mounted: true))),
-        (id: "stable", name: "Stable", category: Building, era: 2, base_price: 0.0, slots: 4),
+        (id: "stable", name: "Stable", category: Building, era: 2, base_price: 0.0, slots: 4, footprint: Some((24.0, 24.0))),
     ],
     recipes: [
         (id: "make_iron_spear", name: "Make iron spear", skill: "spear_making", difficulty: 0.35,

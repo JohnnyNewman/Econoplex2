@@ -47,17 +47,20 @@ impl Plugin for BattlesPlugin {
         app.init_resource::<Looks>()
             .init_resource::<LiveScene>()
             .init_resource::<Staged>()
-            .add_systems(Startup, stage_battle)
-            .add_systems(Update, (start_battles, play_battles, show_live).chain())
+            .add_systems(
+                Update,
+                (stage_battle, start_battles, play_battles, show_live).chain(),
+            )
             .add_systems(EguiPrimaryContextPass, battle_panel);
     }
 }
 
 /// Battle seconds shown per real second.
 const PLAYBACK: f32 = 30.0;
-/// 3D units per metre of battlefield (a figure is about 0.75 units tall), and
-/// between figures in a formation.
-const METRE: f32 = 0.08;
+/// 3D units per metre of battlefield, as the sim lays a field over a town (a
+/// figure is about 0.75 units tall), and between figures in a formation.
+#[cfg(test)]
+const METRE: f32 = sim_core::battle::MAP_PER_METRE / SCALE;
 const SPACING: f32 = 0.45;
 /// Real seconds a scene stays after its battle ends.
 const LINGER: f32 = 6.0;
@@ -216,40 +219,69 @@ fn start_battles(
 }
 
 /// `--battle LINEUP` (as in `econoplex-sim --battle`): fight it now and play
-/// it beside the focus town, from shortly before the lines meet.
+/// it beside the focus town, from shortly before the lines meet. A line-up
+/// `in town` is fought in the focus town itself, among its real buildings
+/// and houses (from the first snapshot), where a raid on it would be, as the
+/// 2D client stages it.
 fn stage_battle(
     args: Res<crate::Args>,
     world: Res<World3d>,
     mut live: ResMut<LiveSim>,
     mut staged: ResMut<Staged>,
+    mut done: Local<bool>,
 ) {
     use sim_core::battle::{parse_lineup, Battle};
-    let Some(lineup) = &args.battle else { return };
-    let (field, specs) = match parse_lineup(lineup) {
+    if *done {
+        return;
+    }
+    let Some(lineup) = &args.battle else {
+        *done = true;
+        return;
+    };
+    let (mut field, specs) = match parse_lineup(lineup) {
         Ok(x) => x,
         Err(e) => {
             warn!("--battle: {e}");
+            *done = true;
             return;
         }
     };
+    let in_town = !field.obstacles.is_empty();
+    let layout = live
+        .snapshot
+        .towns
+        .get(args.focus_town)
+        .map(|t| t.layout.clone());
+    if in_town && layout.is_none() {
+        return;
+    }
+    *done = true;
     let size = (field.width, field.height);
-    // On `battle.model` from models.ron (`--preset`, `--set`).
-    let (report, squads, frames) =
-        Battle::new(args.battle_params.clone(), field, specs, args.seed).run_recorded(5.0);
     let town = world
         .scenario
         .towns
         .get(args.focus_town)
         .or(world.scenario.towns.first())
         .map_or((0.0, 0.0), |t| t.position);
+    let (at, facing) = if in_town {
+        ((town.0 - 60.0, town.1), (1.0, 0.0))
+    } else {
+        ((town.0, town.1 - 300.0), (1.0, 0.0))
+    };
+    if let (true, Some(layout)) = (in_town, &layout) {
+        field.obstacles = layout.obstacles_on(at, facing, size);
+    }
+    // On `battle.model` from models.ron (`--preset`, `--set`).
+    let (report, squads, frames) =
+        Battle::new(args.battle_params.clone(), field, specs, args.seed).run_recorded(5.0);
     info!(
         "--battle {lineup}: {:?} after {:.0} s",
         report.winner, report.seconds
     );
     let mut replay = Replay {
         town: args.focus_town as u16,
-        at: (town.0, town.1 - 300.0),
-        facing: (1.0, 0.0),
+        at,
+        facing,
         field: size,
         squads,
         frames,
@@ -284,14 +316,8 @@ impl Geo {
     }
 
     /// Where a point of the map lies on the field (metres), for clicks.
-    pub(crate) fn field_at(&self, (mx, my): (f32, f32)) -> (f32, f32) {
-        let (dx, dy) = (mx - self.at.0, my - self.at.1);
-        let (fx, fy) = self.facing;
-        let k = METRE * SCALE;
-        (
-            (fx * dx + fy * dy) / k + self.field.0 / 2.0,
-            (-fy * dx + fx * dy) / k + self.field.1 / 2.0,
-        )
+    pub(crate) fn field_at(&self, m: (f32, f32)) -> (f32, f32) {
+        sim_core::battle::map_to_field(self.at, self.facing, self.field, m)
     }
 
     /// A point of the field in 3D, on the ground.
@@ -302,13 +328,7 @@ impl Geo {
 
     /// Where a point of the field (metres) lies on the map.
     pub(crate) fn on_map(&self, x: f32, y: f32) -> (f32, f32) {
-        let (dx, dy) = (x - self.field.0 / 2.0, y - self.field.1 / 2.0);
-        let (fx, fy) = self.facing;
-        let k = METRE * SCALE;
-        (
-            self.at.0 + (fx * dx - fy * dy) * k,
-            self.at.1 + (fy * dx + fx * dy) * k,
-        )
+        sim_core::battle::field_to_map(self.at, self.facing, self.field, (x, y))
     }
 
     /// A direction on the field as a 3D direction (unit, level).

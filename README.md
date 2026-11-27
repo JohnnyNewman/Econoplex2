@@ -53,6 +53,8 @@ cargo run --release -p sim_cli -- --load game.ron --years 5
 # Fight one battle, or the same battle on 200 seeds for win rates
 cargo run --release -p sim_cli -- --battle "cavalry*20 vs spearmen*30"
 cargo run --release -p sim_cli -- --battle "swordsmen*45,archers*20 vs walls spearmen*30" --seeds 200
+# Defenders in a town: soldiers go round its workplaces and houses
+cargo run --release -p sim_cli -- --battle "swordsmen*40,swordsmen*40 vs town spearmen*40,spearmen*40" --battle-model soldiers
 
 # The same on the per-soldier model, against the squad model, and its cost
 cargo run --release -p sim_cli -- --battle "swordsmen*100,swordsmen*100#flank vs swordsmen*100,swordsmen*100" --seeds 50 --compare

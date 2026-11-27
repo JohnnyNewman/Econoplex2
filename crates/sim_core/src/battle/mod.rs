@@ -41,6 +41,9 @@
 mod control;
 mod kit;
 mod lineup;
+mod nav;
+#[cfg(test)]
+mod obstacle_tests;
 mod report;
 pub mod rts;
 pub mod rules;
@@ -52,10 +55,13 @@ mod tests;
 pub use control::*;
 pub use kit::*;
 pub use lineup::*;
+pub use nav::*;
 pub use report::*;
+pub use soldiers::V2;
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::sync::Arc;
 
 /// Which model fights a battle (`battle.model` in `models.ron`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -217,14 +223,37 @@ impl Default for BattleParams {
     }
 }
 
-/// The field: its size, and a wall at `wall_x` if the defenders have one
-/// (defenders stand at larger x than the wall, attackers at smaller).
+/// The field: its size, a wall at `wall_x` if the defenders have one
+/// (defenders stand at larger x than the wall, attackers at smaller), and
+/// the obstacles on it: the buildings and houses of the town where it is
+/// fought (`layout::battle_field`), in metres on the field.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Field {
     pub width: f32,
     pub height: f32,
     pub wall_x: Option<f32>,
+    pub obstacles: Vec<Obstacle>,
 }
+
+impl Field {
+    /// Where the defenders' first line forms up (x, metres): three quarters
+    /// across, or in a town in front of its houses, so that both sides meet
+    /// formed on open ground and not the defenders filing out of the
+    /// streets to it. Never on the attackers' half.
+    pub fn defenders_x(&self) -> f32 {
+        let stand = self.width * 0.75;
+        let front = self
+            .obstacles
+            .iter()
+            .filter(|o| o.passage.blocks(0))
+            .map(|o| o.reach_x().0)
+            .fold(f32::INFINITY, f32::min);
+        (front - TOWN_GAP).clamp(self.width * 0.5 + TOWN_GAP, stand)
+    }
+}
+
+/// Metres the defenders of a town stand in front of its first house.
+const TOWN_GAP: f32 = 15.0;
 
 impl Default for Field {
     fn default() -> Self {
@@ -232,7 +261,55 @@ impl Default for Field {
             width: 600.0,
             height: 400.0,
             wall_x: None,
+            obstacles: Vec::new(),
         }
+    }
+}
+
+/// Map units per metre of battlefield: the clients draw a battle at this
+/// scale over the town where it is fought, and the town's buildings become
+/// the field's obstacles at the same scale.
+pub const MAP_PER_METRE: f32 = 0.8;
+
+/// Where a point of a field (metres) lies on the map, for a field `size`
+/// big, centred at `at`, whose +x points along `facing` (from the attackers
+/// to the defenders) and +y to its left.
+pub fn field_to_map(
+    at: (f32, f32),
+    facing: (f32, f32),
+    size: (f32, f32),
+    p: (f32, f32),
+) -> (f32, f32) {
+    let (fx, fy) = unit_or_x(facing);
+    let (dx, dy) = (p.0 - 0.5 * size.0, p.1 - 0.5 * size.1);
+    (
+        at.0 + (fx * dx - fy * dy) * MAP_PER_METRE,
+        at.1 + (fy * dx + fx * dy) * MAP_PER_METRE,
+    )
+}
+
+/// Where a point of the map lies on a field (metres): `field_to_map` the
+/// other way round.
+pub fn map_to_field(
+    at: (f32, f32),
+    facing: (f32, f32),
+    size: (f32, f32),
+    p: (f32, f32),
+) -> (f32, f32) {
+    let (fx, fy) = unit_or_x(facing);
+    let (dx, dy) = ((p.0 - at.0) / MAP_PER_METRE, (p.1 - at.1) / MAP_PER_METRE);
+    (
+        fx * dx + fy * dy + 0.5 * size.0,
+        -fy * dx + fx * dy + 0.5 * size.1,
+    )
+}
+
+fn unit_or_x((x, y): (f32, f32)) -> (f32, f32) {
+    let l = x.hypot(y);
+    if l > 1e-6 {
+        (x / l, y / l)
+    } else {
+        (1.0, 0.0)
     }
 }
 
@@ -278,6 +355,28 @@ impl Order {
             facing: None,
             width: None,
             run: false,
+        }
+    }
+
+    /// A move onto an obstacle goes to the nearest spot clear of it, for a
+    /// squad of side `side`; other orders stay as they are.
+    pub fn clear_of(self, nav: &Nav, side: u8) -> Self {
+        match self {
+            Self::MoveTo {
+                anchor,
+                facing,
+                width,
+                run,
+            } => {
+                let p = nav.free_spot(soldiers::V2::new(anchor.0, anchor.1), side);
+                Self::MoveTo {
+                    anchor: (p.x, p.y),
+                    facing,
+                    width,
+                    run,
+                }
+            }
+            o => o,
         }
     }
 }
@@ -335,6 +434,16 @@ trait Model {
     /// Whether the squad fought (struck, shot or was hit), and forget it.
     fn take_engaged(&mut self, squad: usize) -> bool;
     fn members_mut(&mut self, squad: usize) -> &mut [Member];
+    /// The field's obstacles, ready for questions (`None`: there are none).
+    fn nav(&self) -> Option<&Arc<Nav>>;
+    /// The field's obstacles from now on: every way planned on the old
+    /// ones is planned again.
+    fn set_obstacles(&mut self, obstacles: Vec<Obstacle>);
+}
+
+/// The obstacles of `field` as a `Nav` one version on from `old`.
+fn renav(field: &Field, old: Option<&Arc<Nav>>) -> Option<Arc<Nav>> {
+    Nav::new(field, old.map_or(0, |n| n.version() + 1)).map(Arc::new)
 }
 
 /// Which sides still have a squad fighting.
@@ -428,8 +537,46 @@ impl Battle {
     /// it back its own judgment.
     pub fn set_orders(&mut self, squad: usize, orders: &[Order]) {
         if squad < self.model().count() {
-            self.model_mut().set_orders(squad, orders);
+            let side = self.model().spec(squad).side;
+            let orders: Vec<Order> = match self.model().nav() {
+                Some(nav) => orders.iter().map(|o| o.clear_of(nav, side)).collect(),
+                None => orders.to_vec(),
+            };
+            self.model_mut().set_orders(squad, &orders);
         }
+    }
+
+    /// Obstacle `id` lets `passage` through from now on (a gate opened, a
+    /// breach). Returns whether there is such an obstacle.
+    pub fn set_passage(&mut self, id: u64, passage: Passage) -> bool {
+        let mut obstacles = self.model().field().obstacles.clone();
+        let mut found = false;
+        for o in obstacles.iter_mut().filter(|o| o.id == id) {
+            o.passage = passage;
+            found = true;
+        }
+        if found {
+            self.model_mut().set_obstacles(obstacles);
+        }
+        found
+    }
+
+    /// Obstacle `id` is gone (a building burnt, a stretch of wall pulled
+    /// down). Returns whether there was such an obstacle.
+    pub fn remove_obstacle(&mut self, id: u64) -> bool {
+        let mut obstacles = self.model().field().obstacles.clone();
+        let before = obstacles.len();
+        obstacles.retain(|o| o.id != id);
+        let found = obstacles.len() != before;
+        if found {
+            self.model_mut().set_obstacles(obstacles);
+        }
+        found
+    }
+
+    /// The field's obstacles, ready for questions (`None`: an open field).
+    pub fn nav(&self) -> Option<&Arc<Nav>> {
+        self.model().nav()
     }
 
     /// A squad's stance, from now on.
@@ -476,6 +623,13 @@ impl Battle {
             return Err("no facing".into());
         }
         let facing = (facing.0 / l, facing.1 / l);
+        let anchor = match self.model().nav() {
+            Some(nav) => {
+                let p = nav.free_spot(soldiers::V2::new(anchor.0, anchor.1), side);
+                (p.x, p.y)
+            }
+            None => anchor,
+        };
         self.model_mut().deploy(squad, anchor, facing, width);
         Ok(())
     }
@@ -584,6 +738,7 @@ impl Battle {
                 .collect(),
             sheets,
             wall_x: m.field().wall_x,
+            nav: m.nav().cloned(),
             morale: (0..m.count()).map(|s| m.morale(s)).collect(),
             condition,
             frame: self.frame(),

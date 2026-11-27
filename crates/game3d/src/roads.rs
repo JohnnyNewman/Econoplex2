@@ -5,7 +5,8 @@
 //!   leave the road cells free (main.rs).
 //! - **Caravans:** small carts drive along the roads from each town to the towns
 //!   it sells to, more of them for more trade (the daily export value in the
-//!   snapshot, as the trade overlay uses).
+//!   snapshot, as the trade overlay uses). In a town they drive round the
+//!   workplaces and houses standing on the road (`sim_core::layout::detour`).
 
 use crate::bake::Baked;
 use crate::live::LiveSim;
@@ -15,6 +16,7 @@ use bevy::asset::RenderAssetUsages;
 use bevy::light::NotShadowCaster;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
+use sim_core::layout::{detour, TownLayout};
 use sim_core::terrain::Terrain;
 use std::collections::{HashMap, HashSet};
 
@@ -32,6 +34,9 @@ const WIDTH: f32 = 1.5;
 const LIFT: f32 = 0.2;
 /// Caravan speed in 3D units per second.
 const SPEED: f32 = 5.0;
+/// How far a cart keeps from a wall, map units: half its width and the
+/// way it keeps to the right.
+const CART_CLEAR: f32 = 6.0;
 
 /// The road network: which terrain cells roads cross, and the road from each
 /// town to each other town as a line of 3D points.
@@ -116,6 +121,26 @@ pub fn network(t: &Terrain, towns: &[(f32, f32)]) -> Roads {
         }
     }
     roads
+}
+
+/// The way a cart takes along `road`: round the workplaces and houses of
+/// the towns at its ends.
+fn round_buildings(t: &Terrain, road: &Path, towns: [&TownLayout; 2]) -> Path {
+    let mut way: Vec<(f32, f32)> = road
+        .points
+        .iter()
+        .map(|p| (p.x * SCALE, -p.z * SCALE))
+        .collect();
+    for town in towns {
+        if town.footprints().next().is_some() {
+            way = detour(&town.shapes(), &way, CART_CLEAR, 2.0);
+        }
+    }
+    Path::new(
+        way.into_iter()
+            .map(|q| Vec3::new(q.0 / SCALE, ground(t, q) + LIFT, -q.1 / SCALE))
+            .collect(),
+    )
 }
 
 /// The road ribbons as one mesh.
@@ -220,6 +245,9 @@ fn cart_mesh() -> Mesh {
 #[derive(Resource, Default)]
 struct Carts {
     shown: HashMap<(usize, usize, usize), Entity>,
+    /// Each route's way round what stands in its two towns, and what stood
+    /// there when it was found (workplaces and houses of each).
+    ways: HashMap<(usize, usize), ([usize; 4], Path)>,
     mesh: Option<Handle<Mesh>>,
     material: Option<Handle<ToonMaterial>>,
 }
@@ -236,6 +264,7 @@ fn drive_caravans(
     mut meshes: ResMut<Assets<Mesh>>,
     mut toons: ResMut<Assets<ToonMaterial>>,
     mut transforms: Query<&mut Transform>,
+    world: Res<crate::World3d>,
 ) {
     let Some(roads) = roads else { return };
     let mesh = carts
@@ -246,6 +275,7 @@ fn drive_caravans(
         .material
         .get_or_insert_with(|| toons.add(toon(Color::WHITE)))
         .clone();
+    let carts = &mut *carts;
     let towns = &live.snapshot.towns;
     let max = towns
         .iter()
@@ -257,9 +287,21 @@ fn drive_caravans(
             if a == b || value < 0.5 {
                 continue;
             }
-            let Some(path) = roads.paths.get(&(a, b)) else {
+            let Some(road) = roads.paths.get(&(a, b)) else {
                 continue;
             };
+            let (la, lb) = (&from.layout, &towns[b].layout);
+            let stands = [
+                la.buildings.len(),
+                la.house_footprints.len(),
+                lb.buildings.len(),
+                lb.house_footprints.len(),
+            ];
+            if carts.ways.get(&(a, b)).is_none_or(|w| w.0 != stands) {
+                let way = round_buildings(&world.terrain, road, [la, lb]);
+                carts.ways.insert((a, b), (stands, way));
+            }
+            let path = &carts.ways[&(a, b)].1;
             let len = path.length();
             if len < 1.0 {
                 continue;

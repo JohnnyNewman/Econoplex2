@@ -337,7 +337,8 @@ pub fn military(
             if live_ok {
                 let player = links.player.as_ref().and_then(|p| p.0).unwrap();
                 if let Some(live) = prepare_live_battle(
-                    &raid, t, &towns, store, &db, &params, &fight, &gear_defs, &mut rng, player,
+                    &raid, t, &towns, store, &db, &params, &fight, &gear_defs, &terrain, &mut rng,
+                    player,
                 ) {
                     links.pending.as_mut().unwrap().0 = Some(live);
                     raid.back = false;
@@ -356,6 +357,7 @@ pub fn military(
                 &params,
                 &fight,
                 &gear_defs,
+                &terrain,
                 &mut rng,
                 links.battle_log.as_deref_mut(),
             );

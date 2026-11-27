@@ -13,10 +13,10 @@
         (id: "field",    name: "Field",    regrowth: 40.0, capacity: 200.0),
     ],
     products: [
-        (id: "workshop", name: "Workshop", category: Building, base_price: 200.0, slots: 16, starter: true),
-        (id: "mill",     name: "Mill",     category: Building, base_price: 250.0, slots: 16, starter: true),
-        (id: "bakery",   name: "Bakery",   category: Building, base_price: 250.0, slots: 16, starter: true),
-        (id: "furnace",  name: "Furnace",  category: Building, base_price: 300.0, slots: 12, starter: true),
-        (id: "smithy",   name: "Smithy",   category: Building, base_price: 350.0, slots: 12, starter: true),
+        (id: "workshop", name: "Workshop", category: Building, base_price: 200.0, slots: 16, starter: true, footprint: Some((27.0, 45.0))),
+        (id: "mill",     name: "Mill",     category: Building, base_price: 250.0, slots: 16, starter: true, footprint: Some((21.0, 21.0))),
+        (id: "bakery",   name: "Bakery",   category: Building, base_price: 250.0, slots: 16, starter: true, footprint: Some((24.0, 28.0))),
+        (id: "furnace",  name: "Furnace",  category: Building, base_price: 300.0, slots: 12, starter: true, footprint: Some((27.0, 28.0))),
+        (id: "smithy",   name: "Smithy",   category: Building, base_price: 350.0, slots: 12, starter: true, footprint: Some((27.0, 28.0))),
     ],
 )
