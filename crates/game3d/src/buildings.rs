@@ -924,7 +924,8 @@ mod tests {
 
     /// Each workplace's footprint (content, map units, what soldiers and
     /// walkers keep out of) is the ground its walls stand on as drawn here:
-    /// the parts on the ground that are no roof, at 1.5 times their size.
+    /// the parts standing on the ground (roofs and eaves are higher up), at
+    /// 1.5 times their size.
     #[test]
     fn footprints_are_the_walls_as_drawn() {
         let paths = sim_core::AssetPaths::discover();
@@ -937,10 +938,7 @@ mod tests {
             let (w, d) = p.footprint.unwrap();
             let walls: Vec<Part> = parts(&kit, &p.id)
                 .into_iter()
-                .filter(|(m, _, o, s)| {
-                    let roof = [kit.gable.id(), kit.cone.id(), kit.dome.id()].contains(&m.id());
-                    !roof && o.y - s.y / 2.0 < 0.3
-                })
+                .filter(|(_, _, o, s)| o.y - s.y / 2.0 < 0.3)
                 .collect();
             assert!(!walls.is_empty(), "{} has no walls", p.id);
             let reach = |f: fn(Vec3) -> f32| {
