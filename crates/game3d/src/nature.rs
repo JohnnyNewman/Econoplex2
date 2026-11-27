@@ -81,6 +81,11 @@ pub struct GrassExt {
 }
 
 impl MaterialExtension for GrassExt {
+    // Its vertex shader moves the geometry; the default prepass would put it
+    // where it stands still, and the depth prepass would hide parts of it.
+    fn enable_prepass() -> bool {
+        false
+    }
     fn vertex_shader() -> ShaderRef {
         "shaders/grass.wesl".into()
     }
@@ -101,6 +106,11 @@ pub struct TreeExt {
 }
 
 impl MaterialExtension for TreeExt {
+    // Its vertex shader moves the geometry; the default prepass would put it
+    // where it stands still, and the depth prepass would hide parts of it.
+    fn enable_prepass() -> bool {
+        false
+    }
     fn vertex_shader() -> ShaderRef {
         "shaders/sway.wesl".into()
     }

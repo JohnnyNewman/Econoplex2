@@ -677,6 +677,12 @@ fn setup(
             debug: if args.bloom_view { 1.0 } else { 0.0 },
             ..default()
         },
+        // A depth prepass first: the main pass then shades each pixel once
+        // instead of every layer that covers it (the terrain under houses,
+        // trees and grass). Main pass 4.3 -> 2.0 ms of GPU for 0.25 ms of
+        // prepass (docs/profiling.md). Materials that move their vertices
+        // (grass, trees, people, sheep) stay out of it (`enable_prepass`).
+        bevy::core_pipeline::prepass::DepthPrepass,
     ));
     hud::spawn_help(
         &mut commands,
