@@ -52,6 +52,7 @@ mod roads;
 mod sky;
 mod smoke;
 mod terrain;
+mod tiltshift;
 mod toon;
 mod ui;
 mod water;
@@ -338,6 +339,7 @@ fn main() {
     .insert_resource(ShotPath(shot, shot_battle))
     .insert_resource(QuitAfter(quit_after))
     .insert_resource(inspect::Selected(select))
+    .add_plugins(tiltshift::TiltShiftPlugin)
     .add_plugins((
         sky::SkyPlugin,
         toon::ToonPlugin,
@@ -703,6 +705,8 @@ fn setup(
             debug: if args.bloom_view { 1.0 } else { 0.0 },
             ..default()
         },
+        // The miniature look (shader step 20); `X` turns it off.
+        tiltshift::TiltShift::default(),
         // A depth prepass first: the main pass then shades each pixel once
         // instead of every layer that covers it (the terrain under houses,
         // trees and grass). Main pass 4.3 -> 2.0 ms of GPU for 0.25 ms of
