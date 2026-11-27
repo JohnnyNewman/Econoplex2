@@ -2,7 +2,7 @@
 
 use super::*;
 
-impl Battle {
+impl SquadBattle {
     /// A charge on first contact. A braced line with the longer reach turns it
     /// onto its own points; otherwise the charging front strikes with its speed.
     pub(super) fn charge(&mut self, a: usize, b: usize) {

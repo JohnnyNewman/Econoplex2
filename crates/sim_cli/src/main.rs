@@ -5,7 +5,7 @@
 //!               [--set path=value]... [--sweep path=v1,v2,...]... [--seeds N]
 //!               [--order DAY:ORDER]... [--save FILE] [--load FILE]
 //!               [--generate N] [--map-svg FILE] [--events FILE] [--history FILE]
-//!               [--weather FILE] [--battle LINEUP]
+//!               [--weather FILE] [--battle LINEUP [--battle-model M] [--compare]]
 //!               [--embedding] [--hash] [--profile] [--quiet]
 //! ```
 //!
@@ -60,6 +60,10 @@ struct Args {
     weather: Option<PathBuf>,
     /// Fight one squad battle with this line-up and exit.
     battle: Option<String>,
+    /// The battle model for `--battle`, over `battle.model` in models.ron.
+    battle_model: Option<sim_core::battle::BattleModel>,
+    /// Fight `--battle` on both models and print both.
+    compare: bool,
 }
 
 fn parse_args() -> Args {
@@ -89,6 +93,8 @@ fn parse_args() -> Args {
         history: None,
         weather: None,
         battle: None,
+        battle_model: None,
+        compare: false,
     };
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
@@ -121,6 +127,10 @@ fn parse_args() -> Args {
             "--history" => a.history = Some(PathBuf::from(val())),
             "--weather" => a.weather = Some(PathBuf::from(val())),
             "--battle" => a.battle = Some(val()),
+            "--battle-model" => {
+                a.battle_model = Some(val().parse().unwrap_or_else(|e: String| die(&e)))
+            }
+            "--compare" => a.compare = true,
             "--preset" => {
                 let path = PathBuf::from(val());
                 let sets = sim_core::read_preset(&path).unwrap_or_else(|e| die(&e.to_string()));
@@ -189,6 +199,9 @@ fn parse_args() -> Args {
                                     \"cavalry*20 vs spearmen*30\" or \"swordsmen*45,archers*20 vs walls spearmen*30+5!0.6\"\n\
                                     squad: KIT*COUNT[+BATTLES][@SKILL][!MORALE]; KIT: spearmen swordsmen\n\
                                     archers cavalry levy heavy horse_archers\n\
+                                    %FATIGUE (0..1) tires a squad; #flank or #rear deploys it beside or behind the enemy\n\
+                     --battle-model M  squads or soldiers (default: battle.model in models.ron)\n\
+                     --compare      with --battle: fight on both models over the same seeds and print both\n\
                      --assets DIR   assets folder (default: discovered)\n\
                      --csv FILE     write per-town yearly metrics as CSV (batch mode: one row per run)\n\
                      --set P=V      override a parameter in models.ron, e.g. military.tribute_share=0.3\n\
@@ -209,7 +222,7 @@ fn parse_args() -> Args {
                                     spending TOWN RATE|auto | procure TOWN PRODUCT AMOUNT\n\
                      --save FILE    save the game at the end of the run (FILE.bin: compact binary; else RON text)
                      --load FILE    continue a saved game (days in --order count from the load)
-                     --profile      print wall-clock time per system\n\
+                     --profile      print wall-clock time per system (with --battle: per phase of the soldier model)\n\
                      --quiet        only print the summary"
                 );
                 std::process::exit(0);
@@ -220,25 +233,134 @@ fn parse_args() -> Args {
     a
 }
 
-/// Fight a squad battle from a line-up; with several seeds, print win rates instead.
-fn run_battle(lineup: &str, params: &sim_core::battle::BattleParams, seed: u64, seeds: u64) {
+/// Fight a battle from a line-up; with several seeds, print win rates
+/// instead; with `--compare`, on both models; with `--profile`, time it.
+fn run_battle(lineup: &str, params: &sim_core::battle::BattleParams, args: &Args) {
+    use sim_core::battle::BattleModel;
+    let mut params = params.clone();
+    if let Some(m) = args.battle_model {
+        params.model = m;
+    }
+    let seed = args.seed.unwrap_or(1);
+    let seeds = args.seeds.max(1);
+    sim_core::battle::parse_lineup(lineup).unwrap_or_else(|e| die(&e));
+    if args.profile {
+        profile_battle(lineup, &params, seed, seeds);
+        return;
+    }
+    let models = if args.compare {
+        vec![BattleModel::Squads, BattleModel::Soldiers]
+    } else {
+        vec![params.model]
+    };
+    for model in models {
+        let params = sim_core::battle::BattleParams {
+            model,
+            ..params.clone()
+        };
+        let start = Instant::now();
+        let reports = fight_battles(lineup, &params, seed, seeds);
+        let wall = start.elapsed().as_secs_f64();
+        if seeds == 1 && !args.compare {
+            print!("{}", reports[0]);
+            continue;
+        }
+        let (mut att, mut def) = (0, 0);
+        let (mut lost, mut minutes) = ([0usize; 2], 0.0);
+        for r in &reports {
+            match r.winner {
+                Some(0) => att += 1,
+                Some(_) => def += 1,
+                None => {}
+            }
+            for s in &r.squads {
+                lost[(s.side as usize).min(1)] += s.wounded + s.dead;
+            }
+            minutes += r.seconds / 60.0;
+        }
+        let k = seeds as f32;
+        println!(
+            "{lineup} [{model:?}]: attackers won {att}, defenders {def} of {seeds}; \
+             lost {:.1} vs {:.1} each battle, {:.0} min, {:.1} ms wall per battle",
+            lost[0] as f32 / k,
+            lost[1] as f32 / k,
+            minutes / k,
+            1000.0 * wall / seeds as f64
+        );
+    }
+}
+
+/// One report per seed, fought on all threads.
+fn fight_battles(
+    lineup: &str,
+    params: &sim_core::battle::BattleParams,
+    seed: u64,
+    seeds: u64,
+) -> Vec<sim_core::battle::Report> {
+    use rayon::prelude::*;
     use sim_core::battle::{parse_lineup, Battle};
-    let (mut att, mut def) = (0, 0);
-    for s in seed..seed + seeds.max(1) {
-        let (field, specs) = parse_lineup(lineup).unwrap_or_else(|e| die(&e));
-        let report = Battle::new(params.clone(), field, specs, s).run();
-        match report.winner {
-            Some(0) => att += 1,
-            Some(_) => def += 1,
-            None => {}
+    (seed..seed + seeds)
+        .into_par_iter()
+        .map(|s| {
+            let (field, specs) = parse_lineup(lineup).unwrap_or_else(|e| die(&e));
+            Battle::new(params.clone(), field, specs, s).run()
+        })
+        .collect()
+}
+
+/// Time a line-up on the soldier model, phase by phase, and on the squad
+/// model, one battle after another on one thread.
+fn profile_battle(lineup: &str, params: &sim_core::battle::BattleParams, seed: u64, seeds: u64) {
+    use sim_core::battle::{parse_lineup, soldiers::Profile, Battle, BattleModel, BattleParams};
+    let time = |model: BattleModel| {
+        let p = BattleParams {
+            model,
+            ..params.clone()
+        };
+        let (mut wall, mut seconds, mut phases, mut soldiers) = (0.0, 0.0, Profile::default(), 0);
+        for s in seed..seed + seeds {
+            let (field, specs) = parse_lineup(lineup).unwrap_or_else(|e| die(&e));
+            let start = Instant::now();
+            let mut b = Battle::new(p.clone(), field, specs, s);
+            b.enable_profile();
+            let r = b.run();
+            wall += start.elapsed().as_secs_f64();
+            seconds += r.seconds as f64;
+            soldiers = b.soldiers();
+            if let Some(f) = b.profile() {
+                phases.substeps += f.substeps;
+                for (a, x) in phases.phases.iter_mut().zip(f.phases) {
+                    *a += x;
+                }
+            }
         }
-        if seeds <= 1 {
-            print!("{report}");
-        }
+        (wall, seconds, phases, soldiers)
+    };
+    let (wall, seconds, phases, soldiers) = time(BattleModel::Soldiers);
+    let per_s = |x: f64| 1000.0 * x / seconds.max(1.0);
+    println!(
+        "{lineup}: {soldiers} soldiers, {seeds} battles of {:.1} min on average",
+        seconds / 60.0 / seeds as f64
+    );
+    println!(
+        "soldier model: {} substeps, {:.3} ms per battle second, {:.1} ms per battle",
+        phases.substeps,
+        per_s(wall),
+        1000.0 * wall / seeds as f64
+    );
+    let ns = 1e9 * phases.phases.iter().sum::<f64>()
+        / (phases.substeps.max(1) as f64 * soldiers.max(1) as f64);
+    for (name, x) in Profile::PHASES.iter().zip(phases.phases) {
+        println!("  {name:<20} {:.4} ms per battle second", per_s(x));
     }
-    if seeds > 1 {
-        println!("{lineup}: attackers won {att}, defenders {def} of {seeds}");
-    }
+    println!("  {:<20} {ns:.1} ns per soldier per substep", "all phases");
+    let (wall, seconds, _, _) = time(BattleModel::Squads);
+    println!(
+        "squad model: {:.4} ms per battle second, {:.2} ms per battle ({:.1} min on average)",
+        1000.0 * wall / seconds.max(1.0),
+        1000.0 * wall / seeds as f64,
+        seconds / 60.0 / seeds as f64
+    );
 }
 
 fn die(msg: &str) -> ! {
@@ -288,7 +410,7 @@ fn main() {
         return;
     }
     if let Some(lineup) = &args.battle {
-        run_battle(lineup, &params.battle, args.seed.unwrap_or(1), args.seeds);
+        run_battle(lineup, &params.battle, &args);
         return;
     }
     if args.tech_tree {

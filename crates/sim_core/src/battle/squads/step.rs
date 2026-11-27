@@ -2,7 +2,7 @@
 
 use super::*;
 
-impl Battle {
+impl SquadBattle {
     /// Advance the battle by one step of `params.dt` seconds.
     #[allow(clippy::needless_range_loop)] // squads are indexed while self is mutated
     pub fn step(&mut self) {

@@ -1,9 +1,9 @@
-//! Squad battles on a small field.
+//! Battles between squads on a small field.
 //!
 //! The war redesign (design note "Econoplex war redesign") makes the squad the
 //! unit of war: 10 to 40 people of one type, raised by one town, with one morale
-//! and one place on the field. This module fights one battle between squads,
-//! second by second, from physical properties only:
+//! and one place on the field. This module fights one battle between squads
+//! from physical properties only:
 //!
 //! - **Kit** gives reach, strike damage and rate, bow range and arrows, armour,
 //!   a shield and whether the squad is mounted. Spears outreach swords, a lance
@@ -19,17 +19,26 @@
 //! down, arrows thin a slow levy, swords get inside a spear's reach, and walls
 //! narrow the attacker's front to the breach.
 //!
-//! The battle is deterministic for a seed. It can run to the end on its own
-//! (auto-resolve), or a player can pause between steps and change orders: the
-//! same rules run either way. The caller (a raid, `systems::military`, or the
-//! `--battle` command) builds [`SquadSpec`]s and reads the [`Report`] (and
-//! updated members) back.
+//! Two models fight the same battle (`battle.model` in `models.ron`):
+//!
+//! - [`squads`]: each squad is a disc with one morale, settled with dice per
+//!   squad each second. Cheap; the war planner's forecasts always use it.
+//! - [`soldiers`]: every soldier has a place, a facing, a morale, a fatigue and
+//!   their own kit, so flanks, broken lines and tired armies come out of the
+//!   positions (design note `docs/design/battle-per-soldier.md`).
+//!
+//! [`Battle`] is either one, with the same methods and outputs. The battle is
+//! deterministic for a seed. It can run to the end on its own (auto-resolve),
+//! or a player can pause between steps and change orders: the same rules run
+//! either way. The caller (a raid, `systems::military`, or the `--battle`
+//! command) builds [`SquadSpec`]s and reads the [`Report`] (and updated
+//! members) back.
 
-mod combat;
 mod kit;
 mod lineup;
 mod report;
-mod step;
+pub mod soldiers;
+pub mod squads;
 #[cfg(test)]
 mod tests;
 
@@ -37,15 +46,36 @@ pub use kit::*;
 pub use lineup::*;
 pub use report::*;
 
-use rand::{Rng, SeedableRng};
-use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+
+/// Which model fights a battle (`battle.model` in `models.ron`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BattleModel {
+    /// Squads as discs, dice per squad.
+    #[default]
+    Squads,
+    /// Every soldier simulated.
+    Soldiers,
+}
+
+impl std::str::FromStr for BattleModel {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, String> {
+        match s.to_ascii_lowercase().as_str() {
+            "squads" => Ok(Self::Squads),
+            "soldiers" => Ok(Self::Soldiers),
+            _ => Err(format!("unknown battle model `{s}` (squads or soldiers)")),
+        }
+    }
+}
 
 /// Physical constants of a battle (`battle:` in `models.ron`).
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct BattleParams {
+    /// Which model fights the battle.
+    pub model: BattleModel,
     /// Seconds per step, and the longest a battle may last.
     pub dt: f32,
     pub max_seconds: f32,
@@ -97,11 +127,14 @@ pub struct BattleParams {
     /// of the gate or breach the attackers must fight through, in metres.
     pub wall_cover: f32,
     pub breach_width: f32,
+    /// Constants only the soldier model uses.
+    pub soldiers: soldiers::SoldierParams,
 }
 
 impl Default for BattleParams {
     fn default() -> Self {
         Self {
+            model: BattleModel::Squads,
             dt: 1.0,
             max_seconds: 3.0 * 3600.0,
             walk_speed: 1.4,
@@ -131,6 +164,7 @@ impl Default for BattleParams {
             rout_at: 0.15,
             wall_cover: 0.6,
             breach_width: 6.0,
+            soldiers: soldiers::SoldierParams::default(),
         }
     }
 }
@@ -180,147 +214,142 @@ pub enum SquadState {
     Destroyed,
 }
 
-#[derive(Clone, Debug)]
-struct Squad {
-    spec: SquadSpec,
-    state: SquadState,
-    morale: f32,
-    order: Order,
-    /// Arrows left for the whole squad.
-    arrows: u32,
-    /// The enemy this squad faces; blows from any other enemy in contact are flank blows.
-    primary: Option<usize>,
-    /// Enemies in melee contact last step.
-    contacts: Vec<usize>,
-    /// Seconds until a shorter weapon is inside this squad's reach (or this
-    /// squad's inside the other's), per enemy in contact.
-    closing: Vec<(usize, f32)>,
-    /// Metres moved last step, per second.
-    speed: f32,
-    /// Seconds since the squad last lost anyone or was in contact.
-    quiet: f32,
-    engaged: bool,
-    wavering: bool,
-    /// Effective skill and discipline, refreshed every step.
-    eff: f32,
-    discipline: f32,
+/// What both models keep, so [`Battle`] reports on either the same way.
+trait Model {
+    fn params(&self) -> &BattleParams;
+    fn field(&self) -> &Field;
+    fn seconds(&self) -> f32;
+    /// Advance one step of `params.dt` battle seconds.
+    fn step(&mut self);
+    fn set_order(&mut self, squad: usize, order: Order);
+    fn order(&self, squad: usize) -> Order;
+    /// How many squads fight.
+    fn count(&self) -> usize;
+    /// A squad as it fights: its kit, side and members with their health now.
+    fn spec(&self, squad: usize) -> &SquadSpec;
+    fn position(&self, squad: usize) -> (f32, f32);
+    fn state(&self, squad: usize) -> SquadState;
+    fn morale(&self, squad: usize) -> f32;
+    fn events(&self) -> &[Event];
+    /// Whether the squad fought (struck, shot or was hit), and forget it.
+    fn take_engaged(&mut self, squad: usize) -> bool;
+    fn members_mut(&mut self, squad: usize) -> &mut [Member];
 }
 
-impl Squad {
-    fn alive(&self) -> usize {
-        self.spec.members.iter().filter(|m| m.health > 0.0).count()
-    }
-    fn fighting(&self) -> bool {
-        self.state == SquadState::Fighting
-    }
-    fn on_field(&self) -> bool {
-        matches!(self.state, SquadState::Fighting | SquadState::Routing)
-    }
-    fn spacing(&self, p: &BattleParams) -> f32 {
-        if self.spec.kit.mounted {
-            p.horse_spacing
-        } else {
-            p.foot_spacing
+/// Which sides still have a squad fighting.
+fn sides_fighting(m: &(impl Model + ?Sized)) -> [bool; 2] {
+    let mut f = [false; 2];
+    for s in 0..m.count() {
+        if m.state(s) == SquadState::Fighting {
+            f[(m.spec(s).side as usize).min(1)] = true;
         }
     }
-    /// Half the depth of the formation: a squad is a disc for distances.
-    fn radius(&self, p: &BattleParams) -> f32 {
-        (self.alive() as f32).sqrt() * self.spacing(p) * 0.5 + 0.5
-    }
-    fn front(&self, p: &BattleParams) -> f32 {
-        (self.alive() as f32).min(p.frontage / self.spacing(p))
-    }
-    fn has_bow(&self) -> bool {
-        self.spec.kit.range > 0.0 && self.arrows > 0
-    }
+    f
 }
 
-/// A battle in progress.
-pub struct Battle {
-    pub params: BattleParams,
-    pub field: Field,
-    squads: Vec<Squad>,
-    t: f32,
-    rng: ChaCha8Rng,
-    events: Vec<Event>,
+/// The battle is over when time is up, or when one side has no squad left
+/// fighting and every routing squad has left the field (pursuit goes on until then).
+fn finished(m: &(impl Model + ?Sized)) -> bool {
+    if m.seconds() >= m.params().max_seconds {
+        return true;
+    }
+    let decided = sides_fighting(m).iter().filter(|&&b| b).count() < 2;
+    decided && !(0..m.count()).any(|s| m.state(s) == SquadState::Routing)
+}
+
+/// A battle in progress, on either model.
+pub enum Battle {
+    Squads(Box<squads::SquadBattle>),
+    Soldiers(Box<soldiers::SoldierBattle>),
 }
 
 impl Battle {
+    /// A battle on the model `params.model` chooses.
     pub fn new(params: BattleParams, field: Field, specs: Vec<SquadSpec>, seed: u64) -> Self {
-        let squads = specs
-            .into_iter()
-            .map(|spec| Squad {
-                arrows: spec.kit.arrows * spec.members.len() as u32,
-                morale: spec.morale.clamp(0.0, 1.0),
-                state: if spec.members.iter().any(|m| m.health > 0.0) {
-                    SquadState::Fighting
-                } else {
-                    SquadState::Destroyed
-                },
-                spec,
-                order: Order::Auto,
-                primary: None,
-                contacts: Vec::new(),
-                closing: Vec::new(),
-                speed: 0.0,
-                quiet: 0.0,
-                engaged: false,
-                wavering: false,
-                eff: 0.0,
-                discipline: 0.0,
-            })
-            .collect();
-        Self {
-            params,
-            field,
-            squads,
-            t: 0.0,
-            rng: ChaCha8Rng::seed_from_u64(seed),
-            events: Vec::new(),
+        match params.model {
+            BattleModel::Squads => Self::Squads(Box::new(squads::SquadBattle::new(
+                params, field, specs, seed,
+            ))),
+            BattleModel::Soldiers => Self::Soldiers(Box::new(soldiers::SoldierBattle::new(
+                params, field, specs, seed,
+            ))),
+        }
+    }
+
+    fn model(&self) -> &dyn Model {
+        match self {
+            Self::Squads(b) => b.as_ref(),
+            Self::Soldiers(b) => b.as_ref(),
+        }
+    }
+
+    fn model_mut(&mut self) -> &mut dyn Model {
+        match self {
+            Self::Squads(b) => b.as_mut(),
+            Self::Soldiers(b) => b.as_mut(),
+        }
+    }
+
+    pub fn params(&self) -> &BattleParams {
+        self.model().params()
+    }
+
+    /// On the soldier model, time each phase from now on (`--profile`).
+    pub fn enable_profile(&mut self) {
+        if let Self::Soldiers(b) = self {
+            b.enable_profile();
+        }
+    }
+
+    /// Time spent per phase so far, on the soldier model with profiling on.
+    pub fn profile(&self) -> Option<soldiers::Profile> {
+        match self {
+            Self::Squads(_) => None,
+            Self::Soldiers(b) => b.profile(),
+        }
+    }
+
+    /// How many fighters the battle started with.
+    pub fn soldiers(&self) -> usize {
+        let m = self.model();
+        (0..m.count()).map(|s| m.spec(s).members.len()).sum()
+    }
+
+    /// Advance the battle by one step of `params.dt` seconds.
+    pub fn step(&mut self) {
+        if !self.finished() {
+            self.model_mut().step();
         }
     }
 
     /// Give a squad an order (between steps: the player's pause).
     pub fn set_order(&mut self, squad: usize, order: Order) {
-        if let Some(s) = self.squads.get_mut(squad) {
-            s.order = order;
+        if squad < self.model().count() {
+            self.model_mut().set_order(squad, order);
         }
     }
 
     pub fn seconds(&self) -> f32 {
-        self.t
+        self.model().seconds()
     }
 
+    /// Where a squad stands: its centre, metres.
     pub fn position(&self, squad: usize) -> (f32, f32) {
-        self.squads[squad].spec.pos
+        self.model().position(squad)
     }
 
     pub fn state(&self, squad: usize) -> SquadState {
-        self.squads[squad].state
+        self.model().state(squad)
     }
 
     pub fn morale(&self, squad: usize) -> f32 {
-        self.squads[squad].morale
+        self.model().morale(squad)
     }
 
     /// The battle is over when time is up, or when one side has no squad left
     /// fighting and every routing squad has left the field (pursuit goes on until then).
     pub fn finished(&self) -> bool {
-        if self.t >= self.params.max_seconds {
-            return true;
-        }
-        let decided = self.sides_fighting().iter().filter(|&&b| b).count() < 2;
-        decided && !self.squads.iter().any(|s| s.state == SquadState::Routing)
-    }
-
-    fn sides_fighting(&self) -> [bool; 2] {
-        let mut f = [false; 2];
-        for s in &self.squads {
-            if s.fighting() {
-                f[(s.spec.side as usize).min(1)] = true;
-            }
-        }
-        f
+        finished(self.model())
     }
 
     /// Run to the end with the current orders (auto-resolve).
@@ -332,11 +361,28 @@ impl Battle {
     }
 
     pub fn field_size(&self) -> (f32, f32) {
-        (self.field.width, self.field.height)
+        let f = self.model().field();
+        (f.width, f.height)
     }
 
     pub fn side(&self, squad: usize) -> Option<u8> {
-        self.squads.get(squad).map(|s| s.spec.side)
+        let m = self.model();
+        (squad < m.count()).then(|| m.spec(squad).side)
+    }
+
+    fn replay_squads(&self) -> Vec<ReplaySquad> {
+        let m = self.model();
+        (0..m.count())
+            .map(|s| {
+                let spec = m.spec(s);
+                ReplaySquad {
+                    name: spec.name.clone(),
+                    side: spec.side,
+                    mounted: spec.kit.mounted,
+                    start: spec.members.len() as u16,
+                }
+            })
+            .collect()
     }
 
     /// The battle as the game shows it while the player fights it.
@@ -347,24 +393,16 @@ impl Battle {
         facing: (f32, f32),
         player_side: u8,
     ) -> LiveView {
+        let m = self.model();
         let finished = self.finished();
         LiveView {
             town,
             at,
             facing,
             field: self.field_size(),
-            squads: self
-                .squads
-                .iter()
-                .map(|s| ReplaySquad {
-                    name: s.spec.name.clone(),
-                    side: s.spec.side,
-                    mounted: s.spec.kit.mounted,
-                    start: s.spec.members.len() as u16,
-                })
-                .collect(),
-            orders: self.squads.iter().map(|s| s.order).collect(),
-            morale: self.squads.iter().map(|s| s.morale).collect(),
+            squads: self.replay_squads(),
+            orders: (0..m.count()).map(|s| m.order(s)).collect(),
+            morale: (0..m.count()).map(|s| m.morale(s)).collect(),
             frame: self.frame(),
             player_side,
             finished,
@@ -374,33 +412,37 @@ impl Battle {
 
     /// Where every squad stands now.
     pub fn frame(&self) -> ReplayFrame {
+        let m = self.model();
         ReplayFrame {
-            t: self.t,
-            squads: self
-                .squads
-                .iter()
-                .map(|s| (s.spec.pos.0, s.spec.pos.1, s.alive() as u16, s.state))
+            t: m.seconds(),
+            squads: (0..m.count())
+                .map(|s| {
+                    let (x, y) = m.position(s);
+                    (x, y, standing(m.spec(s)) as u16, m.state(s))
+                })
                 .collect(),
         }
     }
 
     /// Like [`Self::run`], recording a frame every `every` seconds (and the last).
     pub fn run_recorded(&mut self, every: f32) -> (Report, Vec<ReplaySquad>, Vec<ReplayFrame>) {
-        let squads = self
-            .squads
-            .iter()
-            .map(|s| ReplaySquad {
-                name: s.spec.name.clone(),
-                side: s.spec.side,
-                mounted: s.spec.kit.mounted,
-                start: s.alive() as u16,
+        let m = self.model();
+        let squads = (0..m.count())
+            .map(|s| {
+                let spec = m.spec(s);
+                ReplaySquad {
+                    name: spec.name.clone(),
+                    side: spec.side,
+                    mounted: spec.kit.mounted,
+                    start: standing(spec) as u16,
+                }
             })
             .collect();
         let mut frames = vec![self.frame()];
         let mut next = every;
         while !self.finished() {
             self.step();
-            if self.t >= next {
+            if self.seconds() >= next {
                 frames.push(self.frame());
                 next += every;
             }
@@ -412,83 +454,61 @@ impl Battle {
     /// Survivors gain a battle's experience; the report is returned and the
     /// members (with their wounds and experience) can be read back with [`Self::members`].
     pub fn finish(&mut self) -> Report {
-        for s in &mut self.squads {
-            if s.engaged {
-                for m in &mut s.spec.members {
-                    if m.health > 0.0 {
-                        m.experience += 1.0;
+        let m = self.model_mut();
+        for s in 0..m.count() {
+            if m.take_engaged(s) {
+                for member in m.members_mut(s) {
+                    if member.health > 0.0 {
+                        member.experience += 1.0;
                     }
                 }
-                s.engaged = false;
             }
         }
         self.report()
     }
 
     pub fn members(&self, squad: usize) -> &[Member] {
-        &self.squads[squad].spec.members
+        &self.model().spec(squad).members
     }
 
     pub fn report(&self) -> Report {
-        let f = self.sides_fighting();
-        let winner = match f {
+        let m = self.model();
+        let winner = match sides_fighting(m) {
             [true, false] => Some(0),
             [false, true] => Some(1),
             [false, false] => Some(1), // nobody left: the defenders keep their town
             _ => None,
         };
-        let death = self.params.death_below;
+        let death = m.params().death_below;
         Report {
             winner,
-            seconds: self.t,
-            squads: self
-                .squads
-                .iter()
+            seconds: m.seconds(),
+            squads: (0..m.count())
                 .map(|s| {
-                    let m = &s.spec.members;
+                    let spec = m.spec(s);
+                    let members = &spec.members;
                     SquadReport {
-                        name: s.spec.name.clone(),
-                        side: s.spec.side,
-                        kit: s.spec.kit.name.clone(),
-                        start: m.len(),
-                        standing: m.iter().filter(|m| m.health > 0.0).count(),
-                        wounded: m
+                        name: spec.name.clone(),
+                        side: spec.side,
+                        kit: spec.kit.name.clone(),
+                        start: members.len(),
+                        standing: standing(spec),
+                        wounded: members
                             .iter()
                             .filter(|m| m.health <= 0.0 && m.health > death)
                             .count(),
-                        dead: m.iter().filter(|m| m.health <= death).count(),
-                        state: s.state,
-                        morale: s.morale,
+                        dead: members.iter().filter(|m| m.health <= death).count(),
+                        state: m.state(s),
+                        morale: m.morale(s),
                     }
                 })
                 .collect(),
-            events: self.events.clone(),
+            events: m.events().to_vec(),
         }
     }
+}
 
-    fn event(&mut self, kind: EventKind) {
-        self.events.push(Event { t: self.t, kind });
-    }
-
-    fn dist(&self, a: usize, b: usize) -> f32 {
-        let (p, q) = (self.squads[a].spec.pos, self.squads[b].spec.pos);
-        ((p.0 - q.0).powi(2) + (p.1 - q.1).powi(2)).sqrt()
-    }
-
-    /// Distance between the squads' edges.
-    fn gap(&self, a: usize, b: usize) -> f32 {
-        let p = &self.params;
-        self.dist(a, b) - self.squads[a].radius(p) - self.squads[b].radius(p)
-    }
-
-    fn enemies(&self, i: usize) -> impl Iterator<Item = usize> + '_ {
-        let side = self.squads[i].spec.side;
-        (0..self.squads.len()).filter(move |&j| self.squads[j].spec.side != side)
-    }
-
-    fn nearest(&self, i: usize, keep: impl Fn(&Squad) -> bool) -> Option<usize> {
-        self.enemies(i)
-            .filter(|&j| keep(&self.squads[j]))
-            .min_by(|&a, &b| self.dist(i, a).total_cmp(&self.dist(i, b)).then(a.cmp(&b)))
-    }
+/// Members of a squad still standing.
+fn standing(spec: &SquadSpec) -> usize {
+    spec.members.iter().filter(|m| m.health > 0.0).count()
 }

@@ -417,6 +417,60 @@ rate with room for chance:
 6. A 40-year comparison of auto-resolve on soldiers against squads. Switch the
    default only if it is affordable and the outcomes make sense.
 
+## Where steps 1 and 2 stand
+
+The model is in `battle/soldiers/`, behind `battle.model` (default `Squads`).
+Tuning added a few rules that the note above did not name:
+
+- A squad starts facing the enemy army as a whole, not the nearest squad, so
+  `#flank` meets an enemy that has to wheel.
+- A soldier turns at `soldier_turn` radians per second. A blow from a side
+  they have not turned to yet is a flank blow.
+- Any steady soldier who arrives at a run charges, not only one who is still
+  formed. Before this, only the point of a wedge charged.
+- Seeing a foe break gives a soldier heart (`foe_breaks`). Without it, two
+  squads often broke together, and a draw goes to the defenders: mirror images
+  split 37 to 63.
+- Two counts per squad. Cohesion counts only the fallen, so a rout does not
+  feed on itself. Refilling the ranks counts everyone who left the line.
+- Defenders on a wall strike over twice the breach width, and a man climbing
+  through it cannot parry.
+
+`--compare`, 50 seeds, side 0's wins (squads / soldiers):
+
+| Line-up | Squads | Soldiers |
+| --- | --- | --- |
+| `cavalry*20 vs spearmen*30` | 0 | 1 |
+| `cavalry*20 vs archers*30` | 50 | 47 |
+| `levy*40 vs archers*30` | 0 | 0 |
+| `swordsmen*30 vs spearmen*30` | 50 | 50 |
+| `swordsmen*25+20 vs swordsmen*30` | 50 | 50 |
+| `swordsmen*45 vs walls spearmen*30` | 0 | 0 |
+| `swordsmen*30!0.3 vs swordsmen*30!0.9` | 0 | 0 |
+| `swordsmen*100 vs swordsmen*100%0.8` | 22 | 50 |
+| two squads a side, frontal | 29 | 24 |
+| the same with `#flank` | 19 | 48 |
+| `swordsmen*200 vs swordsmen*200` | 25 | 24 |
+| `swordsmen*2000 vs swordsmen*2000` | 26 | 27 |
+
+The equal-armies test holds at 200 and at 2,000 a side, also with the sides
+swapped. The flank test does not reach the bar. With the frontal mirror near
+25 of 50, a margin of 25 needs the flank to win nearly every battle, and it
+wins 46 to 48 of 50: 19 to 25 more than frontally over four sets of 50 seeds.
+The test is written to the bar and marked `#[ignore]` until that is settled.
+
+**Cost.** Measured on a shared 4-core VM, timings vary about 15% from run to
+run. The yardstick is 50 squads of 40 a side, a 6.4-minute battle:
+
+| Measure | Budget | Measured |
+| --- | --- | --- |
+| ms per battle second, one core | ≤ 1 | 1.39 (best of 3) |
+| ns per soldier per substep | ≤ 60 | 87 |
+| one battle | ≤ 2 s | 0.53 s |
+
+The soldier controllers take 40% of the time. Apply, the grid and the blows
+take about 15% each. The model is not yet within 1 ms per battle second.
+
 ## Open questions
 
 - Should auto-resolved raids ever use the soldier model, or only battles the

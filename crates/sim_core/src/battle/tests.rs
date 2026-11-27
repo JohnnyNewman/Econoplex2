@@ -1,11 +1,32 @@
-use super::*;
+//! The squad model's tests. The matchups run on both models: the soldier
+//! model must keep them.
 
-fn wins(lineup: &str, seeds: u64) -> (u64, u64) {
-    let mut att = 0;
-    let mut def = 0;
-    for seed in 0..seeds {
-        let (field, specs) = parse_lineup(lineup).unwrap();
-        let r = Battle::new(BattleParams::default(), field, specs, seed).run();
+use super::*;
+use rayon::prelude::*;
+
+const MODELS: [BattleModel; 2] = [BattleModel::Squads, BattleModel::Soldiers];
+
+pub(super) fn params(model: BattleModel) -> BattleParams {
+    BattleParams {
+        model,
+        ..BattleParams::default()
+    }
+}
+
+/// One report per seed `0..seeds`, fought on all threads.
+pub(super) fn reports(model: BattleModel, lineup: &str, seeds: u64) -> Vec<Report> {
+    (0..seeds)
+        .into_par_iter()
+        .map(|seed| {
+            let (field, specs) = parse_lineup(lineup).unwrap();
+            Battle::new(params(model), field, specs, seed).run()
+        })
+        .collect()
+}
+
+pub(super) fn wins_on(model: BattleModel, lineup: &str, seeds: u64) -> (u64, u64) {
+    let (mut att, mut def) = (0, 0);
+    for r in reports(model, lineup, seeds) {
         match r.winner {
             Some(0) => att += 1,
             Some(_) => def += 1,
@@ -15,11 +36,9 @@ fn wins(lineup: &str, seeds: u64) -> (u64, u64) {
     (att, def)
 }
 
-fn losses(lineup: &str, seeds: u64) -> (usize, usize) {
+pub(super) fn losses_on(model: BattleModel, lineup: &str, seeds: u64) -> (usize, usize) {
     let (mut a, mut d) = (0, 0);
-    for seed in 0..seeds {
-        let (field, specs) = parse_lineup(lineup).unwrap();
-        let r = Battle::new(BattleParams::default(), field, specs, seed).run();
+    for r in reports(model, lineup, seeds) {
         for s in &r.squads {
             let lost = s.wounded + s.dead;
             if s.side == 0 {
@@ -34,11 +53,13 @@ fn losses(lineup: &str, seeds: u64) -> (usize, usize) {
 
 #[test]
 fn same_seed_same_battle() {
-    let run = |seed| {
-        let (field, specs) = parse_lineup("swordsmen*30,archers*20 vs spearmen*30").unwrap();
-        Battle::new(BattleParams::default(), field, specs, seed).run()
-    };
-    assert_eq!(run(7), run(7));
+    for model in MODELS {
+        let run = |seed| {
+            let (field, specs) = parse_lineup("swordsmen*30,archers*20 vs spearmen*30").unwrap();
+            Battle::new(params(model), field, specs, seed).run()
+        };
+        assert_eq!(run(7), run(7), "{model:?}");
+    }
 }
 
 /// Equal armies on an open field win about half the time each, at any size:
@@ -52,7 +73,7 @@ fn equal_armies_win_about_half_the_time() {
         "cavalry*200 vs cavalry*200",
         "swordsmen*40,swordsmen*40,swordsmen*40 vs swordsmen*40,swordsmen*40,swordsmen*40",
     ] {
-        let (att, def) = wins(lineup, 100);
+        let (att, def) = wins_on(BattleModel::Squads, lineup, 100);
         assert!(
             (35..=65).contains(&att) && att + def >= 90,
             "{lineup}: attackers won {att}, defenders {def} of 100"
@@ -62,85 +83,127 @@ fn equal_armies_win_about_half_the_time() {
 
 #[test]
 fn spear_wall_stops_a_charge() {
-    let (att, def) = wins("cavalry*20 vs spearmen*30", 20);
-    assert!(
-        def >= 14,
-        "spearmen won {def} of 20 against cavalry (cavalry {att})"
-    );
+    for model in MODELS {
+        let (att, def) = wins_on(model, "cavalry*20 vs spearmen*30", 20);
+        assert!(
+            def >= 14,
+            "{model:?}: spearmen won {def} of 20 against cavalry (cavalry {att})"
+        );
+    }
 }
 
 #[test]
 fn cavalry_rides_down_archers() {
-    let (att, _) = wins("cavalry*20 vs archers*30", 20);
-    assert!(att >= 16, "cavalry won {att} of 20 against archers");
+    for model in MODELS {
+        let (att, _) = wins_on(model, "cavalry*20 vs archers*30", 20);
+        assert!(
+            att >= 16,
+            "{model:?}: cavalry won {att} of 20 against archers"
+        );
+    }
 }
 
 #[test]
 fn arrows_break_a_levy() {
-    let (_, def) = wins("levy*40 vs archers*30", 20);
-    assert!(def >= 14, "archers won {def} of 20 against a levy");
+    for model in MODELS {
+        let (_, def) = wins_on(model, "levy*40 vs archers*30", 20);
+        assert!(
+            def >= 14,
+            "{model:?}: archers won {def} of 20 against a levy"
+        );
+    }
 }
 
 #[test]
 fn swords_get_inside_spears() {
-    let (att, _) = wins("swordsmen*30 vs spearmen*30", 20);
-    assert!(att >= 14, "swordsmen won {att} of 20 against spearmen");
+    for model in MODELS {
+        let (att, _) = wins_on(model, "swordsmen*30 vs spearmen*30", 20);
+        assert!(
+            att >= 14,
+            "{model:?}: swordsmen won {att} of 20 against spearmen"
+        );
+    }
 }
 
 #[test]
 fn veterans_beat_more_recruits() {
-    let (att, _) = wins("swordsmen*25+20 vs swordsmen*30", 20);
-    assert!(att >= 14, "25 veterans won {att} of 20 against 30 recruits");
+    for model in MODELS {
+        let (att, _) = wins_on(model, "swordsmen*25+20 vs swordsmen*30", 20);
+        assert!(
+            att >= 14,
+            "{model:?}: 25 veterans won {att} of 20 against 30 recruits"
+        );
+    }
 }
 
 #[test]
 fn walls_hold_the_breach() {
-    let (open_a, _) = wins("swordsmen*45 vs spearmen*30", 20);
-    let (wall_a, _) = wins("swordsmen*45 vs walls spearmen*30", 20);
-    assert!(
-        wall_a + 6 <= open_a,
-        "attackers won {open_a} of 20 in the open but {wall_a} against walls"
-    );
-    let (a, d) = losses("swordsmen*45 vs walls spearmen*30", 10);
-    assert!(a > d, "attackers lost {a}, defenders on the wall {d}");
+    for model in MODELS {
+        let (open_a, _) = wins_on(model, "swordsmen*45 vs spearmen*30", 20);
+        let (wall_a, _) = wins_on(model, "swordsmen*45 vs walls spearmen*30", 20);
+        assert!(
+            wall_a + 6 <= open_a,
+            "{model:?}: attackers won {open_a} of 20 in the open but {wall_a} against walls"
+        );
+        let (a, d) = losses_on(model, "swordsmen*45 vs walls spearmen*30", 10);
+        assert!(
+            a > d,
+            "{model:?}: attackers lost {a}, defenders on the wall {d}"
+        );
+    }
 }
 
 #[test]
 fn hungry_squads_break_first() {
-    let (fed, _) = wins("swordsmen*30!0.9 vs swordsmen*30!0.9", 20);
-    let (hungry, _) = wins("swordsmen*30!0.3 vs swordsmen*30!0.9", 20);
-    assert!(
-        hungry + 5 <= fed,
-        "fed won {fed}, hungry won {hungry} of 20"
-    );
+    for model in MODELS {
+        let (fed, _) = wins_on(model, "swordsmen*30!0.9 vs swordsmen*30!0.9", 20);
+        let (hungry, _) = wins_on(model, "swordsmen*30!0.3 vs swordsmen*30!0.9", 20);
+        assert!(
+            hungry + 5 <= fed,
+            "{model:?}: fed won {fed}, hungry won {hungry} of 20"
+        );
+    }
 }
 
 #[test]
 fn routed_squads_leave_the_field() {
-    let (field, specs) = parse_lineup("levy*20!0.3 vs swordsmen*30+5").unwrap();
-    let r = Battle::new(BattleParams::default(), field, specs, 1).run();
-    assert_eq!(r.winner, Some(1));
-    assert!(
-        matches!(r.squads[0].state, SquadState::Fled | SquadState::Destroyed),
-        "{r}"
-    );
-    assert!(r
-        .events
-        .iter()
-        .any(|e| matches!(e.kind, EventKind::Routing(0))));
+    for model in MODELS {
+        for seed in 0..10 {
+            let (field, specs) = parse_lineup("levy*20!0.3 vs swordsmen*30+5").unwrap();
+            let r = Battle::new(params(model), field, specs, seed).run();
+            assert_eq!(r.winner, Some(1), "{model:?} seed {seed}: {r}");
+            assert!(
+                matches!(r.squads[0].state, SquadState::Fled | SquadState::Destroyed),
+                "{model:?} seed {seed}: {r}"
+            );
+            assert!(
+                r.events
+                    .iter()
+                    .any(|e| matches!(e.kind, EventKind::Routing(0))),
+                "{model:?} seed {seed}: {r}"
+            );
+        }
+    }
 }
 
 #[test]
 fn orders_change_the_battle() {
-    // Archers ordered to hold and shoot never close; ordered to attack, they do.
-    let (field, specs) = parse_lineup("archers*20 vs spearmen*20").unwrap();
-    let mut b = Battle::new(BattleParams::default(), field, specs, 3);
-    b.set_order(1, Order::Hold);
-    b.set_order(0, Order::Shoot(1));
-    for _ in 0..120 {
-        b.step();
+    // Archers ordered to hold and shoot never close.
+    for model in MODELS {
+        let (field, specs) = parse_lineup("archers*20 vs spearmen*20").unwrap();
+        let mut b = Battle::new(params(model), field, specs, 3);
+        b.set_order(1, Order::Hold);
+        b.set_order(0, Order::Shoot(1));
+        for _ in 0..120 {
+            b.step();
+        }
+        let (p, q) = (b.position(0), b.position(1));
+        let apart = (p.0 - q.0).hypot(p.1 - q.1);
+        assert!(
+            apart > 60.0,
+            "{model:?}: archers closed to {apart:.0} m despite their order"
+        );
     }
-    assert!(b.gap(0, 1) > 50.0, "archers closed in despite their order");
 }
 
 #[test]
@@ -205,8 +268,14 @@ fn content_kit_matches_the_presets() {
 
 #[test]
 fn a_recorded_battle_ends_where_the_report_says() {
+    for model in MODELS {
+        recorded(model);
+    }
+}
+
+fn recorded(model: BattleModel) {
     let (field, specs) = parse_lineup("cavalry*20 vs archers*30").unwrap();
-    let mut b = Battle::new(BattleParams::default(), field, specs, 5);
+    let mut b = Battle::new(params(model), field, specs, 5);
     let (report, squads, frames) = b.run_recorded(5.0);
     assert_eq!(squads.len(), 2);
     assert!(frames.len() > 2);
@@ -234,13 +303,17 @@ fn a_recorded_battle_ends_where_the_report_says() {
 
 #[test]
 fn survivors_gain_experience() {
-    let (field, specs) = parse_lineup("swordsmen*30 vs levy*20").unwrap();
-    let mut b = Battle::new(BattleParams::default(), field, specs, 2);
-    b.run();
-    assert!(b
-        .members(0)
-        .iter()
-        .any(|m| m.health > 0.0 && m.experience >= 1.0));
+    for model in MODELS {
+        let (field, specs) = parse_lineup("swordsmen*30 vs levy*20").unwrap();
+        let mut b = Battle::new(params(model), field, specs, 2);
+        b.run();
+        assert!(
+            b.members(0)
+                .iter()
+                .any(|m| m.health > 0.0 && m.experience >= 1.0),
+            "{model:?}"
+        );
+    }
 }
 
 /// A squad of 30 with the given melee damage per type and armour per type,
@@ -256,58 +329,79 @@ fn typed_squad(side: u8, damage: PerType, armour: PerType) -> SquadSpec {
 }
 
 /// How many of `seeds` battles side 0 wins, and side 1's losses.
-fn typed_battles(att: &SquadSpec, def: &SquadSpec, seeds: u64) -> (u64, usize) {
-    let (mut won, mut lost) = (0, 0);
-    for seed in 0..seeds {
-        let specs = vec![att.clone(), def.clone()];
-        let r = Battle::new(BattleParams::default(), Field::default(), specs, seed).run();
-        won += u64::from(r.winner == Some(0));
-        lost += r.squads[1].wounded + r.squads[1].dead;
-    }
+fn typed_battles(model: BattleModel, att: &SquadSpec, def: &SquadSpec, seeds: u64) -> (u64, usize) {
+    let rs: Vec<Report> = (0..seeds)
+        .into_par_iter()
+        .map(|seed| {
+            let specs = vec![att.clone(), def.clone()];
+            Battle::new(params(model), Field::default(), specs, seed).run()
+        })
+        .collect();
+    let won = rs.iter().filter(|r| r.winner == Some(0)).count() as u64;
+    let lost = rs
+        .iter()
+        .map(|r| r.squads[1].wounded + r.squads[1].dead)
+        .sum();
     (won, lost)
 }
 
 #[test]
 fn mail_turns_swords_better_than_spears() {
-    use sim_data::DamageType::{Pierce, Slash};
-    // The same blow by edge and by point: mail stops more of the edge.
-    let sword = Kit {
-        damage: typed(Slash, 0.6),
-        ..Kit::preset("swordsmen").unwrap()
-    };
-    let point = Kit {
-        damage: typed(Pierce, 0.6),
-        ..sword.clone()
-    };
-    assert!(sword.blow(0.0, &MAIL) < point.blow(0.0, &MAIL));
-    // In battle, mailed men facing edges lose fewer and win more.
-    let mailed = typed_squad(1, typed(Slash, 0.6), MAIL);
-    let (edge_won, edge_lost) =
-        typed_battles(&typed_squad(0, typed(Slash, 0.6), MAIL), &mailed, 40);
-    let (point_won, point_lost) =
-        typed_battles(&typed_squad(0, typed(Pierce, 0.6), MAIL), &mailed, 40);
-    eprintln!("against mail: swords won {edge_won}, lost {edge_lost}; spears won {point_won}, lost {point_lost}");
-    assert!(
-        point_won >= edge_won + 10 && point_lost > edge_lost,
-        "against mail: swords won {edge_won} of 40 (mail lost {edge_lost}), \
-         spears won {point_won} (mail lost {point_lost})"
-    );
+    for model in MODELS {
+        use sim_data::DamageType::{Pierce, Slash};
+        // The same blow by edge and by point: mail stops more of the edge.
+        let sword = Kit {
+            damage: typed(Slash, 0.6),
+            ..Kit::preset("swordsmen").unwrap()
+        };
+        let point = Kit {
+            damage: typed(Pierce, 0.6),
+            ..sword.clone()
+        };
+        assert!(sword.blow(0.0, &MAIL) < point.blow(0.0, &MAIL));
+        // In battle, mailed men facing edges lose fewer and win more.
+        let mailed = typed_squad(1, typed(Slash, 0.6), MAIL);
+        let (edge_won, edge_lost) =
+            typed_battles(model, &typed_squad(0, typed(Slash, 0.6), MAIL), &mailed, 40);
+        let (point_won, point_lost) = typed_battles(
+            model,
+            &typed_squad(0, typed(Pierce, 0.6), MAIL),
+            &mailed,
+            40,
+        );
+        eprintln!("{model:?}: against mail: swords won {edge_won}, lost {edge_lost}; spears won {point_won}, lost {point_lost}");
+        assert!(
+            point_won >= edge_won + 10 && point_lost > edge_lost,
+            "{model:?}: against mail: swords won {edge_won} of 40 (mail lost {edge_lost}), \
+             spears won {point_won} (mail lost {point_lost})"
+        );
+    }
 }
 
 #[test]
 fn blunt_beats_slash_against_plate() {
-    use sim_data::DamageType::{Blunt, Slash};
-    // Plate (not in the content yet): turns edges and points, a weight less.
-    let plate = [0.7, 0.75, 0.35];
-    let plated = typed_squad(1, typed(Slash, 0.6), plate);
-    let (slash_won, slash_lost) =
-        typed_battles(&typed_squad(0, typed(Slash, 0.6), plate), &plated, 40);
-    let (blunt_won, blunt_lost) =
-        typed_battles(&typed_squad(0, typed(Blunt, 0.6), plate), &plated, 40);
-    eprintln!("against plate: slash won {slash_won}, lost {slash_lost}; blunt won {blunt_won}, lost {blunt_lost}");
-    assert!(
-        blunt_won >= slash_won + 10 && blunt_lost > slash_lost,
-        "against plate: slash won {slash_won} of 40 (plate lost {slash_lost}), \
-         blunt won {blunt_won} (plate lost {blunt_lost})"
-    );
+    for model in MODELS {
+        use sim_data::DamageType::{Blunt, Slash};
+        // Plate (not in the content yet): turns edges and points, a weight less.
+        let plate = [0.7, 0.75, 0.35];
+        let plated = typed_squad(1, typed(Slash, 0.6), plate);
+        let (slash_won, slash_lost) = typed_battles(
+            model,
+            &typed_squad(0, typed(Slash, 0.6), plate),
+            &plated,
+            40,
+        );
+        let (blunt_won, blunt_lost) = typed_battles(
+            model,
+            &typed_squad(0, typed(Blunt, 0.6), plate),
+            &plated,
+            40,
+        );
+        eprintln!("{model:?}: against plate: slash won {slash_won}, lost {slash_lost}; blunt won {blunt_won}, lost {blunt_lost}");
+        assert!(
+            blunt_won >= slash_won + 10 && blunt_lost > slash_lost,
+            "{model:?}: against plate: slash won {slash_won} of 40 (plate lost {slash_lost}), \
+             blunt won {blunt_won} (plate lost {blunt_lost})"
+        );
+    }
 }

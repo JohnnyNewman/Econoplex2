@@ -65,10 +65,12 @@ pub(super) fn plan_raid(
         let (mut wins, mut dead, mut standing) = (0.0f32, 0.0f32, 0.0f32);
         for _ in 0..FORECASTS {
             let seed = rng.random::<u64>();
+            // A forecast is a guess: it fights on the cheap squad model.
             match setup_field_battle(
                 store,
                 db,
                 params,
+                crate::battle::BattleModel::Squads,
                 fight,
                 gear_defs,
                 &town.squad,
