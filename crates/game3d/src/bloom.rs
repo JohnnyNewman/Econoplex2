@@ -89,7 +89,7 @@ fn bloom_keys(keys: Res<ButtonInput<KeyCode>>, mut cams: Query<&mut BloomSetting
 }
 
 #[derive(Resource)]
-struct BloomPipelines {
+pub(crate) struct BloomPipelines {
     layout: BindGroupLayoutDescriptor,
     composite_layout: BindGroupLayoutDescriptor,
     sampler: Sampler,
@@ -180,7 +180,7 @@ fn init_pipelines(
 
 /// The mip chain of one camera.
 #[derive(Component)]
-struct BloomMips(Vec<CachedTexture>);
+pub(crate) struct BloomMips(Vec<CachedTexture>);
 
 /// Cameras with our bloom.
 type BloomViews = (With<ExtractedView>, With<BloomSettings>);
@@ -219,7 +219,7 @@ fn prepare_mips(
     }
 }
 
-fn bloom_pass(
+pub(crate) fn bloom_pass(
     view: bevy::render::renderer::ViewQuery<(&ViewTarget, &BloomSettings, &BloomMips)>,
     pipelines: Option<Res<BloomPipelines>>,
     cache: Res<PipelineCache>,
