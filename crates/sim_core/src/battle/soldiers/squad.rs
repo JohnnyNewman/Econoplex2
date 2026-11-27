@@ -15,6 +15,8 @@ struct Goal {
     target: Option<usize>,
     /// Marching or running pace, metres per second.
     pace: f32,
+    /// Backing away: it keeps facing `face` as it goes.
+    backing: bool,
 }
 
 impl SoldierBattle {
@@ -34,6 +36,7 @@ impl SoldierBattle {
             // Turn toward the goal, or toward what it faces while it stands.
             let want = goal
                 .to
+                .filter(|_| !goal.backing)
                 .map(|g| g - s.anchor)
                 .filter(|d| d.len2() > 1.0)
                 .or(goal.face.map(|f| f - s.centre))
@@ -67,7 +70,7 @@ impl SoldierBattle {
             s.facing = facing;
             s.target = goal.target;
             s.shoot_at = shoot_at;
-            if formation != s.formation {
+            if formation != s.formation || std::mem::take(&mut s.reform_due) {
                 self.reform(c, formation);
             }
         }
@@ -102,8 +105,21 @@ impl SoldierBattle {
         }
     }
 
+    /// A move the squad has reached gives way to its next order, if any.
+    fn advance(&mut self, c: usize) {
+        let s = &mut self.squads[c];
+        while let Order::MoveTo { anchor, .. } = s.order() {
+            if s.orders.len() < 2 || (V2::new(anchor.0, anchor.1) - s.anchor).len() > ARRIVED {
+                break;
+            }
+            s.orders.remove(0);
+            s.start_order();
+        }
+    }
+
     /// Where a squad goes, by its order or its own judgment.
     fn goal(&mut self, c: usize) -> Goal {
+        self.advance(c);
         let p = &self.params;
         let s = &self.squads[c];
         let (walk, run) = if s.mounted() {
@@ -116,6 +132,7 @@ impl SoldierBattle {
             face,
             target: None,
             pace: 0.0,
+            backing: false,
         };
         let nearest_face = self
             .nearest(c, |q| q.fighting())
@@ -128,6 +145,7 @@ impl SoldierBattle {
                     face: nearest_face,
                     target: None,
                     pace: walk,
+                    backing: false,
                 };
             }
             self.squads[c].rally = None;
@@ -154,13 +172,39 @@ impl SoldierBattle {
                         face: None,
                         target: Some(j),
                         pace: walk,
+                        backing: false,
                     };
                 }
                 return hold(Some(q.centre));
             }
         }
         let valid = |j: usize| j < self.squads.len() && self.squads[j].on_field();
-        let goal: Option<(V2, Option<usize>)> = match s.order {
+        let order = s.order();
+        // Skirmishers back away from enemies who come close, facing them,
+        // unless told to close with one or to go somewhere.
+        if s.stance.fire == Fire::Skirmish
+            && s.has_bow()
+            && !matches!(
+                order,
+                Order::Attack(_) | Order::MoveTo { .. } | Order::Withdraw
+            )
+        {
+            if let Some(j) = self
+                .nearest(c, |q| q.fighting())
+                .filter(|&j| self.ahead(c, j) < p.skirmish_distance)
+            {
+                let e = self.squads[j].centre;
+                return Goal {
+                    to: Some(s.anchor + (s.anchor - e).norm_or(-s.facing) * 20.0),
+                    face: Some(e),
+                    target: None,
+                    pace: run,
+                    backing: true,
+                };
+            }
+        }
+        let mut pace = None;
+        let goal: Option<(V2, Option<usize>)> = match order {
             Order::Hold => {
                 // Spears face the riders they brace against.
                 let riders = self
@@ -168,7 +212,20 @@ impl SoldierBattle {
                     .map(|j| self.squads[j].centre);
                 return hold(riders.or(nearest_face));
             }
-            Order::MoveTo(x, y) => Some((V2::new(x, y), None)),
+            Order::MoveTo {
+                anchor,
+                facing,
+                run: r,
+                ..
+            } => {
+                let to = V2::new(anchor.0, anchor.1);
+                if (to - s.anchor).len() <= ARRIVED {
+                    // There: stand, turned the way it was told.
+                    return hold(facing.map(|(x, y)| s.centre + V2::new(x, y) * 100.0));
+                }
+                pace = Some(if r { run } else { walk });
+                Some((to, None))
+            }
             Order::Withdraw => Some((V2::new(self.home_x(c), s.centre.y), None)),
             Order::Attack(j) if valid(j) => Some((self.squads[j].centre, Some(j))),
             Order::Shoot(j) if valid(j) => {
@@ -187,13 +244,21 @@ impl SoldierBattle {
                 .map(|j| self.squads[j].centre);
             return hold(riders.or(nearest_face));
         };
-        let near = target.is_some_and(|j| self.ahead(c, j) < p.charge_distance);
+        // An aggressive side's squads run in from further out.
+        let eager = order == Order::Auto && self.doctrine_of(c).posture == Posture::Aggressive;
+        let charge = p.charge_distance * if eager { 2.0 } else { 1.0 };
+        let near = target.is_some_and(|j| self.ahead(c, j) < charge);
         Goal {
             to: Some(to),
             face: None,
             target,
-            pace: if near { run } else { walk },
+            pace: pace.unwrap_or(if near { run } else { walk }),
+            backing: false,
         }
+    }
+
+    fn doctrine_of(&self, c: usize) -> Doctrine {
+        self.doctrine[(self.squads[c].spec.side as usize).min(1)]
     }
 
     /// A squad's own judgment, as on the squad model: where to go, and whom
@@ -204,11 +269,24 @@ impl SoldierBattle {
             return None;
         }
         let kit = &s.spec.kit;
+        // A cautious side's squads hold until an enemy comes close.
+        if self.doctrine_of(c).posture == Posture::Cautious
+            && self
+                .nearest(c, |q| q.fighting())
+                .is_none_or(|j| self.ahead(c, j) > self.params.cautious_wait)
+        {
+            return None;
+        }
         let target = if kit.mounted {
-            // Riders look for archers and fleeing squads, and steer clear of a
-            // spear wall while softer targets are about.
+            // Riders look for archers and fleeing squads (if they chase
+            // them), and steer clear of a spear wall while softer targets
+            // are about.
+            let pursue = s.pursues();
             self.enemies(c)
-                .filter(|&j| self.squads[j].on_field())
+                .filter(|&j| {
+                    let q = &self.squads[j];
+                    q.fighting() || (pursue && q.on_field())
+                })
                 .min_by(|&a, &b| {
                     let score = |j: usize| {
                         let q = &self.squads[j];
@@ -249,12 +327,15 @@ impl SoldierBattle {
     /// The squad its archers shoot: the ordered one in range, else the nearest.
     fn shoot_target(&self, c: usize) -> Option<usize> {
         let s = &self.squads[c];
-        if !s.has_bow() {
+        if !s.has_bow() || s.stance.fire == Fire::Hold {
             return None;
         }
         let range = s.spec.kit.range;
-        let ok = |j: usize| self.squads[j].on_field() && self.dist(c, j) <= range;
-        match s.order {
+        let ok = |j: usize| {
+            let q = &self.squads[j];
+            (q.fighting() || (s.pursues() && q.on_field())) && self.dist(c, j) <= range
+        };
+        match s.order() {
             Order::Shoot(j) | Order::Attack(j) if j < self.squads.len() && ok(j) => Some(j),
             _ => self
                 .enemies(c)
@@ -268,31 +349,36 @@ impl SoldierBattle {
         let s = &self.squads[c];
         let kit = &s.spec.kit;
         let sp = &self.params.soldiers;
+        let loose = match s.stance.spacing {
+            Spacing::Own => kit.range > 0.0 && !kit.mounted,
+            Spacing::Tight => false,
+            Spacing::Loose => true,
+        };
+        let spread = if loose {
+            Formation::Loose
+        } else {
+            Formation::Line
+        };
         if kit.mounted {
-            return if near {
-                Formation::Wedge
-            } else {
-                Formation::Line
-            };
+            return if near { Formation::Wedge } else { spread };
         }
         if kit.reach >= 2.5 {
             let riders = self.enemies(c).any(|j| {
                 let r = &self.squads[j];
                 r.fighting() && r.mounted() && self.dist(c, j) < sp.brace_riders
             });
-            if s.order == Order::Hold || riders {
+            if s.order() == Order::Hold || riders {
                 return Formation::Braced;
             }
         }
-        let marching = matches!(s.order, Order::MoveTo(..) | Order::Withdraw)
+        // A squad whose front the player set keeps it on the march.
+        let marching = s.width.is_none()
+            && matches!(s.order(), Order::MoveTo { .. } | Order::Withdraw)
             && to.is_some_and(|g| (g - s.anchor).len() > sp.column_beyond);
         if marching {
             return Formation::Column;
         }
-        if kit.range > 0.0 {
-            return Formation::Loose;
-        }
-        Formation::Line
+        spread
     }
 
     /// The soldiers of a squad standing in its line.
@@ -311,10 +397,16 @@ impl SoldierBattle {
         } else {
             p.foot_spacing
         };
-        match formation {
-            Formation::Line | Formation::Braced | Formation::Wedge => (p.frontage / base) as usize,
-            Formation::Loose => (p.frontage / p.soldiers.loose_spacing) as usize,
-            Formation::Column => p.soldiers.column_files as usize,
+        let spacing = if formation == Formation::Loose {
+            p.soldiers.loose_spacing
+        } else {
+            base
+        };
+        match (formation, s.width) {
+            (Formation::Column, _) => p.soldiers.column_files as usize,
+            (Formation::Wedge, _) | (_, None) => (p.frontage / spacing) as usize,
+            // The front the player set.
+            (_, Some(w)) => (w / spacing).round() as usize,
         }
         .max(1)
     }

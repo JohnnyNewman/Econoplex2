@@ -192,8 +192,8 @@ fn orders_change_the_battle() {
     for model in MODELS {
         let (field, specs) = parse_lineup("archers*20 vs spearmen*20").unwrap();
         let mut b = Battle::new(params(model), field, specs, 3);
-        b.set_order(1, Order::Hold);
-        b.set_order(0, Order::Shoot(1));
+        b.set_orders(1, &[Order::Hold]);
+        b.set_orders(0, &[Order::Shoot(1)]);
         for _ in 0..120 {
             b.step();
         }
@@ -404,4 +404,412 @@ fn blunt_beats_slash_against_plate() {
              blunt won {blunt_won} (plate lost {blunt_lost})"
         );
     }
+}
+
+/// The squad model takes the same orders: a move it has reached gives way
+/// to the next order, the facing and width of a move change nothing, and its
+/// frames carry no soldiers.
+#[test]
+fn the_squad_model_carries_out_orders_in_turn() {
+    let fight = |orders: &[Order]| {
+        let (field, specs) = parse_lineup("swordsmen*30,swordsmen*20 vs spearmen*40").unwrap();
+        let mut b = Battle::new(params(BattleModel::Squads), field, specs, 4);
+        b.set_orders(1, orders);
+        assert!(b.frame().soldiers.is_empty());
+        let v = b.live_view(0, (0.0, 0.0), (1.0, 0.0), 0);
+        assert!(!v.on_soldiers() && v.lines[1].anchor == b.position(1));
+        b.run()
+    };
+    let attack = fight(&[Order::Attack(2)]);
+    let (field, specs) = parse_lineup("swordsmen*30,swordsmen*20 vs spearmen*40").unwrap();
+    let here = Battle::new(params(BattleModel::Squads), field, specs, 4).position(1);
+    let first_here = [
+        Order::MoveTo {
+            anchor: here,
+            facing: Some((0.0, 1.0)),
+            width: Some(3.0),
+            run: false,
+        },
+        Order::Attack(2),
+    ];
+    assert_eq!(fight(&first_here), attack);
+}
+
+// Battle controls (module `control`), on both models where both have them.
+
+/// A battle of `lineup` on `model`, seed 1.
+fn battle(model: BattleModel, lineup: &str) -> Battle {
+    let (field, specs) = parse_lineup(lineup).unwrap();
+    Battle::new(params(model), field, specs, 1)
+}
+
+fn far((ax, ay): (f32, f32), (bx, by): (f32, f32)) -> f32 {
+    (ax - bx).hypot(ay - by)
+}
+
+/// A move at a run gets further than one at a march.
+#[test]
+fn a_run_outpaces_a_march() {
+    for model in MODELS {
+        let gone = |run: bool| {
+            let mut b = battle(model, "swordsmen*30 vs swordsmen*30");
+            let from = b.position(0);
+            let to = (from.0, from.1 + 150.0);
+            b.set_orders(1, &[Order::Hold]);
+            b.set_orders(
+                0,
+                &[Order::MoveTo {
+                    anchor: to,
+                    facing: None,
+                    width: None,
+                    run,
+                }],
+            );
+            for _ in 0..20 {
+                b.step();
+            }
+            far(b.position(0), from)
+        };
+        let (walk, run) = (gone(false), gone(true));
+        assert!(
+            run > 1.5 * walk && walk > 10.0,
+            "{model:?}: {walk} walking, {run} running"
+        );
+    }
+}
+
+/// Archers holding fire shoot nobody; at will they thin the enemy.
+#[test]
+fn archers_holding_fire_shoot_nobody() {
+    for model in MODELS {
+        let hit = |fire: Fire| {
+            let (field, mut specs) = parse_lineup("archers*30 vs swordsmen*30").unwrap();
+            specs[0].pos.0 = specs[1].pos.0 - 100.0;
+            let mut b = Battle::new(params(model), field, specs, 1);
+            b.set_orders(1, &[Order::Hold]);
+            b.set_orders(0, &[Order::Hold]);
+            b.command(
+                0,
+                Command::Stance(Stance {
+                    fire,
+                    ..Stance::default()
+                }),
+            )
+            .unwrap();
+            assert_eq!(b.stance(0).fire, fire);
+            for _ in 0..60 {
+                b.step();
+            }
+            b.members(1).iter().filter(|m| m.health < 1.0).count()
+        };
+        assert_eq!(hit(Fire::Hold), 0, "{model:?}");
+        assert!(hit(Fire::AtWill) > 0, "{model:?}");
+    }
+}
+
+/// Skirmishers give ground to swordsmen who come at them; archers at will
+/// stand.
+#[test]
+fn skirmishers_give_ground() {
+    for model in MODELS {
+        let back = |fire: Fire| {
+            let (field, mut specs) = parse_lineup("archers*30 vs swordsmen*30").unwrap();
+            specs[0].pos.0 = specs[1].pos.0 - 120.0;
+            let mut b = Battle::new(params(model), field, specs, 1);
+            b.set_stance(
+                0,
+                Stance {
+                    fire,
+                    ..Stance::default()
+                },
+            );
+            b.set_orders(0, &[Order::Hold]);
+            b.set_orders(1, &[Order::Attack(0)]);
+            let from = b.position(0).0;
+            for _ in 0..60 {
+                b.step();
+            }
+            from - b.position(0).0
+        };
+        let (skirmish, stand) = (back(Fire::Skirmish), back(Fire::AtWill));
+        assert!(
+            skirmish > 20.0 && stand < 5.0,
+            "{model:?}: gave {skirmish} m skirmishing, {stand} m standing"
+        );
+    }
+}
+
+/// A side that lets enemies who run go cuts fewer of them down than one
+/// that chases them. (The squad model's pursuit is a disc's: its routers
+/// mostly get away either way, so there it only must not kill more.)
+#[test]
+fn letting_them_go_kills_fewer() {
+    for model in MODELS {
+        let down = |prisoners: Pursuit| {
+            (0..6)
+                .map(|seed| {
+                    let (field, specs) = parse_lineup("cavalry*40 vs archers*30!0.5").unwrap();
+                    let mut b = Battle::new(params(model), field, specs, seed);
+                    b.set_doctrine(
+                        0,
+                        Doctrine {
+                            prisoners,
+                            ..Doctrine::default()
+                        },
+                    );
+                    assert_eq!(b.stance(0).pursuit, prisoners);
+                    let r = b.run().squads[1].clone();
+                    r.start - r.standing
+                })
+                .sum::<usize>()
+        };
+        let (kill, go) = (down(Pursuit::Kill), down(Pursuit::LetGo));
+        let fewer = match model {
+            BattleModel::Squads => go <= kill,
+            BattleModel::Soldiers => (go as f32) < 0.8 * kill as f32,
+        };
+        assert!(fewer, "{model:?}: {go} down let go, {kill} cut down");
+    }
+}
+
+/// A cautious side's squads hold their ground until the enemy comes close;
+/// a balanced side's march out.
+#[test]
+fn a_cautious_side_waits_for_the_enemy() {
+    for model in MODELS {
+        let moved = |posture: Posture| {
+            let mut b = battle(model, "swordsmen*30 vs swordsmen*30");
+            b.set_orders(0, &[Order::Hold]);
+            b.set_doctrine(
+                1,
+                Doctrine {
+                    posture,
+                    ..Doctrine::default()
+                },
+            );
+            let from = b.position(1);
+            for _ in 0..60 {
+                b.step();
+            }
+            far(b.position(1), from)
+        };
+        let (cautious, balanced) = (moved(Posture::Cautious), moved(Posture::Balanced));
+        assert!(
+            cautious < 3.0 && balanced > 30.0,
+            "{model:?}: {cautious} m cautious, {balanced} m balanced"
+        );
+    }
+}
+
+/// An aggressive side's squads break into a run from further out.
+#[test]
+fn an_aggressive_side_runs_in_sooner() {
+    for model in MODELS {
+        let covered = |posture: Posture| {
+            let (field, mut specs) = parse_lineup("swordsmen*30 vs swordsmen*30").unwrap();
+            specs[0].pos.0 = specs[1].pos.0 - 110.0;
+            let mut b = Battle::new(params(model), field, specs, 1);
+            b.set_orders(1, &[Order::Hold]);
+            b.set_doctrine(
+                0,
+                Doctrine {
+                    posture,
+                    ..Doctrine::default()
+                },
+            );
+            let from = b.position(0);
+            for _ in 0..10 {
+                b.step();
+            }
+            far(b.position(0), from)
+        };
+        let (eager, balanced) = (covered(Posture::Aggressive), covered(Posture::Balanced));
+        assert!(
+            eager > 1.5 * balanced,
+            "{model:?}: {eager} m eager, {balanced} m balanced"
+        );
+    }
+}
+
+/// Before the battle a squad stands where it is deployed, in its own half;
+/// outside it, or once the battle has started, it is refused.
+#[test]
+fn deployment_is_in_your_own_half_and_before_the_start() {
+    for model in MODELS {
+        let mut b = battle(model, "swordsmen*30 vs swordsmen*30");
+        let zone = b.live_view(0, (0.0, 0.0), (1.0, 0.0), 0).deploy_zone(0);
+        assert_eq!(zone, (0.0, 300.0, 0.0, 400.0));
+        assert!(b.deploy(0, (400.0, 100.0), (1.0, 0.0), None).is_err());
+        let to = (200.0, 100.0);
+        b.command(
+            0,
+            Command::Deploy {
+                anchor: to,
+                facing: (0.0, 2.0),
+                width: Some(10.0),
+            },
+        )
+        .unwrap();
+        let line = b.live_view(0, (0.0, 0.0), (1.0, 0.0), 0).lines[0];
+        if model == BattleModel::Soldiers {
+            assert!(
+                far(line.anchor, to) < 0.01 && line.facing == (0.0, 1.0),
+                "{line:?}"
+            );
+            assert_eq!(line.width, 10.0);
+            let y = b.position(0).1;
+            assert!(
+                y < to.1 && y > to.1 - 3.0,
+                "the ranks stand behind the front: {y}"
+            );
+        } else {
+            assert_eq!(b.position(0), to);
+        }
+        b.step();
+        assert!(b.deploy(0, to, (1.0, 0.0), None).is_err());
+    }
+    // Defenders behind a wall stay inside it.
+    let b = battle(BattleModel::Squads, "swordsmen*30 vs walls swordsmen*30");
+    let v = b.live_view(0, (0.0, 0.0), (1.0, 0.0), 1);
+    assert_eq!(v.deploy_zone(1).0, 361.0);
+}
+
+/// Loose order stands soldiers `loose_spacing` apart, tight order archers
+/// shoulder to shoulder.
+#[test]
+fn spacing_stances_set_the_files_apart() {
+    let mut b = battle(
+        BattleModel::Soldiers,
+        "swordsmen*30,archers*30 vs swordsmen*30",
+    );
+    let spacing = |b: &Battle, q: usize| b.live_view(0, (0.0, 0.0), (1.0, 0.0), 0).lines[q].spacing;
+    assert_eq!((spacing(&b, 0), spacing(&b, 1)), (1.0, 3.0));
+    for (q, s) in [(0, Spacing::Loose), (1, Spacing::Tight)] {
+        b.set_stance(
+            q,
+            Stance {
+                spacing: s,
+                ..Stance::default()
+            },
+        );
+    }
+    b.step();
+    assert_eq!((spacing(&b, 0), spacing(&b, 1)), (3.0, 1.0));
+}
+
+/// The ghost line: every soldier's slot where the last move leaves the
+/// squad, and the seconds to get there at a march or a run.
+#[test]
+fn a_preview_gives_the_slots_and_the_time() {
+    let b = battle(BattleModel::Soldiers, "swordsmen*30 vs swordsmen*30");
+    let v = b.live_view(0, (0.0, 0.0), (1.0, 0.0), 0);
+    let line = v.lines[0];
+    let to = (line.anchor.0 + 50.0, line.anchor.1 + 120.0);
+    let go = |run: bool| Order::MoveTo {
+        anchor: to,
+        facing: Some((0.0, 1.0)),
+        width: Some(10.0),
+        run,
+    };
+    assert!(v.preview(0, &[Order::Hold]).is_none());
+    let walk = v.preview(0, &[go(false)]).unwrap();
+    let run = v.preview(0, &[go(true)]).unwrap();
+    assert_eq!(walk.slots.len(), 30);
+    assert!((walk.eta - 130.0 / 1.4).abs() < 1.0, "{}", walk.eta);
+    assert!((run.eta - 130.0 / 3.0).abs() < 1.0, "{}", run.eta);
+    // Ten files facing +y: the front rank on y = to.1, the third rank 2 m back.
+    let front: Vec<&(f32, f32)> = walk
+        .slots
+        .iter()
+        .filter(|s| (s.1 - to.1).abs() < 1e-3)
+        .collect();
+    assert_eq!(front.len(), 10);
+    assert!(walk
+        .slots
+        .iter()
+        .all(|s| s.1 <= to.1 + 1e-3 && s.1 >= to.1 - 2.0 - 1e-3));
+    // The squad model draws the same ghost from its centre.
+    let b = battle(BattleModel::Squads, "swordsmen*30 vs swordsmen*30");
+    let v = b.live_view(0, (0.0, 0.0), (1.0, 0.0), 0);
+    assert_eq!(v.preview(0, &[go(false)]).unwrap().slots.len(), 30);
+}
+
+/// One drag over several squads lines them up along it, each a share of
+/// it by its front; one click moves them keeping their places in the group.
+#[test]
+fn group_orders_keep_a_formation() {
+    let b = battle(
+        BattleModel::Soldiers,
+        "swordsmen*40,swordsmen*20 vs swordsmen*30",
+    );
+    let v = b.live_view(0, (0.0, 0.0), (1.0, 0.0), 0);
+    let (w0, w1) = (v.lines[0].width, v.lines[1].width);
+    let line = v.group_line(&[1, 0], (100.0, 50.0), (100.0, 151.0), true);
+    let mv = |o: &Order| match *o {
+        Order::MoveTo {
+            anchor,
+            facing,
+            width,
+            run,
+        } => (anchor, facing.unwrap(), width.unwrap(), run),
+        _ => panic!("{o:?}"),
+    };
+    // Squad 0 stands lower on the field, so it takes the start of the drag.
+    assert_eq!(line.iter().map(|o| o.0).collect::<Vec<_>>(), [0, 1]);
+    let (a, f, wa, run) = mv(&line[0].1);
+    let (b1, _, wb, _) = mv(&line[1].1);
+    assert!(run && f.0 < -0.99, "a drag up the field faces left: {f:?}");
+    assert!((wa + wb + 1.0 - 101.0).abs() < 1e-3 && (wa / wb - w0 / w1).abs() < 1e-3);
+    assert!((a.1 - (50.0 + 0.5 * wa)).abs() < 1e-3 && (b1.1 - (151.0 - 0.5 * wb)).abs() < 1e-3);
+    let shift = v.group_shift(&[0, 1], (200.0, 200.0), false);
+    let (a, _, _, _) = mv(&shift[0].1);
+    let (c, _, _, _) = mv(&shift[1].1);
+    let (l0, l1) = (v.lines[0].anchor, v.lines[1].anchor);
+    assert!(far((a.0 - c.0, a.1 - c.1), (l0.0 - l1.0, l0.1 - l1.1)) < 1e-3);
+    assert!(far(((a.0 + c.0) * 0.5, (a.1 + c.1) * 0.5), (200.0, 200.0)) < 1e-3);
+}
+
+/// The matchup hints: blows and arrows per damage type after armour, which
+/// is the damage the battle deals.
+#[test]
+fn matchups_follow_the_armour() {
+    let b = battle(
+        BattleModel::Squads,
+        "spearmen*20,archers*20 vs swordsmen*20",
+    );
+    let v = b.live_view(0, (0.0, 0.0), (1.0, 0.0), 0);
+    let spears = v.matchup(0, 2).unwrap();
+    let (spear, sword) = (&v.kits[0], &v.kits[2]);
+    assert!((spears.blow.iter().sum::<f32>() - spear.blow(0.0, &sword.armour)).abs() < 1e-5);
+    assert!(spears.melee_per_second > 0.0 && spears.shots_per_second == 0.0);
+    let arrows = v.matchup(1, 2).unwrap();
+    let bare = Kit::preset("levy").unwrap();
+    assert!(arrows.arrow[0] > 0.0 && arrows.arrow[0] < v.kits[1].against(&bare).arrow[0]);
+    assert!(v.matchup(0, 9).is_none());
+}
+
+/// The overlay: on the soldier model each soldier's morale and fatigue;
+/// the squad model has neither per soldier.
+#[test]
+fn the_live_view_has_every_soldiers_condition() {
+    let mut b = battle(BattleModel::Soldiers, "swordsmen*30 vs spearmen*20!0.6%0.3");
+    b.step();
+    let v = b.live_view(0, (0.0, 0.0), (1.0, 0.0), 0);
+    assert_eq!(
+        v.condition.iter().map(Vec::len).collect::<Vec<_>>(),
+        [30, 20]
+    );
+    let c = v.condition[1][0];
+    assert!(
+        (c.morale() - 0.6).abs() < 0.02 && (c.fatigue() - 0.3).abs() < 0.02,
+        "{c:?}"
+    );
+    assert!(v.paces[1].0 < 1.3 && v.paces[0].0 > 1.39);
+    let v = battle(BattleModel::Squads, "swordsmen*30 vs spearmen*20").live_view(
+        0,
+        (0.0, 0.0),
+        (1.0, 0.0),
+        0,
+    );
+    assert!(v.condition.is_empty() && v.paces[0] == (1.4, 3.0));
 }

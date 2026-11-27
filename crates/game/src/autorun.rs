@@ -4,13 +4,20 @@
 //! econoplex [--load FILE] [--speed 1-9] [--shot FILE [--shot-day N | --shot-battle S] [--exit]]
 //!           [--town NAME] [--camera X Y] [--zoom F] [--no-economy] [--product-space]
 //!           [--report why|town|history|log|person] [--select ID] [--culture]
+//!           [--set PATH=VALUE]... [--battle LINEUP]
 //! ```
+//!
+//! `--set` changes models.ron for this run, as in the CLI (e.g.
+//! `--set battle.model=Soldiers`). `--battle` fights a line-up (as
+//! `econoplex-sim --battle`) on `battle.model`, plays it beside the player's
+//! town as the 3D client does, and starts the camera on its field.
 //!
 //! `--shot` runs until day N (default: right away), pauses, lets the view settle,
 //! writes a PNG screenshot and, with `--exit`, quits. With `--shot-battle S` it
 //! waits instead for a live battle to have been fought S battle seconds, and
-//! looks at its field. Used to make the README and PR
-//! screenshots.
+//! looks at its field; with `--battle`, for the staged battle's playback to
+//! reach S battle seconds. Either way it then stops the clock, so the battle
+//! holds still for the shot. Used to make the README and PR screenshots.
 
 use crate::view::WorldCamera;
 use crate::SimControl;
@@ -40,6 +47,12 @@ pub struct GameArgs {
     pub player: Option<String>,
     /// Orders given on day 0, as typed in the CLI (e.g. "tax Greenvale income 0.1").
     pub orders: Vec<String>,
+    /// Changes to models.ron (`--set PATH=VALUE`).
+    pub sets: Vec<(String, String)>,
+    /// A line-up to fight and play back at start (`--battle`), and where on
+    /// the map its field lies once staged.
+    pub battle: Option<String>,
+    pub battle_at: Option<(f32, f32)>,
     /// The report open at start (reports.rs), and a person selected at start.
     pub report: Option<crate::reports::Report>,
     pub select: Option<u32>,
@@ -112,6 +125,14 @@ pub fn parse() -> GameArgs {
             "--culture" => a.culture = true,
             "--player" => a.player = Some(val()),
             "--order" => a.orders.push(val()),
+            "--set" => {
+                let v = val();
+                let (k, x) = v
+                    .split_once('=')
+                    .unwrap_or_else(|| die("--set expects path=value"));
+                a.sets.push((k.to_string(), x.to_string()));
+            }
+            "--battle" => a.battle = Some(val()),
             "-h" | "--help" => {
                 println!(
                     "econoplex: the Econoplex game\n\n\
@@ -119,15 +140,17 @@ pub fn parse() -> GameArgs {
                      --speed N        start at speed N (1-9)\n\
                      --shot FILE      save a PNG screenshot once the game reaches --shot-day\n\
                      --shot-day N     simulated day (month) of the screenshot (default: at once)\n\
-                     --shot-battle S  instead, once a live battle has been fought S seconds, on its field\n\
-                     --exit           quit after the screenshot
-                     --town NAME      town shown in the economy panel at start
-                     --camera X Y     center the camera on a world position
-                     --zoom F         camera zoom (default 1.6; smaller is closer)
-                     --no-economy     start with the economy panel closed
+                     --shot-battle S  instead, once a live (or --battle) battle has been fought S seconds\n\
+                     --exit           quit after the screenshot\n\
+                     --town NAME      town shown in the economy panel at start\n\
+                     --camera X Y     center the camera on a world position\n\
+                     --zoom F         camera zoom (default 1.6; smaller is closer)\n\
+                     --no-economy     start with the economy panel closed\n\
                      --product-space  start with the product space overlay (P) on\n\
                      --player NAME    govern this town (default: scenario.ron's player)\n\
-                     --order TEXT     give an order on day 0 (repeatable), as in the CLI"
+                     --order TEXT     give an order on day 0 (repeatable), as in the CLI\n\
+                     --set PATH=VALUE change models.ron for this run (repeatable)\n\
+                     --battle LINEUP  fight a line-up on battle.model and play it back"
                 );
                 std::process::exit(0);
             }
@@ -144,11 +167,14 @@ pub fn apply_view_args(
     mut economy: ResMut<crate::economy_ui::EconomyView>,
     mut overlay: ResMut<crate::view::Overlay>,
 ) {
-    if let Some((x, y)) = args.camera {
+    // A staged battle is what there is to watch: start on its field, close
+    // enough in to tell its soldiers apart.
+    if let Some((x, y)) = args.camera.or(args.battle_at) {
         camera.translation.x = x;
         camera.translation.y = y;
     }
-    if let Some(z) = args.zoom {
+    let staged = args.battle_at.map(|_| crate::live_battle::LOOK_ZOOM);
+    if let Some(z) = args.zoom.or(staged) {
         camera.scale = Vec3::new(z, z, 1.0);
     }
     if args.no_economy {
@@ -185,6 +211,8 @@ pub fn autoshot(
     args: Res<GameArgs>,
     clock: Res<sim_core::SimClock>,
     live: Res<crate::live_battle::LiveBattle>,
+    scenes: Res<crate::battles::BattleScenes>,
+    mut time: ResMut<Time<Virtual>>,
     mut camera: Single<&mut Transform, With<WorldCamera>>,
     mut follow: ResMut<crate::view::Follow>,
     mut control: ResMut<SimControl>,
@@ -196,6 +224,13 @@ pub fn autoshot(
     };
     if state.frames == 0 {
         match args.shot_battle {
+            // The staged battle, where the camera already looks.
+            Some(s) if args.battle_at.is_some() => {
+                if scenes.newest_at(time.elapsed_secs()).is_none_or(|t| t < s) {
+                    return;
+                }
+                time.pause();
+            }
             Some(s) => {
                 let Some(v) = live.view.as_ref().filter(|v| v.frame.t >= s || v.finished) else {
                     return;
@@ -204,6 +239,7 @@ pub fn autoshot(
                 crate::view::look_at(&mut camera, crate::live_battle::look_point(v));
                 let z = args.zoom.unwrap_or(crate::live_battle::LOOK_ZOOM);
                 camera.scale = Vec3::new(z, z, 1.0);
+                time.pause();
             }
             None if clock.tick < args.shot_day => return,
             None => {}

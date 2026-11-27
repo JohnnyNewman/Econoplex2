@@ -90,17 +90,22 @@ pub fn step_live_battle(world: &mut World, seconds: f32) {
     }
 }
 
-/// An order to one of the player's squads in the waiting battle.
-pub fn order_live_battle(world: &mut World, squad: usize, order: crate::battle::Order) {
-    let Some(mut pending) = world.get_resource_mut::<PendingBattle>() else {
-        return;
-    };
-    let Some(live) = pending.0.as_mut() else {
-        return;
-    };
-    if live.battle.side(squad) == Some(live.player_side) {
-        live.battle.set_order(squad, order);
+/// What the player tells one of their squads in the waiting battle: orders
+/// carried out in turn, a stance, or (before it starts) where to deploy
+/// (`Battle::command`). An error says why it was not done.
+pub fn command_live_battle(
+    world: &mut World,
+    squad: usize,
+    command: crate::battle::Command,
+) -> Result<(), String> {
+    let mut pending = world
+        .get_resource_mut::<PendingBattle>()
+        .ok_or("no battle is waiting")?;
+    let live = pending.0.as_mut().ok_or("no battle is waiting")?;
+    if live.battle.side(squad) != Some(live.player_side) {
+        return Err("not the player's squad".into());
     }
+    live.battle.command(squad, command)
 }
 
 /// Fights the waiting battle to its end at once (auto-resolve).

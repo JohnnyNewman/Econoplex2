@@ -34,6 +34,7 @@
 //! command) builds [`SquadSpec`]s and reads the [`Report`] (and updated
 //! members) back.
 
+mod control;
 mod kit;
 mod lineup;
 mod report;
@@ -42,6 +43,7 @@ pub mod squads;
 #[cfg(test)]
 mod tests;
 
+pub use control::*;
 pub use kit::*;
 pub use lineup::*;
 pub use report::*;
@@ -130,6 +132,11 @@ pub struct BattleParams {
     /// of the gate or breach the attackers must fight through, in metres.
     pub wall_cover: f32,
     pub breach_width: f32,
+    /// Stances and doctrine: archers who skirmish back away from enemies
+    /// this close (metres between the squads' edges), and squads of a
+    /// cautious side hold their ground until an enemy is this close.
+    pub skirmish_distance: f32,
+    pub cautious_wait: f32,
     /// Constants only the soldier model uses.
     pub soldiers: soldiers::SoldierParams,
 }
@@ -168,6 +175,8 @@ impl Default for BattleParams {
             rout_at: 0.15,
             wall_cover: 0.6,
             breach_width: 6.0,
+            skirmish_distance: 40.0,
+            cautious_wait: 120.0,
             soldiers: soldiers::SoldierParams::default(),
         }
     }
@@ -194,6 +203,13 @@ impl Default for Field {
 
 /// An order to one squad. `Auto` lets the squad's own judgment decide, which is
 /// also what an auto-resolved battle uses for every squad.
+///
+/// A squad takes a list of orders and carries them out in turn: the first is
+/// in force, and a `MoveTo` gives way to the next once the squad stands
+/// there (`Battle::set_orders`). The orders are what an RTS control gives:
+/// right-click ground is a `MoveTo` (right-drag sets its facing and width),
+/// right-click an enemy is `Attack` (or `Shoot` for archers), shift queues,
+/// double-click runs (module `control`).
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Order {
     Auto,
@@ -203,10 +219,41 @@ pub enum Order {
     Attack(usize),
     /// Shoot this squad while it is in range; close no further.
     Shoot(usize),
-    MoveTo(f32, f32),
+    /// Go to `anchor` (metres on the field: the centre of the front rank on
+    /// the soldier model, the squad's centre on the squad model), and stand
+    /// there facing `facing` (unit; `None`: the way it came). On the soldier
+    /// model, `width` sets the front, metres, from now on (`None`: as it
+    /// was); the squad model has no front and ignores both. `run`: at a
+    /// run (a gallop), not a march, which tires.
+    MoveTo {
+        anchor: (f32, f32),
+        facing: Option<(f32, f32)>,
+        width: Option<f32>,
+        run: bool,
+    },
     /// Leave the field in good order (counts as fled, not routed).
     Withdraw,
 }
+
+impl Order {
+    /// To `anchor`, the way it comes, its front as it is.
+    pub fn move_to(anchor: (f32, f32)) -> Self {
+        Self::MoveTo {
+            anchor,
+            facing: None,
+            width: None,
+            run: false,
+        }
+    }
+}
+
+/// The order in force in a list of orders: the first, or `Auto`.
+fn order_now(orders: &[Order]) -> Order {
+    orders.first().copied().unwrap_or(Order::Auto)
+}
+
+/// Metres from a `MoveTo`'s anchor at which a squad counts as there.
+const ARRIVED: f32 = 1.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SquadState {
@@ -225,8 +272,20 @@ trait Model {
     fn seconds(&self) -> f32;
     /// Advance one step of `params.dt` battle seconds.
     fn step(&mut self);
-    fn set_order(&mut self, squad: usize, order: Order);
-    fn order(&self, squad: usize) -> Order;
+    /// Give a squad its orders, carried out in turn.
+    fn set_orders(&mut self, squad: usize, orders: &[Order]);
+    /// A squad's orders left, the first in force.
+    fn orders(&self, squad: usize) -> &[Order];
+    /// Where its front stands.
+    fn line(&self, squad: usize) -> SquadLine;
+    fn set_stance(&mut self, squad: usize, stance: Stance);
+    fn stance(&self, squad: usize) -> Stance;
+    /// A side's doctrine; its squads take its `prisoners` as their pursuit.
+    fn set_doctrine(&mut self, side: u8, doctrine: Doctrine);
+    /// A squad's marching and running pace now, metres per second.
+    fn pace(&self, squad: usize) -> (f32, f32);
+    /// Stand a squad with its front at `anchor` before the battle starts.
+    fn deploy(&mut self, squad: usize, anchor: (f32, f32), facing: (f32, f32), width: Option<f32>);
     /// How many squads fight.
     fn count(&self) -> usize;
     /// A squad as it fights: its kit, side and members with their health now.
@@ -326,11 +385,75 @@ impl Battle {
         }
     }
 
-    /// Give a squad an order (between steps: the player's pause).
-    pub fn set_order(&mut self, squad: usize, order: Order) {
+    /// Give a squad its orders, carried out in turn (between steps: the
+    /// player's pause). They replace what it was doing; an empty list gives
+    /// it back its own judgment.
+    pub fn set_orders(&mut self, squad: usize, orders: &[Order]) {
         if squad < self.model().count() {
-            self.model_mut().set_order(squad, order);
+            self.model_mut().set_orders(squad, orders);
         }
+    }
+
+    /// A squad's stance, from now on.
+    pub fn set_stance(&mut self, squad: usize, stance: Stance) {
+        if squad < self.model().count() {
+            self.model_mut().set_stance(squad, stance);
+        }
+    }
+
+    pub fn stance(&self, squad: usize) -> Stance {
+        self.model().stance(squad)
+    }
+
+    /// Side `side`'s doctrine (0 attacks, 1 defends): how its squads go
+    /// about it on their own judgment. Every squad of the side takes its
+    /// `prisoners` as its pursuit, which a stance may change after.
+    pub fn set_doctrine(&mut self, side: u8, doctrine: Doctrine) {
+        self.model_mut().set_doctrine(side, doctrine);
+    }
+
+    /// Before the first step only: stand squad `squad` with its front's
+    /// centre at `anchor`, facing `facing`, `width` wide (`None`: its own),
+    /// which must be in its side's zone (`deploy_zone`).
+    pub fn deploy(
+        &mut self,
+        squad: usize,
+        anchor: (f32, f32),
+        facing: (f32, f32),
+        width: Option<f32>,
+    ) -> Result<(), String> {
+        let side = self.side(squad).ok_or("no such squad")?;
+        if self.seconds() > 0.0 {
+            return Err("the battle has started".into());
+        }
+        let (x0, x1, y0, y1) = deploy_zone(self.model().field(), side);
+        if !(x0..=x1).contains(&anchor.0) || !(y0..=y1).contains(&anchor.1) {
+            return Err(format!(
+                "({:.0}, {:.0}) is outside the side's zone",
+                anchor.0, anchor.1
+            ));
+        }
+        let l = facing.0.hypot(facing.1);
+        if l < 1e-6 {
+            return Err("no facing".into());
+        }
+        let facing = (facing.0 / l, facing.1 / l);
+        self.model_mut().deploy(squad, anchor, facing, width);
+        Ok(())
+    }
+
+    /// What the player tells a squad: orders, a stance or where to deploy.
+    pub fn command(&mut self, squad: usize, command: Command) -> Result<(), String> {
+        match command {
+            Command::Orders(o) => self.set_orders(squad, &o),
+            Command::Stance(s) => self.set_stance(squad, s),
+            Command::Deploy {
+                anchor,
+                facing,
+                width,
+            } => return self.deploy(squad, anchor, facing, width),
+        }
+        Ok(())
     }
 
     pub fn seconds(&self) -> f32 {
@@ -405,20 +528,25 @@ impl Battle {
             facing,
             field: self.field_size(),
             squads: self.replay_squads(),
-            orders: (0..m.count()).map(|s| m.order(s)).collect(),
+            orders: (0..m.count()).map(|s| m.orders(s).to_vec()).collect(),
+            lines: (0..m.count()).map(|s| m.line(s)).collect(),
+            stances: (0..m.count()).map(|s| m.stance(s)).collect(),
+            paces: (0..m.count()).map(|s| m.pace(s)).collect(),
+            kits: (0..m.count()).map(|s| m.spec(s).kit.clone()).collect(),
+            wall_x: m.field().wall_x,
             morale: (0..m.count()).map(|s| m.morale(s)).collect(),
+            condition: match self {
+                Self::Squads(_) => Vec::new(),
+                Self::Soldiers(b) => b.condition(),
+            },
             frame: self.frame(),
             player_side,
             finished,
             winner: if finished { self.report().winner } else { None },
-            soldiers: match self {
-                Self::Squads(_) => Vec::new(),
-                Self::Soldiers(b) => b.live_soldiers(),
-            },
         }
     }
 
-    /// Where every squad stands now.
+    /// Where every squad stands now, and on the soldier model every soldier.
     pub fn frame(&self) -> ReplayFrame {
         let m = self.model();
         ReplayFrame {
@@ -429,6 +557,10 @@ impl Battle {
                     (x, y, standing(m.spec(s)) as u16, m.state(s))
                 })
                 .collect(),
+            soldiers: match self {
+                Self::Squads(_) => Vec::new(),
+                Self::Soldiers(b) => b.frame_soldiers(),
+            },
         }
     }
 

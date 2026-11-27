@@ -9,13 +9,19 @@
 //! was destroyed fades. The scene stays a few seconds after the end, with the
 //! outcome written above the field, then clears.
 //!
+//! A battle fought on the soldier model records every soldier in each frame.
+//! Zoomed in (`live_battle::SOLDIERS_BELOW`), such a replay is drawn soldier
+//! by soldier (`draw_soldiers`), each moving between frames as the 3D client
+//! moves its figures.
+//!
 //! A battle the player's own town fights is live instead (live_battle.rs):
 //! its squads are drawn here the same way, from the battle's current frame.
 //! On the soldier model the frame puts each squad at its soldiers' centre,
-//! and zoomed in the soldiers themselves are drawn (`draw_soldiers`).
+//! and zoomed in the soldiers themselves are drawn.
 
+use crate::view::WorldCamera;
 use bevy::prelude::*;
-use sim_core::battle::{BattleLog, FighterState, LiveSoldier, Replay, ReplaySquad, SquadState};
+use sim_core::battle::{BattleLog, FighterState, FrameSoldier, Replay, ReplaySquad, SquadState};
 use sim_core::Towns;
 
 /// Battle seconds shown per real second.
@@ -87,6 +93,58 @@ pub fn start_battles(
         });
     }
     scenes.seen = log.total;
+}
+
+impl BattleScenes {
+    /// How far (battle seconds) the newest battle being played back has got.
+    pub fn newest_at(&self, now: f32) -> Option<f32> {
+        self.scenes.last().map(|s| (now - s.start) * PLAYBACK)
+    }
+}
+
+/// `--battle LINEUP`: fight it now on `battle.model` (models.ron, `--set`)
+/// and put it in the battle log to play beside the player's town, from
+/// shortly before the lines meet, as the 3D client stages it. Returns where
+/// on the map the lines meet.
+pub fn stage_battle(world: &mut World, lineup: &str) -> (f32, f32) {
+    use sim_core::battle::{parse_lineup, Battle};
+    let (field, specs) = parse_lineup(lineup).unwrap_or_else(|e| {
+        eprintln!("error: --battle: {e}");
+        std::process::exit(2);
+    });
+    let params = world.resource::<sim_core::world::Params>().battle.clone();
+    let k = world
+        .resource::<sim_core::policy::PlayerTown>()
+        .0
+        .map_or(0, |t| t as usize);
+    let town = world
+        .resource::<Towns>()
+        .0
+        .get(k)
+        .map_or((0.0, 0.0), |t| t.pos);
+    let size = (field.width, field.height);
+    let (report, squads, frames) = Battle::new(params, field, specs, 1).run_recorded(5.0);
+    info!(
+        "--battle {lineup}: {:?} after {:.0} s",
+        report.winner, report.seconds
+    );
+    // Below the town, clear of its houses.
+    let at = (town.0, town.1 - 0.5 * size.1 * SCALE - 60.0);
+    let mut replay = Replay {
+        town: k as u16,
+        at,
+        facing: (1.0, 0.0),
+        field: size,
+        squads,
+        frames,
+        winner: report.winner,
+    };
+    let to_map = field_to_map(replay.at, replay.facing, replay.field);
+    let meet = replay
+        .skip_approach()
+        .map_or(Vec2::new(at.0, at.1), |p| to_map(Vec2::from(p)));
+    world.resource_mut::<BattleLog>().push(replay);
+    (meet.x, meet.y)
 }
 
 /// How long a replay lasts, battle seconds.
@@ -212,14 +270,14 @@ pub struct Dot {
     pub down: bool,
 }
 
-/// The dots for every soldier of a live battle on the soldier model.
+/// The dots for every soldier of a battle on the soldier model.
 pub fn soldier_dots(
     now: f32,
     at: (f32, f32),
     facing: (f32, f32),
     field: (f32, f32),
     squads: &[ReplaySquad],
-    soldiers: &[Vec<LiveSoldier>],
+    soldiers: &[Vec<FrameSoldier>],
 ) -> Vec<Dot> {
     let to_map = field_to_map(at, facing, field);
     let mut out = Vec::new();
@@ -237,8 +295,9 @@ pub fn soldier_dots(
                 FighterState::Down => (base.with_alpha(0.3), true),
                 FighterState::Fled => continue,
             };
+            let (x, y) = m.pos();
             out.push(Dot {
-                at: to_map(Vec2::new(m.x, m.y)),
+                at: to_map(Vec2::new(x, y)),
                 radius,
                 colour,
                 down,
@@ -248,7 +307,7 @@ pub fn soldier_dots(
     out
 }
 
-/// Draw a live battle's soldiers as dots, with the field's outline.
+/// Draw a battle's soldiers as dots, with the field's outline.
 /// `px` is map units per screen pixel, so a dot is never smaller than a pixel.
 #[allow(clippy::too_many_arguments)]
 pub fn draw_soldiers(
@@ -258,7 +317,7 @@ pub fn draw_soldiers(
     facing: (f32, f32),
     field: (f32, f32),
     squads: &[ReplaySquad],
-    soldiers: &[Vec<LiveSoldier>],
+    soldiers: &[Vec<FrameSoldier>],
     outline: Color,
     px: f32,
 ) {
@@ -280,28 +339,51 @@ pub fn draw_soldiers(
     }
 }
 
-/// Draw every scene, and write the outcome once a battle is over.
+/// Draw every scene, and write the outcome once a battle is over. Zoomed
+/// in, a battle fought on the soldier model shows its soldiers.
 pub fn draw_battles(
     mut gizmos: Gizmos,
     time: Res<Time>,
     scenes: Res<BattleScenes>,
     mut labels: Query<&mut Text2d>,
+    camera: Single<&Transform, With<WorldCamera>>,
 ) {
     let now = time.elapsed_secs();
+    let zoom = camera.scale.x;
+    let outline = Color::srgba(1.0, 0.9, 0.6, 0.35);
     for s in &scenes.scenes {
         let r = &s.replay;
         let t = (now - s.start) * PLAYBACK;
         let over = (now - s.start) >= duration(r);
-        draw_field(
-            &mut gizmos,
-            now,
-            r.at,
-            r.facing,
-            r.field,
-            &r.squads,
-            |k| squad_at(r, k, t),
-            Color::srgba(1.0, 0.9, 0.6, 0.35),
-        );
+        let soldiers = if zoom < crate::live_battle::SOLDIERS_BELOW {
+            r.soldiers_at(t)
+        } else {
+            Vec::new()
+        };
+        if soldiers.is_empty() {
+            draw_field(
+                &mut gizmos,
+                now,
+                r.at,
+                r.facing,
+                r.field,
+                &r.squads,
+                |k| squad_at(r, k, t),
+                outline,
+            );
+        } else {
+            draw_soldiers(
+                &mut gizmos,
+                now,
+                r.at,
+                r.facing,
+                r.field,
+                &r.squads,
+                &soldiers,
+                outline,
+                zoom,
+            );
+        }
         if over {
             if let Ok(mut text) = labels.get_mut(s.label) {
                 let outcome = match r.winner {
@@ -338,10 +420,12 @@ mod tests {
                 ReplayFrame {
                     t: 0.0,
                     squads: vec![(0.0, 10.0, 20, SquadState::Fighting)],
+                    soldiers: Vec::new(),
                 },
                 ReplayFrame {
                     t: 10.0,
                     squads: vec![(10.0, 10.0, 12, SquadState::Routing)],
+                    soldiers: Vec::new(),
                 },
             ],
             winner: Some(1),
@@ -356,5 +440,46 @@ mod tests {
         let (p, _, s) = squad_at(&r, 0, 99.0).unwrap();
         assert!((p.x - 10.0).abs() < 1e-4 && s == SquadState::Routing);
         assert!(squad_at(&r, 3, 1.0).is_none());
+        assert!(r.soldiers_at(5.0).is_empty());
+    }
+
+    /// A battle recorded on the soldier model plays back soldier by
+    /// soldier: one dot for each who has not left the field, moving between
+    /// frames.
+    #[test]
+    fn a_soldier_replay_is_drawn_soldier_by_soldier() {
+        use sim_core::battle::{parse_lineup, Battle, BattleModel, BattleParams};
+        let (field, specs) = parse_lineup("swordsmen*30 vs spearmen*20").unwrap();
+        let params = BattleParams {
+            model: BattleModel::Soldiers,
+            ..BattleParams::default()
+        };
+        let (_, squads, frames) = Battle::new(params, field.clone(), specs, 1).run_recorded(5.0);
+        let r = Replay {
+            town: 0,
+            at: (0.0, 0.0),
+            facing: (1.0, 0.0),
+            field: (field.width, field.height),
+            squads,
+            frames,
+            winner: None,
+        };
+        let t = 0.5 * (r.frames[3].t + r.frames[4].t);
+        let men = r.soldiers_at(t);
+        assert_eq!(men.iter().map(Vec::len).collect::<Vec<_>>(), [30, 20]);
+        let dots = soldier_dots(0.0, r.at, r.facing, r.field, &r.squads, &men);
+        let on = men
+            .iter()
+            .flatten()
+            .filter(|m| m.state != FighterState::Fled);
+        assert_eq!(dots.len(), on.count());
+        // The first soldier's dot lies between where the frames have them.
+        let to_map = field_to_map(r.at, r.facing, r.field);
+        let at = |f: &sim_core::battle::ReplayFrame| {
+            let (x, y) = f.soldiers[0][0].pos();
+            to_map(Vec2::new(x, y))
+        };
+        let (a, b) = (at(&r.frames[3]), at(&r.frames[4]));
+        assert!((dots[0].at - (a + b) * 0.5).length() <= 0.1 * SCALE);
     }
 }

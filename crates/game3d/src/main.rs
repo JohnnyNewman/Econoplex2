@@ -9,11 +9,17 @@
 //!     [--fog-view N] [--no-fog] [--days N] [--speed 0-8] [--paused] [--trade] [--culture] [--product-space] [--bloom-view] [--focus-town I] [--focus X,Z] [--view-from YAW,PITCH,DIST]
 //!     [--no-ui] [--no-lod] [--lod-view] [--fps] [--render-scale F] [--shot FILE] [--quit-after S] [--select ID]
 //!     [--weather clear|cloudy|rain|storm|snow|fog] [--season spring|summer|autumn|winter]
-//!     [--preset FILE] [--order TEXT]... [--shot-battle S]
+//!     [--preset FILE] [--set PATH=VALUE]... [--order TEXT]... [--shot-battle S] [--battle LINEUP]
+//!
+//! `--preset` and `--set` change models.ron for this run, as in the CLI (e.g.
+//! `--set battle.model=Soldiers`). `--battle` fights a line-up (as
+//! `econoplex-sim --battle`) on `battle.model` and plays it beside the focus
+//! town.
 //!
 //! `--order` gives an order before the first day, as typed in the CLI. With
 //! `--shot FILE --shot-battle S` the screenshot waits for a live battle to have
-//! been fought S battle seconds, and looks at its field.
+//! been fought S battle seconds, and looks at its field (with `--battle`, for
+//! the staged battle's playback to reach S seconds, where its lines meet).
 //!
 //! econoplex3d --playground [--hour H] [--view N] [--toon-view N] [--pbr] [--face-sun] [--shot FILE]
 //!     (shader playground)
@@ -69,8 +75,10 @@ struct Args {
     towns: u32,
     /// Overrides of models.ron (`--preset FILE`).
     sets: Vec<(String, String)>,
-    /// A squad battle to stage beside the focus town (`--battle LINEUP`).
+    /// A squad battle to stage beside the focus town (`--battle LINEUP`),
+    /// and the battle settings from models.ron it is fought with.
     battle: Option<String>,
+    battle_params: sim_core::battle::BattleParams,
 }
 
 /// Bevy's asset plugin, pointed at `crates/game3d/assets` (shaders), so the
@@ -124,6 +132,7 @@ fn main() {
         bloom_view: false,
         sets: Vec::new(),
         battle: None,
+        battle_params: Default::default(),
     };
     let (mut shot, mut hour, mut view, mut playground, mut face_sun) =
         (None, None, None, false, false);
@@ -157,6 +166,16 @@ fn main() {
                         .expect("cannot read the preset");
                     args.sets.extend(sets);
                 }
+            }
+            "--set" => {
+                let Some((k, v)) = it.next().and_then(|s| {
+                    s.split_once('=')
+                        .map(|(k, v)| (k.to_string(), v.to_string()))
+                }) else {
+                    eprintln!("error: --set expects path=value");
+                    std::process::exit(2);
+                };
+                args.sets.push((k, v));
             }
             "--towns" => args.towns = it.next().and_then(|v| v.parse().ok()).unwrap_or(5),
             "--shot" => shot = it.next().map(PathBuf::from),
@@ -280,6 +299,7 @@ fn main() {
     let scenario = sim_core::worldgen::resolve(&scenario, &db);
     let terrain = Terrain::build(&scenario);
     // The simulation of this world, run ahead by `--days`, then on its own thread.
+    args.battle_params = params.battle.clone();
     let mut sim = sim_core::Simulation::new(db, params, &scenario);
     for text in &orders {
         if let Err(e) = sim.order(text) {
@@ -724,13 +744,19 @@ struct Shot {
 
 /// With `--shot FILE`: save a screenshot after 60 frames, then quit. With
 /// `--shot-battle S`, count the frames from when a live battle has been
-/// fought S battle seconds, looking at its field.
+/// fought S battle seconds, looking at its field; with `--battle`, from when
+/// the staged battle's playback reaches S battle seconds, looking where its
+/// lines meet. Either way the clock then stops, so the battle holds still.
+#[allow(clippy::too_many_arguments)]
 fn shoot(
     mut commands: Commands,
     args: Res<ShotPath>,
     // Absent in the shader playground, which has no simulation.
     live: Option<Res<live::LiveSim>>,
     world: Option<Res<World3d>>,
+    staged: Option<Res<battles::Staged>>,
+    scenes: Query<&battles::BattleScene>,
+    mut time: ResMut<Time<Virtual>>,
     mut cameras: Query<&mut camera::WorldCamera>,
     mut state: Local<Shot>,
     mut exit: MessageWriter<AppExit>,
@@ -740,12 +766,24 @@ fn shoot(
         let (Some(live), Some(world)) = (live, world) else {
             return;
         };
-        let Some(v) = live.live_battle().filter(|v| v.frame.t >= s || v.finished) else {
-            return;
-        };
-        for mut cam in &mut cameras {
-            battles::look_at_field(&mut cam, &v, &world.terrain, 20.0);
+        if let Some(at) = staged.and_then(|st| st.0) {
+            let now = time.elapsed_secs();
+            if !scenes.iter().any(|sc| sc.playback(now) >= s) {
+                return;
+            }
+            for mut cam in &mut cameras {
+                cam.focus = Vec3::new(at.0 / SCALE, ground(&world.terrain, at), -at.1 / SCALE);
+                cam.distance = cam.distance.min(10.0);
+            }
+        } else {
+            let Some(v) = live.live_battle().filter(|v| v.frame.t >= s || v.finished) else {
+                return;
+            };
+            for mut cam in &mut cameras {
+                battles::look_at_field(&mut cam, &v, &world.terrain, 20.0);
+            }
         }
+        time.pause();
     }
     state.frames += 1;
     if state.frames == 60 {

@@ -136,7 +136,7 @@ impl SquadBattle {
     pub(super) fn shoot(&mut self, i: usize) {
         let p = self.params.clone();
         let s = &self.squads[i];
-        if !s.fighting() || !s.has_bow() || !s.contacts.is_empty() {
+        if !s.fighting() || !s.has_bow() || !s.contacts.is_empty() || s.stance.fire == Fire::Hold {
             return;
         }
         let range = s.spec.kit.range;
@@ -147,7 +147,7 @@ impl SquadBattle {
                 && self.dist(i, j) <= range
                 && !q.contacts.iter().any(|&c| self.squads[c].spec.side == side)
         };
-        let target = match s.order {
+        let target = match order_now(&s.orders) {
             Order::Shoot(j) | Order::Attack(j) if j < self.squads.len() && ok(j) => Some(j),
             _ => self
                 .enemies(i)

@@ -86,6 +86,10 @@ impl SquadBattle {
             if !contacts[i].contains(&p) {
                 continue;
             }
+            // A squad that lets enemies go strikes nobody who runs.
+            if !self.squads[i].pursues() && self.squads[p].state == SquadState::Routing {
+                continue;
+            }
             if self.squads[p].primary != Some(i) && self.squads[p].fighting() {
                 flanked[p] = true;
             }
@@ -183,11 +187,7 @@ impl SquadBattle {
             return;
         }
         let mounted = s.spec.kit.mounted;
-        let (walk, run) = if mounted {
-            (p.horse_walk_speed, p.horse_charge_speed)
-        } else {
-            (p.walk_speed, p.run_speed)
-        };
+        let (walk, run) = s.paces(&p);
 
         if s.state == SquadState::Routing {
             // Away from the nearest enemy, toward its own edge of the field.
@@ -214,9 +214,46 @@ impl SquadBattle {
             }
             return;
         }
-        let goal: Option<(f32, f32, Option<usize>)> = match s.order {
+        // A move reached gives way to the next order.
+        if let Order::MoveTo { anchor, .. } = order_now(&s.orders) {
+            let at = s.spec.pos;
+            if (anchor.0 - at.0).hypot(anchor.1 - at.1) <= ARRIVED && s.orders.len() > 1 {
+                self.squads[i].orders.remove(0);
+            }
+        }
+        let s = &self.squads[i];
+        let order = order_now(&s.orders);
+        // Skirmishers back away from enemies who come close, unless told
+        // to close with one or to go somewhere.
+        if s.stance.fire == Fire::Skirmish
+            && s.has_bow()
+            && !matches!(
+                order,
+                Order::Attack(_) | Order::MoveTo { .. } | Order::Withdraw
+            )
+        {
+            if let Some(j) = self
+                .nearest(i, |q| q.fighting())
+                .filter(|&j| self.gap(i, j) < p.skirmish_distance)
+            {
+                let (a, b) = (s.spec.pos, self.squads[j].spec.pos);
+                let away = (a.0 - b.0, a.1 - b.1);
+                let l = away.0.hypot(away.1).max(1e-3);
+                let to = (a.0 + away.0 / l * 20.0, a.1 + away.1 / l * 20.0);
+                self.step_toward(i, to, run, None);
+                return;
+            }
+        }
+        let goal: Option<(f32, f32, Option<usize>)> = match order {
             Order::Hold => None,
-            Order::MoveTo(x, y) => Some((x, y, None)),
+            Order::MoveTo { anchor, run: r, .. } => {
+                let at = s.spec.pos;
+                if (anchor.0 - at.0).hypot(anchor.1 - at.1) <= ARRIVED {
+                    return;
+                }
+                self.step_toward(i, anchor, if r { run } else { walk }, None);
+                return;
+            }
             Order::Withdraw => {
                 let home_x = if s.spec.side == 0 {
                     -10.0
@@ -243,7 +280,11 @@ impl SquadBattle {
         let Some((x, y, target)) = goal else {
             return;
         };
-        let near = target.is_some_and(|j| self.gap(i, j) < p.charge_distance);
+        // An aggressive side's squads run in from further out.
+        let eager = order == Order::Auto
+            && self.doctrine[(s.spec.side as usize).min(1)].posture == Posture::Aggressive;
+        let charge = p.charge_distance * if eager { 2.0 } else { 1.0 };
+        let near = target.is_some_and(|j| self.gap(i, j) < charge);
         self.step_toward(i, (x, y), if near { run } else { walk }, target);
     }
 
@@ -255,11 +296,24 @@ impl SquadBattle {
         }
         let kit = &s.spec.kit;
         let fighting = |q: &Squad| q.fighting();
+        // A cautious side's squads hold until an enemy comes close.
+        if self.doctrine[(s.spec.side as usize).min(1)].posture == Posture::Cautious
+            && self
+                .nearest(i, fighting)
+                .is_none_or(|j| self.gap(i, j) > self.params.cautious_wait)
+        {
+            return None;
+        }
         let target = if kit.mounted {
-            // Riders look for archers and fleeing squads, and steer clear of a
-            // spear wall while softer targets are about.
+            // Riders look for archers and fleeing squads (if they chase
+            // them), and steer clear of a spear wall while softer targets
+            // are about.
+            let pursue = s.pursues();
             self.enemies(i)
-                .filter(|&j| self.squads[j].on_field())
+                .filter(|&j| {
+                    let q = &self.squads[j];
+                    q.fighting() || (pursue && q.on_field())
+                })
                 .min_by(|&a, &b| {
                     let score = |j: usize| {
                         let q = &self.squads[j];

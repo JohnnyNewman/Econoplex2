@@ -208,12 +208,10 @@ flowchart TD
 
 **Commander, one per side.** This is the player in a live battle, or the auto
 commander, which is today's `auto_goal` judgment lifted to the side. Orders are
-`Order` as today, so the battle panels in both clients and
-`order_live_battle` work unchanged. Two orders are added later, for the panels
-to offer:
-
-- `Flank(j)` goes round squad `j` and then attacks;
-- `Form(Formation)` sets a squad's formation by hand.
+`Order`, a list per squad carried out in turn, shaped for RTS control (step 5,
+"Battle controls"). Going round a squad's side and setting a front are moves
+(`MoveTo` with a facing and a width), not orders of their own. A side's
+doctrine sets how the auto commander goes about it.
 
 **Squad controller.** It turns the order into an **anchor** (the centre of the
 front rank), a **facing** and a **formation**. Each soldier's slot is then:
@@ -226,7 +224,7 @@ front rank), a **facing** and a **formation**. Each soldier's slot is then:
 | Column | 4 wide | marching to a goal far away |
 | Wedge | a triangle, point at the front | cavalry charging |
 | Braced | Line, with the front ranks kneeling and facing the threat | spears under `Hold`, or when riders come within 200 m |
-| Loose | Line at 3 m spacing | archers and skirmishers |
+| Loose | Line at 3 m spacing | archers and skirmishers, or any squad in loose order |
 
 When soldiers fall, the controller fills the front from the rear rank: slots are
 reassigned by a stable sort on rank, then on file. So a squad gets thinner and
@@ -418,8 +416,9 @@ rate with room for chance:
 3. Live battles on the soldier model, in both clients: the panels stay, and the
    squads are drawn from their soldiers' positions.
 4. Per-soldier replay frames, for the 3D crowd (`crowd.rs` can take one
-   record per soldier).
-5. The `Flank` and `Form` orders in the battle panels.
+   record per soldier). Done: see "Steps 4 and 5" below.
+5. Going round a flank and setting a front from the battle panels. Done, as
+   an order API for RTS control (see "Battle controls").
 6. A 40-year comparison of auto-resolve on soldiers against squads. Switch the
    default only if it is affordable and the outcomes make sense.
 
@@ -515,6 +514,132 @@ within budget, from 1.24 ms and 77 ns on the same machine:
 - Both clients take `--shot FILE --shot-battle S`: the screenshot waits for a
   live battle fought S battle seconds and looks at its field. The 3D client
   also takes `--order TEXT`, as the 2D one does, so a raid can be scripted.
+
+## Steps 4 and 5: soldier replays, and orders for RTS control
+
+**Replays.** A frame of a battle on the soldier model holds every soldier
+(`ReplayFrame.soldiers`, empty on the squad model), so the live view and
+replays share one form:
+
+- each soldier is a `FrameSoldier` of six bytes: position to a tenth of a
+  metre (two `i16`, so ±3.2 km), facing to 1/256 of a turn, and state;
+- frames are still recorded every 5 battle seconds (`run_recorded(5.0)`);
+- the clients play a soldier between two frames along the line, turning the
+  short way (`Replay::soldiers_at`). The 3D client walks a figure per
+  soldier (battles.rs `play_battles`, not `crowd.rs`: the battle figures are
+  their own entities, and a replay holds a few hundred soldiers at once). The
+  2D client draws dots when zoomed in, as for a live battle.
+
+**Size.** Replays are not in saves: the battle log lives in memory and goes
+to the view, and `save.rs` writes the simulation's entities only. So
+`SAVE_VERSION` stays at 16. In memory, a soldier replay costs
+6 bytes × soldiers × frames, plus 24 bytes per squad per frame. Measured
+with `cargo test -p sim_core replay_size -- --ignored --nocapture` (seed 1):
+
+| Battle | Soldiers | Battle time | Frames | Soldiers' bytes |
+| --- | --- | --- | --- | --- |
+| a raid, `swordsmen*30 vs spearmen*20` | 50 | 4.9 min | 60 | 21 KB |
+| `swordsmen*200 vs swordsmen*200` | 400 | 6.9 min | 85 | 208 KB |
+| the yardstick, 50 squads of 40 a side | 4,000 | 6.4 min | 78 | 2.1 MB |
+
+The battle log keeps the newest 16 (`BattleLog::KEEP`), so even 16 yardstick
+battles stay near 33 MB. Auto-resolved raids are on the squad model by
+default (`battle.model`), so a default game records no soldiers at all.
+
+**Orders.** Step 5 first added `Flank` and `Form` as orders of their own.
+They were replaced before it was merged by an order API that the mouse
+controls of an RTS (Total War) map onto directly (module `battle::control`,
+"Battle controls" below). A squad takes a **list** of orders and carries
+them out in turn (`Battle::set_orders`):
+
+- `MoveTo { anchor, facing, width, run }`: go to `anchor` (the centre of
+  the front rank), and stand there facing `facing`, `width` metres wide,
+  from now on. `None` keeps the way it came and the width it has. A move it
+  has reached (within 1 m) gives way to the next order.
+- `Attack(j)`, `Shoot(j)`, `Hold`, `Withdraw` and `Auto`, as before.
+
+Going round an enemy and taking a formation are no longer orders. They are
+ways of making moves:
+
+- **Flank** is `LiveView::flank(q, j)`: a move out to a lane 20 m clear of
+  `j`'s end on the side nearer `q` (at a slant, halfway along, if `q` is still
+  in front of it), a move to that lane a little behind `j`'s front, facing in,
+  then `Attack(j)`. With the mouse, the same is shift-queued right-clicks
+  and a right-click on the enemy.
+- **Form** is `LiveView::reform(q, files)`: a move to where the front stands
+  now, `files` wide, then the orders it had. With the mouse, it is a
+  right-drag in place. The panels offer four fronts (`LiveView::FRONTS`):
+  column (4 files), deep (10), line (20) and wide (40).
+- The squad controller still picks the shape. Riders charge in a wedge,
+  spears brace, a long march goes in column unless the player set a width,
+  and a squad stands loose if it is in loose order. The formation is no
+  longer part of the API.
+- On the squad model a move goes to `anchor` and ignores the facing and the
+  width, since a disc has neither. The panels do not offer the flank or the
+  fronts there (`LiveView::on_soldiers`).
+
+Both clients also take `--battle LINEUP`, fought on `battle.model`, and
+`--set PATH=VALUE`, as the CLI does: `--set battle.model=Soldiers --battle
+"swordsmen*60 vs spearmen*40"` plays a soldier replay at start.
+
+## Battle controls
+
+Battles are to be fought with standard RTS controls, as in Total War. This PR
+adds the sim's side of all of it (`battle::control`), and the clients' panel
+buttons sit on it. The clients' mouse controls come next, in two PRs, each in
+both clients.
+
+| Feature | Control | What the sim gives |
+| --- | --- | --- |
+| Select squads | click, shift-click, box-drag, control groups | (client only) |
+| Move, attack | right-click ground, right-click an enemy | `Order::MoveTo`, `Attack`, `Shoot` |
+| Set the line | right-drag: position, facing and width | `MoveTo { anchor, facing, width }` |
+| Run | double-click | `MoveTo { run: true }` |
+| Group move keeping formation | right-click with several selected | `LiveView::group_shift`: each squad keeps its place, facing and width |
+| Group line | right-drag with several selected | `LiveView::group_line`: one line along the drag, each squad a share by its front |
+| Queued waypoints | shift-right-click | the order list: moves give way in turn |
+| Pause to give orders | pause | the battle steps only when told (`Battle::step`) |
+| Stances: fire | archers skirmish or hold fire | `Stance.fire`: `AtWill`, `Hold`, `Skirmish` (back away from enemies within `battle.skirmish_distance`, 40 m) |
+| Stances: order | loose or tight | `Stance.spacing`: `Own`, `Tight` (shoulder to shoulder, stands up to a charge), `Loose` (`soldiers.loose_spacing`: fewer are hit where an arrow lands) |
+| Pursuit of routers | kill, take prisoners, let go | `Stance.pursuit`: `Kill`, `Capture`, `LetGo`. A squad that does not kill strikes nobody who runs and chases nobody. `Capture` acts as `LetGo` until captives are built (A) |
+| Deployment | before the battle, in your own half | `Battle::deploy` (or `Command::Deploy`): only before the first step, only in `deploy_zone` (your half; defenders behind a wall stay inside it) |
+| Ghost line | the dragged line, with arrival time | `LiveView::preview(q, orders)`: every soldier's slot where the moves leave them, and the seconds to get there at the squad's pace now (`LiveView.paces`) |
+| Matchup hints | hover an enemy | `LiveView::matchup(a, b)`, `Kit::against`: health per blow and per arrow, per damage type, after armour and shield, and per second of one fighter |
+| Morale and fatigue overlay | a toggle | `LiveView.condition`: each soldier's morale and fatigue (soldier model only; the squad model has `LiveView.morale` per squad) |
+| Town doctrine | governance: cautious, balanced or aggressive, and a prisoner policy | `Doctrine { posture, prisoners }`, `Battle::set_doctrine(side, ..)`: on their own judgment a cautious side holds until an enemy is within `battle.cautious_wait` (120 m), an aggressive one runs in from twice `charge_distance`; every squad of the side takes `prisoners` as its pursuit |
+
+Messenger delay for orders was considered and is not planned.
+
+The clients tell a squad what to do with one call, `command_live_battle(world,
+squad, Command)`, where a `Command` is `Orders(list)`, `Stance(stance)` or
+`Deploy { anchor, facing, width }`. It returns an error when the command is not
+taken: the squad is not the player's, the battle has started, or the point is
+outside the deployment zone.
+
+On the squad model, every control does the nearest thing a disc can:
+
+- a move runs if told to, and its facing and width change nothing;
+- the spacing stance changes nothing;
+- holding fire, skirmishing, pursuit and doctrine work as on the soldier
+  model;
+- a preview lays out a ghost from the squad's centre.
+
+**Build order.**
+
+- **A.** In both clients:
+  - mouse control: selection, control groups, right-click and right-drag,
+    double-click to run, group moves, and pause to give orders;
+  - stances in the panel;
+  - the ghost line with its arrival time;
+  - pursuit, including prisoners who become captives in the town economy
+    (the sim's `Capture`);
+  - matchup hints;
+  - the morale and fatigue overlay.
+- **B.** In both clients:
+  - queued waypoints (shift-right-click);
+  - the deployment phase before a live battle starts;
+  - town doctrine in governance, saved with the town (a `SAVE_VERSION`
+    bump), and used by auto-resolved battles.
 
 ## Open questions
 
