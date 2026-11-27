@@ -69,7 +69,7 @@ impl SoldierBattle {
                 } else {
                     // Among obstacles: round them along the way home, each
                     // runner on its own side of it.
-                    let side = if i % 2 == 0 { 1.0 } else { -1.0 };
+                    let side = if i.is_multiple_of(2) { 1.0 } else { -1.0 };
                     home * 0.3 + V2::new(-home.y, home.x) * side
                 };
             }
