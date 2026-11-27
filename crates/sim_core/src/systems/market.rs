@@ -132,7 +132,14 @@ pub fn settle(
             for p in 0..np {
                 if db.coin[p] > 0.0 {
                     // Coin is worth its face value, while the town wants more of it.
-                    town.price[p] = if mint_wanted { db.coin[p] } else { 0.0 };
+                    // (Metal coin, kept by a town that issues its own, is
+                    // worth its face value in the common unit.)
+                    let face = if mp.treasury == crate::config::Treasury::Issues {
+                        db.coin[p] / town.coin_value.max(1e-3)
+                    } else {
+                        db.coin[p]
+                    };
+                    town.price[p] = if mint_wanted { face } else { 0.0 };
                     continue;
                 }
                 if let Some(kind) = db.opens[p] {
@@ -982,7 +989,12 @@ pub fn pay_abroad(
     let back = Coin::from_coins(need.min(held));
     towns.0[buyer].hold(seller, -back);
     towns.0[seller].treasury += back;
-    let rest = Coin::from_coins(cost * (1.0 - back.coins() / need.max(1e-9)).max(0.0));
+    // Then metal coin, worth its face value in the common unit everywhere.
+    let left = (cost * (1.0 - back.coins() / need.max(1e-9))).max(0.0);
+    let metal = Coin::from_coins((left * vb).min(towns.0[buyer].metal.coins().max(0.0)));
+    towns.0[buyer].metal -= metal;
+    towns.0[seller].metal += metal;
+    let rest = Coin::from_coins((left - metal.coins() / vb.max(1e-6)).max(0.0));
     towns.0[buyer].treasury -= rest;
     towns.0[seller].hold(buyer, rest);
     (back.coins(), rest.coins())

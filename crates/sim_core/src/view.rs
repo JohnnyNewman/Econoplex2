@@ -70,6 +70,9 @@ pub struct TownView {
     /// Other towns' coin the town holds, by issuing town.
     #[serde(default)]
     pub foreign: Vec<f32>,
+    /// Metal coin the town holds (worth its face value everywhere).
+    #[serde(default)]
+    pub metal: f32,
     /// Houses by kind (product id, how many), and how well they shelter the
     /// town's people (0..1).
     #[serde(default)]
@@ -563,6 +566,7 @@ impl ViewSnapshot {
                     treasury: t.treasury.coins(),
                     coin_value: t.coin_value,
                     foreign: t.foreign.iter().map(|c| c.coins()).collect(),
+                    metal: t.metal.coins(),
                     houses: t
                         .houses
                         .iter()

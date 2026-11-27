@@ -148,6 +148,11 @@ fn panels(
                     ));
                     ui.end_row();
                 }
+                if town.metal >= 1.0 {
+                    ui.label("metal coin");
+                    ui.label(format!("{:.0} (every town takes it)", town.metal));
+                    ui.end_row();
+                }
                 ui.label("coin worth");
                 ui.label(format!("{:.2} (1 = the average coin)", town.coin_value));
                 ui.end_row();

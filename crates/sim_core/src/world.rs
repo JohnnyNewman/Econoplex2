@@ -230,6 +230,11 @@ pub struct Town {
     /// trade, and spendable only on that town's goods or exchanged.
     #[serde(default)]
     pub foreign: Vec<crate::coin::Coin>,
+    /// Metal coin the town's mints struck (silver, copper or iron), worth its
+    /// face value in the common unit everywhere: what a town that issues its
+    /// own coin pays abroad with before its own.
+    #[serde(default)]
+    pub metal: crate::coin::Coin,
     /// Houses the town has, by product (only house products count).
     #[serde(default)]
     pub houses: Vec<u32>,
@@ -604,6 +609,11 @@ impl Town {
         match self.policy.minting {
             crate::policy::Minting::On => true,
             crate::policy::Minting::Off => false,
+            crate::policy::Minting::Auto if mp.treasury == crate::config::Treasury::Issues => {
+                // A town that issues its own coin wants metal to pay abroad with.
+                let n = self.residents.len().max(1) as f32;
+                self.metal.coins() < mp.mint_below_per_capita * n
+            }
             crate::policy::Minting::Auto => {
                 let n = self.residents.len().max(1) as f32;
                 self.treasury.coins() < mp.mint_below_per_capita * n
@@ -644,6 +654,7 @@ pub fn total_coin(store: &AgentStore, towns: &Towns) -> crate::coin::Coin {
             t.treasury
                 + t.firms.iter().map(|f| f.cash).sum::<crate::coin::Coin>()
                 + t.foreign.iter().copied().sum::<crate::coin::Coin>()
+                + t.metal
         })
         .sum();
     agents + towns
@@ -879,6 +890,7 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
             coin_value: 1.0,
             foreign: Vec::new(),
             houses: Vec::new(),
+            metal: crate::coin::Coin::ZERO,
             goods_today: Vec::new(),
             goods_use: Vec::new(),
             wage_factor: vec![1.0; db.recipes.len()],

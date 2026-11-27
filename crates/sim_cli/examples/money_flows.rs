@@ -46,10 +46,11 @@ fn main() {
                 .map(|c| format!("{:.0}", c.coins()))
                 .collect();
             println!(
-                "  {:<11} coin value {:.3}, treasury {:.0}, holds [{}]",
+                "  {:<11} coin value {:.3}, treasury {:.0}, metal {:.0}, holds [{}]",
                 town.name,
                 town.coin_value,
                 town.treasury.coins(),
+                town.metal.coins(),
                 held.join(", ")
             );
             let mut line = format!("  {:<11}", town.name);

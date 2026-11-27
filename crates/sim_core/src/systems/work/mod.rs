@@ -468,9 +468,15 @@ pub fn produce(
                         town.flows.add(crate::goods::Flow::Minted, pi, q);
                         let minted = q * db.coin[pi];
                         let struck = crate::coin::Coin::from_coins(minted);
-                        town.treasury += struck;
                         town.minted += struck;
-                        town.ledger.add(crate::ledger::Flow::Minted, minted);
+                        if params.market.treasury == crate::config::Treasury::Issues {
+                            // A town that issues its own coin keeps metal coin
+                            // apart, to pay other towns with.
+                            town.metal += struck;
+                        } else {
+                            town.treasury += struck;
+                            town.ledger.add(crate::ledger::Flow::Minted, minted);
+                        }
                         continue;
                     }
                     let old = town.stock[pi];
