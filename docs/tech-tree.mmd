@@ -55,6 +55,7 @@ flowchart LR
     p_bronze_spear["Bronze spear (lvl 1)"]
     p_horse["Horse"]
     p_stable[["Stable"]]
+    p_bronze_scale["Bronze scale"]
     p_silver["Silver"]
     p_mint[["Mint"]]
     p_coin(("Coin"))
@@ -78,9 +79,15 @@ flowchart LR
     p_iron_spear["Iron spear (lvl 2)"]
     p_lance["Lance"]
     p_mail["Mail shirt"]
+    p_pike["Pike"]
+    p_war_axe["War axe"]
+    p_mace["Mace"]
+    p_crossbow["Crossbow"]
+    p_rimmed_shield["Iron-rimmed shield"]
     p_plough["Iron plough"]
   end
   subgraph era4["4 Early industry"]
+    p_plate["Plate armour"]
     p_coke["Coke"]
     p_machine_parts["Machine parts"]
     p_blast_furnace[["Blast furnace"]]
@@ -127,6 +134,7 @@ flowchart LR
   p_beam --> p_masons_yard
   p_beam --> p_mill
   p_beam --> p_mint
+  p_beam --> p_pike
   p_beam --> p_smithy
   p_beam --> p_stable
   p_beam --> p_weaving_shed
@@ -136,14 +144,17 @@ flowchart LR
   p_brick --> p_machine_shop
   p_brick --> p_roller_mill
   p_brick --> p_textile_mill
+  p_bronze --> p_bronze_scale
   p_bronze --> p_bronze_spear
   p_bronze --> p_shears
   p_clay --> p_brick
   p_clay --> p_kiln
   p_clay --> p_pot
   p_clay --> p_roof_tile
+  p_cloth --> p_bronze_scale
   p_cloth --> p_clothes
   p_cloth --> p_padded_coat
+  p_cloth --> p_plate
   p_coal --> p_coke
   p_coke --> p_iron
   p_coke --> p_steel
@@ -170,15 +181,19 @@ flowchart LR
   p_iron --> p_iron_blade
   p_iron --> p_iron_spear
   p_iron --> p_lance
+  p_iron --> p_mace
   p_iron --> p_machine_parts
   p_iron --> p_machine_shop
   p_iron --> p_mail
   p_iron --> p_nails
   p_iron --> p_pickaxe
+  p_iron --> p_pike
   p_iron --> p_plough
+  p_iron --> p_rimmed_shield
   p_iron --> p_sickle
   p_iron --> p_smithy
   p_iron --> p_steel
+  p_iron --> p_war_axe
   p_iron_blade --> p_longsword_1
   p_lime --> p_mortar
   p_machine_parts --> p_roller_mill
@@ -189,6 +204,7 @@ flowchart LR
   p_mortar --> p_roller_mill
   p_mortar --> p_textile_mill
   p_nails --> p_machine_shop
+  p_nails --> p_rimmed_shield
   p_ore --> p_iron
   p_pot --> p_ale
   p_roof_tile --> p_brewery
@@ -199,7 +215,9 @@ flowchart LR
   p_sharp_blade --> p_longsword_3
   p_silver --> p_coin
   p_silver_ore --> p_silver
+  p_steel --> p_crossbow
   p_steel --> p_machine_parts
+  p_steel --> p_plate
   p_steel --> p_steel_blade
   p_steel_blade --> p_longsword_2
   p_steel_blade --> p_tempered_blade
