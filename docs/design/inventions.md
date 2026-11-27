@@ -1,8 +1,8 @@
 # Inventions and knowledge
 
 Design note, agreed in discussion with Nils on 2026-11-26. Steps 1 (content and
-validation) and 2 (knowledge per person, `knowledge.rs`, opt-in with
-`knowledge.enabled`) are built, and step 4 (inventing, opt-in with `knowledge.invention.enabled`).
+validation), 2 (knowledge per person, `knowledge.rs`, `knowledge.enabled`) and 4
+(inventing, `knowledge.invention.enabled`) are built and on by default since 2026-11-27.
 
 ## Goal
 

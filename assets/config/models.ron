@@ -569,7 +569,7 @@
     // at `learn_per_day`; pupils learn their teacher's recipes at
     // learn_per_day * school_share. Off: everyone knows everything.
     knowledge: (
-        enabled: false,
+        enabled: true,
         start_share: 0.1,
         foreign_share: 0.2,
         learn_per_day: 0.03,
@@ -585,7 +585,7 @@
         // price against the town's price level, ^need_weight, 0.5 .. 2) * rest
         // (1 - fatigue). Each invention goes to the event log.
         invention: (
-            enabled: false,
+            enabled: true,
             rate: 1e-3,
             margin: 0.1,
             related: 0.4,
