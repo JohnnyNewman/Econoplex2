@@ -57,6 +57,8 @@ flowchart LR
     p_dyed_cloth["Dyed cloth"]
     p_fine_clothes["Fine clothes"]
     p_blanket["Blanket"]
+    p_tavern[["Tavern"]]
+    p_evening_out["Evening at the tavern"]
   end
   subgraph era2["2 Bronze"]
     p_shears["Shears"]
@@ -139,6 +141,7 @@ flowchart LR
   n_quarry --> p_stone
   n_silver_vein --> p_silver_ore
   n_tin_vein --> p_tin_ore
+  p_ale --> p_evening_out
   p_barrel --> p_ale
   p_beam --> p_bakery
   p_beam --> p_brewery
@@ -153,6 +156,7 @@ flowchart LR
   p_beam --> p_smithy
   p_beam --> p_stable
   p_beam --> p_stone_house
+  p_beam --> p_tavern
   p_beam --> p_weaving_shed
   p_beam --> p_workshop
   p_brick --> p_blast_furnace
@@ -255,6 +259,7 @@ flowchart LR
   p_thatch --> p_masons_yard
   p_thatch --> p_mill
   p_thatch --> p_stable
+  p_thatch --> p_tavern
   p_thatch --> p_weaving_shed
   p_thatch --> p_workshop
   p_tin --> p_bronze
@@ -281,6 +286,7 @@ flowchart LR
   p_mint -.-> p_coin
   p_roller_mill -.-> p_flour
   p_stable -.-> p_horse
+  p_tavern -.-> p_evening_out
   p_textile_mill -.-> p_cloth
   p_textile_mill -.-> p_yarn
   p_weaving_shed -.-> p_blanket
