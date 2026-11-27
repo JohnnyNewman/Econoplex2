@@ -337,7 +337,9 @@
     ),
     // Squad battles on a field (battle.rs): every number has a unit. Raids fight
     // them; `econoplex-sim --battle "cavalry*20 vs spearmen*30"` fights one.
-    // Matchups come from reach, armour, speed, skill and experience.
+    // Matchups come from reach, armour, speed, skill and experience. Blows and
+    // arrows follow the combat rules (sim_core::battle::rules, after the open 5e
+    // SRD ideas): d20 + attack bonus against armour class, damage dice.
     battle: (
         // Squads: each squad a disc, settled with dice per squad. Soldiers: every
         // soldier simulated (docs/design/battle-per-soldier.md, `soldiers` below).
@@ -354,24 +356,28 @@
         foot_spacing: 1.0,         // m of front per fighter
         horse_spacing: 2.0,
         frontage: 40.0,            // m: widest front a squad forms
-        base_hit: 0.35,            // chance a blow lands between equals
-        skill_slope: 3.0,
-        experience_weight: 0.15,   // effective skill per ln(1 + battles survived)
+        proficiency: 2.0,          // attack bonus of a fighter of skill 0.5 and no battles,
+        skill_bonus: 4.0,          // more per unit of skill above that,
+        experience_bonus: 1.0,     // and per ln(1 + battles survived)
+        hit_points: 8.0,           // a townsperson unhurt,
+        hp_per_experience: 2.0,    // more per ln(1 + battles survived)
+        exhaustion_penalty: 1.0,   // attack bonus lost per level of exhaustion (a fifth of fatigue)
         experience_full: 10.0,     // battles for full discipline from experience
-        shield_parry: 0.5,         // share of shield cover that also turns blows
         close_speed: 0.5,          // m/s a short weapon closes inside a long one
-        charge_damage: 0.08,       // health per m/s of a horse's (or braced spear's) impact
+        charge_damage: 0.6,        // hit points per m/s of a horse's (or braced spear's) impact
         foot_charge: 0.3,          // a running man's share of that
-        shot_accuracy: 0.5,        // arrow hit chance at point blank
-        range_falloff: 0.6,        // share of it lost at full range
-        mounted_size: 1.5,         // a rider is a bigger target
+        arrow_aim: 0.6,            // share of arrows that come down on the man aimed at
+        range_penalty: 8.0,        // attack bonus an arrow loses at full range
+        rider_target: 2.0,         // attack bonus against a rider (squad model)
+        mounted_size: 1.5,         // a rider is a bigger target where arrows land (soldier model)
         death_below: -0.5,         // health below this is death, above it a wound
         morale_per_loss: 1.5,      // morale lost per share of the squad lost
         flank_drain: 0.01,         // morale per second of blows in the flank
         morale_regen: 0.002,       // morale per second out of the fight
         waver_at: 0.4,
         rout_at: 0.15,
-        wall_cover: 0.6,           // share of a man on the wall hidden from arrows
+        wall_cover: 2.0,           // armour class a man on the wall gains against arrows from below
+        wall_ground: 2.0,          // attack bonus of his blows on a man climbing it (the higher ground)
         breach_width: 6.0,         // m of gate or breach attackers fight through
         skirmish_distance: 40.0,   // m: skirmishing archers back away from enemies this close
         cautious_wait: 120.0,      // m: a cautious side holds until an enemy is this close
@@ -412,6 +418,7 @@
             rally_after: 4.0,      // s riders stay on a spear wall before riding back
             rally_distance: 30.0,  // m they ride back to charge again
             hit_radius: 0.5,       // m: an arrow hits whoever stands this close to where it lands
+            crush_bodies: 4,       // bodies pressing on a soldier at once: a crush (restrained)
             friendly_fire: true,   // arrows hit friends too
             parallel_from: 2048,   // soldiers from which a battle runs on all threads
         ),

@@ -111,6 +111,9 @@ pub struct SoldierParams {
     /// An arrow hits a man whose centre is within this many metres of where
     /// it lands (a rider: times `battle.mounted_size`).
     pub hit_radius: f32,
+    /// A soldier pressed by this many bodies at once is in a crush:
+    /// restrained (blows on them have advantage, theirs disadvantage).
+    pub crush_bodies: u8,
     /// Whether arrows can hit friends where they land.
     pub friendly_fire: bool,
     /// Phases 3 and 4 run on all threads from this many soldiers on.
@@ -155,6 +158,7 @@ impl Default for SoldierParams {
             rally_after: 4.0,
             rally_distance: 30.0,
             hit_radius: 0.5,
+            crush_bodies: 4,
             friendly_fire: true,
             parallel_from: 2048,
         }
@@ -450,6 +454,8 @@ struct Plan {
     aim: u32,
     /// Morale gained or lost from what is around them.
     morale: f32,
+    /// Bodies pressing on them.
+    crush: u8,
 }
 
 impl Default for Plan {
@@ -462,6 +468,7 @@ impl Default for Plan {
             act: Act::None,
             aim: NONE,
             morale: 0.0,
+            crush: 0,
         }
     }
 }
@@ -561,8 +568,12 @@ pub struct SoldierBattle {
     /// The soldier one rank ahead in their file, whom they keep behind
     /// while the squad is in contact (`NONE` in the front rank).
     ahead: Vec<u32>,
-    /// Effective skill: skill + `experience_weight` * ln(1 + battles).
-    skill: Vec<f32>,
+    /// Attack bonus before exhaustion: proficiency and their weapon's
+    /// quality; hit points unhurt; and whether they were in a crush last
+    /// substep (restrained).
+    bonus: Vec<f32>,
+    max_hp: Vec<f32>,
+    restrained: Vec<bool>,
     target: Vec<u32>,
     cooldown: Vec<f32>,
     arrows: Vec<u16>,
@@ -623,7 +634,9 @@ impl SoldierBattle {
             file: vec![0; n],
             rank: vec![0; n],
             ahead: vec![NONE; n],
-            skill: Vec::with_capacity(n),
+            bonus: Vec::with_capacity(n),
+            max_hp: Vec::with_capacity(n),
+            restrained: vec![false; n],
             target: vec![NONE; n],
             cooldown: Vec::with_capacity(n),
             arrows: Vec::with_capacity(n),
@@ -713,9 +726,10 @@ impl SoldierBattle {
             self.kit.push(k);
             self.body.push(self.kits[k as usize].body);
             self.squad.push(c as u16);
-            self.skill
-                .push(member.skill + p.experience_weight * (1.0 + e).ln());
             let kit = &self.kits[k as usize].kit;
+            self.bonus
+                .push(rules::proficiency(&p, member.skill, e) + kit.quality);
+            self.max_hp.push(rules::max_hp(&p, e));
             let mut d = Draw::new(self.seed, 0, i, Purpose::Start);
             self.cooldown
                 .push(d.f32() / kit.strike_rate.max(kit.shot_rate).max(1e-3));
@@ -990,14 +1004,26 @@ impl SoldierBattle {
         self.events.push(Event { t: self.t, kind });
     }
 
-    /// 1 - `fatigue_effect` * fatigue: the share of their speed, strike rate
-    /// and parry a tired soldier keeps.
+    /// 1 - `fatigue_effect` * fatigue: the share of their speed and attack
+    /// rate a tired soldier keeps.
     #[inline]
     fn vigour(&self, i: usize) -> f32 {
         1.0 - self.params.soldiers.fatigue_effect * self.fatigue[i]
     }
 
-    /// The share of blows a wavering soldier still strikes, as on the squad model.
+    /// Frightened: a wavering soldier attacks with disadvantage.
+    #[inline]
+    fn frightened(&self, i: usize) -> bool {
+        self.morale[i] < self.params.waver_at
+    }
+
+    /// Soldier `i`'s attack bonus now: less a point per level of exhaustion.
+    #[inline]
+    fn attack_bonus(&self, i: usize) -> f32 {
+        self.bonus[i] - self.params.exhaustion_penalty * rules::exhaustion(self.fatigue[i]) as f32
+    }
+
+    /// The share of runners a wavering soldier still lays hands on.
     #[inline]
     fn nerve(&self, i: usize) -> f32 {
         let w = self.params.waver_at.max(1e-3);

@@ -5,11 +5,15 @@
 //! and one place on the field. This module fights one battle between squads
 //! from physical properties only:
 //!
-//! - **Kit** gives reach, strike damage and rate, bow range and arrows, armour,
-//!   a shield and whether the squad is mounted. Spears outreach swords, a lance
-//!   hits hard at a gallop, mail stops arrows.
+//! - **Kit** gives reach, damage dice and attacks per second, bow range and
+//!   arrows, armour class and resistances, a shield and whether the squad is
+//!   mounted. Spears outreach swords, a lance hits hard at a gallop, mail
+//!   turns blades.
 //! - **People** give skill and experience. Experience (battles survived) counts
-//!   heavily, both in how well a fighter strikes and in the squad's discipline.
+//!   heavily: in the attack bonus, in hit points and in the squad's discipline.
+//! - **The rules** ([`rules`]) settle every blow and arrow: an attack roll of
+//!   d20 + bonus against armour class, damage dice, resistance, advantage and
+//!   conditions, after the ideas of the open fifth-edition SRD.
 //! - **Morale** starts from the squad's needs (fed, warm, paid; computed by the
 //!   caller) and falls with losses and with being hit in the flank. A wavering
 //!   squad fights worse; a routing one runs for the edge of the field and goes home.
@@ -39,6 +43,7 @@ mod kit;
 mod lineup;
 mod report;
 pub mod rts;
+pub mod rules;
 pub mod soldiers;
 pub mod squads;
 #[cfg(test)]
@@ -98,26 +103,33 @@ pub struct BattleParams {
     pub foot_spacing: f32,
     pub horse_spacing: f32,
     pub frontage: f32,
-    /// Chance a strike lands between equally skilled fighters, and how steeply
-    /// the chance follows the difference in effective skill.
-    pub base_hit: f32,
-    pub skill_slope: f32,
-    /// Effective skill gained per log of battles survived: skill + weight * ln(1 + battles).
-    pub experience_weight: f32,
+    /// The combat rules (`rules`): proficiency for a fighter of skill 0.5
+    /// and no battles, more per unit of skill above that and per ln(1 +
+    /// battles survived); hit points unhurt, and more per ln(1 + battles).
+    pub proficiency: f32,
+    pub skill_bonus: f32,
+    pub experience_bonus: f32,
+    pub hit_points: f32,
+    pub hp_per_experience: f32,
+    /// Attack bonus lost per level of exhaustion.
+    pub exhaustion_penalty: f32,
     /// Battles after which experience gives full discipline.
     pub experience_full: f32,
-    /// Share of a shield's cover that also turns blows from the front.
-    pub shield_parry: f32,
     /// Metres per second at which a shorter weapon closes inside a longer one's reach.
     pub close_speed: f32,
-    /// Extra damage per metre per second of closing speed in a charge, for a horse
-    /// (and a spear braced against one). A running man hits with `foot_charge` of it.
+    /// Extra hit points of damage per metre per second of closing speed in a
+    /// charge, for a horse (and a spear braced against one). A running man
+    /// hits with `foot_charge` of it.
     pub charge_damage: f32,
     pub foot_charge: f32,
-    /// Chance an arrow hits a man at point-blank range, the share of that lost
-    /// at full range, and how much bigger a mounted target is.
-    pub shot_accuracy: f32,
-    pub range_falloff: f32,
+    /// Arrows: the share that come down on the man aimed at (the rest fall
+    /// among his neighbours on the soldier model, and are lost on the squad
+    /// model), the attack bonus lost at full range, the bonus against a
+    /// rider on the squad model (a bigger target), and how much bigger a
+    /// rider is where an arrow lands on the soldier model.
+    pub arrow_aim: f32,
+    pub range_penalty: f32,
+    pub rider_target: f32,
     pub mounted_size: f32,
     /// A fighter whose health falls below this is dead; above it, wounded.
     pub death_below: f32,
@@ -129,9 +141,12 @@ pub struct BattleParams {
     /// Below `waver_at` a squad fights worse; below `rout_at` it runs.
     pub waver_at: f32,
     pub rout_at: f32,
-    /// Walls: share of a defender on the wall hidden from arrows, and the width
+    /// Walls: armour class a defender on the wall gains against arrows from
+    /// below it (cover), the attack bonus their blows have on a man climbing
+    /// it or pushing through the breach (the higher ground), and the width
     /// of the gate or breach the attackers must fight through, in metres.
     pub wall_cover: f32,
+    pub wall_ground: f32,
     pub breach_width: f32,
     /// Stances and doctrine: archers who skirmish back away from enemies
     /// this close (metres between the squads' edges), and squads of a
@@ -157,16 +172,19 @@ impl Default for BattleParams {
             foot_spacing: 1.0,
             horse_spacing: 2.0,
             frontage: 40.0,
-            base_hit: 0.35,
-            skill_slope: 3.0,
-            experience_weight: 0.15,
+            proficiency: 2.0,
+            skill_bonus: 4.0,
+            experience_bonus: 1.0,
+            hit_points: 8.0,
+            hp_per_experience: 2.0,
+            exhaustion_penalty: 1.0,
             experience_full: 10.0,
-            shield_parry: 0.5,
             close_speed: 0.5,
-            charge_damage: 0.08,
+            charge_damage: 0.6,
             foot_charge: 0.3,
-            shot_accuracy: 0.5,
-            range_falloff: 0.6,
+            arrow_aim: 0.6,
+            range_penalty: 8.0,
+            rider_target: 2.0,
             mounted_size: 1.5,
             death_below: -0.5,
             morale_per_loss: 1.5,
@@ -174,7 +192,8 @@ impl Default for BattleParams {
             morale_regen: 0.002,
             waver_at: 0.4,
             rout_at: 0.15,
-            wall_cover: 0.6,
+            wall_cover: 2.0,
+            wall_ground: 2.0,
             breach_width: 6.0,
             skirmish_distance: 40.0,
             cautious_wait: 120.0,
@@ -523,6 +542,13 @@ impl Battle {
     ) -> LiveView {
         let m = self.model();
         let finished = self.finished();
+        let condition = match self {
+            Self::Squads(_) => Vec::new(),
+            Self::Soldiers(b) => b.condition(),
+        };
+        let (sheets, bonus): (Vec<_>, Vec<_>) = (0..m.count())
+            .map(|s| rules::sheets(m.params(), m.spec(s), condition.get(s)))
+            .unzip();
         LiveView {
             town,
             at,
@@ -534,12 +560,14 @@ impl Battle {
             stances: (0..m.count()).map(|s| m.stance(s)).collect(),
             paces: (0..m.count()).map(|s| m.pace(s)).collect(),
             kits: (0..m.count()).map(|s| m.spec(s).kit.clone()).collect(),
+            bonus: bonus
+                .iter()
+                .map(|&b| (b, b - 0.5 * m.params().range_penalty))
+                .collect(),
+            sheets,
             wall_x: m.field().wall_x,
             morale: (0..m.count()).map(|s| m.morale(s)).collect(),
-            condition: match self {
-                Self::Squads(_) => Vec::new(),
-                Self::Soldiers(b) => b.condition(),
-            },
+            condition,
             frame: self.frame(),
             player_side,
             deploying: false,

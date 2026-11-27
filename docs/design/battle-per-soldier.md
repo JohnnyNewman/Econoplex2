@@ -60,13 +60,15 @@ outside the world, as today.
 | `pos` | `Vec2` (m) | position on the field |
 | `facing` | `Vec2`, unit | where they look. Kept as a vector, so the hot path needs no `sin` or `cos`. |
 | `vel` | `Vec2` (m/s) | last step's velocity, used for charges and impact |
-| `health` | `f32` | 1 is unhurt, ≤ 0 is down, ≤ `death_below` is dead (as `Member.health`) |
+| `health` | `f32` | the share of hit points left: 1 is unhurt, ≤ 0 is down, ≤ `death_below` is dead (as `Member.health`) |
 | `morale` | `f32` 0..1 | the soldier's own nerve. It starts at the squad's morale. |
 | `fatigue` | `f32` 0..1 | 0 is rested, 1 is spent. It starts from the person's `fatigue` state. |
 | `kit` | `u16` | index into the battle's kit table (below) |
 | `squad` | `u16` | the squad they belong to |
 | `slot` | `u16` | their place in the squad's formation (file and rank) |
-| `skill` | `f32` | effective skill: skill + `experience_weight` · ln(1 + battles) |
+| `bonus` | `f32` | attack bonus before exhaustion: proficiency + the weapon's quality (see "Combat rules") |
+| `max_hp` | `f32` | hit points unhurt: `hit_points` + `hp_per_experience` · ln(1 + battles) |
+| `restrained` | `bool` | in a crush last substep (pressed by `crush_bodies` bodies or more) |
 | `target` | `u32` or none | the enemy they are fighting |
 | `cooldown` | `f32` (s) | time until their next blow or shot |
 | `arrows` | `u16` | arrows left |
@@ -89,24 +91,26 @@ from the content's `fight` values (PR #178):
 - **A blow and a shot have a type.** A weapon's melee `damage_type` and its
   missile `shot_type` are each `Pierce`, `Slash` or `Blunt`. Spears, lances
   and arrows pierce, swords slash, clubs and maces are blunt. Fists are blunt.
-- **Armour stops each type by its own share:**
-  `armour: (pierce, slash, blunt)`. Layers multiply per type, as in
-  `Kit::from_gear`.
-- **The damage of a hit** is the sum over types of damage_t × (1 − armour_t),
-  as in `Kit::blow` and `Kit::shot`. A charge's extra damage splits in the same
-  shares as the blow.
+- **Armour resists some types:** a piece's `resist` list halves those types
+  and its `vulnerable` list doubles them (`FightDef::taken`); layers multiply
+  per type, as in `Kit::from_gear`. Armour also adds to armour class (see
+  "Combat rules").
+- **The damage of a hit** is the weapon's dice times what the armour lets
+  through of its type, as in `Kit::blow` and `Kit::shot`. A charge's extra
+  hit points split in the same shares as the blow.
 
 The squad model has to average a squad's weapons into one share per type. The
 soldier model needs no average: each soldier's blow carries their own
 weapon's type and lands on one target's own armour. Each kit-table entry holds:
 
-- `damage: [pierce, slash, blunt]`, with one non-zero entry for a single weapon;
-- `shot_damage` in the same form;
-- `armour` per type.
+- `dice`, `charge_dice` and `damage_type` for a blow, `shot_dice` and
+  `shot_type` for an arrow, and the means per type (`damage`, `shot_damage`)
+  the squad model uses;
+- `ac`, `shield` and `taken` per type.
 
-Phase 4 of a substep takes the striker's damage and the target's armour from
-the kit table, so per-type damage costs three multiplications and no more
-lookups. The tests in the squad model ("mail turns swords better than spears",
+Phase 4 of a substep takes the striker's dice and the target's armour from
+the kit table, so a blow costs an attack roll, a roll of the dice and one
+multiplication, with no more lookups. The tests in the squad model ("mail turns swords better than spears",
 "blunt beats slash against plate") also run on the soldier model.
 
 **Fatigue.** This is new, because the squad model has none. It rises each
@@ -118,8 +122,10 @@ second by:
 
 It falls by `fatigue_rest` while standing out of contact.
 
-Fatigue slows a soldier: their top speed, strike rate and parry are multiplied
-by (1 − `fatigue_effect` · fatigue). A spent soldier also loses morale faster.
+Fatigue slows a soldier: their top speed and attack rate are multiplied by
+(1 − `fatigue_effect` · fatigue), and each fifth of fatigue is a level of
+exhaustion, a point off their attack rolls. A spent soldier also loses
+morale faster.
 
 An army that arrives after a forced march, or one whose soldiers did not sleep,
 starts tired. This comes from the store's `fatigue` state, which
