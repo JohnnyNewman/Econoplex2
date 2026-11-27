@@ -762,7 +762,21 @@ fn a_town_short_of_money_builds_a_mint_and_strikes_coin() {
     // Ironhold has ore and a furnace; ordered to mint, it builds a mint and works it.
     s.order("mint Ironhold on").unwrap();
     s.order("build Ironhold mint").unwrap();
-    run_years(&mut s, 5);
+    // Up to eight years: cut stone is imported, and builders are in demand
+    // (on Linux the mint was not up after five once the fine goods came).
+    let mint_def = s
+        .world
+        .resource::<sim_core::Db>()
+        .content
+        .product("mint")
+        .unwrap();
+    for _ in 0..8 {
+        run_years(&mut s, 1);
+        let t = &s.world.resource::<sim_core::Towns>().0[0];
+        if t.building_count(mint_def) >= 1 && t.ledger.total[Flow::Minted as usize] > 0.0 {
+            break;
+        }
+    }
     let db = s.world.resource::<sim_core::Db>();
     let mint = db.content.product("mint").unwrap();
     let towns = s.world.resource::<sim_core::Towns>();
