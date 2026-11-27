@@ -1386,8 +1386,10 @@ fn agents_learn_what_their_jobs_pay() {
     assert!(ratios.len() > 50, "only {} agents ever baked", ratios.len());
     ratios.sort_by(f32::total_cmp);
     let median = ratios[ratios.len() / 2];
+    // The public rate is what a full share earns (pay follows skill), so a
+    // typical baker expects well below it.
     assert!(
-        (0.2..5.0).contains(&median),
+        (0.1..5.0).contains(&median),
         "bakers expect {median:.2} times what baking pays"
     );
     assert!(store

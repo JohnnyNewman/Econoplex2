@@ -16,6 +16,7 @@ flowchart LR
   subgraph d2["food"]
     r_bake_bread["Bake bread"]
     r_brew_ale["Brew ale"]
+    r_keep_tavern["Keep the tavern"]
   end
   subgraph d3["textiles"]
     r_spin_wool["Spin wool"]
@@ -126,6 +127,7 @@ flowchart LR
     r_build_roller_mill["Build roller mill"]
     r_build_textile_mill["Build textile mill"]
     r_build_mint["Build mint"]
+    r_build_tavern["Build tavern"]
   end
   subgraph d12["engineering"]
     r_make_machine_parts["Make machine parts"]
@@ -300,6 +302,10 @@ flowchart LR
   r_refine_silver --> r_make_silver_jewellery
   r_cast_bronze --> r_make_bronze_jewellery
   r_spin_wool --> r_weave_blanket
+  r_brew_ale --> r_keep_tavern
+  r_build_tavern --> r_keep_tavern
+  r_build_workshop --> r_build_tavern
+  r_brew_ale --> r_build_tavern
   style d0 fill:#e8f0d8,stroke:#888
   style d1 fill:#efe3d3,stroke:#888
   style d2 fill:#f3dcc4,stroke:#888

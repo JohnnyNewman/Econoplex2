@@ -1,0 +1,26 @@
+// The tavern (plan Phase 4, belonging): the first service. An innkeeper turns
+// ale and a fire into evenings out, which households buy and use up within
+// the week, for belonging. A service is modelled as a good that keeps a week.
+// Its own file, so it can change or go on its own.
+(
+    skills: [
+        (id: "innkeeping", name: "Innkeeping", domain: "food", prereqs: ["brewing"]),
+    ],
+    products: [
+        (id: "tavern", name: "Tavern", category: Building, era: 1, base_price: 220.0, slots: 6),
+        // An evening at the tavern: company, a song, a drink.
+        (id: "evening_out", name: "Evening at the tavern", category: Material, era: 1, base_price: 2.5,
+            household: Some((life_days: 7.0,
+                serves: [(need: Belonging, amount: 0.4, by: Consume)]))),
+    ],
+    recipes: [
+        (id: "keep_tavern", name: "Keep the tavern", skill: "innkeeping", difficulty: 0.25,
+            requires: ["brew_ale", "build_tavern"],
+            inputs: [("ale", 2), ("wood", 1)], outputs: [("evening_out", 5)], building: Some("tavern"),
+            duration: 1.0, max_team: 3, physique: [("perception", 0.1)]),
+        (id: "build_tavern", name: "Build tavern", skill: "construction", difficulty: 0.30,
+            requires: ["build_workshop", "brew_ale"],
+            inputs: [("plank", 8), ("beam", 4), ("thatch", 6)], outputs: [("tavern", 1)],
+            duration: 30.0, max_team: 6, physique: [("strength", 0.3), ("endurance", 0.2)]),
+    ],
+)
