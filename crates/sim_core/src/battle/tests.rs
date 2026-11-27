@@ -813,3 +813,35 @@ fn the_live_view_has_every_soldiers_condition() {
     );
     assert!(v.condition.is_empty() && v.paces[0] == (1.4, 3.0));
 }
+
+/// Squads that take prisoners lay hands on runners instead of striking
+/// them: the prisoners are out of the battle, and are not counted standing.
+#[test]
+fn prisoners_are_taken_not_struck() {
+    let fight = |pursuit: Pursuit| {
+        (0..4)
+            .map(|seed| {
+                let (field, specs) = parse_lineup("cavalry*40 vs archers*30!0.5").unwrap();
+                let mut b = Battle::new(params(BattleModel::Soldiers), field, specs, seed);
+                b.set_stance(
+                    0,
+                    Stance {
+                        pursuit,
+                        ..Stance::default()
+                    },
+                );
+                let r = b.run();
+                let taken = b.members(1).iter().filter(|m| m.captured).count();
+                assert!(r.squads[1].standing + taken <= 30);
+                (taken, r.squads[1].dead)
+            })
+            .fold((0, 0), |a, b| (a.0 + b.0, a.1 + b.1))
+    };
+    let (taken, dead) = fight(Pursuit::Capture);
+    let (none, killed) = fight(Pursuit::Kill);
+    assert!(
+        taken > 0 && none == 0,
+        "{taken} taken capturing, {none} killing"
+    );
+    assert!(dead < killed, "{dead} dead capturing, {killed} killing");
+}

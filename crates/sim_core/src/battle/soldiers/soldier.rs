@@ -104,8 +104,9 @@ impl SoldierBattle {
                 }
                 let bj = self.body[j];
                 plan.push += self.shove(i, j, d, d2, 0.5);
-                // A squad that lets enemies go strikes nobody who runs.
-                if !c.pursues() && self.state[j] == SoldierState::Routing {
+                // A squad that lets enemies go strikes nobody who runs (one
+                // that takes prisoners goes for them, to take them).
+                if !c.chases() && self.state[j] == SoldierState::Routing {
                     return;
                 }
                 if d2 < best_d2 {
@@ -155,6 +156,10 @@ impl SoldierBattle {
                 };
                 if plan.act != Act::None && self.blocked(i, me, u, d) {
                     plan.act = Act::None;
+                }
+                // A runner within reach is taken, not struck.
+                if plan.act != Act::None && !c.pursues() && self.state[t] == SoldierState::Routing {
+                    plan.act = Act::Capture;
                 }
             }
         } else {
@@ -316,6 +321,10 @@ impl SoldierBattle {
                 }
             }
             Act::Shoot => self.shoot(i, plan.aim as usize, &mut b),
+            Act::Capture => {
+                b.target = plan.target;
+                b.capture = true;
+            }
         }
         b
     }

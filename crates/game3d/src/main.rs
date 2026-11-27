@@ -10,6 +10,7 @@
 //!     [--no-ui] [--no-lod] [--lod-view] [--fps] [--render-scale F] [--shot FILE] [--quit-after S] [--select ID]
 //!     [--weather clear|cloudy|rain|storm|snow|fog] [--season spring|summer|autumn|winter]
 //!     [--preset FILE] [--set PATH=VALUE]... [--order TEXT]... [--shot-battle S] [--battle LINEUP]
+//!     [--rts-demo ghost|overlay]
 //!
 //! `--preset` and `--set` change models.ron for this run, as in the CLI (e.g.
 //! `--set battle.model=Soldiers`). `--battle` fights a line-up (as
@@ -20,6 +21,10 @@
 //! `--shot FILE --shot-battle S` the screenshot waits for a live battle to have
 //! been fought S battle seconds, and looks at its field (with `--battle`, for
 //! the staged battle's playback to reach S seconds, where its lines meet).
+//! `--rts-demo` shows a battle control without a mouse, for screenshots:
+//! `ghost` selects your squads and lays out a line ahead of them, `overlay`
+//! colours the soldiers by morale and fatigue (battle_input.rs; F1 lists the
+//! controls).
 //!
 //! econoplex3d --playground [--hour H] [--view N] [--toon-view N] [--pbr] [--face-sun] [--shot FILE]
 //!     (shader playground)
@@ -32,6 +37,7 @@ use sim_core::terrain::Terrain;
 use std::path::PathBuf;
 
 mod bake;
+mod battle_input;
 mod battles;
 mod bloom;
 mod buildings;
@@ -138,6 +144,7 @@ fn main() {
     let (mut shot, mut hour, mut view, mut playground, mut face_sun) =
         (None, None, None, false, false);
     let mut shot_battle: Option<f32> = None;
+    let mut rts_demo: Option<battle_input::Demo> = None;
     // Orders given before the first day, as typed in the CLI (`--order`).
     let mut orders: Vec<String> = Vec::new();
     let mut toon_settings = toon::ToonSettings::default();
@@ -261,6 +268,16 @@ fn main() {
             }
             "--paused" => paused = true,
             "--battle" => args.battle = it.next(),
+            "--rts-demo" => {
+                rts_demo = match it.next().as_deref().map(str::parse) {
+                    Some(Ok(d)) => Some(d),
+                    Some(Err(e)) => {
+                        eprintln!("error: {e}");
+                        std::process::exit(2);
+                    }
+                    None => None,
+                }
+            }
             "--grid-step" => {
                 terrain_settings.step = it
                     .next()
@@ -388,7 +405,9 @@ fn main() {
         livestock::LivestockPlugin,
         grading::GradingPlugin,
         battles::BattlesPlugin,
+        battle_input::BattleInputPlugin,
     ))
+    .insert_resource(battle_input::BattleControls::new(rts_demo))
     .insert_resource(env_override)
     .insert_resource(clock)
     .insert_resource(toon_settings)

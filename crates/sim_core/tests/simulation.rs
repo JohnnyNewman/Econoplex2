@@ -3160,10 +3160,47 @@ fn a_live_battle_waits_for_the_player_then_settles() {
     // Only the player's own squads take commands.
     let theirs = view.squads.iter().position(|q| q.side == 1).unwrap();
     assert!(command_live_battle(&mut s.world, theirs, Command::Orders(vec![Order::Hold])).is_err());
+    // The player's squads take prisoners.
+    for q in (0..view.squads.len()).filter(|&q| view.squads[q].side == 0) {
+        let capture = sim_core::battle::Stance {
+            pursuit: sim_core::battle::Pursuit::Capture,
+            ..Default::default()
+        };
+        command_live_battle(&mut s.world, q, Command::Stance(capture)).unwrap();
+    }
     resolve_live_battle(&mut s.world);
     assert!(!live_battle_waiting(&s.world));
+    let (prisoners, won) = {
+        let pending = s
+            .world
+            .resource::<sim_core::systems::military::PendingBattle>();
+        let live = pending.0.as_ref().unwrap();
+        (live.prisoners(), live.battle.report().winner == Some(0))
+    };
     s.step();
+    // Prisoners go to the winners' town: the raiders' march home as captives.
+    let store = s.world.resource::<sim_core::store::AgentStore>();
     let towns = s.world.resource::<sim_core::Towns>();
+    let winners = if won {
+        player
+    } else {
+        towns.0[player]
+            .raid
+            .as_ref()
+            .map_or(player, |r| r.target as usize)
+    };
+    for &i in &prisoners {
+        let i = i as usize;
+        assert!(
+            !store.alive[i] || store.town[i] as usize == winners,
+            "prisoner {i} stayed"
+        );
+        // Captives on the march; settled in the town once the raid is home.
+        let marching = towns.0[player].raid.is_some();
+        if won && marching && store.alive[i] {
+            assert_eq!(store.activity[i], sim_core::store::Activity::Captive);
+        }
+    }
     let raid = towns.0[player].raid.as_ref();
     assert!(raid.is_none_or(|r| r.back), "the battle was not settled");
     assert!(

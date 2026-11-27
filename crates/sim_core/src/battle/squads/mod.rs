@@ -45,7 +45,7 @@ struct Squad {
 
 impl Squad {
     fn alive(&self) -> usize {
-        self.spec.members.iter().filter(|m| m.health > 0.0).count()
+        self.spec.members.iter().filter(|m| m.fights()).count()
     }
     fn fighting(&self) -> bool {
         self.state == SquadState::Fighting
@@ -78,9 +78,13 @@ impl Squad {
             (p.walk_speed, p.run_speed)
         }
     }
-    /// Whether it chases enemies who run.
+    /// Whether it strikes enemies who run.
     fn pursues(&self) -> bool {
         self.stance.pursuit == Pursuit::Kill
+    }
+    /// Whether it goes after enemies who run (to cut them down or take them).
+    fn chases(&self) -> bool {
+        self.stance.pursuit != Pursuit::LetGo
     }
 }
 

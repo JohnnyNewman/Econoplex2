@@ -121,7 +121,7 @@ impl SquadBattle {
             .members
             .iter()
             .enumerate()
-            .filter(|(_, m)| m.health > 0.0)
+            .filter(|(_, m)| m.fights())
             .map(|(k, _)| k)
             .collect();
         if standing.is_empty() {
@@ -129,6 +129,31 @@ impl SquadBattle {
         }
         let k = standing[self.rng.random_range(0..standing.len())];
         self.squads[t].spec.members[k].health -= damage;
+    }
+
+    /// Squad `i` takes runners of routing squad `t` prisoner: as many as
+    /// its front would strike blows this step.
+    pub(super) fn capture(&mut self, i: usize, t: usize) {
+        let p = self.params.clone();
+        let si = &self.squads[i];
+        let reach = si.front(&p) * si.spec.kit.strike_rate * p.dt * self.morale_factor(i);
+        let n = self.count(reach);
+        for _ in 0..n {
+            let free: Vec<usize> = self.squads[t]
+                .spec
+                .members
+                .iter()
+                .enumerate()
+                .filter(|(_, m)| m.fights())
+                .map(|(k, _)| k)
+                .collect();
+            if free.is_empty() {
+                return;
+            }
+            let k = free[self.rng.random_range(0..free.len())];
+            self.squads[t].spec.members[k].captured = true;
+        }
+        self.squads[i].engaged = true;
     }
 
     /// Arrows: archers not locked in melee shoot the nearest enemy in range

@@ -601,7 +601,7 @@ both clients.
 | Pause to give orders | pause | the battle steps only when told (`Battle::step`) |
 | Stances: fire | archers skirmish or hold fire | `Stance.fire`: `AtWill`, `Hold`, `Skirmish` (back away from enemies within `battle.skirmish_distance`, 40 m) |
 | Stances: order | loose or tight | `Stance.spacing`: `Own`, `Tight` (shoulder to shoulder, stands up to a charge), `Loose` (`soldiers.loose_spacing`: fewer are hit where an arrow lands) |
-| Pursuit of routers | kill, take prisoners, let go | `Stance.pursuit`: `Kill`, `Capture`, `LetGo`. A squad that does not kill strikes nobody who runs and chases nobody. `Capture` acts as `LetGo` until captives are built (A) |
+| Pursuit of routers | kill, take prisoners, let go | `Stance.pursuit`: `Kill`, `Capture`, `LetGo`. A squad that lets go strikes nobody who runs and chases nobody; one that captures chases routers and takes them instead of striking them (`Member.captured`), and they leave the fight |
 | Deployment | before the battle, in your own half | `Battle::deploy` (or `Command::Deploy`): only before the first step, only in `deploy_zone` (your half; defenders behind a wall stay inside it) |
 | Ghost line | the dragged line, with arrival time | `LiveView::preview(q, orders)`: every soldier's slot where the moves leave them, and the seconds to get there at the squad's pace now (`LiveView.paces`) |
 | Matchup hints | hover an enemy | `LiveView::matchup(a, b)`, `Kit::against`: health per blow and per arrow, per damage type, after armour and shield, and per second of one fighter |
@@ -640,6 +640,49 @@ On the squad model, every control does the nearest thing a disc can:
   - the deployment phase before a live battle starts;
   - town doctrine in governance, saved with the town (a `SAVE_VERSION`
     bump), and used by auto-resolved battles.
+
+## Where build A stands
+
+Build A is in both clients, on shared logic in `battle::rts` (tested there
+headlessly: selection, groups, the click and drag to command mapping, the
+ghost, stances, matchup words and the overlay's colour). Each client only
+turns the mouse into field metres and draws.
+
+**Controls.** While a live battle waits for the player:
+
+| Input | Does |
+| --- | --- |
+| left-click, shift-click, drag a box | select your squads (empty ground: none); Esc selects none |
+| right-click | with squads selected: move there (several keep their formation, `group_shift`), or attack the enemy squad under it (archers with arrows shoot) |
+| right-drag | with squads selected: lay out the line along the drag (one squad: `MoveTo` with its width; several: `group_line`); the ghost and its arrival time follow the pointer |
+| double right-click | the same, running |
+| Ctrl+1–9, 1–9 | make the selection a group; select it, and a second tap within 0.4 s looks at it |
+| Z, X, C / V, B, N | with squads selected: fire at will, hold fire, skirmish / tight, loose, own order |
+| O | the morale and fatigue overlay |
+| hover an enemy squad | the matchup hint, e.g. "weak: their mail turns your blades" |
+| Space | pauses the battle; orders still go in |
+
+Pursuit (kill, capture, let go) is in the battle panel only, beside the
+stance buttons, which show the selection's stance.
+
+**Conflicts with the camera and other keys.** The battle reads input
+before anything else (`PreUpdate`) and clears the presses it takes. Without
+a selection, or off the field, right-drag still turns the 3D camera, and
+the stance letters do what they always do (2D: C culture; 3D: X tilt-shift,
+C the clock, V overlays, B bloom, N glow). The number keys are the battle's
+while it waits (otherwise 2D game speed, 3D shader views), and O too (3D
+outlines). WASD, the wheel and middle-drag keep moving the camera.
+
+**Prisoners.** A capturing squad marks routers it reaches as captured
+(squad model: a share of its front per second; soldier model: a blow that
+takes instead of striking). When a live battle is settled
+(`take_prisoners`), each captured soldier of the losing side changes sides:
+their kit goes to the winner's armory, they leave their squad and their
+raid. Taken by a winning raid, they march home with it as `Captive`, as
+raid captives do, and become the town's people there; taken by winning
+defenders, they join the town at once (there is no town-held captive state
+to keep them in). Auto-resolved battles take no prisoners until doctrine
+(B) gives them a prisoner policy.
 
 ## Open questions
 

@@ -15,6 +15,7 @@
 //! · the player's own battles are fought live, with orders (live_battle.rs)
 
 mod autorun;
+mod battle_input;
 mod battles;
 mod economy_ui;
 mod hud;
@@ -95,7 +96,11 @@ fn main() {
     }))
     // The button state the panels read (Bevy 0.20 UI widgets are part of
     // DefaultPlugins with the bevy_ui_widgets feature).
-    .add_systems(PreUpdate, ui_compat::update_interaction);
+    .add_systems(PreUpdate, ui_compat::update_interaction)
+    .add_systems(
+        PreUpdate,
+        battle_input::battle_input.after(bevy::picking::PickingSystems::Last),
+    );
 
     sim_core::world::setup(app.world_mut(), db, params, &scenario);
     // The player's squad marches only when ordered.
@@ -146,6 +151,7 @@ fn main() {
             .0
             .map(|t| t as usize))
         .unwrap_or(0);
+    let rts_demo = args.rts_demo;
     app.insert_resource(Time::<Fixed>::from_hz(FIXED_HZ))
         .insert_resource(SimControl {
             paused: false,
@@ -160,6 +166,7 @@ fn main() {
         .insert_resource(seasons::FieldYear::default())
         .insert_resource(seasons::WhyRings::default())
         .insert_resource(live_battle::LiveBattle::default())
+        .insert_resource(battle_input::BattleControls::new(rts_demo))
         // The player's own battles wait for the player (live_battle.rs).
         .insert_resource(sim_core::systems::military::LiveBattles(true))
         .insert_resource(policy_ui::PolicyCursor::default())
@@ -188,6 +195,7 @@ fn main() {
                 reports::spawn_chart_camera,
                 seasons::spawn_night_veil,
                 live_battle::spawn_battle_panel,
+                battle_input::spawn_controls_tip,
             ),
         )
         .add_systems(
@@ -255,6 +263,8 @@ fn main() {
             Update,
             (
                 live_battle::draw_live_battle,
+                battle_input::draw_battle_controls.after(live_battle::draw_live_battle),
+                battle_input::update_controls_tip,
                 live_battle::battle_buttons,
                 live_battle::update_battle_panel.after(live_battle::battle_buttons),
             ),
