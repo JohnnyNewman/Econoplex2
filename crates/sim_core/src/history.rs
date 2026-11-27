@@ -249,6 +249,14 @@ pub fn describe(order: &Order, db: &Db, towns: &Towns) -> String {
                 .get(*domain as usize)
                 .map_or("?", |d| d.as_str())
         ),
+        Order::Secrets { domain, on, .. } => format!(
+            "{} the {} guild's secrets",
+            if *on { "kept" } else { "opened" },
+            db.content
+                .domains
+                .get(*domain as usize)
+                .map_or("?", |d| d.as_str())
+        ),
     }
 }
 

@@ -14,6 +14,9 @@
 //! - **Immigration**: closed borders turn migrants away; encouraged immigration
 //!   adds to the town's appeal and pays newcomers a settlement grant.
 //! - **Guild charter**: a chartered guild's masters teach faster.
+//! - **Guild secrets**: a guild keeps its recipe-skills to itself: they pass on
+//!   the job and at school only between members of the town's guild of that
+//!   domain (`knowledge.rs`).
 //! - **Army**: the share of adults kept under arms, and whether the squad raids on
 //!   its own judgment or only defends; a raid order sends it against a chosen town.
 //! - **Doctrine**: how the town's squads fight on their own judgment
@@ -93,6 +96,9 @@ pub struct Policy {
     pub immigration: Immigration,
     /// Chartered guilds, by skill domain.
     pub charters: Vec<bool>,
+    /// Guilds that keep their recipe-skills secret, by skill domain.
+    #[serde(default)]
+    pub secrets: Vec<bool>,
     /// Share of adults under arms; `None` keeps the default from `models.ron`.
     pub army_share: Option<f32>,
     pub war: War,
@@ -168,6 +174,7 @@ impl Policy {
             school: None,
             immigration: Immigration::Open,
             charters: vec![false; domains],
+            secrets: vec![false; domains],
             ..Default::default()
         }
     }
@@ -189,6 +196,11 @@ pub enum Order {
         policy: Immigration,
     },
     Charter {
+        town: u16,
+        domain: u32,
+        on: bool,
+    },
+    Secrets {
         town: u16,
         domain: u32,
         on: bool,
@@ -287,6 +299,7 @@ impl Order {
             | Order::School { town, .. }
             | Order::Immigration { town, .. }
             | Order::Charter { town, .. }
+            | Order::Secrets { town, .. }
             | Order::Army { town, .. }
             | Order::War { town, .. }
             | Order::Doctrine { town, .. }
@@ -312,6 +325,7 @@ impl Order {
     /// school <town> <domain> <seats>         school <town> off
     /// immigration <town> open|closed|encouraged
     /// charter <town> <domain> on|off
+    /// secrets <town> <domain> on|off
     /// army <town> <share>|auto               e.g. army Greenvale 0.1
     /// war <town> auto|defend
     /// doctrine <town> cautious|balanced|aggressive kill|capture|letgo
@@ -379,6 +393,11 @@ impl Order {
                 },
             }),
             ["charter", t, d, on @ ("on" | "off")] => Ok(Order::Charter {
+                town: town(t)?,
+                domain: domain(d)?,
+                on: *on == "on",
+            }),
+            ["secrets", t, d, on @ ("on" | "off")] => Ok(Order::Secrets {
                 town: town(t)?,
                 domain: domain(d)?,
                 on: *on == "on",
@@ -567,6 +586,13 @@ pub fn apply_orders(
             Order::Charter { domain, on, .. } => {
                 if let Some(c) = p.charters.get_mut(domain as usize) {
                     *c = on;
+                }
+            }
+            Order::Secrets { domain, on, .. } => {
+                let d = domain as usize;
+                if d < p.charters.len() {
+                    p.secrets.resize(p.charters.len(), false);
+                    p.secrets[d] = on;
                 }
             }
             Order::Army { share, .. } => {

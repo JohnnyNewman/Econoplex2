@@ -3797,3 +3797,47 @@ fn the_player_sees_what_their_people_know_and_keeps_it() {
         "the player's people learned nothing new in 6 years"
     );
 }
+
+#[test]
+fn guilds_that_keep_secrets_teach_fewer_people() {
+    // Learned recipe-skills over three years, with every guild in every town
+    // keeping its secrets or none (inventing off, so only teaching counts).
+    let learned = |secrets: bool| {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+        scenario.seed = 5;
+        params.knowledge.enabled = true;
+        params.knowledge.invention.enabled = false;
+        let mut s = Simulation::new(db, params, &scenario);
+        if secrets {
+            let towns: Vec<String> = s
+                .world
+                .resource::<sim_core::Towns>()
+                .0
+                .iter()
+                .map(|t| t.name.clone())
+                .collect();
+            let domains = s.world.resource::<sim_core::Db>().content.domains.clone();
+            for t in &towns {
+                for d in &domains {
+                    s.order(&format!("secrets {t} {d} on")).unwrap();
+                }
+            }
+        }
+        let count = |s: &Simulation| -> u32 {
+            let st = s.world.resource::<sim_core::AgentStore>();
+            st.known.iter().flatten().map(|w| w.count_ones()).sum()
+        };
+        let before = count(&s);
+        run_years(&mut s, 3);
+        let h = s.world.resource::<sim_core::history::History>();
+        if secrets {
+            assert!(h.events.iter().any(|e| e.text.contains("guild's secrets")));
+        }
+        count(&s) - before
+    };
+    let open = learned(false);
+    let kept = learned(true);
+    assert!(open > 0, "nobody learned anything in 3 years");
+    assert!(kept < open, "secrets kept {kept} learned, open {open}");
+}

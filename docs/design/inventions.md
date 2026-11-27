@@ -175,7 +175,7 @@ is cached. The nightly pass checks at most `max_checks` related items per workin
 3. Apprenticeship and migration carry knowledge; loss on death; town knowledge = union of residents (done with step 2)
 4. Nightly invention check with context factors; event log (done)
 5. Player reveal (simulation side done: `History::revealed`, `ViewSnapshot::revealed`) and the hidden graph in the UI
-6. Schools (pupils learn their teacher's recipes: done with step 2) and guild secrets
+6. Schools (pupils learn their teacher's recipes: done with step 2) and guild secrets (done: the `secrets TOWN DOMAIN on|off` order)
 7. New levels and new items toward the steampunk end; writing and libraries
 
 ## As built (steps 2 and 3)
