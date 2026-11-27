@@ -25,6 +25,18 @@ fn main() {
         }
         println!("year {y}");
         for (t, town) in towns.0.iter().enumerate() {
+            let held: Vec<String> = town
+                .foreign
+                .iter()
+                .map(|c| format!("{:.0}", c.coins()))
+                .collect();
+            println!(
+                "  {:<11} coin value {:.3}, treasury {:.0}, holds [{}]",
+                town.name,
+                town.coin_value,
+                town.treasury.coins(),
+                held.join(", ")
+            );
             let mut line = format!("  {:<11}", town.name);
             for (k, f) in flows.iter().enumerate() {
                 let v = town.ledger.total[*f as usize];

@@ -3376,3 +3376,41 @@ fn the_grown_population_starts_with_masters_and_apprentices() {
     assert!(members > 0, "no members");
     assert!(apprentices > 0, "no apprentices after a year");
 }
+
+#[test]
+fn trade_is_paid_in_the_buyers_coin_and_moves_its_value() {
+    // Each town issues its own coin: a buyer pays abroad in it, the seller
+    // keeps it as a foreign balance, and coins piling up abroad lose value.
+    let mut s = full(42);
+    run_years(&mut s, 5);
+    let towns = s.world.resource::<sim_core::Towns>();
+    let held: f32 = towns
+        .0
+        .iter()
+        .flat_map(|t| t.foreign.iter())
+        .map(|c| c.coins().max(0.0))
+        .sum();
+    assert!(held > 0.0, "no town holds another town's coin");
+    let values: Vec<f32> = towns.0.iter().map(|t| t.coin_value).collect();
+    assert!(
+        values.iter().any(|&v| (v - 1.0).abs() > 0.01),
+        "no coin moved: {values:?}"
+    );
+    // The coin held most abroad is worth less than the average.
+    let n = towns.0.len();
+    let abroad = |c: usize| -> f32 {
+        (0..n)
+            .filter(|&t| t != c)
+            .map(|t| towns.0[t].holds(c).coins().max(0.0))
+            .sum()
+    };
+    let most = (0..n)
+        .max_by(|&a, &b| abroad(a).total_cmp(&abroad(b)))
+        .unwrap();
+    let mean = values.iter().sum::<f32>() / n as f32;
+    assert!(
+        values[most] < mean,
+        "the coin most held abroad is worth {} against a mean of {mean}",
+        values[most]
+    );
+}

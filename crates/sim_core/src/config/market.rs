@@ -164,6 +164,9 @@ pub struct MarketParams {
     /// Whether a treasury can pay out more of its own coin than it holds.
     #[serde(default)]
     pub treasury: Treasury,
+    /// How towns' own coins move against each other.
+    #[serde(default)]
+    pub exchange: ExchangeParams,
     /// A town on automatic minting builds a mint and strikes coin while its treasury
     /// holds less than this per resident.
     #[serde(default = "default_mint_below")]
@@ -215,4 +218,25 @@ pub enum Treasury {
     /// other towns still takes coin it holds.
     #[default]
     Issues,
+}
+
+/// `market.exchange` in models.ron: a coin's value aims for
+/// 1 / (1 + pressure x share), where share is the part of it held unspent
+/// abroad, relative to the average coin; it moves `speed` of the way each
+/// month, by at most `max_monthly` (a share of its value).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct ExchangeParams {
+    pub pressure: f32,
+    pub speed: f32,
+    pub max_monthly: f32,
+}
+
+impl Default for ExchangeParams {
+    fn default() -> Self {
+        ExchangeParams {
+            pressure: 3.0,
+            speed: 0.3,
+            max_monthly: 0.05,
+        }
+    }
 }
