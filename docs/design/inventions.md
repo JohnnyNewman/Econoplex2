@@ -176,7 +176,7 @@ is cached. The nightly pass checks at most `max_checks` related items per workin
 4. Nightly invention check with context factors; event log (done)
 5. Player reveal (simulation side done: `History::revealed`, `ViewSnapshot::revealed`) and the hidden graph in the UI
 6. Schools (pupils learn their teacher's recipes: done with step 2) and guild secrets (done: the `secrets TOWN DOMAIN on|off` order)
-7. New levels and new items toward the steampunk end; writing and libraries
+7. New levels and new items toward the steampunk end; writing and libraries (levels started)
 
 ## As built (steps 2 and 3)
 
@@ -226,6 +226,24 @@ is cached. The nightly pass checks at most `max_checks` related items per workin
 - `ViewSnapshot::revealed` hands a view the newly revealed nodes (all of them on the
   first capture). The CLI prints how many the player has seen, and when the later ones came.
 - Without a player town, or with knowledge off, nothing is hidden.
+
+## As built (step 7, first part)
+
+Nils chose on 2026-11-27 that a level improves a mix, chosen per item.
+
+- A level is its own recipe (`level: 2`, `requires` the level below). Its own `inputs`,
+  `duration` and `difficulty` give input and time savings. The new `quality_bonus` lifts
+  quality as if the team were that much more skilled.
+- Founders know only level 1 (`knowledge.start_level`), so better ways must be invented.
+- An apprentice place needs someone in town who knows the recipe (else apprentices fill
+  places in a way nobody can teach them).
+- Several ways of making exactly the same goods share their places: together they offer
+  the places of the most open way (`Db::same_outputs`), not the sum.
+- Content: `70_levels.ron` has pattern welding (quality). A shaft furnace (less ore), a
+  treadle loom (faster) and dressed millstones (finer, faster) were tried and taken out:
+  with them, food per head fell from 8.8 to 5.4 over 16 seeds × 30 years. That held even
+  with the two fixes above, and even for an exact copy of flour milling at level 2. Why a
+  second way of making a staple lowers food reserves is still to find.
 
 ## Open questions
 

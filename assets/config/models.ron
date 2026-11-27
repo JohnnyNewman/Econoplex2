@@ -555,7 +555,7 @@
     start: Steady(food_days: 25.0, input_days: 10.0, raw_days: 90.0),
     // Crops through the seasons (farming.rs): growth follows the temperature,
     // standing crop rots in wet and cold, so the harvest needs hands in time.
-    farming: (crops: ["field", "flax_field", "pasture"], crop_capacity: 15.0, frost_loss: 0.05, rot_wet: 0.02, rot_cold: 0.01),
+    farming: (crops: ["field", "flax_field", "pasture", "garden", "orchard"], crop_capacity: 15.0, frost_loss: 0.05, rot_wet: 0.02, rot_cold: 0.01),
     // Fronts drifting across the map from the west. `Clear` for none.
     weather: Fronts(
         front_size: 1500.0,
@@ -581,6 +581,9 @@
         // Recipes making goods of a later era (index into the eras: 3 = iron and
         // steel) are known by nobody at the start; they have to be invented.
         start_era: 3,
+        // Better ways of doing a job (recipe level 2 and up) are known by
+        // nobody at the start either.
+        start_level: 1,
         // Inventing (needs knowledge on): after a day's work a worker may think
         // of a recipe-skill on their frontier that nobody in town knows, among
         // the `max_checks` closest to the work (skill cosine >= `related`).

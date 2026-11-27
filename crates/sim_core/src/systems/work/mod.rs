@@ -395,7 +395,9 @@ pub fn produce(
             let success = m.builds.is_some()
                 || rng.random::<f32>() < models.success.probability(eff, m.difficulty);
             let quality = models.quality.combine(
-                models.quality.step_quality(eff, m.difficulty),
+                models
+                    .quality
+                    .step_quality(eff + m.quality_bonus, m.difficulty),
                 task.input_quality,
             );
 
@@ -713,7 +715,9 @@ pub fn produce(
                 let success = m.builds.is_some()
                     || rng.random::<f32>() < models.success.probability(eff, m.difficulty);
                 let quality = models.quality.combine(
-                    models.quality.step_quality(eff, m.difficulty),
+                    models
+                        .quality
+                        .step_quality(eff + m.quality_bonus, m.difficulty),
                     task.input_quality,
                 );
                 let rate = team_rate(store, &db, &models, &params, task.recipe, &workers);

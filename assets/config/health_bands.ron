@@ -32,7 +32,8 @@
 // 13.7 months; both bands open upward to 14 and 16. The richer towns also make
 // more kinds of goods (diversity 32.5 on CI) and grow to about 2900 people, so
 // those bands open to 40 and 4000. Each content batch adds goods, and with the
-// fine goods diversity reached 38 (2026-11-27): its band opens to 50. With
+// fine goods diversity reached 38 (2026-11-27): its band opens to 50, and to
+// 60 with the farm foods (47.5). With
 // barrels (ale costs wood now) and blankets more work goes to goods other
 // than food: the end-of-winter reserve came to 4.2 months with starving at
 // 0.02 %, so its band's floor moves to 3 months.
@@ -46,6 +47,6 @@
     "pop": (1500, 4000),
     "starve%": (0, 2.5),
     "food/cap": (2.0, 18.0),
-    "div": (18, 50),
+    "div": (18, 60),
     "reserve": (3.0, 18.0),
 }
