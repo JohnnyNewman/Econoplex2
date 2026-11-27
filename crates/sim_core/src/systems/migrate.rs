@@ -68,7 +68,7 @@ pub fn migrate(
     let food_pc: Vec<f32> = towns
         .0
         .iter()
-        .map(|t| t.food_stock(&db) / t.residents.len().max(1) as f32)
+        .map(|t| crate::world::food_held(store, t, &db) / t.residents.len().max(1) as f32)
         .collect();
     let danger: Vec<f32> = towns
         .0

@@ -50,6 +50,8 @@ pub struct Db {
     /// Groups of two or more recipes that make exactly the same goods (several
     /// ways of making them), by recipe index.
     pub same_outputs: Vec<Vec<u32>>,
+    /// Each recipe's group in `same_outputs`, or `u32::MAX` when it has none.
+    pub group_of: Vec<u32>,
     pub embedding: Embedding,
     /// Length of every capability vector in this game.
     pub cap_dim: usize,
@@ -73,6 +75,9 @@ pub struct Db {
     pub food_value: Vec<f32>,
     /// Protein, fat and vitamins of each product against its calories.
     pub nutrients: Vec<[f32; 3]>,
+    /// Days each product keeps in store at the reference temperature (0: it
+    /// has no entry; a food without one keeps `market.spoilage.food_days`).
+    pub keep_days: Vec<f32>,
     /// Houses: (people each holds, how well it shelters them).
     pub house: Vec<Option<(u32, f32)>>,
     /// Face value of coin products (0 for everything else).
@@ -187,6 +192,17 @@ impl Db {
 
         let coin = content.products.iter().map(|p| p.coin).collect();
         let food_value = content.products.iter().map(|p| p.food).collect();
+        let keep_days = content
+            .products
+            .iter()
+            .map(|p| {
+                content
+                    .keeping
+                    .iter()
+                    .find(|k| k.product == p.id)
+                    .map_or(0.0, |k| k.days)
+            })
+            .collect();
         let nutrients = content
             .products
             .iter()
@@ -300,8 +316,15 @@ impl Db {
             }
             by.into_values().filter(|g| g.len() > 1).collect()
         };
+        let mut group_of = vec![u32::MAX; recipes.len()];
+        for (g, group) in same_outputs.iter().enumerate() {
+            for &r in group {
+                group_of[r as usize] = g as u32;
+            }
+        }
         Db {
             cap_dim,
+            group_of,
             related,
             same_outputs,
             recipe_era,
@@ -310,6 +333,7 @@ impl Db {
             house,
             food_value,
             nutrients,
+            keep_days,
             content,
             embedding,
             skill_vecs,
@@ -398,4 +422,24 @@ pub fn food_potential(content: &Content) -> Vec<f32> {
         }
     }
     pot
+}
+
+/// Adds `amount` of good `p` to `total`, except for a recipe in a group of ways
+/// that make the same thing (`group` from `Db::group_of`): those draw on one
+/// stock and fill one demand, so the group keeps only its largest amount in
+/// `per_group`, to be added once the caller has seen every recipe.
+pub fn add_once(
+    total: &mut [f32],
+    per_group: &mut [Vec<(u32, f32)>],
+    group: u32,
+    p: u32,
+    amount: f32,
+) {
+    match per_group.get_mut(group as usize) {
+        None => total[p as usize] += amount,
+        Some(gw) => match gw.iter_mut().find(|e| e.0 == p) {
+            Some(e) => e.1 = e.1.max(amount),
+            None => gw.push((p, amount)),
+        },
+    }
 }

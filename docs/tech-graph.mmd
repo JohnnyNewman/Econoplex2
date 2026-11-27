@@ -49,6 +49,7 @@ flowchart LR
     r_dye_cloth["Dye cloth"]
     r_sew_fine_clothes["Sew fine clothes"]
     r_weave_blanket["Weave blanket"]
+    r_treadle_weave_cloth["Weave cloth on a treadle loom 2"]
   end
   subgraph d5["masonry"]
     r_quarry_stone(["Quarry stone"])
@@ -88,6 +89,7 @@ flowchart LR
     r_blast_iron["Blast iron"]
     r_blast_steel["Blast steel"]
     r_refine_silver["Refine silver"]
+    r_shaft_smelt_iron["Smelt iron in a shaft furnace 2"]
   end
   subgraph d9["smithing"]
     r_forge_shears["Forge shears"]
@@ -348,6 +350,8 @@ flowchart LR
   r_build_workshop --> r_build_tavern
   r_brew_ale --> r_build_tavern
   r_forge_steel_blade --> r_pattern_weld_blade
+  r_smelt_iron --> r_shaft_smelt_iron
+  r_weave_cloth --> r_treadle_weave_cloth
   style d0 fill:#e8f0d8,stroke:#888
   style d1 fill:#efe3d3,stroke:#888
   style d2 fill:#f3dcc4,stroke:#888

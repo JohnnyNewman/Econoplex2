@@ -239,7 +239,7 @@ pub fn govern(
         let sub_max = (gp.max_subsidy * personality.ambition).min(max_subsidy);
 
         // --- food: subsidize what feeds people while the town goes hungry
-        let food_target = mp.food_target_per_capita;
+        let food_target = crate::systems::decide::market_food_target(&db, town, &params);
         // The forecast: days the food in store lasts at the year's rate of
         // making against eating. A governor acts on it before the market runs
         // dry.
