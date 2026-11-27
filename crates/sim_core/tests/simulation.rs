@@ -763,6 +763,9 @@ fn a_town_short_of_money_builds_a_mint_and_strikes_coin() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
     params.market.treasury = sim_core::config::Treasury::Holds;
+    // Free job choice: the test is of the order, not of whether a smith
+    // happens to take up coining.
+    params.decision.attendance = sim_core::config::Attendance::Free;
     scenario.seed = 42;
     let mut s = Simulation::new(db, params, &scenario);
     // Ironhold has ore and a furnace; ordered to mint, it builds a mint and works it.
@@ -3516,16 +3519,25 @@ fn trade_is_paid_in_the_buyers_coin_and_moves_its_value() {
         values.iter().any(|&v| (v - 1.0).abs() > 0.01),
         "no coin moved: {values:?}"
     );
-    // The coin held most abroad is worth less than the average.
+    // The coin with the largest share of itself held unspent abroad is worth
+    // less than the average (the rule works on that share).
     let n = towns.0.len();
-    let abroad = |c: usize| -> f32 {
-        (0..n)
+    let store = s.world.resource::<sim_core::AgentStore>();
+    let share = |c: usize| -> f32 {
+        let abroad: f32 = (0..n)
             .filter(|&t| t != c)
             .map(|t| towns.0[t].holds(c).coins().max(0.0))
-            .sum()
+            .sum();
+        let home: f32 = towns.0[c]
+            .residents
+            .iter()
+            .map(|&i| store.wealth[i as usize].coins().max(0.0))
+            .sum::<f32>()
+            + towns.0[c].treasury.coins().max(0.0);
+        abroad / (abroad + home).max(1e-3)
     };
     let most = (0..n)
-        .max_by(|&a, &b| abroad(a).total_cmp(&abroad(b)))
+        .max_by(|&a, &b| share(a).total_cmp(&share(b)))
         .unwrap();
     let mean = values.iter().sum::<f32>() / n as f32;
     assert!(
