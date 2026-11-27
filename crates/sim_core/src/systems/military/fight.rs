@@ -191,12 +191,34 @@ pub(super) fn aftermath(
     // Plunder: money changes hands now, goods travel home with the squad.
     if won {
         let money = towns.0[d].treasury.coins().max(0.0) * mp.loot_share;
-        towns.0[d].treasury -= crate::coin::Coin::from_coins(money);
+        let taken = crate::coin::Coin::from_coins(money);
+        towns.0[d].treasury -= taken;
         towns.0[d].ledger.add(crate::ledger::Flow::LootLost, money);
-        towns.0[attacker].treasury += crate::coin::Coin::from_coins(money);
-        towns.0[attacker]
-            .ledger
-            .add(crate::ledger::Flow::LootTaken, money);
+        if params.market.treasury == crate::config::Treasury::Issues {
+            // The defender's coin is held abroad by the attacker; so is a
+            // share of the foreign coin the defender held.
+            towns.0[attacker].hold(d, taken);
+            for c in 0..towns.0[d].foreign.len() {
+                let part = crate::coin::Coin::from_coins(
+                    towns.0[d].foreign[c].coins().max(0.0) * mp.loot_share,
+                );
+                towns.0[d].foreign[c] -= part;
+                if c == attacker {
+                    // Its own coin comes home.
+                    towns.0[attacker].treasury += part;
+                    towns.0[attacker]
+                        .ledger
+                        .add(crate::ledger::Flow::LootTaken, part.coins());
+                } else {
+                    towns.0[attacker].hold(c, part);
+                }
+            }
+        } else {
+            towns.0[attacker].treasury += taken;
+            towns.0[attacker]
+                .ledger
+                .add(crate::ledger::Flow::LootTaken, money);
+        }
         plunder(raid, d, towns, store, db);
         towns.0[attacker].war.raids_won += 1;
 

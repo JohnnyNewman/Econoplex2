@@ -100,7 +100,12 @@ pub(super) fn plan_raid(
         let (p, dead, standing) = (wins / k, dead / k, standing / k);
         let defense = total_defense(store, towns, o, fight, mp, loyalty);
         let tribute = if attack >= mp.conquest_margin * defense {
-            mp.tribute_share * other.treasury.coins().max(0.0)
+            crate::systems::tribute_due(
+                other,
+                &params.market,
+                mp,
+                params.calendar().every(mp.tribute_interval),
+            ) * other.coin_value
         } else {
             0.0
         };

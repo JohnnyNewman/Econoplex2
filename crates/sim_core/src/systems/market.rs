@@ -808,18 +808,27 @@ fn food_imports(towns: &mut Towns, db: &Db, params: &Params, terrain: &Terrain, 
                 }
                 let price = towns.0[a].price[f] * (1.0 + mp.transport_cost * road / 1000.0);
                 let cost = amount * price;
-                let paid = cost.min(towns.0[b].treasury.coins().max(0.0));
                 let q = towns.0[a].quality[f];
                 towns.0[a].stock[f] -= amount;
-                towns.0[a].treasury += crate::coin::Coin::from_coins(paid);
-                towns.0[a].ledger.add(Flow::TradeSales, paid);
                 towns.0[a].ledger.export(b, cost);
+                if mp.treasury == crate::config::Treasury::Issues {
+                    // Paid at once in the buyer's coin: no debt.
+                    let cost_b =
+                        crate::coin::exchange(cost, towns.0[a].coin_value, towns.0[b].coin_value);
+                    let (home, paid) = pay_abroad(towns, b, a, cost_b, mp.treasury);
+                    towns.0[a].ledger.add(Flow::TradeSales, home);
+                    towns.0[b].ledger.add(Flow::TradePurchases, paid);
+                } else {
+                    let paid = cost.min(towns.0[b].treasury.coins().max(0.0));
+                    towns.0[a].treasury += crate::coin::Coin::from_coins(paid);
+                    towns.0[a].ledger.add(Flow::TradeSales, paid);
+                    towns.0[b].treasury -= crate::coin::Coin::from_coins(paid);
+                    towns.0[b].ledger.add(Flow::TradePurchases, paid);
+                    towns.0[b].debts[a] += cost - paid;
+                }
                 let tb = &mut towns.0[b];
                 tb.quality[f] = (tb.stock[f] * tb.quality[f] + amount * q) / (tb.stock[f] + amount);
                 tb.stock[f] += amount;
-                tb.treasury -= crate::coin::Coin::from_coins(paid);
-                tb.ledger.add(Flow::TradePurchases, paid);
-                tb.debts[a] += cost - paid;
                 need -= amount * value;
             }
         }
