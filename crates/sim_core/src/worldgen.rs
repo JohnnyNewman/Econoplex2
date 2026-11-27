@@ -293,6 +293,10 @@ pub fn nature_kinds(db: &crate::db::Db) -> Vec<(String, f32)> {
                 "hunting_ground" => 0.7,
                 // Lakes and the coast; towns by a river get fishing as well (see `generate`).
                 "fishing_water" => 0.3,
+                // Every town keeps gardens; orchards are only planted.
+                "garden" => 1.0,
+                "orchard" => 0.0,
+                "salt_spring" => 0.2,
                 _ => 0.4,
             };
             (n.id.clone(), common)

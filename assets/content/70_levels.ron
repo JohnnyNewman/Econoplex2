@@ -1,0 +1,21 @@
+// Recipe levels (inventions step 7, docs/design/inventions.md): better ways of
+// doing a job people already do. Each is its own recipe-skill one level up
+// from the way it improves, and nobody knows it at the start
+// (knowledge.start_level): it has to be invented by someone who works the
+// level below. A level improves what fits the craft: quality (quality_bonus:
+// as if the team were that much more skilled), inputs, or time.
+// Its own file, so levels can change or go on their own.
+//
+// Only one level so far: a second way of making flour, cloth or iron (tried:
+// a shaft furnace, a treadle loom, dressed millstones) lowered the food
+// reserves in every run, for reasons still to find (docs/design/inventions.md).
+(
+    recipes: [
+        // Quality: welding steel and iron in layers makes a better blade, at
+        // more work and a little iron.
+        (id: "pattern_weld_blade", name: "Pattern-weld blade", skill: "bladesmithing", difficulty: 0.90,
+            level: 2, requires: ["forge_steel_blade"], quality_bonus: 0.3,
+            inputs: [("steel", 2), ("iron", 1)], outputs: [("steel_blade", 1)], building: Some("smithy"),
+            duration: 3.0, physique: [("strength", 0.3), ("dexterity", 0.2)]),
+    ],
+)

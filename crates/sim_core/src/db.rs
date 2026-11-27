@@ -13,6 +13,10 @@ pub struct RecipeMeta {
     /// Latent skill vector (unit length).
     pub skill: CapVec,
     pub difficulty: f32,
+    /// `RecipeDef::quality_bonus`: quality as if the team were this much more skilled.
+    pub quality_bonus: f32,
+    /// `RecipeDef::level`.
+    pub level: u32,
     pub domain: u32,
     /// Physical demand weights per physique dimension.
     pub phys: PhysVec,
@@ -43,6 +47,9 @@ pub struct Db {
     /// Per recipe, its era: the latest era among what it makes or builds and
     /// the eras of what it requires (the earliest way to meet each requirement).
     pub recipe_era: Vec<u8>,
+    /// Groups of two or more recipes that make exactly the same goods (several
+    /// ways of making them), by recipe index.
+    pub same_outputs: Vec<Vec<u32>>,
     pub embedding: Embedding,
     /// Length of every capability vector in this game.
     pub cap_dim: usize,
@@ -62,6 +69,8 @@ pub struct Db {
     pub recipe_firm: Vec<usize>,
     /// Land products: the nature kind each one opens.
     pub opens: Vec<Option<u32>>,
+    /// Food value of each product (0 for non-food).
+    pub food_value: Vec<f32>,
     /// Houses: (people each holds, how well it shelters them).
     pub house: Vec<Option<(u32, f32)>>,
     /// Face value of coin products (0 for everything else).
@@ -134,6 +143,8 @@ impl Db {
                     skill_idx: si,
                     skill: skill_vecs[si as usize].clone(),
                     difficulty: r.difficulty,
+                    quality_bonus: r.quality_bonus,
+                    level: r.level,
                     domain: content.domain(&content.skills[si as usize].domain).unwrap(),
                     phys,
                     phys_total: phys.iter().sum(),
@@ -173,6 +184,7 @@ impl Db {
             .collect();
 
         let coin = content.products.iter().map(|p| p.coin).collect();
+        let food_value = content.products.iter().map(|p| p.food).collect();
         let house = content
             .products
             .iter()
@@ -262,13 +274,28 @@ impl Db {
             }
             era
         };
+        let same_outputs: Vec<Vec<u32>> = {
+            let mut by: std::collections::BTreeMap<Vec<(u32, u32)>, Vec<u32>> = Default::default();
+            for (r, m) in recipes.iter().enumerate() {
+                if m.outputs.is_empty() {
+                    continue;
+                }
+                let mut key: Vec<(u32, u32)> =
+                    m.outputs.iter().map(|&(p, q)| (p, q.to_bits())).collect();
+                key.sort();
+                by.entry(key).or_default().push(r as u32);
+            }
+            by.into_values().filter(|g| g.len() > 1).collect()
+        };
         Db {
             cap_dim,
             related,
+            same_outputs,
             recipe_era,
             coin,
             requires,
             house,
+            food_value,
             content,
             embedding,
             skill_vecs,

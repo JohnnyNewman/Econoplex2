@@ -216,6 +216,7 @@ fn parse_args() -> Args {
                      --order D:O    give a player order on day D (repeatable), e.g. 0:school Greenvale smithing 20\n\
                                     orders: subsidy TOWN PRODUCT SHARE | school TOWN DOMAIN SEATS | school TOWN off\n\
                                     immigration TOWN open|closed|encouraged | charter TOWN DOMAIN on|off\n\
+                                    secrets TOWN DOMAIN on|off\n\
                                     army TOWN SHARE|auto | war TOWN auto|defend | raid TOWN TARGET\n\
                                     build TOWN BUILDING [X Y] | mint TOWN auto|on|off\n\
                                     tax TOWN wealth|income RATE|auto | wages TOWN SHARE|auto\n\
@@ -730,6 +731,26 @@ fn print_eras(sim: &Simulation) {
             })
             .collect();
         println!("  {:<11} {}", ts.name, firsts.join(", "));
+    }
+    // The knowledge graph as the player has seen it.
+    let h = sim.world.resource::<sim_core::history::History>();
+    if !h.revealed.is_empty() {
+        let dpy = sim.world.resource::<sim_core::SimClock>().months_per_year as u64;
+        let start = h.revealed[0].1;
+        let later: Vec<String> = h
+            .revealed
+            .iter()
+            .filter(|&&(_, day)| day > start)
+            .map(|&(r, day)| format!("{} y{}", db.recipes[r as usize].name, day / dpy))
+            .collect();
+        println!(
+            "\nRecipe-skills the player has seen: {} of {} ({} from the start{}{})",
+            h.revealed.len(),
+            db.recipes.len(),
+            h.revealed.len() - later.len(),
+            if later.is_empty() { "" } else { "; then " },
+            later.join(", ")
+        );
     }
 }
 

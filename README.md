@@ -225,7 +225,8 @@ with `knowledge.invention.enabled` (on by default), a worker may invent a recipe
 work that nobody in town knows, if they know part of what it requires and the town
 knows the rest. The chance grows with their skill at it, materials at hand, a high
 price for what it makes and being rested. Inventions go to the event log
-(`--events`).
+(`--events`). The player sees a recipe-skill once any of their people has known it
+(`History::revealed`, `ViewSnapshot::revealed`); the rest of the graph stays hidden.
 
 The content (`assets/content/*.ron`) spans five eras: **wood and grain**, **stone,
 clay and cloth**, **bronze**, **iron and steel**, and **early industry**. Each file
@@ -571,6 +572,9 @@ town's policy:
   day from the treasury.
 - **Guild charter** (`charter TOWN DOMAIN on|off`): the domain's masters teach
   `charter_teaching` faster.
+- **Guild secrets** (`secrets TOWN DOMAIN on|off`): the domain's recipe-skills pass on
+  the job and at school only between members of the town's guild of that domain, so
+  outsiders and pupils no longer pick them up.
 - **Immigration** (`immigration TOWN open|encouraged|closed`): closed borders turn
   migrants away. Encouraged immigration adds `immigration_bonus` to the town's appeal
   and pays each newcomer a `settlement_grant` from the treasury.

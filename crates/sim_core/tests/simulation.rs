@@ -1162,7 +1162,18 @@ fn the_run_does_not_depend_on_the_number_of_threads() {
 #[test]
 fn an_order_that_eats_into_food_is_flagged_but_not_capped() {
     let mut s = full(8);
-    s.order("procure Greenvale bread 30000").unwrap();
+    // Orders for every food, so the town's food runs short (one food alone
+    // no longer does it: there are many).
+    let foods: Vec<String> = {
+        let db = s.world.resource::<sim_core::Db>();
+        db.foods
+            .iter()
+            .map(|f| db.content.products[f.0 as usize].id.clone())
+            .collect()
+    };
+    for f in &foods {
+        s.order(&format!("procure Greenvale {f} 30000")).unwrap();
+    }
     s.order("procure Greenvale cloth 50").unwrap();
     let mut flagged = false;
     for _ in 0..24 {
@@ -1220,7 +1231,8 @@ fn governors_pull_the_players_levers_through_the_order_queue() {
 
 #[test]
 fn a_hungry_town_subsidizes_food_then_winds_it_down() {
-    // Brassmoor with two fields and no bread to start: it goes hungry in year one.
+    // Brassmoor with one field, no other food land and no bread to start: it
+    // goes hungry in year one.
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
     // Calibrated with first-come jobs: skilled matching keeps this town fed.
@@ -1234,7 +1246,11 @@ fn a_hungry_town_subsidizes_food_then_winds_it_down() {
     let b = &mut scenario.towns[3];
     for n in &mut b.nature {
         if n.0 == "field" {
-            n.1 = 2;
+            n.1 = 1;
+        }
+        // No other food land either (gardens, game, fish would feed it).
+        if ["garden", "hunting_ground", "fishing_water", "pasture"].contains(&n.0.as_str()) {
+            n.1 = 0;
         }
     }
     b.stock.retain(|s| s.0 != "bread");
@@ -2293,7 +2309,7 @@ fn a_hungry_broke_town_imports_food_on_credit_and_recovers() {
         // itself well enough that imports hardly matter.
         let b = &mut scenario.towns[3];
         for n in &mut b.nature {
-            if n.0 == "field" {
+            if n.0 == "field" || n.0 == "garden" {
                 n.1 = 0;
             }
         }
@@ -2348,8 +2364,9 @@ fn a_hungry_broke_town_imports_food_on_credit_and_recovers() {
         starving_with < starving_without,
         "imports didn't help: {starving_with} vs {starving_without}"
     );
-    // Fed from its neighbours, the town keeps most of its people.
-    assert!(pop_with > pop_without + 50, "{pop_with} vs {pop_without}");
+    // Fed from its neighbours, the town keeps more of its people (with hens,
+    // game and fish beside bread it starves less without imports, too).
+    assert!(pop_with > pop_without + 20, "{pop_with} vs {pop_without}");
 }
 
 #[test]
@@ -2919,11 +2936,17 @@ fn a_stockpile_fills_the_town_store_and_draws_production() {
         w.resource::<sim_core::world::Params>(),
         grain,
     );
-    let lacks = 150.0 - g.granary[grain];
-    assert!(
-        lacks <= 0.0 || target > before - 1e-3,
-        "{target} vs {before}"
-    );
+    // (The market's own aim for grain moves with what the town eats, so
+    // compare against today's: the store's lack comes on top of it.)
+    let _ = before;
+    let own = sim_core::systems::decide::food_per_capita(
+        w.resource::<sim_core::Db>(),
+        g,
+        w.resource::<sim_core::world::Params>(),
+        grain,
+    ) * g.residents.len() as f32;
+    let lacks = g.stockpile_target(grain) - g.granary[grain];
+    assert!(lacks <= 0.0 || target > own + 1e-3, "{target} vs {own}");
     check_goods(&s);
     s.order("stockpile Greenvale grain 0").unwrap();
     s.step();
@@ -3743,4 +3766,122 @@ fn early_industry_starts_unknown_and_gets_invented() {
         known_later > 0,
         "inventions: {inventions:?}, yet nobody knows a later recipe"
     );
+}
+
+#[test]
+fn the_player_sees_what_their_people_know_and_keeps_it() {
+    use sim_core::history::{EventKind, History};
+    use sim_core::view::{Seen, ViewSnapshot};
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    scenario.seed = 5;
+    assert!(
+        scenario.player.is_some(),
+        "the scenario hands a town to the player"
+    );
+    params.knowledge.enabled = true;
+    params.knowledge.invention.enabled = true;
+    params.knowledge.invention.rate = 0.05;
+    let mut s = Simulation::new(db, params, &scenario);
+    s.step();
+    let mut seen = Seen::default();
+    let first = ViewSnapshot::capture(&s.world, &mut seen);
+    let start: Vec<(u32, u64)> = s.world.resource::<History>().revealed.clone();
+    {
+        let db = s.world.resource::<sim_core::Db>();
+        let kp = &s.world.resource::<sim_core::world::Params>().knowledge;
+        assert!(!start.is_empty());
+        assert_eq!(
+            first.revealed.len(),
+            start.len(),
+            "the first capture brings all"
+        );
+        // Nothing past the start era is known, so nothing of it is shown.
+        assert!(start
+            .iter()
+            .all(|&(r, _)| sim_core::knowledge::era(db, r as usize) <= kp.start_era));
+        assert!(
+            start.len() < db.recipes.len(),
+            "the whole graph is open at the start"
+        );
+    }
+    assert!(ViewSnapshot::capture(&s.world, &mut seen)
+        .revealed
+        .is_empty());
+    run_years(&mut s, 6);
+    let h = s.world.resource::<History>();
+    assert_eq!(
+        &h.revealed[..start.len()],
+        &start[..],
+        "a revealed node stays revealed"
+    );
+    assert!(
+        h.revealed.len() > start.len() && h.events.iter().any(|e| e.kind == EventKind::Discovered),
+        "the player's people learned nothing new in 6 years"
+    );
+}
+
+#[test]
+fn guilds_that_keep_secrets_teach_fewer_people() {
+    // Learned recipe-skills over three years, with every guild in every town
+    // keeping its secrets or none (inventing off, so only teaching counts).
+    let learned = |secrets: bool| {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+        scenario.seed = 5;
+        params.knowledge.enabled = true;
+        params.knowledge.invention.enabled = false;
+        let mut s = Simulation::new(db, params, &scenario);
+        if secrets {
+            let towns: Vec<String> = s
+                .world
+                .resource::<sim_core::Towns>()
+                .0
+                .iter()
+                .map(|t| t.name.clone())
+                .collect();
+            let domains = s.world.resource::<sim_core::Db>().content.domains.clone();
+            for t in &towns {
+                for d in &domains {
+                    s.order(&format!("secrets {t} {d} on")).unwrap();
+                }
+            }
+        }
+        let count = |s: &Simulation| -> u32 {
+            let st = s.world.resource::<sim_core::AgentStore>();
+            st.known.iter().flatten().map(|w| w.count_ones()).sum()
+        };
+        let before = count(&s);
+        run_years(&mut s, 3);
+        let h = s.world.resource::<sim_core::history::History>();
+        if secrets {
+            assert!(h.events.iter().any(|e| e.text.contains("guild's secrets")));
+        }
+        count(&s) - before
+    };
+    let open = learned(false);
+    let kept = learned(true);
+    assert!(open > 0, "nobody learned anything in 3 years");
+    assert!(kept < open, "secrets kept {kept} learned, open {open}");
+}
+
+#[test]
+fn better_ways_start_unknown_and_lift_quality() {
+    let s = full(5);
+    let db = s.world.resource::<sim_core::Db>();
+    let store = s.world.resource::<sim_core::AgentStore>();
+    let kp = &s.world.resource::<sim_core::world::Params>().knowledge;
+    let weld = db.content.recipe("pattern_weld_blade").unwrap() as usize;
+    let forge = db.content.recipe("forge_steel_blade").unwrap() as usize;
+    assert_eq!(db.recipes[weld].level, 2);
+    assert!(db.recipes[weld].quality_bonus > 0.0);
+    assert!(
+        (0..store.len()).all(|i| !sim_core::knowledge::knows(kp, db, store, i, weld)),
+        "a founder knows a level-2 recipe"
+    );
+    // Both ways make the same blade, so they share their places.
+    assert!(db
+        .same_outputs
+        .iter()
+        .any(|g| g.contains(&(weld as u32)) && g.contains(&(forge as u32))));
 }
