@@ -119,6 +119,7 @@ flowchart LR
     r_strike_coins["Strike iron coins"]
     r_make_silver_jewellery["Make silver jewellery"]
     r_make_bronze_jewellery["Make bronze jewellery"]
+    r_pattern_weld_blade["Pattern-weld blade 2"]
   end
   subgraph d10["construction"]
     r_build_dairy["Build dairy"]
@@ -346,6 +347,7 @@ flowchart LR
   r_build_tavern --> r_keep_tavern
   r_build_workshop --> r_build_tavern
   r_brew_ale --> r_build_tavern
+  r_forge_steel_blade --> r_pattern_weld_blade
   style d0 fill:#e8f0d8,stroke:#888
   style d1 fill:#efe3d3,stroke:#888
   style d2 fill:#f3dcc4,stroke:#888

@@ -182,7 +182,8 @@ pub fn job_capacity(
             nature_total[n.kind as usize] += n.amount;
         }
     }
-    db.recipes
+    let mut caps: Vec<f32> = db
+        .recipes
         .iter()
         .enumerate()
         .map(|(r, m)| {
@@ -246,7 +247,23 @@ pub fn job_capacity(
                 0.0
             }
         })
-        .collect()
+        .collect();
+    // Several ways of making the same goods (recipe levels, new methods) draw
+    // on the same stock and serve the same demand: together they offer the
+    // places of the most open way, not the sum (shared out in proportion).
+    for group in &db.same_outputs {
+        let total = group
+            .iter()
+            .map(|&r| caps[r as usize])
+            .fold(0.0f32, f32::max);
+        let sum: f32 = group.iter().map(|&r| caps[r as usize]).sum();
+        if total.is_finite() && sum > total {
+            for &r in group {
+                caps[r as usize] *= total / sum;
+            }
+        }
+    }
+    caps
 }
 
 /// How many days of work one worker does over the day of time that starts at
@@ -718,10 +735,22 @@ pub fn decide(
                     .collect()
             })
             .collect();
+        // What each town's people know between them: an apprentice needs a
+        // master who knows the work (knowledge.rs; with it off, all is known).
+        let town_known: Vec<Vec<u64>> = if params.knowledge.enabled {
+            towns
+                .0
+                .iter()
+                .map(|t| crate::knowledge::union(&db, store, &t.residents))
+                .collect()
+        } else {
+            Vec::new()
+        };
         // Every idle agent ranks its options (regular and apprentice places above
         // resting), in parallel, with its own random stream.
         let lists: Vec<Vec<Opt>> = {
             let store = &*store;
+            let town_known = &town_known;
             let (open_jobs, places) = (&open_jobs, &places);
             let pairs: Vec<(usize, &(f32, Vec<f32>))> = idle.iter().copied().zip(&scores).collect();
             super::par_map(&pairs, |&(i, (rest, job_scores))| {
@@ -730,8 +759,14 @@ pub fn decide(
                 let app_scores = ctx.scores(store, i, jobs, *apprentice_wage).1;
                 let mut options = Vec::with_capacity(jobs.len() * 2);
                 // A regular place needs the recipe known; an apprentice place
-                // only what it requires (knowledge.rs; anything with it off).
+                // only what it requires, and someone in town who knows it
+                // (knowledge.rs; anything with it off).
                 let kp = &params.knowledge;
+                let master_here = |r: usize| {
+                    !kp.enabled
+                        || db.requires[r].is_empty()
+                        || crate::knowledge::in_set(&town_known[t], r)
+                };
                 for (k, &v) in job_scores.iter().enumerate() {
                     let r = jobs[k] as usize;
                     if crate::knowledge::knows(kp, &db, store, i, r) {
@@ -739,6 +774,7 @@ pub fn decide(
                     }
                     if places[t][k].apprentice > 0
                         && crate::knowledge::can_learn(kp, &db, store, i, r)
+                        && master_here(r)
                     {
                         options.push((2 * k as u32 + 1, app_scores[k]));
                     }
