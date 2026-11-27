@@ -3864,3 +3864,24 @@ fn guilds_that_keep_secrets_teach_fewer_people() {
     assert!(open > 0, "nobody learned anything in 3 years");
     assert!(kept < open, "secrets kept {kept} learned, open {open}");
 }
+
+#[test]
+fn better_ways_start_unknown_and_lift_quality() {
+    let s = full(5);
+    let db = s.world.resource::<sim_core::Db>();
+    let store = s.world.resource::<sim_core::AgentStore>();
+    let kp = &s.world.resource::<sim_core::world::Params>().knowledge;
+    let weld = db.content.recipe("pattern_weld_blade").unwrap() as usize;
+    let forge = db.content.recipe("forge_steel_blade").unwrap() as usize;
+    assert_eq!(db.recipes[weld].level, 2);
+    assert!(db.recipes[weld].quality_bonus > 0.0);
+    assert!(
+        (0..store.len()).all(|i| !sim_core::knowledge::knows(kp, db, store, i, weld)),
+        "a founder knows a level-2 recipe"
+    );
+    // Both ways make the same blade, so they share their places.
+    assert!(db
+        .same_outputs
+        .iter()
+        .any(|g| g.contains(&(weld as u32)) && g.contains(&(forge as u32))));
+}
