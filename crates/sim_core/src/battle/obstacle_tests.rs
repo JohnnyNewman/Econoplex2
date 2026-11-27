@@ -362,6 +362,27 @@ fn profile_a_town_battle() {
     }
 }
 
+/// Runners among the houses find their way off the field, so a town
+/// battle ends: on these seeds some were once caught swinging between two
+/// cells of the flow field, with an enemy who let them go beside them.
+#[test]
+fn runners_leave_a_town_and_the_battle_ends() {
+    let s = vec!["swordsmen*40"; 50].join(",");
+    let (field, specs) = parse_lineup(&format!("{s} vs town {s}")).unwrap();
+    for seed in [1, 3, 5, 6, 11] {
+        let mut b = Battle::new(
+            params(BattleModel::Soldiers),
+            field.clone(),
+            specs.clone(),
+            seed,
+        );
+        while !b.finished() && b.seconds() < 3600.0 {
+            b.step();
+        }
+        assert!(b.finished(), "seed {seed}: still going after an hour");
+    }
+}
+
 #[test]
 fn a_field_without_obstacles_has_no_nav() {
     let (field, specs) = parse_lineup("swordsmen*20 vs swordsmen*20").unwrap();

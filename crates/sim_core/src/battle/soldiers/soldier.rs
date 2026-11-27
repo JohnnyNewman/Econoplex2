@@ -67,10 +67,19 @@ impl SoldierBattle {
                 dir = if home == edge {
                     V2::new(home.x * 0.3, round)
                 } else {
-                    home * 0.3 + V2::new(-home.y, home.x) * (round * home.x.signum())
+                    // Among obstacles: round them along the way home, each
+                    // runner on its own side of it.
+                    let side = if i % 2 == 0 { 1.0 } else { -1.0 };
+                    home * 0.3 + V2::new(-home.y, home.x) * side
                 };
             }
-            let dir = dir.norm_or(home);
+            let mut dir = dir.norm_or(home);
+            // Among obstacles the way home turns from cell to cell, and a
+            // runner deciding afresh each substep could swing back and forth
+            // between two of them for ever: it keeps some of the way it ran.
+            if self.nav.is_some() {
+                dir = (dir + self.vel[i].norm_or(V2::ZERO) * 1.5).norm_or(home);
+            }
             plan.vel = dir * top;
             plan.facing = dir;
             return plan;
