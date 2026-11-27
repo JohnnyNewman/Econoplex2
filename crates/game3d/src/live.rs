@@ -90,7 +90,7 @@ struct Shared {
     /// The battle waiting for the player, as it stands now.
     live_battle: Option<Arc<sim_core::battle::LiveView>>,
     /// Orders to the player's squads in it, and a request to auto-resolve it.
-    battle_orders: Vec<(usize, sim_core::battle::Order)>,
+    battle_commands: Vec<(usize, sim_core::battle::Command)>,
     battle_resolve: bool,
     /// Orders the simulation could not parse, with the reason.
     errors: Vec<String>,
@@ -164,7 +164,7 @@ impl LiveSim {
             samples: Vec::new(),
             battles: Vec::new(),
             live_battle: None,
-            battle_orders: Vec::new(),
+            battle_commands: Vec::new(),
             battle_resolve: false,
             why_town: None,
             inspect: None,
@@ -213,13 +213,14 @@ impl LiveSim {
         self.shared.lock().unwrap().live_battle.clone()
     }
 
-    /// An order to one of the player's squads in the waiting battle.
-    pub fn order_battle(&self, squad: usize, order: sim_core::battle::Order) {
+    /// What the player tells one of their squads in the waiting battle:
+    /// orders carried out in turn, a stance, or where to deploy.
+    pub fn command_battle(&self, squad: usize, command: sim_core::battle::Command) {
         self.shared
             .lock()
             .unwrap()
-            .battle_orders
-            .push((squad, order));
+            .battle_commands
+            .push((squad, command));
     }
 
     /// Fight the waiting battle to its end at once.
@@ -336,15 +337,17 @@ fn run(sim: &mut Simulation, shared: &Mutex<Shared>, mut seen: sim_core::view::S
         // time (unless paused) and takes the player's orders.
         {
             use sim_core::systems::military as war;
-            let (battle_orders, resolve) = {
+            let (battle_commands, resolve) = {
                 let mut s = shared.lock().unwrap();
                 (
-                    std::mem::take(&mut s.battle_orders),
+                    std::mem::take(&mut s.battle_commands),
                     std::mem::take(&mut s.battle_resolve),
                 )
             };
-            for (squad, order) in battle_orders {
-                war::order_live_battle(&mut sim.world, squad, order);
+            for (squad, command) in battle_commands {
+                if let Err(e) = war::command_live_battle(&mut sim.world, squad, command) {
+                    eprintln!("battle command to squad {squad}: {e}");
+                }
             }
             if resolve {
                 war::resolve_live_battle(&mut sim.world);
@@ -1032,8 +1035,8 @@ mod tests {
         };
         let view = view.expect("the player's raid never reached a battle");
         // Watched battles fight on the soldier model: a figure per soldier.
-        assert_eq!(view.soldiers.len(), view.squads.len());
-        assert!(view.soldiers.iter().any(|s| !s.is_empty()));
+        assert_eq!(view.frame.soldiers.len(), view.squads.len());
+        assert!(view.frame.soldiers.iter().any(|s| !s.is_empty()));
         // The clock holds while the battle waits.
         let tick = live.shared.lock().unwrap().latest.tick;
         std::thread::sleep(Duration::from_millis(300));
@@ -1043,11 +1046,12 @@ mod tests {
             .iter()
             .position(|q| q.side == view.player_side)
             .unwrap();
-        live.order_battle(mine, sim_core::battle::Order::Hold);
+        use sim_core::battle::{Command, Order};
+        live.command_battle(mine, Command::Orders(vec![Order::Hold]));
         let deadline = Instant::now() + Duration::from_secs(10);
         while live
             .live_battle()
-            .is_some_and(|v| v.orders[mine] != sim_core::battle::Order::Hold)
+            .is_some_and(|v| v.orders[mine] != [Order::Hold])
         {
             assert!(
                 Instant::now() < deadline,

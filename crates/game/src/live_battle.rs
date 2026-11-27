@@ -6,22 +6,30 @@
 //! (`main.rs::run_sim_tick`) holds the economy's clock and steps the battle in
 //! real time instead, `BATTLE_SPEED` battle seconds a second, unless the game
 //! is paused. Everything goes through the simulation's own calls
-//! (`order_live_battle`, `step_live_battle`, `resolve_live_battle`,
+//! (`command_live_battle`, `step_live_battle`, `resolve_live_battle`,
 //! `live_battle_view`); once the battle is over, the next economy step settles
 //! it as usual.
 //!
 //! The squads are drawn on the map with battles.rs, from the battle's current
 //! frame. Live battles fight on `battle.live_model` (the soldier model by
 //! default): zoomed in, every soldier is drawn as a dot where they stand,
-//! as the 3D client stands a figure for each. A panel at the top lists every squad: its fighters left, state and
-//! morale, and for the player's fighting squads the orders: own judgment,
-//! hold, withdraw, or attack (archers also shoot) a named enemy squad. "Look
-//! at the field" moves the camera there; "Fight it out" settles it at once.
+//! as the 3D client stands a figure for each. A panel at the top lists every
+//! squad: its fighters left, state and morale, and for the player's fighting
+//! squads the orders: own judgment, hold, withdraw, or attack (archers also
+//! shoot) a named enemy squad. On the soldier model a squad can also go
+//! round a named enemy squad's side (`LiveView::flank`: moves, then attack)
+//! and re-form where it stands to a front of so many files
+//! (`LiveView::reform`); the squad model has no front or sides, so those
+//! buttons are not shown. Every button sends a list of orders, as the mouse
+//! controls of an RTS will (`sim_core::battle::Command`; design note
+//! battle-per-soldier.md, "Battle controls").
+//! "Look at the field" moves the camera there; "Fight it out" settles it at
+//! once.
 
 use crate::ui_compat::Interaction;
 use crate::view::WorldCamera;
 use bevy::prelude::*;
-use sim_core::battle::{LiveView, Order, SquadState};
+use sim_core::battle::{Command, LiveView, Order, SquadState};
 use sim_core::systems::military as war;
 use sim_core::Towns;
 
@@ -40,7 +48,8 @@ pub const LOOK_ZOOM: f32 = 0.15;
 #[derive(Resource, Default)]
 pub struct LiveBattle {
     pub view: Option<LiveView>,
-    pub orders: Vec<(usize, Order)>,
+    /// What the player told which squad.
+    pub commands: Vec<(usize, Command)>,
     pub resolve: bool,
     /// Battle seconds due and not yet stepped.
     due: f32,
@@ -51,15 +60,17 @@ pub struct LiveBattle {
 /// paused), and refresh the view. Returns whether a battle waits, in which
 /// case the economy's clock holds.
 pub fn run(world: &mut World, real_secs: f32, paused: bool) -> bool {
-    let (orders, resolve) = {
+    let (commands, resolve) = {
         let mut live = world.resource_mut::<LiveBattle>();
         (
-            std::mem::take(&mut live.orders),
+            std::mem::take(&mut live.commands),
             std::mem::take(&mut live.resolve),
         )
     };
-    for (squad, order) in orders {
-        war::order_live_battle(world, squad, order);
+    for (squad, command) in commands {
+        if let Err(e) = war::command_live_battle(world, squad, command) {
+            warn!("battle command to squad {squad}: {e}");
+        }
     }
     if resolve {
         war::resolve_live_battle(world);
@@ -104,7 +115,7 @@ pub fn draw_live_battle(
             v.facing,
             v.field,
             &v.squads,
-            &v.soldiers,
+            &v.frame.soldiers,
             outline,
             zoom,
         );
@@ -132,11 +143,15 @@ pub fn draw_live_battle(
 pub fn look_point(v: &LiveView) -> (f32, f32) {
     let to_map = crate::battles::field_to_map(v.at, v.facing, v.field);
     let on: Vec<Vec2> = v
+        .frame
         .soldiers
         .iter()
         .flatten()
         .filter(|m| m.state != sim_core::battle::FighterState::Fled)
-        .map(|m| to_map(Vec2::new(m.x, m.y)))
+        .map(|m| {
+            let (x, y) = m.pos();
+            to_map(Vec2::new(x, y))
+        })
         .collect();
     if on.is_empty() {
         return v.at;
@@ -147,7 +162,7 @@ pub fn look_point(v: &LiveView) -> (f32, f32) {
 
 /// Whether a live battle is drawn soldier by soldier at camera zoom `zoom`.
 pub fn shows_soldiers(v: &LiveView, zoom: f32) -> bool {
-    !v.soldiers.is_empty() && zoom < SOLDIERS_BELOW
+    v.on_soldiers() && zoom < SOLDIERS_BELOW
 }
 
 #[derive(Component)]
@@ -165,12 +180,17 @@ pub struct SquadText(usize);
 #[derive(Component)]
 pub struct SquadRows;
 
-#[derive(Component, Clone, Copy, Debug, PartialEq)]
+#[derive(Component, Clone, Debug, PartialEq)]
 pub enum BattleAction {
-    Order(usize, Order),
+    /// A squad's orders, carried out in turn.
+    Orders(usize, Vec<Order>),
     Look,
     FightOut,
 }
+
+/// A button for what the squad does now (its order, or its formation).
+#[derive(Component)]
+pub struct Chosen;
 
 const BUTTON: Color = Color::srgb(0.22, 0.24, 0.22);
 const CHOSEN: Color = Color::srgb(0.45, 0.38, 0.15);
@@ -184,7 +204,7 @@ fn font(px: f32) -> TextFont {
 }
 
 fn spawn_button(p: &mut ChildSpawnerCommands, label: &str, action: BattleAction, chosen: bool) {
-    p.spawn((
+    let mut button = p.spawn((
         crate::ui_compat::button(),
         Node {
             padding: UiRect::axes(Val::Px(6.0), Val::Px(1.0)),
@@ -193,8 +213,11 @@ fn spawn_button(p: &mut ChildSpawnerCommands, label: &str, action: BattleAction,
         },
         BackgroundColor(if chosen { CHOSEN } else { BUTTON }),
         action,
-    ))
-    .with_children(|b| {
+    ));
+    if chosen {
+        button.insert(Chosen);
+    }
+    button.with_children(|b| {
         b.spawn((Text::new(label), font(12.0)));
     });
 }
@@ -262,28 +285,49 @@ fn orderable(v: &LiveView, q: usize) -> bool {
             .is_some_and(|f| f.3 == SquadState::Fighting)
 }
 
-/// The orders a squad can be given: its own judgment, hold, withdraw, and
-/// attack each enemy on the field (archers, by name as in the 3D client, also
-/// shoot).
-pub fn choices(v: &LiveView, q: usize) -> Vec<(String, Order)> {
+/// The orders a squad can be given, each a list carried out in turn: its own
+/// judgment, hold, withdraw, and attack each enemy on the field (archers, by
+/// name as in the 3D client, also shoot). On the soldier model, also go
+/// round each enemy's side, and re-form where it stands to each of the
+/// panels' fronts (`LiveView::FRONTS`).
+pub fn choices(v: &LiveView, q: usize) -> Vec<(String, Vec<Order>)> {
     let mut out = vec![
-        ("Own judgment".to_string(), Order::Auto),
-        ("Hold".to_string(), Order::Hold),
-        ("Withdraw".to_string(), Order::Withdraw),
+        ("Own judgment".to_string(), vec![Order::Auto]),
+        ("Hold".to_string(), vec![Order::Hold]),
+        ("Withdraw".to_string(), vec![Order::Withdraw]),
     ];
     let archer = v.squads[q].name.to_lowercase().contains("bow");
     for e in enemies(v) {
         let name = &v.squads[e].name;
-        out.push((format!("Attack {name}"), Order::Attack(e)));
+        out.push((format!("Attack {name}"), vec![Order::Attack(e)]));
+        if v.on_soldiers() {
+            out.push((format!("Flank {name}"), v.flank(q, e)));
+        }
         if archer {
-            out.push((format!("Shoot {name}"), Order::Shoot(e)));
+            out.push((format!("Shoot {name}"), vec![Order::Shoot(e)]));
+        }
+    }
+    if v.on_soldiers() {
+        for (name, files) in LiveView::FRONTS {
+            out.push((name.to_string(), v.reform(q, files)));
         }
     }
     out
 }
 
+/// Whether squad `q` follows `plan` now: a single order in force and
+/// nothing after it. Moves (going round, re-forming) are never shown chosen.
+pub fn chosen(v: &LiveView, q: usize, plan: &[Order]) -> bool {
+    let left = v.orders.get(q).map_or(0, Vec::len);
+    matches!(plan, [o] if left <= 1 && v.order_now(q) == *o && !matches!(o, Order::MoveTo { .. }))
+}
+
 /// What the rows are built from; they are rebuilt only when this changes.
-type Layout = (usize, Vec<Option<Vec<(String, Order)>>>, Vec<Order>);
+type Layout = (
+    usize,
+    Vec<Option<Vec<(String, Vec<Order>)>>>,
+    Vec<Vec<Order>>,
+);
 
 /// Show, fill and hide the panel; rebuild its squad rows when the choices or
 /// the orders given change.
@@ -345,7 +389,6 @@ pub fn update_battle_panel(
             for (q, opts) in shape.1.iter().enumerate() {
                 p.spawn((Text::new(""), font(13.0), SquadText(q)));
                 let Some(opts) = opts else { continue };
-                let now = v.orders.get(q).copied().unwrap_or(Order::Auto);
                 p.spawn(Node {
                     flex_direction: FlexDirection::Row,
                     flex_wrap: FlexWrap::Wrap,
@@ -354,7 +397,8 @@ pub fn update_battle_panel(
                 })
                 .with_children(|r| {
                     for (label, o) in opts {
-                        spawn_button(r, label, BattleAction::Order(q, *o), *o == now);
+                        let on = chosen(v, q, o);
+                        spawn_button(r, label, BattleAction::Orders(q, o.clone()), on);
                     }
                 });
             }
@@ -388,29 +432,36 @@ pub fn update_battle_panel(
 /// The panel's buttons: orders go to the sim loop; "Look at the field" centres
 /// and zooms the camera on it; "Fight it out" settles the battle at once.
 pub fn battle_buttons(
-    mut buttons: Query<(&Interaction, &BattleAction, &mut BackgroundColor), Changed<Interaction>>,
+    mut buttons: Query<
+        (
+            &Interaction,
+            &BattleAction,
+            &mut BackgroundColor,
+            Has<Chosen>,
+        ),
+        Changed<Interaction>,
+    >,
     mut live: ResMut<LiveBattle>,
     mut follow: ResMut<crate::view::Follow>,
     mut camera: Single<&mut Transform, With<WorldCamera>>,
 ) {
-    for (interaction, action, mut colour) in &mut buttons {
+    for (interaction, action, mut colour, chosen) in &mut buttons {
         match interaction {
             Interaction::Hovered => colour.0 = HOVER,
-            Interaction::None => colour.0 = BUTTON,
+            // The squad's order and formation stay marked.
+            Interaction::None => colour.0 = if chosen { CHOSEN } else { BUTTON },
             Interaction::Pressed => {
                 colour.0 = HOVER;
-                match *action {
-                    BattleAction::Order(q, o) => live.orders.push((q, o)),
+                match action {
+                    BattleAction::Orders(q, plan) => {
+                        live.commands.push((*q, Command::Orders(plan.clone())))
+                    }
                     BattleAction::FightOut => live.resolve = true,
                     BattleAction::Look => {
                         if let Some(v) = &live.view {
                             follow.0 = false;
                             crate::view::look_at(&mut camera, look_point(v));
-                            let most = if v.soldiers.is_empty() {
-                                0.8
-                            } else {
-                                LOOK_ZOOM
-                            };
+                            let most = if v.on_soldiers() { LOOK_ZOOM } else { 0.8 };
                             let z = camera.scale.x.min(most);
                             camera.scale = Vec3::new(z, z, 1.0);
                         }
@@ -424,7 +475,7 @@ pub fn battle_buttons(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sim_core::battle::{ReplayFrame, ReplaySquad};
+    use sim_core::battle::{Kit, ReplayFrame, ReplaySquad, SquadLine, Stance};
 
     fn view() -> LiveView {
         let squad = |name: &str, side| ReplaySquad {
@@ -439,8 +490,22 @@ mod tests {
             facing: (1.0, 0.0),
             field: (100.0, 50.0),
             squads: vec![squad("Bowmen", 0), squad("Spears", 0), squad("Raiders", 1)],
-            orders: vec![Order::Auto; 3],
+            orders: vec![Vec::new(); 3],
+            lines: vec![
+                SquadLine {
+                    anchor: (10.0, 10.0),
+                    facing: (1.0, 0.0),
+                    width: 5.0,
+                    spacing: 1.0,
+                };
+                3
+            ],
+            stances: vec![Stance::default(); 3],
+            paces: vec![(1.4, 3.0); 3],
+            kits: vec![Kit::preset("archers").unwrap(); 3],
+            wall_x: None,
             morale: vec![1.0; 3],
+            condition: Vec::new(),
             frame: ReplayFrame {
                 t: 30.0,
                 squads: vec![
@@ -448,11 +513,11 @@ mod tests {
                     (10.0, 30.0, 0, SquadState::Destroyed),
                     (80.0, 20.0, 15, SquadState::Fighting),
                 ],
+                soldiers: Vec::new(),
             },
             player_side: 0,
             finished: false,
             winner: None,
-            soldiers: Vec::new(),
         }
     }
 
@@ -460,20 +525,67 @@ mod tests {
     fn squads_get_the_orders_the_3d_client_offers() {
         let v = view();
         assert_eq!(enemies(&v), vec![2]);
-        let bow: Vec<Order> = choices(&v, 0).into_iter().map(|c| c.1).collect();
+        let bow: Vec<Vec<Order>> = choices(&v, 0).into_iter().map(|c| c.1).collect();
         assert_eq!(
             bow,
-            vec![
+            [
                 Order::Auto,
                 Order::Hold,
                 Order::Withdraw,
                 Order::Attack(2),
                 Order::Shoot(2)
             ]
+            .map(|o| vec![o])
         );
         assert!(orderable(&v, 0));
         // A destroyed squad and the enemy take no orders.
         assert!(!orderable(&v, 1) && !orderable(&v, 2));
+        assert!(chosen(&v, 0, &[Order::Auto]) && !chosen(&v, 0, &[Order::Hold]));
+    }
+
+    /// On the soldier model a squad can also go round each enemy's side and
+    /// re-form where it stands, as in the 3D client: going round is moves
+    /// along the enemy's side and then the attack; re-forming is a move to
+    /// where it stands, that many files wide, and then on as before.
+    #[test]
+    fn on_soldiers_squads_also_go_round_and_re_form() {
+        let mut v = view();
+        v.frame.soldiers = vec![Vec::new(); 3];
+        v.orders[1] = vec![Order::Hold];
+        let opts = choices(&v, 1);
+        let labels: Vec<&str> = opts.iter().map(|c| c.0.as_str()).collect();
+        assert_eq!(
+            labels,
+            [
+                "Own judgment",
+                "Hold",
+                "Withdraw",
+                "Attack Raiders",
+                "Flank Raiders",
+                "Column",
+                "Deep",
+                "Line",
+                "Wide"
+            ]
+        );
+        let flank = &opts[4].1;
+        assert!(matches!(
+            flank.as_slice(),
+            [.., Order::MoveTo { .. }, Order::Attack(2)]
+        ));
+        assert_eq!(
+            opts[5].1,
+            vec![
+                Order::MoveTo {
+                    anchor: (10.0, 10.0),
+                    facing: Some((1.0, 0.0)),
+                    width: Some(4.0),
+                    run: false
+                },
+                Order::Hold
+            ]
+        );
+        assert!(chosen(&v, 1, &[Order::Hold]) && !chosen(&v, 1, &opts[5].1));
     }
 
     /// A live battle on the soldier model lists every soldier, and zoomed in
@@ -491,13 +603,12 @@ mod tests {
             b.step();
         }
         let v = b.live_view(0, (500.0, 200.0), (0.0, 1.0), 0);
-        assert_eq!(v.soldiers.len(), 2);
-        assert!(v.soldiers.iter().all(|s| s.len() == 30));
+        let men = &v.frame.soldiers;
+        assert_eq!(men.len(), 2);
+        assert!(men.iter().all(|s| s.len() == 30));
         assert!(shows_soldiers(&v, 0.1) && !shows_soldiers(&v, 1.0));
-        let dots =
-            crate::battles::soldier_dots(0.0, v.at, v.facing, v.field, &v.squads, &v.soldiers);
-        let on_field = v
-            .soldiers
+        let dots = crate::battles::soldier_dots(0.0, v.at, v.facing, v.field, &v.squads, men);
+        let on_field = men
             .iter()
             .flatten()
             .filter(|m| m.state != FighterState::Fled)
@@ -514,19 +625,16 @@ mod tests {
             );
         }
         // Each squad's block stands at the centre of its soldiers in the line.
-        for (q, men) in v.soldiers.iter().enumerate() {
-            let up: Vec<_> = men
+        for (q, men) in men.iter().enumerate() {
+            let up: Vec<Vec2> = men
                 .iter()
                 .filter(|m| m.state == FighterState::Standing)
+                .map(|m| Vec2::from(m.pos()))
                 .collect();
             if up.is_empty() {
                 continue;
             }
-            let n = up.len() as f32;
-            let c = Vec2::new(
-                up.iter().map(|m| m.x).sum::<f32>() / n,
-                up.iter().map(|m| m.y).sum::<f32>() / n,
-            );
+            let c = up.iter().sum::<Vec2>() / up.len() as f32;
             let f = v.frame.squads[q];
             assert!(
                 (c - Vec2::new(f.0, f.1)).length() < 1.0,
@@ -541,7 +649,7 @@ mod tests {
             (1.0, 0.0),
             0,
         );
-        assert!(v.soldiers.is_empty() && !shows_soldiers(&v, 0.1));
+        assert!(!v.on_soldiers() && !shows_soldiers(&v, 0.1));
     }
 
     /// The scenario's player raids a neighbour: the battle waits, the
@@ -581,7 +689,7 @@ mod tests {
         let v = s.world.resource::<LiveBattle>().view.clone().unwrap();
         // Watched battles fight on the soldier model; auto-resolve stays on squads.
         assert!(
-            !v.soldiers.is_empty(),
+            v.on_soldiers(),
             "the live battle is not on the soldier model"
         );
         let t0 = v.frame.t;
@@ -627,8 +735,8 @@ mod tests {
             .unwrap();
         s.world
             .resource_mut::<LiveBattle>()
-            .orders
-            .push((mine, Order::Hold));
+            .commands
+            .push((mine, Command::Orders(vec![Order::Hold])));
         run(&mut s.world, 0.0, true);
         assert_eq!(
             s.world
@@ -637,7 +745,7 @@ mod tests {
                 .as_ref()
                 .unwrap()
                 .orders[mine],
-            Order::Hold
+            [Order::Hold]
         );
         s.world.resource_mut::<LiveBattle>().resolve = true;
         assert!(!run(&mut s.world, 0.0, false), "fought out at once");

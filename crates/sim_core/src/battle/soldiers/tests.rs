@@ -181,6 +181,153 @@ fn a_braced_line_turns_to_face_riders() {
     );
 }
 
+/// Going round: while one squad fights a standing enemy's front, another,
+/// starting behind it and sent round the enemy's side (`LiveView::flank`:
+/// moves along a lane off its side, then `Attack`), meets it more than 60
+/// degrees off the front it fights on. Sent straight at it (`Attack`), it
+/// meets it at that front.
+#[test]
+fn a_squad_sent_round_the_side_meets_the_enemy_from_the_side() {
+    // The cosine of the angle, at the enemy, between the squad holding its
+    // front and the second squad when the second squad first meets it; `None`
+    // if the enemy broke before it got there.
+    let meets = |flank: bool, seed: u64| {
+        let (field, mut specs) =
+            parse_lineup("swordsmen*100,swordsmen*30 vs swordsmen*100").unwrap();
+        // Both squads straight in front of the enemy, the second behind the first.
+        specs[0].pos.1 = specs[2].pos.1;
+        specs[1].pos = (specs[0].pos.0 - 40.0, specs[2].pos.1);
+        let mut b = Battle::new(soldiers(), field, specs, seed);
+        b.set_orders(2, &[Order::Hold]);
+        let plan = if flank {
+            b.live_view(0, (0.0, 0.0), (1.0, 0.0), 0).flank(1, 2)
+        } else {
+            vec![Order::Attack(2)]
+        };
+        b.set_orders(1, &plan);
+        while !b.finished() {
+            b.step();
+            let Battle::Soldiers(sb) = &b else {
+                unreachable!()
+            };
+            let (front, s, q) = (&sb.squads[0], &sb.squads[1], &sb.squads[2]);
+            if s.in_contact > 0 && s.fighting_with == Some(2) {
+                let way = |p: V2| (p - q.centre).norm_or(V2::new(-1.0, 0.0));
+                return Some(way(s.centre).dot(way(front.centre)));
+            }
+        }
+        None
+    };
+    let mut flanked = 0;
+    for seed in 1..=8 {
+        let (flank, attack) = (meets(true, seed), meets(false, seed));
+        assert!(
+            flank.is_none_or(|c| c < 0.5) && attack.is_none_or(|c| c > 0.9),
+            "seed {seed}: met the enemy at cos {flank:.2?} off its front going round, {attack:.2?} straight"
+        );
+        flanked += flank.is_some() as usize;
+    }
+    assert!(
+        flanked >= 5,
+        "the flank came round in time {flanked} of 8 battles"
+    );
+}
+
+/// `MoveTo` with a width and facing: the squad re-forms that wide where it
+/// stands. Sent on by two moves, it goes to the first, then the second,
+/// takes the second's width and turns there as told.
+#[test]
+fn a_move_sets_the_front_and_gives_way_to_the_next_order() {
+    let (field, specs) = parse_lineup("swordsmen*40 vs swordsmen*40").unwrap();
+    let mut b = Battle::new(soldiers(), field, specs, 1);
+    let line = b.live_view(0, (0.0, 0.0), (1.0, 0.0), 0).lines[0];
+    assert_eq!(line.width, 40.0);
+    let ahead = (line.anchor.0 + 20.0, line.anchor.1);
+    // Narrower where it stands: there at once, so the move stays in force.
+    b.set_orders(
+        0,
+        &[Order::MoveTo {
+            anchor: line.anchor,
+            facing: Some(line.facing),
+            width: Some(4.0),
+            run: false,
+        }],
+    );
+    b.step();
+    let v = b.live_view(0, (0.0, 0.0), (1.0, 0.0), 0);
+    assert_eq!((v.lines[0].width, v.orders[0].len()), (4.0, 1));
+    let then = (ahead.0, ahead.1 + 10.0);
+    let last = Order::MoveTo {
+        anchor: then,
+        facing: Some((0.0, 1.0)),
+        width: Some(10.0),
+        run: false,
+    };
+    b.set_orders(0, &[Order::move_to(ahead), last]);
+    for _ in 0..40 {
+        b.step();
+    }
+    let v = b.live_view(0, (0.0, 0.0), (1.0, 0.0), 0);
+    let l = v.lines[0];
+    assert_eq!((v.orders[0].as_slice(), l.width), (&[last][..], 10.0));
+    let off = (l.anchor.0 - then.0).hypot(l.anchor.1 - then.1);
+    assert!(off < 2.0 && l.facing.1 > 0.95, "{l:?}");
+}
+
+/// A recorded battle on the soldier model has every soldier in each frame,
+/// packed to six bytes, and played back between frames.
+#[test]
+fn replay_frames_carry_every_soldier() {
+    assert_eq!(std::mem::size_of::<FrameSoldier>(), 6);
+    let (field, specs) = parse_lineup("swordsmen*30 vs spearmen*20").unwrap();
+    let mut b = Battle::new(soldiers(), field.clone(), specs, 1);
+    let (_, squads, frames) = b.run_recorded(5.0);
+    let replay = Replay {
+        town: 0,
+        at: (0.0, 0.0),
+        facing: (1.0, 0.0),
+        field: (field.width, field.height),
+        squads,
+        frames,
+        winner: None,
+    };
+    for f in &replay.frames {
+        let sizes: Vec<usize> = f.soldiers.iter().map(Vec::len).collect();
+        assert_eq!(sizes, [30, 20]);
+    }
+    let last = replay.frames.last().unwrap();
+    assert!(last
+        .soldiers
+        .iter()
+        .flatten()
+        .any(|m| m.state == FighterState::Down));
+    // Halfway between two frames, a soldier stands halfway between.
+    let (a, b) = (&replay.frames[4], &replay.frames[5]);
+    let mid = replay.soldiers_at(0.5 * (a.t + b.t));
+    let (pa, pb, pm) = (
+        a.soldiers[0][0].pos(),
+        b.soldiers[0][0].pos(),
+        mid[0][0].pos(),
+    );
+    assert!((pm.0 - 0.5 * (pa.0 + pb.0)).abs() <= 0.1 && (pm.1 - 0.5 * (pa.1 + pb.1)).abs() <= 0.1);
+}
+
+#[test]
+fn a_frame_soldier_keeps_a_tenth_of_a_metre_and_turns_the_short_way() {
+    let m = FrameSoldier::new(123.456, -7.89, (0.0, 2.0), FighterState::Routing);
+    let (x, y) = m.pos();
+    assert!((x - 123.456).abs() <= 0.05 && (y + 7.89).abs() <= 0.05);
+    let f = m.facing();
+    assert!(f.0.abs() < 0.02 && (f.1 - 1.0).abs() < 1e-3);
+    assert_eq!(m.state, FighterState::Routing);
+    // From just below east to just above it: through east, not round west.
+    let a = FrameSoldier::new(0.0, 0.0, (1.0, -0.1), FighterState::Standing);
+    let b = FrameSoldier::new(10.0, 0.0, (1.0, 0.1), FighterState::Down);
+    let h = FrameSoldier::between(a, b, 0.5);
+    assert!(h.facing().0 > 0.99 && (h.pos().0 - 5.0).abs() < 1e-4);
+    assert_eq!(h.state, FighterState::Down);
+}
+
 /// Debugging aid: `TRACE="cavalry*20 vs spearmen*30" cargo test trace -- --ignored --nocapture`.
 #[test]
 #[ignore]
@@ -211,6 +358,32 @@ fn trace() {
     for e in &b.events {
         eprintln!("{:.0} {:?}", e.t, e.kind);
     }
+}
+
+/// Measure: a soldier replay's frames and bytes in memory, for the design
+/// note's table. `TRACE="swordsmen*200 vs swordsmen*200" cargo test
+/// replay_size -- --ignored --nocapture`.
+#[test]
+#[ignore]
+fn replay_size() {
+    let lineup = std::env::var("TRACE").unwrap_or("swordsmen*30 vs spearmen*20".into());
+    let (field, specs) = parse_lineup(&lineup).unwrap();
+    let (report, _, frames) = Battle::new(soldiers(), field, specs, 1).run_recorded(5.0);
+    let bytes: usize = frames
+        .iter()
+        .map(|f| {
+            f.soldiers
+                .iter()
+                .map(|m| m.len() * std::mem::size_of::<FrameSoldier>() + 24)
+                .sum::<usize>()
+        })
+        .sum();
+    let n: usize = frames[0].soldiers.iter().map(Vec::len).sum();
+    eprintln!(
+        "{lineup}: {n} soldiers, {:.0} s, {} frames, {bytes} bytes of soldiers",
+        report.seconds,
+        frames.len()
+    );
 }
 
 /// Debugging aid: how each of `SEEDS` battles of `TRACE` ended.

@@ -104,6 +104,10 @@ impl SoldierBattle {
                 }
                 let bj = self.body[j];
                 plan.push += self.shove(i, j, d, d2, 0.5);
+                // A squad that lets enemies go strikes nobody who runs.
+                if !c.pursues() && self.state[j] == SoldierState::Routing {
+                    return;
+                }
                 if d2 < best_d2 {
                     let rj = reach + bj;
                     // In reach, or (for the front rank) near the slot.

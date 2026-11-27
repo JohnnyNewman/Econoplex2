@@ -369,6 +369,8 @@
         rout_at: 0.15,
         wall_cover: 0.6,           // share of a man on the wall hidden from arrows
         breach_width: 6.0,         // m of gate or breach attackers fight through
+        skirmish_distance: 40.0,   // m: skirmishing archers back away from enemies this close
+        cautious_wait: 120.0,      // m: a cautious side holds until an enemy is this close
         // The soldier model. Every rate is per second, scaled by the substep.
         soldiers: (
             substep: 0.25,         // battle seconds per substep

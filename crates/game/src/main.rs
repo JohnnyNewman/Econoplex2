@@ -64,9 +64,9 @@ pub struct SimControl {
 pub struct Selection(pub Option<u32>);
 
 fn main() {
-    let args = autorun::parse();
+    let mut args = autorun::parse();
     let paths = AssetPaths::discover();
-    let (db, params, mut scenario) = match sim_core::load(&paths) {
+    let (db, params, mut scenario) = match sim_core::load_with(&paths, &args.sets) {
         Ok(x) => x,
         Err(e) => {
             eprintln!(
@@ -122,6 +122,9 @@ fn main() {
             .resource_mut::<sim_core::policy::OrderQueue>()
             .pending
             .push(order);
+    }
+    if let Some(lineup) = &args.battle {
+        args.battle_at = Some(battles::stage_battle(app.world_mut(), lineup));
     }
     app.add_schedule(sim_core::build_schedule());
     app.add_schedule(sim_core::build_economy_schedule());

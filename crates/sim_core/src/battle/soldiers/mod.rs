@@ -303,7 +303,7 @@ impl SoldierState {
 /// How a squad stands.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Formation {
-    /// `frontage` wide, as many ranks as it takes.
+    /// `frontage` wide (or as wide as the player set), as many ranks as it takes.
     Line,
     /// `column_files` wide, for marching to a goal far away.
     Column,
@@ -311,7 +311,7 @@ pub enum Formation {
     Wedge,
     /// A line whose front faces the threat and stands to take a charge.
     Braced,
-    /// A line at `loose_spacing`: archers.
+    /// A line at `loose_spacing`: archers, or a squad told to stand loose.
     Loose,
 }
 
@@ -337,11 +337,17 @@ struct KitEntry {
 struct SquadCtl {
     spec: SquadSpec,
     state: SquadState,
-    order: Order,
+    /// Orders left, the first in force.
+    orders: Vec<Order>,
+    stance: Stance,
     morale: f32,
     /// Its soldiers are `first..first + spec.members.len()`.
     first: usize,
     formation: Formation,
+    /// The front the player set (`MoveTo` width), metres; `None`: its own.
+    width: Option<f32>,
+    /// The width changed: re-form, even in the same formation.
+    reform_due: bool,
     /// The centre of the front rank, and where the front faces (unit).
     anchor: V2,
     facing: V2,
@@ -381,6 +387,19 @@ struct SquadCtl {
 }
 
 impl SquadCtl {
+    /// The order in force.
+    fn order(&self) -> Order {
+        order_now(&self.orders)
+    }
+    /// An order comes into force: a `MoveTo` with a width sets the front.
+    fn start_order(&mut self) {
+        if let Order::MoveTo { width: Some(w), .. } = self.order() {
+            if self.width != Some(w) {
+                self.width = Some(w);
+                self.reform_due = true;
+            }
+        }
+    }
     fn fighting(&self) -> bool {
         self.state == SquadState::Fighting
     }
@@ -392,6 +411,10 @@ impl SquadCtl {
     }
     fn mounted(&self) -> bool {
         self.spec.kit.mounted
+    }
+    /// Whether it chases and strikes enemies who run.
+    fn pursues(&self) -> bool {
+        self.stance.pursuit == Pursuit::Kill
     }
     /// A disc for distances between squads, as the squad model has it.
     fn radius(&self) -> f32 {
@@ -556,6 +579,8 @@ pub struct SoldierBattle {
     met: Vec<bool>,
     charged: Vec<bool>,
     profile: Option<Profile>,
+    /// Each side's doctrine.
+    doctrine: [Doctrine; 2],
 }
 
 impl SoldierBattle {
@@ -605,6 +630,7 @@ impl SoldierBattle {
             charged: vec![false; specs.len() * specs.len()],
             profile: None,
             widest: [0.0; 2],
+            doctrine: [Doctrine::default(); 2],
         };
         let centres: Vec<(u8, V2)> = specs
             .iter()
@@ -725,10 +751,13 @@ impl SoldierBattle {
         self.squads.push(SquadCtl {
             spec,
             state,
-            order: Order::Auto,
+            orders: Vec::new(),
+            stance: Stance::default(),
             morale,
             first,
             formation: Formation::Line,
+            width: None,
+            reform_due: false,
             anchor: centre,
             facing,
             files: 1,
@@ -784,6 +813,49 @@ impl SoldierBattle {
         }
     }
 
+    /// Stand a squad anew before the battle: its front's centre at
+    /// `anchor`, facing `facing` (unit), `width` wide if given, everyone in
+    /// their slot.
+    fn redeploy(&mut self, c: usize, anchor: V2, facing: V2, width: Option<f32>) {
+        let s = &mut self.squads[c];
+        s.anchor = anchor;
+        s.facing = facing;
+        if width.is_some() {
+            s.width = width;
+        }
+        let formation = self.formation_for(c, None, false);
+        self.reform(c, formation);
+        let s = &mut self.squads[c];
+        s.front = anchor;
+        let (first, n) = (s.first, s.spec.members.len());
+        let (mut sum, mut k) = (V2::ZERO, 0.0);
+        for i in first..first + n {
+            self.pos[i] = self.squads[c].slot(self.file[i], self.rank[i]);
+            self.facing[i] = facing;
+            if self.state[i].present() {
+                sum += self.pos[i];
+                k += 1.0;
+            }
+        }
+        let s = &mut self.squads[c];
+        if k > 0.0 {
+            s.centre = sum * (1.0 / k);
+        }
+        s.spec.pos = (s.centre.x, s.centre.y);
+    }
+
+    /// Each soldier's morale and fatigue, by squad in member order.
+    pub fn condition(&self) -> Vec<Vec<Condition>> {
+        self.squads
+            .iter()
+            .map(|s| {
+                (s.first..s.first + s.spec.members.len())
+                    .map(|i| Condition::new(self.morale[i], self.fatigue[i]))
+                    .collect()
+            })
+            .collect()
+    }
+
     /// Time per phase from now on (`--profile`).
     pub fn enable_profile(&mut self) {
         self.profile.get_or_insert_with(Profile::default);
@@ -794,21 +866,23 @@ impl SoldierBattle {
     }
 
     /// Every soldier of each squad, in member order, as a live battle shows them.
-    pub fn live_soldiers(&self) -> Vec<Vec<LiveSoldier>> {
+    pub fn frame_soldiers(&self) -> Vec<Vec<FrameSoldier>> {
         self.squads
             .iter()
             .map(|s| {
                 (s.first..s.first + s.spec.members.len())
-                    .map(|i| LiveSoldier {
-                        x: self.pos[i].x,
-                        y: self.pos[i].y,
-                        facing: (self.facing[i].x, self.facing[i].y),
-                        state: match self.state[i] {
-                            SoldierState::Routing => FighterState::Routing,
-                            SoldierState::Down => FighterState::Down,
-                            SoldierState::Fled => FighterState::Fled,
-                            _ => FighterState::Standing,
-                        },
+                    .map(|i| {
+                        FrameSoldier::new(
+                            self.pos[i].x,
+                            self.pos[i].y,
+                            (self.facing[i].x, self.facing[i].y),
+                            match self.state[i] {
+                                SoldierState::Routing => FighterState::Routing,
+                                SoldierState::Down => FighterState::Down,
+                                SoldierState::Fled => FighterState::Fled,
+                                _ => FighterState::Standing,
+                            },
+                        )
                     })
                     .collect()
             })
@@ -965,13 +1039,55 @@ impl Model for SoldierBattle {
     fn step(&mut self) {
         SoldierBattle::step(self);
     }
-    fn set_order(&mut self, squad: usize, order: Order) {
+    fn set_orders(&mut self, squad: usize, orders: &[Order]) {
         if let Some(s) = self.squads.get_mut(squad) {
-            s.order = order;
+            s.orders = orders.to_vec();
+            s.start_order();
         }
     }
-    fn order(&self, squad: usize) -> Order {
-        self.squads[squad].order
+    fn orders(&self, squad: usize) -> &[Order] {
+        &self.squads[squad].orders
+    }
+    fn line(&self, squad: usize) -> SquadLine {
+        let s = &self.squads[squad];
+        SquadLine {
+            anchor: (s.anchor.x, s.anchor.y),
+            facing: (s.facing.x, s.facing.y),
+            width: s.files as f32 * s.spacing,
+            spacing: s.spacing,
+        }
+    }
+    fn set_stance(&mut self, squad: usize, stance: Stance) {
+        let s = &mut self.squads[squad];
+        s.reform_due |= s.stance.spacing != stance.spacing;
+        s.stance = stance;
+    }
+    fn stance(&self, squad: usize) -> Stance {
+        self.squads[squad].stance
+    }
+    fn set_doctrine(&mut self, side: u8, doctrine: Doctrine) {
+        self.doctrine[(side as usize).min(1)] = doctrine;
+        for s in self.squads.iter_mut().filter(|s| s.spec.side == side) {
+            s.stance.pursuit = doctrine.prisoners;
+        }
+    }
+    fn pace(&self, squad: usize) -> (f32, f32) {
+        let p = &self.params;
+        let s = &self.squads[squad];
+        let (walk, run) = if s.mounted() {
+            (p.horse_walk_speed, p.horse_charge_speed)
+        } else {
+            (p.walk_speed, p.run_speed)
+        };
+        (walk * s.vigour, run * s.vigour)
+    }
+    fn deploy(&mut self, squad: usize, anchor: (f32, f32), facing: (f32, f32), width: Option<f32>) {
+        self.redeploy(
+            squad,
+            V2::new(anchor.0, anchor.1),
+            V2::new(facing.0, facing.1),
+            width,
+        );
     }
     fn count(&self) -> usize {
         self.squads.len()

@@ -93,9 +93,68 @@ pub struct ReplaySquad {
 pub struct ReplayFrame {
     pub t: f32,
     pub squads: Vec<(f32, f32, u16, SquadState)>,
+    /// On the soldier model, every soldier of each squad, in member order;
+    /// empty on the squad model.
+    pub soldiers: Vec<Vec<FrameSoldier>>,
 }
 
-/// A fought battle, for the 3D view to play back where it happened.
+/// One soldier at one moment of a battle, packed into six bytes: where they
+/// stand to a tenth of a metre, the way they face to 1/256 of a turn, and
+/// how they are.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FrameSoldier {
+    x: i16,
+    y: i16,
+    facing: u8,
+    pub state: FighterState,
+}
+
+impl FrameSoldier {
+    /// Metres per step of position.
+    pub const STEP: f32 = 0.1;
+
+    /// A soldier at (x, y) metres on the field, facing `facing` (any length).
+    pub fn new(x: f32, y: f32, facing: (f32, f32), state: FighterState) -> Self {
+        let q = |v: f32| {
+            (v / Self::STEP)
+                .round()
+                .clamp(i16::MIN as f32, i16::MAX as f32) as i16
+        };
+        let turn = facing.1.atan2(facing.0) / std::f32::consts::TAU;
+        Self {
+            x: q(x),
+            y: q(y),
+            facing: (turn.rem_euclid(1.0) * 256.0).round() as u32 as u8,
+            state,
+        }
+    }
+
+    /// Where they stand, metres on the field.
+    pub fn pos(&self) -> (f32, f32) {
+        (self.x as f32 * Self::STEP, self.y as f32 * Self::STEP)
+    }
+
+    /// The way they face, unit.
+    pub fn facing(&self) -> (f32, f32) {
+        let a = self.facing as f32 / 256.0 * std::f32::consts::TAU;
+        (a.cos(), a.sin())
+    }
+
+    /// Part way (`u` from 0 to 1) from `a` to `b`: the position along the
+    /// line, the facing round the shorter way, the state of the nearer one.
+    pub fn between(a: Self, b: Self, u: f32) -> Self {
+        let lerp = |p: i16, q: i16| (p as f32 + (q as f32 - p as f32) * u).round() as i16;
+        let turn = (b.facing.wrapping_sub(a.facing)) as i8;
+        Self {
+            x: lerp(a.x, b.x),
+            y: lerp(a.y, b.y),
+            facing: a.facing.wrapping_add((turn as f32 * u).round() as i8 as u8),
+            state: if u < 0.5 { a.state } else { b.state },
+        }
+    }
+}
+
+/// A fought battle, for the views to play back where it happened.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Replay {
     /// The town fought over, and the map position of the field's centre.
@@ -111,6 +170,67 @@ pub struct Replay {
     pub winner: Option<u8>,
 }
 
+impl Replay {
+    /// Drop the long approach, for a battle staged to be watched
+    /// (`--battle` in the clients): start three frames before two enemy
+    /// squads first come within 60 m, with the clock from there. Returns
+    /// where on the field (metres) those two meet: halfway between them.
+    pub fn skip_approach(&mut self) -> Option<(f32, f32)> {
+        let squads = &self.squads;
+        let (k, at) = self.frames.iter().enumerate().find_map(|(k, f)| {
+            f.squads.iter().enumerate().find_map(|(a, p)| {
+                f.squads
+                    .iter()
+                    .enumerate()
+                    .find(|&(b, q)| {
+                        squads[a].side != squads[b].side && (p.0 - q.0).hypot(p.1 - q.1) < 60.0
+                    })
+                    .map(|(_, q)| (k, (0.5 * (p.0 + q.0), 0.5 * (p.1 + q.1))))
+            })
+        })?;
+        let from = k.saturating_sub(3);
+        let t0 = self.frames[from].t;
+        self.frames.drain(..from);
+        for f in &mut self.frames {
+            f.t -= t0;
+        }
+        Some(at)
+    }
+
+    /// The frames before and after battle time `t`, and how far (0 to 1)
+    /// `t` lies between them; `None` with no frames.
+    pub fn around(&self, t: f32) -> Option<(&ReplayFrame, &ReplayFrame, f32)> {
+        let last = self.frames.len().checked_sub(1)?;
+        let k = self.frames.partition_point(|f| f.t <= t);
+        let a = &self.frames[k.saturating_sub(1).min(last)];
+        let b = self.frames.get(k).unwrap_or(a);
+        let u = if b.t > a.t {
+            ((t - a.t) / (b.t - a.t)).clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+        Some((a, b, u))
+    }
+
+    /// Every soldier of each squad at battle time `t`, between the frames
+    /// around it; empty for a battle fought on the squad model.
+    pub fn soldiers_at(&self, t: f32) -> Vec<Vec<FrameSoldier>> {
+        let Some((a, b, u)) = self.around(t) else {
+            return Vec::new();
+        };
+        a.soldiers
+            .iter()
+            .zip(&b.soldiers)
+            .map(|(ma, mb)| {
+                ma.iter()
+                    .zip(mb)
+                    .map(|(&p, &q)| FrameSoldier::between(p, q, u))
+                    .collect()
+            })
+            .collect()
+    }
+}
+
 /// A battle being fought live, as the game shows it and the player commands it.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct LiveView {
@@ -119,29 +239,29 @@ pub struct LiveView {
     pub facing: (f32, f32),
     pub field: (f32, f32),
     pub squads: Vec<ReplaySquad>,
-    pub orders: Vec<Order>,
+    /// Each squad's orders left, the first in force (empty: its own judgment).
+    pub orders: Vec<Vec<Order>>,
+    /// Where each squad's front stands.
+    pub lines: Vec<SquadLine>,
+    pub stances: Vec<Stance>,
+    /// Each squad's marching and running pace now, metres per second.
+    pub paces: Vec<(f32, f32)>,
+    /// Each squad's kit, for the matchup hints.
+    pub kits: Vec<Kit>,
+    pub wall_x: Option<f32>,
     pub morale: Vec<f32>,
+    /// Each soldier's morale and fatigue, by squad in member order, for the
+    /// overlay (empty on the squad model, which has neither per soldier).
+    pub condition: Vec<Vec<Condition>>,
+    /// Now, with every soldier on the soldier model (`frame.soldiers`).
     pub frame: ReplayFrame,
     /// The side the player fights on (0 attacks, 1 defends).
     pub player_side: u8,
     pub finished: bool,
     pub winner: Option<u8>,
-    /// On the soldier model, every soldier of each squad, in member order;
-    /// empty on the squad model.
-    pub soldiers: Vec<Vec<LiveSoldier>>,
 }
 
-/// One soldier of a live battle: where they stand (metres on the field),
-/// the way they face (unit), and how they are.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-pub struct LiveSoldier {
-    pub x: f32,
-    pub y: f32,
-    pub facing: (f32, f32),
-    pub state: FighterState,
-}
-
-/// How a soldier of a live battle is, as the clients draw them.
+/// How a soldier is, as the clients draw them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FighterState {
     /// In the line: formed, fighting or wavering.

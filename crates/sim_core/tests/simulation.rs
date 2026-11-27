@@ -3103,8 +3103,10 @@ fn an_army_marches_eats_its_rations_fights_and_comes_home() {
 
 #[test]
 fn a_live_battle_waits_for_the_player_then_settles() {
+    use sim_core::battle::{Command, Order};
     use sim_core::systems::military::{
-        live_battle_view, live_battle_waiting, order_live_battle, resolve_live_battle, LiveBattles,
+        command_live_battle, live_battle_view, live_battle_waiting, resolve_live_battle,
+        LiveBattles,
     };
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     let mut s = Simulation::from_paths(&AssetPaths::from_root(&root)).unwrap();
@@ -3150,11 +3152,14 @@ fn a_live_battle_waits_for_the_player_then_settles() {
         before,
         "the raid moved on while its battle waited"
     );
-    order_live_battle(&mut s.world, mine, sim_core::battle::Order::Hold);
+    command_live_battle(&mut s.world, mine, Command::Orders(vec![Order::Hold])).unwrap();
     assert_eq!(
         live_battle_view(&s.world).unwrap().orders[mine],
-        sim_core::battle::Order::Hold
+        [Order::Hold]
     );
+    // Only the player's own squads take commands.
+    let theirs = view.squads.iter().position(|q| q.side == 1).unwrap();
+    assert!(command_live_battle(&mut s.world, theirs, Command::Orders(vec![Order::Hold])).is_err());
     resolve_live_battle(&mut s.world);
     assert!(!live_battle_waiting(&s.world));
     s.step();

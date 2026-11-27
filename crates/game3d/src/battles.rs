@@ -6,7 +6,9 @@
 //! a figure per fighter in a block formation around its squad's position,
 //! attackers in red, defenders in blue, riders larger. Fighters who fall lie
 //! down where they were; a routing squad turns and runs. A scene stays a few
-//! seconds after the battle ends, then clears.
+//! seconds after the battle ends, then clears. A battle fought on the soldier
+//! model records every soldier in each frame: then each figure walks from
+//! where its soldier stood in one frame to where they stood in the next.
 //!
 //! A battle the player's own town fights is live instead: the simulation holds
 //! its clock while the battle runs in real time, the figures follow it, and a
@@ -14,7 +16,8 @@
 //! or their own judgment), a button to look at the field and one to fight it
 //! out at once. Live battles fight on `battle.live_model`, the soldier model
 //! by default: then each figure stands where its soldier stands, facing their
-//! way, so the squads take the shape their soldiers give them.
+//! way, so the squads take the shape their soldiers give them, and the panel
+//! also offers to flank an enemy squad and to set a squad's formation.
 
 use crate::live::LiveSim;
 use crate::toon::{toon, ToonMaterial};
@@ -23,7 +26,9 @@ use bevy::asset::RenderAssetUsages;
 use bevy::mesh::PrimitiveTopology;
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
-use sim_core::battle::{FighterState, LiveSoldier, Order, Replay, ReplaySquad, SquadState};
+use sim_core::battle::{
+    Command, FighterState, FrameSoldier, LiveView, Order, Replay, ReplaySquad, SquadState,
+};
 
 pub struct BattlesPlugin;
 
@@ -31,6 +36,7 @@ impl Plugin for BattlesPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Looks>()
             .init_resource::<LiveScene>()
+            .init_resource::<Staged>()
             .add_systems(Startup, stage_battle)
             .add_systems(Update, (start_battles, play_battles, show_live).chain())
             .add_systems(EguiPrimaryContextPass, battle_panel);
@@ -86,12 +92,23 @@ struct LiveScene {
     town: Option<u16>,
 }
 
+/// Where on the map the lines of the `--battle` line-up meet, once staged.
+#[derive(Resource, Default)]
+pub(crate) struct Staged(pub Option<(f32, f32)>);
+
 #[derive(Component)]
-struct BattleScene {
+pub(crate) struct BattleScene {
     replay: Replay,
     started: f32,
     /// Figures per squad, in formation order.
     figures: Vec<Vec<Entity>>,
+}
+
+impl BattleScene {
+    /// How far (battle seconds) its playback has got at time `now`.
+    pub(crate) fn playback(&self, now: f32) -> f32 {
+        (now - self.started) * PLAYBACK
+    }
 }
 
 fn figure_mesh() -> Mesh {
@@ -134,12 +151,18 @@ fn start_battles(
     }
     let skip = new.len().saturating_sub(AT_ONCE);
     for replay in new.into_iter().skip(skip) {
+        let first = replay.frames.first();
         let figures = replay
             .squads
             .iter()
-            .map(|sq| {
+            .enumerate()
+            .map(|(q, sq)| {
                 let colour = looks.colours[(sq.side as usize).min(1)].clone();
-                (0..sq.start)
+                // A figure per soldier on the soldier model, else per fighter.
+                let n = first
+                    .and_then(|f| f.soldiers.get(q))
+                    .map_or(sq.start as usize, Vec::len);
+                (0..n)
                     .map(|_| {
                         commands
                             .spawn((
@@ -163,8 +186,13 @@ fn start_battles(
 
 /// `--battle LINEUP` (as in `econoplex-sim --battle`): fight it now and play
 /// it beside the focus town, from shortly before the lines meet.
-fn stage_battle(args: Res<crate::Args>, world: Res<World3d>, mut live: ResMut<LiveSim>) {
-    use sim_core::battle::{parse_lineup, Battle, BattleParams};
+fn stage_battle(
+    args: Res<crate::Args>,
+    world: Res<World3d>,
+    mut live: ResMut<LiveSim>,
+    mut staged: ResMut<Staged>,
+) {
+    use sim_core::battle::{parse_lineup, Battle};
     let Some(lineup) = &args.battle else { return };
     let (field, specs) = match parse_lineup(lineup) {
         Ok(x) => x,
@@ -174,24 +202,9 @@ fn stage_battle(args: Res<crate::Args>, world: Res<World3d>, mut live: ResMut<Li
         }
     };
     let size = (field.width, field.height);
-    let (report, squads, mut frames) =
-        Battle::new(BattleParams::default(), field, specs, args.seed).run_recorded(5.0);
-    // Skip the long approach: start a little before two enemies first meet.
-    let meet = frames.iter().position(|f| {
-        f.squads.iter().enumerate().any(|(a, p)| {
-            f.squads.iter().enumerate().any(|(b, q)| {
-                squads[a].side != squads[b].side && (p.0 - q.0).hypot(p.1 - q.1) < 60.0
-            })
-        })
-    });
-    if let Some(k) = meet {
-        let from = k.saturating_sub(3);
-        let t0 = frames[from].t;
-        frames.drain(..from);
-        for f in &mut frames {
-            f.t -= t0;
-        }
-    }
+    // On `battle.model` from models.ron (`--preset`, `--set`).
+    let (report, squads, frames) =
+        Battle::new(args.battle_params.clone(), field, specs, args.seed).run_recorded(5.0);
     let town = world
         .scenario
         .towns
@@ -202,7 +215,7 @@ fn stage_battle(args: Res<crate::Args>, world: Res<World3d>, mut live: ResMut<Li
         "--battle {lineup}: {:?} after {:.0} s",
         report.winner, report.seconds
     );
-    live.battles.push(Replay {
+    let mut replay = Replay {
         town: args.focus_town as u16,
         at: (town.0, town.1 - 300.0),
         facing: (1.0, 0.0),
@@ -210,7 +223,14 @@ fn stage_battle(args: Res<crate::Args>, world: Res<World3d>, mut live: ResMut<Li
         squads,
         frames,
         winner: report.winner,
-    });
+    };
+    let geo = Geo {
+        at: replay.at,
+        facing: replay.facing,
+        field: replay.field,
+    };
+    staged.0 = replay.skip_approach().map(|(x, y)| geo.on_map(x, y));
+    live.battles.push(replay);
 }
 
 /// Where a battlefield lies: its centre on the map, the attackers' heading,
@@ -322,16 +342,16 @@ fn pose_squad(
     }
 }
 
-/// Where a soldier of a live battle stands in 3D (before the ground's
-/// height), which way they face, and whether they lie fallen; `None` for one
-/// who left the field.
-fn soldier_pose(geo: &Geo, m: &LiveSoldier) -> Option<(Vec3, Vec3, bool)> {
+/// Where a soldier stands in 3D (before the ground's height), which way
+/// they face, and whether they lie fallen; `None` for one who left the field.
+fn soldier_pose(geo: &Geo, m: &FrameSoldier) -> Option<(Vec3, Vec3, bool)> {
     if m.state == FighterState::Fled {
         return None;
     }
-    let (x, y) = geo.on_map(m.x, m.y);
+    let (fx, fy) = m.pos();
+    let (x, y) = geo.on_map(fx, fy);
     // A runner turns to face where they run, as the model turns them.
-    let face = geo.dir_3d(m.facing);
+    let face = geo.dir_3d(m.facing());
     Some((
         Vec3::new(x / SCALE, 0.0, -y / SCALE),
         face,
@@ -346,7 +366,7 @@ fn soldier_pose(geo: &Geo, m: &LiveSoldier) -> Option<(Vec3, Vec3, bool)> {
 fn pose_soldiers(
     geo: &Geo,
     sq: &ReplaySquad,
-    men: &[LiveSoldier],
+    men: &[FrameSoldier],
     entities: &[Entity],
     figures: &mut Figures,
     looks: &Looks,
@@ -423,7 +443,13 @@ fn play_battles(
             facing: r.facing,
             field: r.field,
         };
+        // On the soldier model, every soldier between the two frames.
+        let men = r.soldiers_at(bt);
         for (q, sq) in r.squads.iter().enumerate() {
+            if let Some(men) = men.get(q) {
+                pose_soldiers(&geo, sq, men, &s.figures[q], &mut figures, &looks, t);
+                continue;
+            }
             let (Some(fa), Some(fb)) = (a.squads.get(q), b.squads.get(q)) else {
                 continue;
             };
@@ -480,7 +506,7 @@ fn show_live(
             .map(|(q, sq)| {
                 let colour = looks.colours[(sq.side as usize).min(1)].clone();
                 // A figure per soldier on the soldier model, else per fighter.
-                let n = v.soldiers.get(q).map_or(sq.start as usize, Vec::len);
+                let n = v.frame.soldiers.get(q).map_or(sq.start as usize, Vec::len);
                 (0..n)
                     .map(|_| {
                         commands
@@ -505,7 +531,7 @@ fn show_live(
         field: v.field,
     };
     for (q, sq) in v.squads.iter().enumerate() {
-        if let Some(men) = v.soldiers.get(q) {
+        if let Some(men) = v.frame.soldiers.get(q) {
             pose_soldiers(
                 &geo,
                 sq,
@@ -549,11 +575,15 @@ pub(crate) fn look_at_field(
         field: v.field,
     };
     let on: Vec<(f32, f32)> = v
+        .frame
         .soldiers
         .iter()
         .flatten()
         .filter(|m| m.state != FighterState::Fled)
-        .map(|m| geo.on_map(m.x, m.y))
+        .map(|m| {
+            let (x, y) = m.pos();
+            geo.on_map(x, y)
+        })
         .collect();
     cam.focus = if on.is_empty() {
         geo.centre(t)
@@ -636,37 +666,64 @@ fn battle_panel(
                         100.0 * v.morale.get(q).copied().unwrap_or(0.0)
                     ));
                     if mine && !v.finished && f.3 == SquadState::Fighting {
-                        let order = v.orders.get(q).copied().unwrap_or(Order::Auto);
+                        // A single order in force is shown chosen; moves
+                        // (going round, re-forming) never are.
+                        let single = v.orders.get(q).map_or(0, Vec::len) <= 1;
+                        let order = v.order_now(q);
+                        let on = |o: Order| single && order == o;
+                        let send =
+                            |orders: Vec<Order>| live.command_battle(q, Command::Orders(orders));
                         ui.horizontal(|ui| {
                             for (label, o) in [
                                 ("Own judgment", Order::Auto),
                                 ("Hold", Order::Hold),
                                 ("Withdraw", Order::Withdraw),
                             ] {
-                                if ui.selectable_label(order == o, label).clicked() {
-                                    live.order_battle(q, o);
+                                if ui.selectable_label(on(o), label).clicked() {
+                                    send(vec![o]);
                                 }
                             }
                             for &e in &enemies {
                                 let name = &v.squads[e].name;
                                 if ui
                                     .selectable_label(
-                                        order == Order::Attack(e),
+                                        on(Order::Attack(e)),
                                         format!("Attack {name}"),
                                     )
                                     .clicked()
                                 {
-                                    live.order_battle(q, Order::Attack(e));
+                                    send(vec![Order::Attack(e)]);
+                                }
+                                // Only the soldier model has sides to go round:
+                                // moves along the enemy's side, then the attack.
+                                if v.on_soldiers()
+                                    && ui
+                                        .selectable_label(false, format!("Flank {name}"))
+                                        .clicked()
+                                {
+                                    send(v.flank(q, e));
                                 }
                                 if v.squads[q].name.to_lowercase().contains("bow")
                                     && ui
                                         .selectable_label(
-                                            order == Order::Shoot(e),
+                                            on(Order::Shoot(e)),
                                             format!("Shoot {name}"),
                                         )
                                         .clicked()
                                 {
-                                    live.order_battle(q, Order::Shoot(e));
+                                    send(vec![Order::Shoot(e)]);
+                                }
+                            }
+                            // Fronts, on the soldier model: re-form where it
+                            // stands so many files wide, then carry on.
+                            if v.on_soldiers() {
+                                ui.separator();
+                                let files =
+                                    v.lines.get(q).map(|l| (l.width / l.spacing).round() as u16);
+                                for (label, n) in LiveView::FRONTS {
+                                    if ui.selectable_label(files == Some(n), label).clicked() {
+                                        send(v.reform(q, n));
+                                    }
                                 }
                             }
                         });
@@ -683,17 +740,12 @@ fn battle_panel(
 mod tests {
     use super::*;
 
-    fn man(x: f32, y: f32, facing: (f32, f32), state: FighterState) -> LiveSoldier {
-        LiveSoldier {
-            x,
-            y,
-            facing,
-            state,
-        }
+    fn man(x: f32, y: f32, facing: (f32, f32), state: FighterState) -> FrameSoldier {
+        FrameSoldier::new(x, y, facing, state)
     }
 
-    /// A figure of a live soldier battle stands where its soldier stands on
-    /// the map, faces their way, and is gone once they leave the field.
+    /// A figure of a soldier battle stands where its soldier stands on the
+    /// map, faces their way, and is gone once they leave the field.
     #[test]
     fn a_soldier_figure_stands_and_faces_as_its_soldier() {
         // The field's +x points north on the map (+y), which is 3D -z.

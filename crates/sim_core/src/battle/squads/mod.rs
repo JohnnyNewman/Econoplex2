@@ -2,6 +2,11 @@
 //! each step settles its blows and arrows with dice per squad. A squad is
 //! flanked when an enemy it does not face is in contact, and its front is
 //! `min(alive, frontage / spacing)`.
+//!
+//! It takes the soldier model's orders and stances as nearly as a disc can:
+//! a move's facing and width and the spacing stance change nothing, a move
+//! at a run runs, archers who skirmish back away, and a squad that lets
+//! enemies go does not chase those who run.
 
 mod combat;
 mod step;
@@ -15,7 +20,9 @@ struct Squad {
     spec: SquadSpec,
     state: SquadState,
     morale: f32,
-    order: Order,
+    /// Orders left, the first in force.
+    orders: Vec<Order>,
+    stance: Stance,
     /// Arrows left for the whole squad.
     arrows: u32,
     /// The enemy this squad faces; blows from any other enemy in contact are flank blows.
@@ -63,6 +70,18 @@ impl Squad {
     fn has_bow(&self) -> bool {
         self.spec.kit.range > 0.0 && self.arrows > 0
     }
+    /// Marching and running pace, metres per second.
+    fn paces(&self, p: &BattleParams) -> (f32, f32) {
+        if self.spec.kit.mounted {
+            (p.horse_walk_speed, p.horse_charge_speed)
+        } else {
+            (p.walk_speed, p.run_speed)
+        }
+    }
+    /// Whether it chases enemies who run.
+    fn pursues(&self) -> bool {
+        self.stance.pursuit == Pursuit::Kill
+    }
 }
 
 /// A battle between squads, as discs.
@@ -73,6 +92,8 @@ pub struct SquadBattle {
     t: f32,
     rng: ChaCha8Rng,
     events: Vec<Event>,
+    /// Each side's doctrine.
+    doctrine: [Doctrine; 2],
 }
 
 impl SquadBattle {
@@ -88,7 +109,8 @@ impl SquadBattle {
                     SquadState::Destroyed
                 },
                 spec,
-                order: Order::Auto,
+                orders: Vec::new(),
+                stance: Stance::default(),
                 primary: None,
                 contacts: Vec::new(),
                 closing: Vec::new(),
@@ -107,6 +129,7 @@ impl SquadBattle {
             t: 0.0,
             rng: ChaCha8Rng::seed_from_u64(seed),
             events: Vec::new(),
+            doctrine: [Doctrine::default(); 2],
         }
     }
 
@@ -154,13 +177,45 @@ impl Model for SquadBattle {
     fn step(&mut self) {
         SquadBattle::step(self);
     }
-    fn set_order(&mut self, squad: usize, order: Order) {
+    fn set_orders(&mut self, squad: usize, orders: &[Order]) {
         if let Some(s) = self.squads.get_mut(squad) {
-            s.order = order;
+            s.orders = orders.to_vec();
         }
     }
-    fn order(&self, squad: usize) -> Order {
-        self.squads[squad].order
+    fn orders(&self, squad: usize) -> &[Order] {
+        &self.squads[squad].orders
+    }
+    fn line(&self, squad: usize) -> SquadLine {
+        let s = &self.squads[squad];
+        let spacing = if s.spec.kit.mounted {
+            self.params.horse_spacing
+        } else {
+            self.params.foot_spacing
+        };
+        SquadLine {
+            anchor: s.spec.pos,
+            facing: (if s.spec.side == 0 { 1.0 } else { -1.0 }, 0.0),
+            width: (standing(&s.spec) as f32).sqrt().ceil() * spacing,
+            spacing,
+        }
+    }
+    fn set_stance(&mut self, squad: usize, stance: Stance) {
+        self.squads[squad].stance = stance;
+    }
+    fn stance(&self, squad: usize) -> Stance {
+        self.squads[squad].stance
+    }
+    fn set_doctrine(&mut self, side: u8, doctrine: Doctrine) {
+        self.doctrine[(side as usize).min(1)] = doctrine;
+        for s in self.squads.iter_mut().filter(|s| s.spec.side == side) {
+            s.stance.pursuit = doctrine.prisoners;
+        }
+    }
+    fn pace(&self, squad: usize) -> (f32, f32) {
+        self.squads[squad].paces(&self.params)
+    }
+    fn deploy(&mut self, squad: usize, anchor: (f32, f32), _: (f32, f32), _: Option<f32>) {
+        self.squads[squad].spec.pos = anchor;
     }
     fn count(&self) -> usize {
         self.squads.len()
