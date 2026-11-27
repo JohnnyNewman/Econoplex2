@@ -214,14 +214,14 @@ be met, and an entry that is a list is met by any one of its ids. Recipes that n
 nothing start the graph, and validation checks that every recipe can be learned from
 them.
 
-With `knowledge.enabled` in models.ron (off by default), people know only some
+With `knowledge.enabled` in models.ron (on by default), people know only some
 recipe-skills ([inventions](docs/design/inventions.md), step 2). Founders know their
 family trade and a share of what their town can make; a person takes a regular place
 only in work they know, and an apprentice place in work whose `requires` they meet.
 Apprentices and children working beside someone who knows a recipe learn it, pupils
 learn their teacher's recipes, and knowledge moves with migrants and dies with its
 last holder. Nobody knows recipes of an era after `start_era` (early industry):
-with `knowledge.invention.enabled`, a worker may invent a recipe close to the day's
+with `knowledge.invention.enabled` (on by default), a worker may invent a recipe close to the day's
 work that nobody in town knows, if they know part of what it requires and the town
 knows the rest. The chance grows with their skill at it, materials at hand, a high
 price for what it makes and being rested. Inventions go to the event log
