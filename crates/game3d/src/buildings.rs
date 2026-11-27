@@ -28,8 +28,12 @@ pub struct BuildingSpec {
     pub kind: String,
     /// Ground position (y = terrain height).
     pub at: Vec3,
-    /// A stable number for small variations (rotation, colour).
+    /// A stable number for small variations (colour).
     pub seed: u32,
+    /// How it is turned: a rotation about y by this angle turns its local x
+    /// onto its footprint's axis (`sim_core::layout::Footprint::angle`), its
+    /// front (+z) toward the town centre.
+    pub angle: f32,
     /// The sim's id of the building (mill sails turn while it works).
     pub id: u64,
 }
@@ -566,7 +570,7 @@ fn lamps_of(parts: &[Part], at: &Transform) -> Vec<(Vec3, LampKind)> {
 
 /// One house of a town: where it stands, how it is turned, its number on the
 /// town's spiral (for small variations).
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct HouseSpec {
     pub at: Vec3,
     pub rot: Quat,
@@ -672,7 +676,7 @@ pub fn spawn_building(
     if b.kind == "field_plot" || b.kind == "woodlot" {
         return None;
     }
-    let root = building_root(b.at, b.seed);
+    let root = building_root(b.at, b.angle);
     let mut parts: Vec<Part> = parts(kit, &b.kind)
         .into_iter()
         .map(|(m, c, o, s)| (m, style.restyle(c, b.seed), o, s))
@@ -704,11 +708,10 @@ pub fn spawn_building(
     Some(e)
 }
 
-/// Where a workplace stands and how it is turned: oriented a little
-/// differently each, and drawn 1.5 times the size of a house so it stands
-/// out.
-pub fn building_root(at: Vec3, seed: u32) -> Transform {
-    let rot = Quat::from_rotation_y((seed % 8) as f32 * std::f32::consts::FRAC_PI_4);
+/// Where a workplace stands and how it is turned (as the town's layout turns
+/// it), drawn 1.5 times the size of a house so it stands out.
+pub fn building_root(at: Vec3, angle: f32) -> Transform {
+    let rot = Quat::from_rotation_y(angle);
     Transform::from_translation(at)
         .with_rotation(rot)
         .with_scale(Vec3::splat(1.5))
@@ -883,7 +886,7 @@ pub fn spawn_site(
         commands,
         meshes,
         outlines,
-        building_root(b.at, b.seed),
+        building_root(b.at, b.angle),
         &parts,
     )
 }
@@ -917,5 +920,46 @@ mod tests {
         assert_eq!(new.restyle("thatch", 0), "slate_roof");
         assert_eq!(new.restyle("soot", 0), "soot");
         assert_eq!(new.restyle("gold", 0), "gold");
+    }
+
+    /// Each workplace's footprint (content, map units, what soldiers and
+    /// walkers keep out of) is the ground its walls stand on as drawn here:
+    /// the parts on the ground that are no roof, at 1.5 times their size.
+    #[test]
+    fn footprints_are_the_walls_as_drawn() {
+        let paths = sim_core::AssetPaths::discover();
+        let (db, _, _) = sim_core::load(&paths).unwrap();
+        let mut meshes = Assets::<Mesh>::default();
+        let mut toons = Assets::<ToonMaterial>::default();
+        let kit = Kit::new(&mut meshes, &mut toons);
+        let mut checked = 0;
+        for p in db.content.products.iter().filter(|p| p.workplace()) {
+            let (w, d) = p.footprint.unwrap();
+            let walls: Vec<Part> = parts(&kit, &p.id)
+                .into_iter()
+                .filter(|(m, _, o, s)| {
+                    let roof = [kit.gable.id(), kit.cone.id(), kit.dome.id()].contains(&m.id());
+                    !roof && o.y - s.y / 2.0 < 0.3
+                })
+                .collect();
+            assert!(!walls.is_empty(), "{} has no walls", p.id);
+            let reach = |f: fn(Vec3) -> f32| {
+                walls
+                    .iter()
+                    .map(|(_, _, o, s)| f(*o).abs() + f(*s) / 2.0)
+                    .fold(0.0, f32::max)
+            };
+            let (x, z) = (reach(|v| v.x), reach(|v| v.z));
+            let drawn = (2.0 * x * 1.5 * crate::SCALE, 2.0 * z * 1.5 * crate::SCALE);
+            assert!(
+                (drawn.0 - w).abs() <= 1.5 && (drawn.1 - d).abs() <= 1.5,
+                "{}: footprint {w} x {d}, drawn {:.1} x {:.1}",
+                p.id,
+                drawn.0,
+                drawn.1
+            );
+            checked += 1;
+        }
+        assert!(checked >= 10);
     }
 }

@@ -591,6 +591,7 @@ mod tests {
             paces: vec![(1.4, 3.0); 3],
             kits: vec![Kit::preset("archers").unwrap(); 3],
             wall_x: None,
+            nav: None,
             morale: vec![1.0; 3],
             condition: Vec::new(),
             frame: ReplayFrame {

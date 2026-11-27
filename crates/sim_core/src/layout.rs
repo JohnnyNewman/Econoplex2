@@ -15,7 +15,7 @@
 //! Everything here is in map units; a battle's field is in metres
 //! (`battle::MAP_PER_METRE`).
 
-use crate::battle::{self, Field, Obstacle, Shapes};
+use crate::battle::{self, Field, Obstacle, Shapes, V2};
 use crate::db::Db;
 use crate::terrain::Terrain;
 use crate::world::Towns;
@@ -181,7 +181,9 @@ pub fn house_spots(
 }
 
 /// The roads into town `ti` near it: the segments of the way from every
-/// town a road connects to it (`Terrain::path`), within `REACH`.
+/// town a road connects to it and of the way out to it (`Terrain::path`:
+/// each follows its own town's road field, so they can part), within
+/// `REACH`.
 pub fn roads_into(terrain: &Terrain, towns: &Towns, ti: usize) -> Vec<((f32, f32), (f32, f32))> {
     let here = towns.0[ti].pos;
     let near = |p: (f32, f32)| (p.0 - here.0).hypot(p.1 - here.1) < REACH;
@@ -190,15 +192,56 @@ pub fn roads_into(terrain: &Terrain, towns: &Towns, ti: usize) -> Vec<((f32, f32
         if o == ti || !terrain.road(o, ti).is_finite() {
             continue;
         }
-        let mut path = terrain.path(other.pos, ti);
-        path.push(here);
-        for w in path.windows(2) {
-            if near(w[0]) || near(w[1]) {
-                segs.push((w[0], w[1]));
+        let mut into = terrain.path(other.pos, ti);
+        into.push(here);
+        let mut out = terrain.path(here, o);
+        out.push(other.pos);
+        for path in [into, out] {
+            for w in path.windows(2) {
+                if near(w[0]) || near(w[1]) {
+                    segs.push((w[0], w[1]));
+                }
             }
         }
     }
     segs
+}
+
+/// A way along `path` that keeps `r` clear of everything in `shapes` (same
+/// units): a point of it inside something is moved out of it, and between
+/// the points the way goes round what stands in it, as a walker `step` at a
+/// time would (`Shapes::steer`). For carts on the roads through a town.
+pub fn detour(shapes: &Shapes, path: &[(f32, f32)], r: f32, step: f32) -> Vec<(f32, f32)> {
+    let points: Vec<V2> = path
+        .iter()
+        .map(|&(x, y)| shapes.push_out(V2::new(x, y), r, 0))
+        .collect();
+    let Some(&first) = points.first() else {
+        return Vec::new();
+    };
+    let mut way = vec![first];
+    let mut me = first;
+    for &w in &points[1..] {
+        let mut left = ((w - me).len() / step) as usize * 3 + 20;
+        while (w - me).len() > step && left > 0 {
+            left -= 1;
+            let mut to = me + (w - me).norm_or(V2::ZERO) * step;
+            if shapes.any_near(me) || shapes.any_near(to) {
+                if let Some(c) = shapes.steer(me, w, r, 0) {
+                    to = me + (c - me).norm_or(V2::ZERO) * step.min((c - me).len());
+                }
+                to = shapes.resolve(me, to, r, 0);
+                if (to - me).len() < 1e-3 * step {
+                    break;
+                }
+                way.push(to);
+            }
+            me = to;
+        }
+        me = w;
+        way.push(w);
+    }
+    way.into_iter().map(|p| (p.x, p.y)).collect()
 }
 
 /// Everything standing in one town.
@@ -318,6 +361,60 @@ impl TownLayout {
             buildings,
             houses,
             house_footprints,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A cart on a road straight through a workplace goes round it and on
+    /// to the road's end.
+    #[test]
+    fn a_cart_goes_round_a_building_on_its_road() {
+        let f = building_footprint(1, (0.0, 0.0), (70.0, 0.0), (27.0, 45.0));
+        let layout = TownLayout {
+            centre: (0.0, 0.0),
+            buildings: vec![f],
+            ..TownLayout::default()
+        };
+        let way = detour(&layout.shapes(), &[(0.0, 0.0), (200.0, 0.0)], 6.0, 2.0);
+        assert_eq!(way.last(), Some(&(200.0, 0.0)));
+        for w in way.windows(2) {
+            for k in 0..=10 {
+                let t = k as f32 / 10.0;
+                let p = (w[0].0 + t * (w[1].0 - w[0].0), w[0].1 + t * (w[1].1 - w[0].1));
+                assert!(!f.contains(p, 5.0), "{p:?} on the building");
+            }
+        }
+    }
+
+    /// The houses of a sample town stand clear of its workplaces and of each
+    /// other, and houses keep off a road through the town.
+    #[test]
+    fn houses_keep_off_workplaces_roads_and_each_other() {
+        let town = TownLayout::sample((0.0, 0.0), 8, 80);
+        assert_eq!(town.houses.len(), 80);
+        let road = ((-300.0, 5.0), (300.0, 5.0));
+        let spots = house_spots(0, (0.0, 0.0), 80, &[], &[road], |_| false);
+        assert!(spots.iter().all(|h| to_segment(h.pos, road) >= ROAD_CLEAR));
+        let corners = |f: &Footprint| {
+            [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)].map(|(s, t)| {
+                let (u, v) = (s * f.half.0, t * f.half.1);
+                (
+                    f.centre.0 + u * f.axis.0 - v * f.axis.1,
+                    f.centre.1 + u * f.axis.1 + v * f.axis.0,
+                )
+            })
+        };
+        let all: Vec<&Footprint> = town.footprints().collect();
+        for (i, a) in all.iter().enumerate() {
+            for b in &all[i + 1..] {
+                let overlap = corners(a).iter().any(|&p| b.contains(p, -0.01))
+                    || corners(b).iter().any(|&p| a.contains(p, -0.01));
+                assert!(!overlap, "{a:?} and {b:?} overlap");
+            }
         }
     }
 }

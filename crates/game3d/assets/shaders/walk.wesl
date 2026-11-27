@@ -34,12 +34,16 @@ struct Params {
     pad: u32,
     grid: vec4<f32>,   // terrain: x, z of texel (0,0); texel spacing; height scale
     dims: vec4<f32>,   // terrain: texels across (i), deep (j)
+    walls: vec4<f32>,  // wall map: x, z of its first corner; size along x, z (0: none)
 };
 
 @group(0) @binding(0) var<storage, read_write> people: array<Person>;
 @group(0) @binding(1) var<storage, read> targets: array<Target>;
 @group(0) @binding(2) var heights: texture_2d<f32>;
 @group(0) @binding(3) var<uniform> params: Params;
+// How far each spot is from the nearest wall of a building or house, signed
+// (negative inside): grounding.rs draws it, 0.5 + d / (2 WALL_RANGE).
+@group(0) @binding(4) var walls: texture_2d<f32>;
 
 const TAU: f32 = 6.2831853;
 // Distance covered in one full stride (two steps), in 3D units.
@@ -62,6 +66,45 @@ fn ground(xz: vec2<f32>) -> f32 {
     let top = mix(texel(t0), texel(t0 + vec2(1, 0)), f.x);
     let bottom = mix(texel(t0 + vec2(0, 1)), texel(t0 + vec2(1, 1)), f.x);
     return mix(top, bottom, f.y);
+}
+
+// The wall map's range (grounding.rs `WALL_RANGE`), how far a walker keeps
+// from a wall (crowd.rs `WALKER`) and how far ahead they look for one, all in
+// 3D units.
+const WALL_RANGE: f32 = 1.0;
+const RADIUS: f32 = 0.25;
+const LOOK: f32 = 0.6;
+
+// The distance to the nearest wall at a ground point (bilinear, as `ground`),
+// WALL_RANGE when there is no wall map or it is far.
+fn wall_texel(t: vec2<i32>) -> f32 {
+    let last = vec2<i32>(textureDimensions(walls)) - 1;
+    return (textureLoad(walls, clamp(t, vec2<i32>(0), last), 0).r - 0.5) * 2.0 * WALL_RANGE;
+}
+fn wall(xz: vec2<f32>) -> f32 {
+    if params.walls.z <= 0.0 {
+        return WALL_RANGE;
+    }
+    let size = vec2<f32>(textureDimensions(walls));
+    let tc = (xz - params.walls.xy) / params.walls.zw * size - 0.5;
+    if any(tc < vec2<f32>(-1.0)) || any(tc > size) {
+        return WALL_RANGE;
+    }
+    let t0 = vec2<i32>(floor(tc));
+    let f = fract(tc);
+    let top = mix(wall_texel(t0), wall_texel(t0 + vec2(1, 0)), f.x);
+    let bottom = mix(wall_texel(t0 + vec2(0, 1)), wall_texel(t0 + vec2(1, 1)), f.x);
+    return mix(top, bottom, f.y);
+}
+// Away from the nearest wall (unit), from the map's slope.
+fn away(xz: vec2<f32>) -> vec2<f32> {
+    let e = params.walls.z / f32(textureDimensions(walls).x);
+    let g = vec2<f32>(
+        wall(xz + vec2(e, 0.0)) - wall(xz - vec2(e, 0.0)),
+        wall(xz + vec2(0.0, e)) - wall(xz - vec2(0.0, e)),
+    );
+    let l = length(g);
+    return select(vec2<f32>(0.0), g / l, l > 1e-6);
 }
 
 // 64 people per workgroup; the CPU dispatches ceil(count / 64) workgroups.
@@ -91,10 +134,31 @@ fn walk(@builtin(global_invocation_id) id: vec3<u32>) {
     let step = min(max(params.walk, dist * 0.3) * params.dt, dist);
     let walking = dist > 0.05;
     if walking {
-        here += to / dist * step;
+        var dir = to / dist;
+        // A wall ahead, with the goal beyond it: turn along the wall, the way
+        // nearer the goal, the more the nearer it is.
+        if dist > LOOK {
+            let ahead = here + dir * LOOK;
+            let d = wall(ahead);
+            if d < RADIUS + LOOK * 0.5 {
+                let out = away(ahead);
+                var along = vec2<f32>(-out.y, out.x);
+                if dot(along, dir) < 0.0 {
+                    along = -along;
+                }
+                let k = clamp((RADIUS + LOOK * 0.5 - d) / LOOK, 0.0, 1.0);
+                dir = normalize(mix(dir, along, k) + out * k * 0.3 + vec2<f32>(1e-6));
+            }
+        }
+        here += dir * step;
+        // Never into a wall: out to RADIUS from it.
+        let d = wall(here);
+        if d < RADIUS {
+            here += away(here) * (RADIUS - d);
+        }
         // Turn toward the goal at a limited rate instead of snapping. The
         // difference of two angles, wrapped into -pi..pi, is atan2(sin, cos).
-        let want = atan2(to.x, to.y);
+        let want = atan2(dir.x, dir.y);
         let d = want - p.heading;
         let diff = atan2(sin(d), cos(d));
         p.heading += clamp(diff, -TURN * params.dt, TURN * params.dt);

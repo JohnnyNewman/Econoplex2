@@ -530,6 +530,7 @@ fn setup(
     let contact = grounding::ContactMap {
         image: images.add(grounding::contact_image()),
         rect: Vec4::new(x0, z1 - sz, sx, sz),
+        walls: images.add(grounding::wall_image()),
     };
     commands.insert_resource(contact.clone());
     let heights = terrain::spawn_terrain(
@@ -903,11 +904,5 @@ mod tests {
                 );
             }
         }
-    }
-
-    #[test]
-    fn houses_follow_population() {
-        assert_eq!(live::houses_for(0), 12);
-        assert_eq!(live::houses_for(600), 100);
     }
 }

@@ -165,7 +165,7 @@ mod tests {
         let target = Vec2::new(90.0, 0.0);
         let mut p = Vec2::new(10.0, 1.0);
         for _ in 0..400 {
-            let step = 0.5;
+            let step: f32 = 0.5;
             let next = p + (target - p).normalize_or_zero() * step.min(p.distance(target));
             p = g.step(p, next, target, step);
             assert!(!f.contains((p.x, p.y), WALKER - 0.05), "{p} inside");
