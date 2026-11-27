@@ -60,9 +60,12 @@ pub enum Flow {
     // Between towns: repayments of food import debts, paid and received.
     DebtRepaid,
     DebtReceived,
+    // Issued: the treasury's own coin given to newcomers for the coin they
+    // bring from their old town (which it keeps as a foreign balance).
+    Exchanged,
 }
 
-pub const FLOWS: usize = 29;
+pub const FLOWS: usize = 30;
 
 /// How the HUD groups flows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -109,6 +112,7 @@ impl Flow {
         Flow::HouseholdGoods,
         Flow::DebtRepaid,
         Flow::DebtReceived,
+        Flow::Exchanged,
     ];
 
     pub fn name(self) -> &'static str {
@@ -142,6 +146,7 @@ impl Flow {
             Flow::HouseholdGoods => "household goods",
             Flow::DebtRepaid => "debt repaid",
             Flow::DebtReceived => "debt received",
+            Flow::Exchanged => "coin exchanged",
         }
     }
 
@@ -149,7 +154,7 @@ impl Flow {
         use Flow::*;
         match self {
             Wages | Subsidies | SchoolFees | SoldierPay | PublicSpending | SettlementGrants
-            | MarketPurchases | FirmGrants | LoansOut => Group::Issued,
+            | MarketPurchases | FirmGrants | LoansOut | Exchanged => Group::Issued,
             WealthTax | Estates | IncomeTax | Rent | ProfitTax | LoanRepayments | LoanInterest => {
                 Group::Taxed
             }

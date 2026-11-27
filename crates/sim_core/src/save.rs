@@ -38,8 +38,9 @@ use std::path::Path;
 /// (`job_today`), and `food_reserve_days` back in days. 14: tasks count
 /// the work no practice has counted yet (`Task::worked_runs`). 15: each
 /// town's own coin (`Town::coin_value`, `Town::foreign`), careers
-/// (`off_trade`, `vacancies`, `intake`, signed `GuildLink::since`).
-pub const SAVE_VERSION: u32 = 15;
+/// (`off_trade`, `vacancies`, `intake`, signed `GuildLink::since`). 16: the
+/// ledger's coin-exchanged flow (30 flows).
+pub const SAVE_VERSION: u32 = 16;
 
 /// One simulation entity and its components.
 #[derive(Serialize, Deserialize)]

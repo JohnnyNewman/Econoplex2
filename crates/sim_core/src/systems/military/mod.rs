@@ -200,14 +200,25 @@ pub fn military(
                 towns.0[t].war.revolts += 1;
                 continue;
             }
-            let pay = towns.0[t].treasury.coins().max(0.0) * mp.tribute_share;
-            towns.0[t].treasury -= crate::coin::Coin::from_coins(pay);
+            // A town that issues its coin pays a share of what it taxed since
+            // the last tribute, in its own coin, which the ruler holds; one
+            // that only holds coin pays a share of its treasury.
+            let pay = super::tribute_due(
+                &towns.0[t],
+                &params.market,
+                mp,
+                cal.every(mp.tribute_interval),
+            );
+            let (home, paid) =
+                crate::systems::market::pay_abroad(&mut towns, t, r, pay, params.market.treasury);
             towns.0[t].war.tribute_paid += pay;
-            towns.0[t].ledger.add(crate::ledger::Flow::TributePaid, pay);
-            towns.0[r].treasury += crate::coin::Coin::from_coins(pay);
+            towns.0[t]
+                .ledger
+                .add(crate::ledger::Flow::TributePaid, paid);
             towns.0[r]
                 .ledger
-                .add(crate::ledger::Flow::TributeReceived, pay);
+                .add(crate::ledger::Flow::TributeReceived, home);
+            // At face value, in the tributary's coin.
             towns.0[r].war.tribute_received += pay;
             if rng.random::<f32>() < chance {
                 towns.0[t].ruler = None;
