@@ -371,10 +371,14 @@ pub fn settle(
                         continue;
                     }
                     let (pa, pb) = (towns.0[a].price[p], towns.0[b].price[p]);
+                    // Prices compared in the common unit coins are exchanged by.
+                    let (va, vb) = (towns.0[a].coin_value, towns.0[b].coin_value);
                     // Transport costs grow with the length of the road, around
                     // rivers and over hills; no caravan goes where no road leads.
                     let road = terrain.road(a, b);
-                    if !road.is_finite() || pb <= pa * (1.0 + mp.transport_cost * road / 1000.0) {
+                    if !road.is_finite()
+                        || pb * vb <= pa * va * (1.0 + mp.transport_cost * road / 1000.0)
+                    {
                         continue;
                     }
                     // The buyer pays the destination price; the margin over the source
@@ -396,7 +400,13 @@ pub fn settle(
                             surplus.min(lack).min(max_load).max(0.0)
                         }
                     };
-                    let amount = load.min(towns.0[b].treasury.coins().max(0.0) / pb).floor();
+                    // A town that issues its coin pays abroad in it; one that
+                    // only holds coin pays what it holds.
+                    let budget = match mp.treasury {
+                        crate::config::Treasury::Issues => f32::INFINITY,
+                        crate::config::Treasury::Holds => towns.0[b].treasury.coins().max(0.0),
+                    };
+                    let amount = load.min(budget / pb).floor();
                     if amount < 1.0 {
                         continue;
                     }
@@ -421,18 +431,25 @@ pub fn settle(
                         }
                     }
                     towns.0[a].stock[p] = (towns.0[a].stock[p] - amount).max(0.0);
-                    towns.0[a].treasury += crate::coin::Coin::from_coins(amount * pb);
-                    towns.0[a].ledger.add(Flow::TradeSales, amount * pb);
-                    towns.0[a].ledger.export(b, amount * pb);
+                    // The books follow the treasuries: the seller's sale is
+                    // what came home to it, the buyer's purchase what left its own.
+                    let (home, paid) = pay_abroad(&mut towns, b, a, amount * pb, mp.treasury);
+                    towns.0[a].ledger.add(Flow::TradeSales, home);
+                    towns.0[a]
+                        .ledger
+                        .export(b, crate::coin::exchange(amount * pb, vb, va));
                     let tb = &mut towns.0[b];
                     tb.quality[p] =
                         (tb.stock[p] * tb.quality[p] + amount * q) / (tb.stock[p] + amount);
                     tb.stock[p] += amount;
-                    tb.treasury -= crate::coin::Coin::from_coins(amount * pb);
-                    tb.ledger.add(Flow::TradePurchases, amount * pb);
+                    tb.ledger.add(Flow::TradePurchases, paid);
                 }
             }
         }
+    }
+
+    if trade_round {
+        exchange_rates(&mut towns, &store, mp, cal.every(mp.trade_interval));
     }
 
     food_imports(&mut towns, &db, &params, &terrain, trade_round);
@@ -912,4 +929,79 @@ fn armory_count(
         .iter()
         .filter(|e| items.get(**e).is_ok_and(|(p, _, _)| p.def == def))
         .count()
+}
+
+/// Town `buyer` pays town `seller` `cost` of its own coin. It pays first with
+/// the seller's coin it holds (which goes home to the seller's treasury), and
+/// the rest in its own coin, which the seller keeps as a foreign balance. A
+/// town that only holds coin (`Treasury::Holds`) pays from its treasury, as
+/// one coin everywhere. Returns what reached the seller's treasury and what
+/// left the buyer's.
+pub fn pay_abroad(
+    towns: &mut Towns,
+    buyer: usize,
+    seller: usize,
+    cost: f32,
+    rule: crate::config::Treasury,
+) -> (f32, f32) {
+    use crate::coin::{exchange, Coin};
+    if rule == crate::config::Treasury::Holds {
+        let c = Coin::from_coins(cost);
+        towns.0[buyer].treasury -= c;
+        towns.0[seller].treasury += c;
+        return (c.coins(), c.coins());
+    }
+    let (vb, vs) = (towns.0[buyer].coin_value, towns.0[seller].coin_value);
+    // What the cost comes to in the seller's coin, and how much of that the
+    // buyer holds.
+    let need = exchange(cost, vb, vs);
+    let held = towns.0[buyer].holds(seller).coins().max(0.0);
+    let back = Coin::from_coins(need.min(held));
+    towns.0[buyer].hold(seller, -back);
+    towns.0[seller].treasury += back;
+    let rest = Coin::from_coins(cost * (1.0 - back.coins() / need.max(1e-9)).max(0.0));
+    towns.0[buyer].treasury -= rest;
+    towns.0[seller].hold(buyer, rest);
+    (back.coins(), rest.coins())
+}
+
+/// Each town's coin moves against the common unit: down while its coin piles
+/// up unspent abroad, as a share of all of it in circulation (residents'
+/// savings, the treasury if above zero, and what foreigners hold), up while
+/// foreigners hold little. Values stay around 1 on average.
+fn exchange_rates(
+    towns: &mut Towns,
+    store: &AgentStore,
+    mp: &crate::config::MarketParams,
+    cal: crate::calendar::Calendar,
+) {
+    if mp.treasury != crate::config::Treasury::Issues {
+        return;
+    }
+    let n = towns.0.len();
+    let ex = &mp.exchange;
+    let mut targets = vec![1.0f32; n];
+    for (c, target) in targets.iter_mut().enumerate() {
+        let abroad: f32 = (0..n)
+            .filter(|&t| t != c)
+            .map(|t| towns.0[t].holds(c).coins().max(0.0))
+            .sum();
+        let home: f32 = towns.0[c]
+            .residents
+            .iter()
+            .map(|&i| store.wealth[i as usize].coins().max(0.0))
+            .sum::<f32>()
+            + towns.0[c].treasury.coins().max(0.0);
+        let share = abroad / (abroad + home).max(1e-3);
+        *target = 1.0 / (1.0 + ex.pressure * share);
+    }
+    // Relative to the others: the common unit is the average coin.
+    let mean = targets.iter().sum::<f32>() / n.max(1) as f32;
+    let step = cal.share(ex.speed);
+    let max = cal.flow(ex.max_monthly).max(0.0);
+    for (town, t) in towns.0.iter_mut().zip(targets) {
+        let want = t / mean.max(1e-6);
+        let d = (step * (want / town.coin_value.max(1e-6)).ln()).clamp(-max, max);
+        town.coin_value = (town.coin_value * d.exp()).clamp(0.01, 100.0);
+    }
 }

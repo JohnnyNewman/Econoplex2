@@ -537,12 +537,15 @@ pub fn record(
         s.purchasing_power = 100.0 / indices[ti].fisher.max(1e-6);
         s.real_exchange_rate =
             crate::price_index::real_exchange_rate(&year_prices[ti].price, &world_p, &world_q);
+        // The treasury, residents' purses and other towns' coin it holds (at
+        // face value, as the world's total counts it).
         let money = town.treasury.coins()
             + town
                 .residents
                 .iter()
                 .map(|&i| store.wealth[i as usize].coins())
-                .sum::<f32>();
+                .sum::<f32>()
+            + town.foreign.iter().map(|c| c.coins()).sum::<f32>();
         s.money_stock = money;
         // With no money (residents in debt for tools), velocity is undefined: 0.
         let per_money = |x: f32| if money > 1.0 { x / money } else { 0.0 };
