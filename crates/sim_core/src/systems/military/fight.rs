@@ -358,8 +358,7 @@ fn field_battle(
     let bp = &params.battle;
     let (mut b, groups) = match setup_field_battle(
         store, db, params, bp.model, field, fight, gear_defs, attackers, defenders, militia,
-        doctrines,
-        seed,
+        doctrines, seed,
     ) {
         Setup::Decided(won) => return (won, 0, 0, None),
         Setup::Battle(b, groups) => (*b, groups),

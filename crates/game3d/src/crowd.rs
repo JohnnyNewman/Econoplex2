@@ -556,7 +556,9 @@ fn home_at(snap: &sim_core::view::ViewSnapshot, homes: &crate::live::TownHomes, 
     if let Some(doors) = homes.0.get(ti).filter(|d| !d.is_empty()) {
         return doors[(unit(keeper, 7) * doors.len() as f32) as usize % doors.len()];
     }
-    snap.towns.get(ti).map_or(Vec2::ZERO, |t| home_of(keeper, t))
+    snap.towns
+        .get(ti)
+        .map_or(Vec2::ZERO, |t| home_of(keeper, t))
 }
 
 /// A house of `town` for this person, picked by their id: its door (a step

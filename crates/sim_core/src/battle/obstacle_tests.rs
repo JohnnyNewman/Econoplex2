@@ -74,7 +74,13 @@ fn a_way_round_a_house_keeps_clear_of_it() {
 
 #[test]
 fn an_order_onto_a_house_goes_to_the_nearest_free_spot() {
-    let (field, specs) = (one_house(), vec![swordsmen(0, 20, (100.0, 200.0)), swordsmen(1, 20, (500.0, 200.0))]);
+    let (field, specs) = (
+        one_house(),
+        vec![
+            swordsmen(0, 20, (100.0, 200.0)),
+            swordsmen(1, 20, (500.0, 200.0)),
+        ],
+    );
     for model in [BattleModel::Soldiers, BattleModel::Squads] {
         let mut b = Battle::new(params(model), field.clone(), specs.clone(), 1);
         b.set_orders(0, &[Order::move_to((302.0, 203.0))]);
@@ -82,7 +88,10 @@ fn an_order_onto_a_house_goes_to_the_nearest_free_spot() {
             panic!()
         };
         // Out of the house, a little past its nearer long wall (x = 310).
-        assert!((anchor.0 - 311.5).abs() < 1.0 && (anchor.1 - 203.0).abs() < 1.0, "{anchor:?}");
+        assert!(
+            (anchor.0 - 311.5).abs() < 1.0 && (anchor.1 - 203.0).abs() < 1.0,
+            "{anchor:?}"
+        );
     }
 }
 
@@ -121,10 +130,15 @@ fn a_gate_lets_one_side_through_and_a_change_plans_again() {
     ];
     let nav = Nav::new(&field, 0).unwrap();
     let (a, b) = (V2::new(250.0, 200.0), V2::new(350.0, 200.0));
-    assert!(nav.path(a, b, 1).is_some_and(|w| Nav::length(a, &w) < 101.0));
+    assert!(nav
+        .path(a, b, 1)
+        .is_some_and(|w| Nav::length(a, &w) < 101.0));
     assert!(nav.path(a, b, 0).is_none(), "the gate is shut to side 0");
     // Opened: side 0 is through it too, on the next plan.
-    let specs = vec![swordsmen(0, 20, (250.0, 200.0)), swordsmen(1, 20, (550.0, 380.0))];
+    let specs = vec![
+        swordsmen(0, 20, (250.0, 200.0)),
+        swordsmen(1, 20, (550.0, 380.0)),
+    ];
     let mut battle = Battle::new(params(BattleModel::Soldiers), field, specs, 3);
     battle.set_orders(0, &[Order::move_to((340.0, 200.0)), Order::Hold]);
     for _ in 0..20 {
@@ -146,7 +160,10 @@ fn a_gate_lets_one_side_through_and_a_change_plans_again() {
 #[test]
 fn a_squad_ordered_past_a_house_reaches_the_far_side() {
     for model in [BattleModel::Soldiers, BattleModel::Squads] {
-        let specs = vec![swordsmen(0, 60, (240.0, 200.0)), swordsmen(1, 20, (580.0, 20.0))];
+        let specs = vec![
+            swordsmen(0, 60, (240.0, 200.0)),
+            swordsmen(1, 20, (580.0, 20.0)),
+        ];
         let mut b = Battle::new(params(model), one_house(), specs, 5);
         let to = (345.0, 200.0);
         b.set_orders(0, &[Order::move_to(to), Order::Hold]);
@@ -189,7 +206,10 @@ fn a_soldier_never_ends_inside_a_footprint() {
 #[test]
 fn the_ghost_line_goes_round_a_house() {
     for model in [BattleModel::Soldiers, BattleModel::Squads] {
-        let specs = vec![swordsmen(0, 40, (240.0, 200.0)), swordsmen(1, 20, (580.0, 20.0))];
+        let specs = vec![
+            swordsmen(0, 40, (240.0, 200.0)),
+            swordsmen(1, 20, (580.0, 20.0)),
+        ];
         let b = Battle::new(params(model), one_house(), specs, 1);
         let v = b.live_view(0, (0.0, 0.0), (1.0, 0.0), 0);
         let orders = [Order::move_to((360.0, 200.0))];
@@ -204,14 +224,27 @@ fn the_ghost_line_goes_round_a_house() {
             }
         }
         for &s in &p.slots {
-            assert!(!nav.inside(V2::new(s.0, s.1), 0.0, 0), "{model:?}: slot {s:?}");
+            assert!(
+                !nav.inside(V2::new(s.0, s.1), 0.0, 0),
+                "{model:?}: slot {s:?}"
+            );
         }
         // The time counts the way round, not straight through.
         let line = v.lines[0];
         let straight = (360.0 - line.anchor.0).hypot(200.0 - line.anchor.1);
-        let way = Nav::length(V2::new(line.anchor.0, line.anchor.1), &p.path[1..].iter().map(|q| V2::new(q.0, q.1)).collect::<Vec<_>>());
+        let way = Nav::length(
+            V2::new(line.anchor.0, line.anchor.1),
+            &p.path[1..]
+                .iter()
+                .map(|q| V2::new(q.0, q.1))
+                .collect::<Vec<_>>(),
+        );
         assert!(way > straight + 3.0, "{model:?}: {way} vs {straight}");
-        assert!((p.eta - way / v.paces[0].0).abs() < 0.5, "{model:?}: {}", p.eta);
+        assert!(
+            (p.eta - way / v.paces[0].0).abs() < 0.5,
+            "{model:?}: {}",
+            p.eta
+        );
     }
 }
 
@@ -223,14 +256,23 @@ fn a_line_narrows_to_pass_an_alley() {
         Obstacle::rect(1, (300.0, 186.0), (10.0, 10.0), (1.0, 0.0)),
         Obstacle::rect(2, (300.0, 214.0), (10.0, 10.0), (1.0, 0.0)),
     ];
-    let specs = vec![swordsmen(0, 60, (240.0, 200.0)), swordsmen(1, 20, (580.0, 20.0))];
+    let specs = vec![
+        swordsmen(0, 60, (240.0, 200.0)),
+        swordsmen(1, 20, (580.0, 20.0)),
+    ];
     let mut b = Battle::new(params(BattleModel::Soldiers), field, specs, 2);
-    b.set_orders(0, &[Order::MoveTo {
-        anchor: (360.0, 200.0),
-        facing: Some((1.0, 0.0)),
-        width: Some(30.0),
-        run: false,
-    }, Order::Hold]);
+    b.set_orders(
+        0,
+        &[
+            Order::MoveTo {
+                anchor: (360.0, 200.0),
+                facing: Some((1.0, 0.0)),
+                width: Some(30.0),
+                run: false,
+            },
+            Order::Hold,
+        ],
+    );
     b.set_orders(1, &[Order::Hold]);
     let mut narrowest = f32::INFINITY;
     for _ in 0..200 {
@@ -254,9 +296,14 @@ fn the_squad_model_fronts_narrow_in_a_town() {
     let longer = |field: Field| {
         (0..20u64)
             .map(|seed| {
-                Battle::new(params(BattleModel::Squads), field.clone(), specs.clone(), seed)
-                    .run()
-                    .seconds
+                Battle::new(
+                    params(BattleModel::Squads),
+                    field.clone(),
+                    specs.clone(),
+                    seed,
+                )
+                .run()
+                .seconds
             })
             .sum::<f32>()
     };
@@ -274,7 +321,8 @@ fn watch_a_town_battle() {
         if (b.seconds() as u32) % 120 == 0 {
             let mut n = std::collections::BTreeMap::new();
             for q in 0..100 {
-                *n.entry((b.side(q).unwrap(), format!("{:?}", b.state(q)))).or_insert(0) += 1;
+                *n.entry((b.side(q).unwrap(), format!("{:?}", b.state(q))))
+                    .or_insert(0) += 1;
             }
             let routers: Vec<String> = (0..100)
                 .filter(|&q| b.state(q) == SquadState::Routing)

@@ -139,22 +139,22 @@ fn walk(@builtin(global_invocation_id) id: vec3<u32>) {
         // nearer the goal, the more the nearer it is.
         if dist > LOOK {
             let ahead = here + dir * LOOK;
-            let d = wall(ahead);
-            if d < RADIUS + LOOK * 0.5 {
+            let near = wall(ahead);
+            if near < RADIUS + LOOK * 0.5 {
                 let out = away(ahead);
                 var along = vec2<f32>(-out.y, out.x);
                 if dot(along, dir) < 0.0 {
                     along = -along;
                 }
-                let k = clamp((RADIUS + LOOK * 0.5 - d) / LOOK, 0.0, 1.0);
+                let k = clamp((RADIUS + LOOK * 0.5 - near) / LOOK, 0.0, 1.0);
                 dir = normalize(mix(dir, along, k) + out * k * 0.3 + vec2<f32>(1e-6));
             }
         }
         here += dir * step;
         // Never into a wall: out to RADIUS from it.
-        let d = wall(here);
-        if d < RADIUS {
-            here += away(here) * (RADIUS - d);
+        let gap = wall(here);
+        if gap < RADIUS {
+            here += away(here) * (RADIUS - gap);
         }
         // Turn toward the goal at a limited rate instead of snapping. The
         // difference of two angles, wrapped into -pi..pi, is atan2(sin, cos).

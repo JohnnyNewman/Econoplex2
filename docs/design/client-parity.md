@@ -56,6 +56,7 @@ the end of this note).
 | Feature | 3D file(s) | 2D status | Effort | How to show it in 2D |
 |---|---|---|---|---|
 | Roads between towns (`Terrain::path`) | roads.rs | same (group 1): road cells are brown in the terrain image (terrain_view.rs) | | |
+| Workplaces and houses where the town's layout puts them (`sim_core::layout`), and walkers going round them, never through | live.rs, crowd.rs, walk.wesl, grounding.rs | same: workplaces drawn at their footprint, turned to the centre; houses drawn from the layout; walkers steer round them (town_ground.rs) | | |
 | Caravans driving along the roads, more of them for more trade | roads.rs, overlay.rs | same (group 5): caravans move as dots along the flow arrows, from one on the smallest route to seven on the biggest (economy_ui.rs) | | |
 | Rings around the buildings a Why? finding names | overlay.rs (`draw_why`), ui.rs | same (groups 2–3): with `Y` open, those buildings pulse in red | | |
 | "Look at" a town or a person moves the camera there | ui.rs, inspect.rs, camera.rs | same (group 1): `Tab` centres the camera on the next town; `F` goes to the selected person | | |

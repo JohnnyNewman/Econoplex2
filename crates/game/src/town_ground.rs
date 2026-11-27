@@ -172,6 +172,8 @@ mod tests {
         }
         assert!(p.distance(target) < 1.0, "stuck at {p}");
         let at = g.clear(Vec2::new(50.0, 0.0));
-        assert!(!f.contains((at.x, at.y), WALKER - 0.05) && at.distance(Vec2::new(50.0, 0.0)) < 15.0);
+        assert!(
+            !f.contains((at.x, at.y), WALKER - 0.05) && at.distance(Vec2::new(50.0, 0.0)) < 15.0
+        );
     }
 }

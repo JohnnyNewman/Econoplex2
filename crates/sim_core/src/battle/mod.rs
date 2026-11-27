@@ -220,7 +220,12 @@ pub const MAP_PER_METRE: f32 = 0.8;
 /// Where a point of a field (metres) lies on the map, for a field `size`
 /// big, centred at `at`, whose +x points along `facing` (from the attackers
 /// to the defenders) and +y to its left.
-pub fn field_to_map(at: (f32, f32), facing: (f32, f32), size: (f32, f32), p: (f32, f32)) -> (f32, f32) {
+pub fn field_to_map(
+    at: (f32, f32),
+    facing: (f32, f32),
+    size: (f32, f32),
+    p: (f32, f32),
+) -> (f32, f32) {
     let (fx, fy) = unit_or_x(facing);
     let (dx, dy) = (p.0 - 0.5 * size.0, p.1 - 0.5 * size.1);
     (
@@ -231,7 +236,12 @@ pub fn field_to_map(at: (f32, f32), facing: (f32, f32), size: (f32, f32), p: (f3
 
 /// Where a point of the map lies on a field (metres): `field_to_map` the
 /// other way round.
-pub fn map_to_field(at: (f32, f32), facing: (f32, f32), size: (f32, f32), p: (f32, f32)) -> (f32, f32) {
+pub fn map_to_field(
+    at: (f32, f32),
+    facing: (f32, f32),
+    size: (f32, f32),
+    p: (f32, f32),
+) -> (f32, f32) {
     let (fx, fy) = unit_or_x(facing);
     let (dx, dy) = ((p.0 - at.0) / MAP_PER_METRE, (p.1 - at.1) / MAP_PER_METRE);
     (

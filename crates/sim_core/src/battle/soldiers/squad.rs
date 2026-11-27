@@ -31,7 +31,7 @@ impl SoldierBattle {
             let way = match (self.nav.as_deref(), goal.to) {
                 (Some(nav), Some(g)) => {
                     let s = &mut self.squads[c];
-                    Some(s.route.next(nav, s.anchor, g, s.spec.side))
+                    Some(s.route.next(nav, s.anchor, g, s.spec.side, dt))
                 }
                 _ => goal.to,
             };
@@ -80,7 +80,9 @@ impl SoldierBattle {
             if formation != s.formation || std::mem::take(&mut s.reform_due) {
                 self.reform(c, formation);
             }
-            if self.nav.is_some() && self.substep % 4 == 0 {
+            // Once a battle second.
+            let every = (1.0 / dt.max(1e-3)).round().max(1.0) as u64;
+            if self.nav.is_some() && self.substep % every == 0 {
                 self.squeeze(c, goal.to.is_some());
             }
         }

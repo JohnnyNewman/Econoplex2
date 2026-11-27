@@ -47,7 +47,10 @@ impl Plugin for BattlesPlugin {
         app.init_resource::<Looks>()
             .init_resource::<LiveScene>()
             .init_resource::<Staged>()
-            .add_systems(Update, (stage_battle, start_battles, play_battles, show_live).chain())
+            .add_systems(
+                Update,
+                (stage_battle, start_battles, play_battles, show_live).chain(),
+            )
             .add_systems(EguiPrimaryContextPass, battle_panel);
     }
 }

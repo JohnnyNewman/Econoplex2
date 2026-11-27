@@ -551,7 +551,9 @@ pub fn produce(
                             .spawn((
                                 Product { def: p, quality },
                                 Structure {
-                                    footprint: db.content.products[pi].footprint.unwrap_or_default(),
+                                    footprint: db.content.products[pi]
+                                        .footprint
+                                        .unwrap_or_default(),
                                 },
                                 TownId(task.town),
                                 Pos { x: pos.0, y: pos.1 },

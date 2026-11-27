@@ -820,11 +820,7 @@ fn sync_scene(
                 chimneys.houses.resize(snap.towns.len(), Vec::new());
             }
             chimneys.houses[ti] = match house_chimney(style) {
-                Some(top) => houses
-                    .list
-                    .iter()
-                    .map(|h| h.at + h.rot * top)
-                    .collect(),
+                Some(top) => houses.list.iter().map(|h| h.at + h.rot * top).collect(),
                 None => Vec::new(),
             };
             chimneys.dirty = true;

@@ -447,7 +447,11 @@ impl LiveView {
                 .and_then(|n| n.path(from, to, side))
                 .unwrap_or_else(|| vec![to]);
             let d = Nav::length(from, &way);
-            let last = if way.len() > 1 { way[way.len() - 2] } else { from };
+            let last = if way.len() > 1 {
+                way[way.len() - 2]
+            } else {
+                from
+            };
             path.extend(way.iter().map(|p| (p.x, p.y)));
             eta += d / if r { run } else { walk }.max(0.1);
             facing = f.unwrap_or(unit((to.x - last.x, to.y - last.y), facing));

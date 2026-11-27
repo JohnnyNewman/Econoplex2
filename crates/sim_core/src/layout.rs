@@ -111,7 +111,12 @@ fn unit((x, y): (f32, f32)) -> (f32, f32) {
 
 /// The footprint of a workplace `size` big (map units) at `pos` in the town
 /// centred at `town`: its front faces the centre.
-pub fn building_footprint(id: u64, town: (f32, f32), pos: (f32, f32), size: (f32, f32)) -> Footprint {
+pub fn building_footprint(
+    id: u64,
+    town: (f32, f32),
+    pos: (f32, f32),
+    size: (f32, f32),
+) -> Footprint {
     let (ux, uy) = unit((town.0 - pos.0, town.1 - pos.1));
     Footprint {
         id,
@@ -302,7 +307,12 @@ impl TownLayout {
 
     /// The footprints on a battlefield `size` metres big, centred at `at`
     /// with +x along `facing`: those that reach onto it, in metres.
-    pub fn obstacles_on(&self, at: (f32, f32), facing: (f32, f32), size: (f32, f32)) -> Vec<Obstacle> {
+    pub fn obstacles_on(
+        &self,
+        at: (f32, f32),
+        facing: (f32, f32),
+        size: (f32, f32),
+    ) -> Vec<Obstacle> {
         self.footprints()
             .map(|f| f.obstacle_on(at, facing, size))
             .filter(|o| match o.shape {
@@ -384,7 +394,10 @@ mod tests {
         for w in way.windows(2) {
             for k in 0..=10 {
                 let t = k as f32 / 10.0;
-                let p = (w[0].0 + t * (w[1].0 - w[0].0), w[0].1 + t * (w[1].1 - w[0].1));
+                let p = (
+                    w[0].0 + t * (w[1].0 - w[0].0),
+                    w[0].1 + t * (w[1].1 - w[0].1),
+                );
                 assert!(!f.contains(p, 5.0), "{p:?} on the building");
             }
         }

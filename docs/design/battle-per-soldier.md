@@ -782,14 +782,15 @@ battle runs exactly as before.
   grown by 1 m, per side.
 - Each squad's way is found once on that grid (weighted A*, the corners
   pulled tight) and cached in its `Route`. A moving goal (an enemy squad)
-  only moves the last leg while it stays in sight, so there is about one
-  search per battle second in a 4,000-soldier town battle.
+  only moves the last leg while it stays in sight (checked once a battle
+  second), so there are one or two searches per battle second in a
+  4,000-soldier town battle.
 - Routers flee down a per-side flow field to their own edge.
 - Soldiers step round a building by its nearer corner (`steer`) and never
   into one (`resolve`, `push_out`, all scaled by the step).
-- A line narrows to the street it is in: every four substeps a moving squad
-  measures the room either side of its anchor and takes fewer files. It
-  widens again once there is room.
+- A line narrows to the street it is in: once a battle second a moving
+  squad measures the room either side of its anchor and takes fewer files.
+  It widens again once there is room.
 - The squad model approximates the same: squads follow the same routes, and
   a squad's front is no wider than the room where it stands.
 - Orders onto a building (`MoveTo`, deployment) go to the nearest free spot.

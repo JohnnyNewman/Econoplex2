@@ -381,7 +381,7 @@ impl SquadBattle {
                 let s = &mut self.squads[i];
                 let at = soldiers::V2::new(from.0, from.1);
                 let goal = soldiers::V2::new(to.0, to.1);
-                let way = s.route.next(nav, at, goal, s.spec.side);
+                let way = s.route.next(nav, at, goal, s.spec.side, self.params.dt);
                 if (way - goal).len() > 0.01 {
                     ((way.x, way.y), Some((way - at).len()))
                 } else {

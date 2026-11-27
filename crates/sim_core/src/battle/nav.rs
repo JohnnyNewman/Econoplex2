@@ -299,7 +299,7 @@ impl Nav {
         }
         let boxes: Vec<Box2> = field.obstacles.iter().map(Box2::of).collect();
         let shapes = Shapes::of(boxes.clone(), V2::ZERO, (field.width, field.height));
-        let gw =(field.width / CELL).ceil().max(1.0) as usize;
+        let gw = (field.width / CELL).ceil().max(1.0) as usize;
         let gh = (field.height / CELL).ceil().max(1.0) as usize;
         let mut blocked = vec![0u8; gw * gh];
         for b in &boxes {
@@ -728,7 +728,6 @@ impl Shapes {
         }
     }
 
-
     /// The boxes listed in `p`'s bucket.
     #[inline]
     fn near(&self, p: V2) -> &[u32] {
@@ -824,7 +823,11 @@ impl Shapes {
         let end = me + dir * look;
         let mut hit: Option<(f32, usize)> = None;
         let (a, b) = (self.near(me), self.near(end));
-        let both = if std::ptr::eq(a, b) { [a, &[][..]] } else { [a, b] };
+        let both = if std::ptr::eq(a, b) {
+            [a, &[][..]]
+        } else {
+            [a, b]
+        };
         for list in both {
             for &k in list {
                 let b = &self.boxes[k as usize];
@@ -876,7 +879,6 @@ impl Shapes {
             (None, None) => None,
         }
     }
-
 }
 
 /// A squad's way to its goal, kept between substeps.
@@ -889,15 +891,24 @@ pub(crate) struct Route {
     goal: V2,
     version: u64,
     planned: bool,
-    /// Calls since it was planned: sight lines are checked every few.
-    age: u32,
+    /// Battle seconds since sight lines were last checked: they are once
+    /// every `SIGHT` seconds.
+    since: f32,
 }
 
+/// How often a route checks its sight lines, battle seconds.
+const SIGHT: f32 = 1.0;
+
 impl Route {
-    /// The point to head for now, on the way from `at` to `goal`.
-    pub(crate) fn next(&mut self, nav: &Nav, at: V2, goal: V2, side: u8) -> V2 {
+    /// The point to head for now, on the way from `at` to `goal`, `dt`
+    /// battle seconds after the last call.
+    pub(crate) fn next(&mut self, nav: &Nav, at: V2, goal: V2, side: u8, dt: f32) -> V2 {
         let moved = (goal - self.goal).len();
-        self.age = self.age.wrapping_add(1);
+        self.since += dt;
+        let look = self.since >= SIGHT;
+        if look {
+            self.since = 0.0;
+        }
         if !self.planned || self.version != nav.version() {
             self.plan(nav, at, goal, side);
         } else if moved > 0.01 && nav.open(goal, side) {
@@ -909,7 +920,7 @@ impl Route {
             if n < 2 {
                 self.way = vec![goal];
                 self.goal = goal;
-            } else if self.age % 4 == 0 {
+            } else if look {
                 if nav.clear_line(self.way[n - 2], goal, side) {
                     self.way[n - 1] = goal;
                     self.goal = goal;
@@ -919,14 +930,13 @@ impl Route {
             }
         }
         while self.way.len() > 1
-            && ((self.way[0] - at).len() < 1.5
-                || (self.age % 4 == 0 && nav.clear_line(at, self.way[1], side)))
+            && ((self.way[0] - at).len() < 1.5 || (look && nav.clear_line(at, self.way[1], side)))
         {
             self.way.remove(0);
         }
         // Heading straight for the goal: plan again once the way closes
         // (the goal walked behind a house).
-        if self.way.len() == 1 && self.age % 4 == 0 && !nav.clear_line(at, self.way[0], side) {
+        if self.way.len() == 1 && look && !nav.clear_line(at, self.way[0], side) {
             self.plan(nav, at, goal, side);
         }
         self.way.first().copied().unwrap_or(goal)
@@ -936,7 +946,7 @@ impl Route {
         self.planned = true;
         self.goal = goal;
         self.version = nav.version();
-        self.age = 0;
+        self.since = 0.0;
         self.way = if nav.open(goal, side) && nav.clear_line(at, goal, side) {
             vec![goal]
         } else {
