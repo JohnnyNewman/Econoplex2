@@ -572,6 +572,9 @@ town's policy:
   day from the treasury.
 - **Guild charter** (`charter TOWN DOMAIN on|off`): the domain's masters teach
   `charter_teaching` faster.
+- **Guild secrets** (`secrets TOWN DOMAIN on|off`): the domain's recipe-skills pass on
+  the job and at school only between members of the town's guild of that domain, so
+  outsiders and pupils no longer pick them up.
 - **Immigration** (`immigration TOWN open|encouraged|closed`): closed borders turn
   migrants away. Encouraged immigration adds `immigration_bonus` to the town's appeal
   and pays each newcomer a `settlement_grant` from the treasury.

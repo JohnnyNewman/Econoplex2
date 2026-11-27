@@ -173,6 +173,33 @@ pub fn can_invent(
         .all(|req| req.iter().any(|&o| root(o) || has(town, o as usize)))
 }
 
+/// Whether `teacher` may pass recipe `r` on to `learner` in `town`: always,
+/// unless the town's guild of the recipe's domain keeps its secrets
+/// (`Policy::secrets`); then only between members of the same guild.
+pub fn may_teach(
+    db: &Db,
+    store: &AgentStore,
+    town: &crate::world::Town,
+    teacher: usize,
+    learner: usize,
+    r: usize,
+) -> bool {
+    let d = db.recipes[r].domain;
+    if !town
+        .policy
+        .secrets
+        .get(d as usize)
+        .copied()
+        .unwrap_or(false)
+    {
+        return true;
+    }
+    match (&store.guild[teacher], &store.guild[learner]) {
+        (Some(a), Some(b)) => a.domain == d && b.domain == d && a.org == b.org,
+        _ => false,
+    }
+}
+
 /// Person `i` learns recipe `r`. Returns whether it was new.
 pub fn learn(store: &mut AgentStore, i: usize, r: usize) -> bool {
     if store.known.len() <= i {
