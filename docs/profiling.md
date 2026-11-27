@@ -61,3 +61,44 @@ GPU busy only about 2 ms.
 
 Named spans of our own: `sim tick` and `sim snapshot` on the simulation thread
 (`live.rs`).
+
+## Measurements of 2026-11-27
+
+After the look work (water, grounding, fields, smoke, cloud shadows,
+grading, people, sheep) the frame is GPU-bound: the render thread spends
+about 3 ms a frame in `prepare_windows`, waiting for the next swapchain
+image. GPU per frame was about 6 ms, of which:
+
+| pass | ms |
+| --- | --- |
+| main opaque pass | 4.3 |
+| sun shadows (all cascades) | 0.3 |
+| clustering | 0.3 |
+| tonemapping | 0.26 |
+
+So caching the shadow map would save at most 0.3 ms; it was dropped. The
+main pass shaded about 9 million fragments for 3.2 million pixels: each
+pixel was shaded almost three times, under houses, trees and grass. A
+**depth prepass** (`DepthPrepass` on the camera) cut the main pass to 2.0 ms
+for 0.25 ms of prepass. Materials whose vertex shader moves the geometry
+(grass, swaying trees, people, sheep) opt out (`enable_prepass` returns
+false). Otherwise the default prepass would write their depth where they
+stand still, and the main pass would lose the parts that moved (pale
+patches in the tree crowns). The terrain has its own prepass vertex shader,
+so it takes part and gains the most.
+
+Frame rates in these runs swing between about 85 and 150 fps from one run to
+the next, as the laptop throttles. Compare GPU pass times, not fps.
+
+
+## Dynamic resolution
+
+The render scale now follows the frame time by default (`render_scale.rs`,
+`AutoScale`). Frames clearly slower than 60 a second step the 3D view down by
+0.05 a second, to 0.6 at the least. Frames that keep up try a step up after a
+few seconds, waiting twice as long after a try that didn't hold. It only
+watches while the window has the focus: a covered window on vsync was slowed
+to 5 to 10 fps by the system in a test, which would have dragged the scale to
+its floor. It's off with `--render-scale F` (a fixed scale), `--no-auto-scale`,
+`--shot` and `--fps`, so screenshots and measurements stay at full resolution.
+Each change logs `render scale …`.

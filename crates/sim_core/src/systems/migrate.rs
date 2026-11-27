@@ -338,6 +338,24 @@ pub fn migrate(
             }
         }
         let pos = towns.0[to].pos;
+        if params.market.treasury == crate::config::Treasury::Issues {
+            // The household changes its savings at the rate: the new town's
+            // treasury gives its own coin and keeps the old town's.
+            let (vh, vt) = (towns.0[home].coin_value, towns.0[to].coin_value);
+            for &j in &household {
+                let old = store.wealth[j];
+                if old.0 <= 0 {
+                    continue;
+                }
+                let new = crate::coin::Coin::from_coins(crate::coin::exchange(old.coins(), vh, vt));
+                towns.0[to].hold(home, old);
+                towns.0[to].treasury -= new;
+                towns.0[to]
+                    .ledger
+                    .add(crate::ledger::Flow::Exchanged, new.coins());
+                store.wealth[j] = new;
+            }
+        }
         for &j in &household {
             let jitter = (
                 rng.random_range(-40.0..40.0f32),

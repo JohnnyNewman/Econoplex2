@@ -107,6 +107,17 @@ pub struct ProductDef {
     /// What the item does in a squad battle (weapons, armour, shields, mounts).
     #[serde(default)]
     pub fight: Option<FightDef>,
+    /// A house (a building): how many people it holds and how well it shelters
+    /// them (1 = fully). Houses are counted per town, not placed one by one.
+    #[serde(default)]
+    pub house: Option<HouseDef>,
+}
+
+/// A house: people it holds, and how well it shelters them (0..1).
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+pub struct HouseDef {
+    pub residents: u32,
+    pub quality: f32,
 }
 
 /// How a blow or a shot hurts: a point, an edge or a weight. Armour stops

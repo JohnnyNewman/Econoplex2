@@ -161,6 +161,11 @@ pub struct CrowdExt {
 }
 
 impl MaterialExtension for CrowdExt {
+    // Its vertex shader moves the geometry; the default prepass would put it
+    // where it stands still, and the depth prepass would hide parts of it.
+    fn enable_prepass() -> bool {
+        false
+    }
     fn vertex_shader() -> ShaderRef {
         "shaders/people.wesl".into()
     }

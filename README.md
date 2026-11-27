@@ -54,6 +54,10 @@ cargo run --release -p sim_cli -- --load game.ron --years 5
 cargo run --release -p sim_cli -- --battle "cavalry*20 vs spearmen*30"
 cargo run --release -p sim_cli -- --battle "swordsmen*45,archers*20 vs walls spearmen*30" --seeds 200
 
+# The same on the per-soldier model, against the squad model, and its cost
+cargo run --release -p sim_cli -- --battle "swordsmen*100,swordsmen*100#flank vs swordsmen*100,swordsmen*100" --seeds 50 --compare
+cargo run --release -p sim_cli -- --battle "swordsmen*2000 vs swordsmen*2000" --battle-model soldiers --profile
+
 # Event log, monthly history and weather as CSV
 cargo run --release -p sim_cli -- --years 10 --events events.csv --history history.csv --weather weather.csv
 
@@ -448,6 +452,10 @@ A battle is fought between squads on a field (`battle.rs`). Each squad has a kit
 size, skill and morale. Kits counter each other, and a squad that loses heart breaks
 before it is wiped out. `econoplex-sim --battle` fights any line-up directly, and
 with `--seeds N` reports win rates, which is how the battle model is tuned.
+`battle.model: Soldiers` (or `--battle-model soldiers`) fights the same squads
+soldier by soldier (`battle/soldiers/`, design note
+`docs/design/battle-per-soldier.md`): flanks, broken lines, tired squads and
+wedges come out of where each soldier stands. Squads stay the default.
 
 A winning raid takes `loot_share` of the defender's treasury at once and carries the
 same share of its stores home. It also takes `captive_share` of the defender's idle

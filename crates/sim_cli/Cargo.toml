@@ -13,3 +13,4 @@ path = "src/main.rs"
 sim_core.workspace = true
 sim_data.workspace = true
 ron.workspace = true
+rayon.workspace = true

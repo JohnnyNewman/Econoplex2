@@ -335,6 +335,9 @@
     // them; `econoplex-sim --battle "cavalry*20 vs spearmen*30"` fights one.
     // Matchups come from reach, armour, speed, skill and experience.
     battle: (
+        // Squads: each squad a disc, settled with dice per squad. Soldiers: every
+        // soldier simulated (docs/design/battle-per-soldier.md, `soldiers` below).
+        model: Squads,
         dt: 1.0,                   // seconds per step
         max_seconds: 10800.0,      // three hours
         walk_speed: 1.4,           // m/s on foot
@@ -364,6 +367,46 @@
         rout_at: 0.15,
         wall_cover: 0.6,           // share of a man on the wall hidden from arrows
         breach_width: 6.0,         // m of gate or breach attackers fight through
+        // The soldier model. Every rate is per second, scaled by the substep.
+        soldiers: (
+            substep: 0.25,         // battle seconds per substep
+            cell: 4.0,             // m: side of a cell of the neighbour grid
+            body: 0.4,             // m: radius of a man, and of a horse
+            horse_body: 0.9,
+            man_kg: 80.0,          // a charge hits with mass
+            horse_kg: 520.0,
+            fatigue_run: 0.004,    // per second running, times 1 + kit kg / carry_kg
+            fatigue_fight: 0.003,  // per second fighting
+            fatigue_walk: 0.0005,  // per second marching
+            fatigue_rest: 0.002,   // lost per second standing out of contact
+            carry_kg: 40.0,
+            horse_tire: 0.5,       // share of the running fatigue on horseback
+            fatigue_effect: 0.5,   // speed, blows and parries lost at full fatigue
+            fatigue_morale: 0.002, // morale per second at full fatigue (times its square)
+            hit_morale: 0.02,      // morale per wound
+            flank_drain: 0.06,     // morale per blow from the side or the rear
+            rear_damage: 1.5,      // a blow from behind does this much more
+            near_fall: 0.01,       // morale when a friend within near_radius falls,
+            near_rout: 0.02,       // or breaks
+            foe_breaks: 0.02,      // morale gained when a foe within near_radius breaks
+            near_radius: 5.0,      // m
+            quiet_after: 10.0,     // s without a blow before nerve comes back
+            leader_regen: 0.002,   // extra morale per second within leader_radius m of the leader
+            leader_radius: 15.0,
+            turn_rate: 0.5,        // radians per second a squad's facing turns
+            soldier_turn: 3.0,     // radians per second a soldier turns
+            lead: 1.5,             // m a squad's anchor may run ahead of its front in contact
+            engage_slack: 2.0,     // m a front-rank soldier strays from their slot to fight
+            column_files: 4,       // files of a marching column,
+            column_beyond: 150.0,  // used beyond this many m from the enemy
+            loose_spacing: 3.0,    // m between archers in loose order
+            brace_riders: 200.0,   // m: spearmen brace when riders come this close
+            rally_after: 4.0,      // s riders stay on a spear wall before riding back
+            rally_distance: 30.0,  // m they ride back to charge again
+            hit_radius: 0.5,       // m: an arrow hits whoever stands this close to where it lands
+            friendly_fire: true,   // arrows hit friends too
+            parallel_from: 2048,   // soldiers from which a battle runs on all threads
+        ),
     ),
     // Households move to towns where their trade sells better, food is plentiful,
     // people think alike and no raids come, so skills follow demand between towns.

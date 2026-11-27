@@ -191,12 +191,34 @@ pub(super) fn aftermath(
     // Plunder: money changes hands now, goods travel home with the squad.
     if won {
         let money = towns.0[d].treasury.coins().max(0.0) * mp.loot_share;
-        towns.0[d].treasury -= crate::coin::Coin::from_coins(money);
+        let taken = crate::coin::Coin::from_coins(money);
+        towns.0[d].treasury -= taken;
         towns.0[d].ledger.add(crate::ledger::Flow::LootLost, money);
-        towns.0[attacker].treasury += crate::coin::Coin::from_coins(money);
-        towns.0[attacker]
-            .ledger
-            .add(crate::ledger::Flow::LootTaken, money);
+        if params.market.treasury == crate::config::Treasury::Issues {
+            // The defender's coin is held abroad by the attacker; so is a
+            // share of the foreign coin the defender held.
+            towns.0[attacker].hold(d, taken);
+            for c in 0..towns.0[d].foreign.len() {
+                let part = crate::coin::Coin::from_coins(
+                    towns.0[d].foreign[c].coins().max(0.0) * mp.loot_share,
+                );
+                towns.0[d].foreign[c] -= part;
+                if c == attacker {
+                    // Its own coin comes home.
+                    towns.0[attacker].treasury += part;
+                    towns.0[attacker]
+                        .ledger
+                        .add(crate::ledger::Flow::LootTaken, part.coins());
+                } else {
+                    towns.0[attacker].hold(c, part);
+                }
+            }
+        } else {
+            towns.0[attacker].treasury += taken;
+            towns.0[attacker]
+                .ledger
+                .add(crate::ledger::Flow::LootTaken, money);
+        }
         plunder(raid, d, towns, store, db);
         towns.0[attacker].war.raids_won += 1;
 
@@ -325,7 +347,7 @@ fn field_battle(
 ) -> (bool, u32, u32) {
     let bp = &params.battle;
     let (mut b, groups) = match setup_field_battle(
-        store, db, params, fight, gear_defs, attackers, defenders, militia, seed,
+        store, db, params, bp.model, fight, gear_defs, attackers, defenders, militia, seed,
     ) {
         Setup::Decided(won) => return (won, 0, 0),
         Setup::Battle(b, groups) => (*b, groups),
@@ -364,12 +386,14 @@ pub(super) enum Setup {
 }
 
 /// Groups each side's people by what they carry (weapon, mount) into squads,
-/// the militia as its own, and sets up the battle.
+/// the militia as its own, and sets up the battle on `model`. Each member
+/// keeps their own kit, and their fatigue, for the soldier model.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn setup_field_battle(
     store: &AgentStore,
     db: &Db,
     params: &Params,
+    model: crate::battle::BattleModel,
     fight: &CapVec,
     gear_defs: &Query<&Product, Without<Stored>>,
     attackers: &[u32],
@@ -381,6 +405,7 @@ pub(super) fn setup_field_battle(
     use crate::goods::Slot;
     let bp = &params.battle;
     let field = Field::default();
+    let gear_slots = [Slot::Weapon, Slot::Armour, Slot::Shield, Slot::Mount];
     let fight_of = |i: usize, slot: Slot| -> Option<(u32, &sim_data::FightDef)> {
         let e = crate::goods::gear(store, i, slot)?;
         let p = gear_defs.get(e).ok()?;
@@ -417,12 +442,40 @@ pub(super) fn setup_field_battle(
             let gear: Vec<Vec<&sim_data::FightDef>> = people
                 .iter()
                 .map(|&i| {
-                    [Slot::Weapon, Slot::Armour, Slot::Shield, Slot::Mount]
+                    gear_slots
                         .into_iter()
                         .filter_map(|s| fight_of(i as usize, s).map(|f| f.1))
                         .collect()
                 })
                 .collect();
+            // What each member carries, in kilograms.
+            let weights: Vec<f32> = people
+                .iter()
+                .map(|&i| {
+                    gear_slots
+                        .into_iter()
+                        .filter_map(|s| fight_of(i as usize, s))
+                        .map(|f| db.content.products[f.0 as usize].kg)
+                        .sum()
+                })
+                .collect();
+            // Each member's own kit; kits that are the same are kept once.
+            let mut kits: Vec<Kit> = Vec::new();
+            let own: Vec<u16> = gear
+                .iter()
+                .zip(&weights)
+                .map(|(g, &kg)| {
+                    let mut kit = Kit::from_gear("", std::slice::from_ref(g));
+                    kit.weight = kg;
+                    let k = kits.iter().position(|k| *k == kit).unwrap_or_else(|| {
+                        kits.push(kit);
+                        kits.len() - 1
+                    });
+                    k as u16
+                })
+                .collect();
+            let mut kit = Kit::from_gear("", &gear);
+            kit.weight = weights.iter().sum::<f32>() / weights.len().max(1) as f32;
             let name = if *levy {
                 "militia".to_string()
             } else if *weapon == u32::MAX {
@@ -437,12 +490,15 @@ pub(super) fn setup_field_battle(
             };
             let members: Vec<Member> = people
                 .iter()
-                .map(|&i| {
+                .zip(own)
+                .map(|(&i, kit)| {
                     let k = i as usize;
                     Member {
                         health: store.state[k][state::HEALTH].clamp(0.05, 1.0),
                         skill: dot(&store.cap[k], fight).clamp(0.0, 1.5),
                         experience: 0.0,
+                        fatigue: store.state[k][state::FATIGUE].clamp(0.0, 1.0),
+                        kit,
                     }
                 })
                 .collect();
@@ -467,7 +523,8 @@ pub(super) fn setup_field_battle(
             SquadSpec {
                 name,
                 side: *side,
-                kit: Kit::from_gear("", &gear),
+                kit,
+                kits,
                 members,
                 drill: if *levy { 0.0 } else { 0.5 },
                 morale: if *levy { morale * 0.7 } else { morale }.clamp(0.1, 1.0),
@@ -482,7 +539,15 @@ pub(super) fn setup_field_battle(
     if !specs.iter().any(|s| s.side == 1) {
         return Setup::Decided(true);
     }
-    let b = Battle::new(bp.clone(), field, specs, seed);
+    let b = Battle::new(
+        crate::battle::BattleParams {
+            model,
+            ..bp.clone()
+        },
+        field,
+        specs,
+        seed,
+    );
     Setup::Battle(
         Box::new(b),
         groups.into_iter().map(|(k, p)| (k.0, p)).collect(),

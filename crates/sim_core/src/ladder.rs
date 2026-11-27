@@ -538,7 +538,11 @@ fn town_views(
                 town.nature_sites.len() + town.free_land as usize,
                 town.buildings.len(),
             );
-            let housed = (housing / town.residents.len().max(1) as f32).min(1.0);
+            let housed = if db.house.iter().any(Option::is_some) {
+                town.shelter(db)
+            } else {
+                (housing / town.residents.len().max(1) as f32).min(1.0)
+            };
             let per_hunger = db
                 .foods
                 .iter()

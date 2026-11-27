@@ -134,6 +134,8 @@ fn main() {
     let mut quit_after: Option<f32> = None;
     let mut select: Option<u32> = None;
     let mut render_scale = 1.0f32;
+    let mut fixed_scale = false;
+    let mut no_auto_scale = false;
     let mut env_override = env::EnvOverride::default();
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
@@ -165,8 +167,10 @@ fn main() {
             "--quit-after" => quit_after = it.next().and_then(|v| v.parse().ok()),
             "--select" => select = it.next().and_then(|v| v.parse().ok()),
             "--render-scale" => {
-                render_scale = it.next().and_then(|v| v.parse().ok()).unwrap_or(1.0)
+                render_scale = it.next().and_then(|v| v.parse().ok()).unwrap_or(1.0);
+                fixed_scale = true;
             }
+            "--no-auto-scale" => no_auto_scale = true,
             "--weather" => {
                 let name = it.next().unwrap_or_default();
                 env_override.weather = env::Preset::parse(&name);
@@ -308,6 +312,11 @@ fn main() {
     .insert_resource(live)
     .insert_resource(ui::Space(space))
     .insert_resource(render_scale::RenderScale(render_scale))
+    // Dynamic resolution, unless the scale was given, or a screenshot or a
+    // measurement wants the full, steady picture.
+    .insert_resource(render_scale::AutoScale::new(
+        !(fixed_scale || no_auto_scale || shot.is_some() || fps),
+    ))
     .insert_resource(args)
     .insert_resource(ShotPath(shot))
     .insert_resource(QuitAfter(quit_after))
@@ -677,6 +686,12 @@ fn setup(
             debug: if args.bloom_view { 1.0 } else { 0.0 },
             ..default()
         },
+        // A depth prepass first: the main pass then shades each pixel once
+        // instead of every layer that covers it (the terrain under houses,
+        // trees and grass). Main pass 4.3 -> 2.0 ms of GPU for 0.25 ms of
+        // prepass (docs/profiling.md). Materials that move their vertices
+        // (grass, trees, people, sheep) stay out of it (`enable_prepass`).
+        bevy::core_pipeline::prepass::DepthPrepass,
     ));
     hud::spawn_help(
         &mut commands,

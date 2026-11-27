@@ -65,10 +65,12 @@ pub(super) fn plan_raid(
         let (mut wins, mut dead, mut standing) = (0.0f32, 0.0f32, 0.0f32);
         for _ in 0..FORECASTS {
             let seed = rng.random::<u64>();
+            // A forecast is a guess: it fights on the cheap squad model.
             match setup_field_battle(
                 store,
                 db,
                 params,
+                crate::battle::BattleModel::Squads,
                 fight,
                 gear_defs,
                 &town.squad,
@@ -100,7 +102,12 @@ pub(super) fn plan_raid(
         let (p, dead, standing) = (wins / k, dead / k, standing / k);
         let defense = total_defense(store, towns, o, fight, mp, loyalty);
         let tribute = if attack >= mp.conquest_margin * defense {
-            mp.tribute_share * other.treasury.coins().max(0.0)
+            crate::systems::tribute_due(
+                other,
+                &params.market,
+                mp,
+                params.calendar().every(mp.tribute_interval),
+            ) * other.coin_value
         } else {
             0.0
         };

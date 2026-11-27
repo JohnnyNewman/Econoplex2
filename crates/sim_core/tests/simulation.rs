@@ -1324,8 +1324,10 @@ fn governors_do_not_swing_back_and_forth() {
     );
     // Kept trades: food workers follow subsidies more slowly, so rulers adjust
     // them more often (the worst town 167).
+    // (One town in 32 reached 239 once tribute and food imports moved in
+    // the towns' own coins.)
     assert!(
-        worst_sub <= 200,
+        worst_sub <= 260,
         "a town made {worst_sub} subsidy changes in 40 years; per seed: {runs:?}"
     );
 }
@@ -1762,26 +1764,34 @@ fn town_cultures_come_from_their_people_and_draw_those_who_fit() {
 fn households_only_move_to_towns_they_know() {
     use sim_core::decision::knowledge::KnowledgeParams;
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    // Two seeds, three years: few households move, so one seed is noisy.
     let run = |knowledge: KnowledgeParams| {
-        let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
-        scenario.seed = 5;
-        params.migration.consider = 0.5;
-        params.migration.min_gain = 0.1;
-        params.decision.knowledge = knowledge;
-        let mut s = Simulation::new(db, params, &scenario);
-        run_years(&mut s, 2);
-        let m = s.world.resource::<sim_core::metrics::Metrics>();
-        let moved: u32 = m
-            .years
-            .iter()
-            .flat_map(|y| &y.towns)
-            .map(|t| t.moves.arrived)
-            .sum();
-        let store = s.world.resource::<sim_core::AgentStore>();
-        let remembered = (0..store.len())
-            .filter(|&i| !store.lived_in[i].is_empty())
-            .count();
-        (moved, remembered)
+        let mut moved_all = 0;
+        let mut remembered_all = 0;
+        for seed in [5, 6] {
+            let (db, mut params, mut scenario) =
+                sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+            scenario.seed = seed;
+            params.migration.consider = 0.5;
+            params.migration.min_gain = 0.1;
+            params.decision.knowledge = knowledge.clone();
+            let mut s = Simulation::new(db, params, &scenario);
+            run_years(&mut s, 3);
+            let m = s.world.resource::<sim_core::metrics::Metrics>();
+            let moved: u32 = m
+                .years
+                .iter()
+                .flat_map(|y| &y.towns)
+                .map(|t| t.moves.arrived)
+                .sum();
+            let store = s.world.resource::<sim_core::AgentStore>();
+            let remembered = (0..store.len())
+                .filter(|&i| !store.lived_in[i].is_empty())
+                .count();
+            moved_all += moved;
+            remembered_all += remembered;
+        }
+        (moved_all, remembered_all)
     };
     // Knowing every town, people move, and movers remember their old home.
     let (all, remembered) = run(KnowledgeParams::All);
@@ -2191,6 +2201,9 @@ fn a_hungry_broke_town_imports_food_on_credit_and_recovers() {
         params.start = sim_core::start::StartParams::Scenario;
         scenario.seed = seed;
         params.governor.enabled = false;
+        // Credit is for a treasury that only holds coin; one that issues
+        // pays at once in its own coin.
+        params.market.treasury = sim_core::config::Treasury::Holds;
         // With two fields, as before the seasonal harvest, the town now feeds
         // itself well enough that imports hardly matter.
         let b = &mut scenario.towns[3];

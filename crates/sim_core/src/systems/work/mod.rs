@@ -521,6 +521,14 @@ pub fn produce(
                         town.free_land = town.free_land.saturating_sub(1);
                         town.cleared += 1;
                         town.price[pi] = 0.0;
+                    } else if db.house[pi].is_some() {
+                        // A finished house adds to the town's houses.
+                        town.stock[pi] -= q;
+                        town.flows.add(crate::goods::Flow::Built, pi, q);
+                        town.houses.resize(db.content.products.len(), 0);
+                        town.houses[pi] += q.round().max(0.0) as u32;
+                        town.built += 1;
+                        town.price[pi] = 0.0;
                     } else if db.category(p) == Category::Building {
                         // The finished building becomes a workplace (stock tracks nothing here).
                         town.stock[pi] -= q;

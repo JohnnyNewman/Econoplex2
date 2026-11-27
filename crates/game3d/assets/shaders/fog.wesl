@@ -84,10 +84,28 @@ fn seasonal(albedo: vec3<f32>, n: vec3<f32>, p: vec3<f32>, foliage: f32, fog: Fo
 
 // ---------------------------------------------------------------- step 17
 // Cloud shadows: the share of the sun that reaches `p` through the clouds
-// (1 clear .. 0.3 under a cloud). The clouds are a deck of fractal noise 40
+// (1 clear .. 0.3 under a cloud). The clouds are a deck of fractal gradient
+// noise 40
 // units up that drifts with the wind; a point's shadow is the cloud where
 // the ray toward the sun meets the deck. Patches only for broken cloud: an
 // overcast sky dims the sun everywhere instead (sky.rs, `sky_light`).
+// Gradient noise for the clouds, -1..1: smooth (quintic blend) and without
+// the cell-shaped edges value noise shows where it is cut off by a threshold.
+fn cloud_grad(i: vec2<f32>, f: vec2<f32>) -> f32 {
+    let a = season_hash(i) * 6.2832;
+    return dot(vec2<f32>(cos(a), sin(a)), f);
+}
+fn cloud_noise(p: vec2<f32>) -> f32 {
+    let i = floor(p);
+    let f = fract(p);
+    let u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+    let a = cloud_grad(i, f);
+    let b = cloud_grad(i + vec2(1.0, 0.0), f - vec2(1.0, 0.0));
+    let c = cloud_grad(i + vec2(0.0, 1.0), f - vec2(0.0, 1.0));
+    let d = cloud_grad(i + vec2(1.0, 1.0), f - vec2(1.0, 1.0));
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y) * 1.4;
+}
+
 fn cloud_shadow(p: vec3<f32>, fog: Fog) -> f32 {
     let cover = fog.debug.z;
     let s = fog.sun_dir.xyz;
@@ -98,18 +116,24 @@ fn cloud_shadow(p: vec3<f32>, fog: Fog) -> f32 {
     // The wind (unit direction, strength 0..1) moves the deck, 0.5-3 units a second.
     let drift = fog.wind.xy * (0.5 + 2.5 * fog.wind.z) * globals.time;
     let q = (deck - drift) / 26.0;
+    // Each octave turned by 37 degrees, so no grid shows through.
+    let turn = mat2x2<f32>(0.799, 0.602, -0.602, 0.799);
     var n = 0.0;
     var a = 0.5;
     var x = q;
-    for (var i = 0; i < 3; i++) {
-        n += a * season_noise(x);
-        x = x * 2.03 + vec2<f32>(5.2, 1.3);
+    for (var i = 0; i < 4; i++) {
+        n += a * cloud_noise(x);
+        x = turn * x * 2.03 + vec2<f32>(5.2, 1.3);
         a *= 0.5;
     }
-    n /= 0.875;
+    n = n / 0.9375 * 0.5 + 0.5; // 0..1
     // More cover: a lower threshold, so more of the noise counts as cloud.
-    let threshold = mix(0.75, 0.3, cover);
-    let cloud = smoothstep(threshold, threshold + 0.15, n) * (1.0 - smoothstep(0.8, 1.0, cover));
+    // Nearly clear skies cast no patches (only the noise's peaks would
+    // count); overcast ones none either (the sun dims everywhere instead).
+    let threshold = mix(0.7, 0.3, cover);
+    let cloud = smoothstep(threshold, threshold + 0.2, n)
+        * smoothstep(0.1, 0.3, cover)
+        * (1.0 - smoothstep(0.8, 1.0, cover));
     return 1.0 - 0.7 * cloud;
 }
 

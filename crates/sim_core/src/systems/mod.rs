@@ -50,3 +50,25 @@ pub mod streams {
     pub const MIGRATE: u64 = 9;
     pub const KNOWLEDGE: u64 = 10;
 }
+
+/// The tribute town `town` owes its ruler this round, in its own coin: a share
+/// of its treasury, or, when it issues its coin, a share of what it taxed
+/// over the round (`cal` spans the round).
+pub fn tribute_due(
+    town: &crate::world::Town,
+    market: &crate::config::MarketParams,
+    mp: &crate::config::MilitaryParams,
+    cal: crate::calendar::Calendar,
+) -> f32 {
+    use crate::ledger::Flow;
+    match market.treasury {
+        crate::config::Treasury::Holds => town.treasury.coins().max(0.0) * mp.tribute_share,
+        crate::config::Treasury::Issues => {
+            let taxed: f32 = [Flow::WealthTax, Flow::IncomeTax, Flow::Rent, Flow::Estates]
+                .iter()
+                .map(|&f| town.ledger.monthly[f as usize].max(0.0))
+                .sum();
+            taxed * cal.days() * mp.tribute_share
+        }
+    }
+}
