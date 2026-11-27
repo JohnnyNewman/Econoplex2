@@ -3744,3 +3744,56 @@ fn early_industry_starts_unknown_and_gets_invented() {
         "inventions: {inventions:?}, yet nobody knows a later recipe"
     );
 }
+
+#[test]
+fn the_player_sees_what_their_people_know_and_keeps_it() {
+    use sim_core::history::{EventKind, History};
+    use sim_core::view::{Seen, ViewSnapshot};
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    scenario.seed = 5;
+    assert!(
+        scenario.player.is_some(),
+        "the scenario hands a town to the player"
+    );
+    params.knowledge.enabled = true;
+    params.knowledge.invention.enabled = true;
+    params.knowledge.invention.rate = 0.05;
+    let mut s = Simulation::new(db, params, &scenario);
+    s.step();
+    let mut seen = Seen::default();
+    let first = ViewSnapshot::capture(&s.world, &mut seen);
+    let start: Vec<(u32, u64)> = s.world.resource::<History>().revealed.clone();
+    {
+        let db = s.world.resource::<sim_core::Db>();
+        let kp = &s.world.resource::<sim_core::world::Params>().knowledge;
+        assert!(!start.is_empty());
+        assert_eq!(
+            first.revealed.len(),
+            start.len(),
+            "the first capture brings all"
+        );
+        // Nothing past the start era is known, so nothing of it is shown.
+        assert!(start
+            .iter()
+            .all(|&(r, _)| sim_core::knowledge::era(db, r as usize) <= kp.start_era));
+        assert!(
+            start.len() < db.recipes.len(),
+            "the whole graph is open at the start"
+        );
+    }
+    assert!(ViewSnapshot::capture(&s.world, &mut seen)
+        .revealed
+        .is_empty());
+    run_years(&mut s, 6);
+    let h = s.world.resource::<History>();
+    assert_eq!(
+        &h.revealed[..start.len()],
+        &start[..],
+        "a revealed node stays revealed"
+    );
+    assert!(
+        h.revealed.len() > start.len() && h.events.iter().any(|e| e.kind == EventKind::Discovered),
+        "the player's people learned nothing new in 6 years"
+    );
+}

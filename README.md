@@ -225,7 +225,8 @@ with `knowledge.invention.enabled` (on by default), a worker may invent a recipe
 work that nobody in town knows, if they know part of what it requires and the town
 knows the rest. The chance grows with their skill at it, materials at hand, a high
 price for what it makes and being rested. Inventions go to the event log
-(`--events`).
+(`--events`). The player sees a recipe-skill once any of their people has known it
+(`History::revealed`, `ViewSnapshot::revealed`); the rest of the graph stays hidden.
 
 The content (`assets/content/*.ron`) spans five eras: **wood and grain**, **stone,
 clay and cloth**, **bronze**, **iron and steel**, and **early industry**. Each file
