@@ -1,0 +1,24 @@
+// Nutrition (see the nutrition design note): what each food gives beside its
+// calories. Each value is against the food's calories: 1 means that eating
+// this food for all one's calories also meets all of that need. A person keeps
+// a store of each (`needs.nutrition` in models.ron) that drains without it; a
+// store run low hurts health, and without vitamins people get scurvy. Bread
+// gives enough protein but somewhat less fat than a person needs and next to no
+// vitamins, so bread alone keeps people fed but ill; gardens, fish, meat and dairy
+// make up the rest. Its own file, so it can change or go on its own.
+(
+    nutrition: [
+        (food: "bread",       protein: 1.2, fat: 0.8, vitamins: 0.05),
+        (food: "grain",       protein: 1.0, fat: 0.6, vitamins: 0.05),
+        (food: "ale",         protein: 0.2, fat: 0.0, vitamins: 0.3),
+        (food: "meat",        protein: 2.0, fat: 1.5, vitamins: 0.1),
+        (food: "fish",        protein: 2.0, fat: 1.0, vitamins: 0.4),
+        (food: "salted_meat", protein: 2.0, fat: 1.5, vitamins: 0.0),
+        (food: "salted_fish", protein: 2.0, fat: 1.0, vitamins: 0.05),
+        (food: "milk",        protein: 1.0, fat: 1.0, vitamins: 0.6),
+        (food: "cheese",      protein: 1.5, fat: 1.5, vitamins: 0.1),
+        (food: "eggs",        protein: 1.5, fat: 1.2, vitamins: 0.3),
+        (food: "vegetables",  protein: 0.3, fat: 0.0, vitamins: 3.0),
+        (food: "fruit",       protein: 0.0, fat: 0.0, vitamins: 4.0),
+    ],
+)

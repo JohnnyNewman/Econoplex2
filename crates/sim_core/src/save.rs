@@ -598,6 +598,7 @@ pub fn restore(
 
     // Saves from before larders existed.
     store.larder.resize(store.len(), Vec::new());
+    store.nutrition.resize(store.len(), [1.0; 3]);
     store.lived_in.resize(store.len(), Vec::new());
     store.owned.resize(store.len(), Vec::new());
     store.off_trade.resize(store.len(), 0);

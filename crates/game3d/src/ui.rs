@@ -153,6 +153,24 @@ fn panels(
                     ui.label(format!("{:.0} (every town takes it)", town.metal));
                     ui.end_row();
                 }
+                ui.label("food");
+                let [cal, protein, fat, vitamins] = town.nutrition;
+                let bar = |x: f32| {
+                    let n = (x.clamp(0.0, 1.0) * 10.0).round() as usize;
+                    format!("{}{} {:.0}%", "#".repeat(n), ".".repeat(10 - n), x * 100.0)
+                };
+                ui.label(format!("{:.0}%", town.food_score * 100.0))
+                    .on_hover_text(format!(
+                        "calories {}
+protein  {}
+fat      {}
+vitamins {}",
+                        bar(cal),
+                        bar(protein),
+                        bar(fat),
+                        bar(vitamins)
+                    ));
+                ui.end_row();
                 ui.label("coin worth");
                 ui.label(format!("{:.2} (1 = the average coin)", town.coin_value));
                 ui.end_row();

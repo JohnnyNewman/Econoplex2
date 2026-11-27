@@ -1087,3 +1087,36 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
 fn one() -> f32 {
     1.0
 }
+
+/// How well a town's people are fed, need by need (0..1): calories (the share
+/// not starving), then protein, fat and vitamins (a store half full counts as
+/// enough).
+pub fn town_nutrition(store: &AgentStore, town: &Town) -> [f32; 4] {
+    use sim_data::dims::state::HUNGER;
+    let n = town.residents.len();
+    if n == 0 {
+        return [1.0; 4];
+    }
+    let mut parts = [0.0f32; 4];
+    for &r in &town.residents {
+        let i = r as usize;
+        parts[0] += if store.state[i][HUNGER] <= 1.0 {
+            1.0
+        } else {
+            0.0
+        };
+        let nu = store.nutrition.get(i).copied().unwrap_or([1.0; 3]);
+        for k in 0..3 {
+            parts[k + 1] += (nu[k] / 0.5).min(1.0);
+        }
+    }
+    parts.map(|x| x / n as f32)
+}
+
+/// One food score (0..1) from the four parts of [`town_nutrition`]: half the
+/// weakest, half the mean, so one need going short shows clearly.
+pub fn food_score(parts: &[f32; 4]) -> f32 {
+    let min = parts.iter().copied().fold(1.0f32, f32::min);
+    let mean = parts.iter().sum::<f32>() / 4.0;
+    0.5 * min + 0.5 * mean
+}

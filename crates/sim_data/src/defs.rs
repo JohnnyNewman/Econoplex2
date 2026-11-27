@@ -16,6 +16,22 @@ pub struct ContentFile {
     /// Names of the technology eras, oldest first (the last file that lists them wins).
     #[serde(default)]
     pub eras: Vec<String>,
+    /// What each food gives beside its calories (later entries override by food).
+    #[serde(default)]
+    pub nutrition: Vec<NutritionDef>,
+}
+
+/// Protein, fat and vitamins in a food, against its calories: 1 means that
+/// eating this food for all one's calories also meets all of that need.
+#[derive(Debug, Clone, Deserialize)]
+pub struct NutritionDef {
+    pub food: String,
+    #[serde(default)]
+    pub protein: f32,
+    #[serde(default)]
+    pub fat: f32,
+    #[serde(default)]
+    pub vitamins: f32,
 }
 
 /// A granular capability. Skills form a DAG through `prereqs` (several parents allowed).

@@ -26,6 +26,21 @@ fn main() {
         println!("year {y}");
         for (t, town) in towns.0.iter().enumerate() {
             let db = sim.world.resource::<sim_core::Db>();
+            let st = sim.world.resource::<sim_core::AgentStore>();
+            let mut nu = [0.0f32; 3];
+            for &r in &town.residents {
+                for k in 0..3 {
+                    nu[k] += st.nutrition[r as usize][k];
+                }
+            }
+            let n = town.residents.len().max(1) as f32;
+            println!(
+                "  {:<11} nutrition protein {:.2} fat {:.2} vitamins {:.2}",
+                town.name,
+                nu[0] / n,
+                nu[1] / n,
+                nu[2] / n
+            );
             let houses: Vec<String> = town
                 .houses
                 .iter()
