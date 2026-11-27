@@ -10,6 +10,11 @@ flowchart LR
     p_grain(["Grain"])
     p_flour["Flour"]
     p_bread["Bread"]
+    p_milk["Milk"]
+    p_eggs["Eggs"]
+    p_vegetables["Vegetables"]
+    p_fruit["Fruit"]
+    p_tallow["Tallow"]
     p_wool(["Wool"])
     p_flax(["Flax"])
     p_stone(["Stone"])
@@ -31,6 +36,14 @@ flowchart LR
     p_silver_ore(["Silver ore"])
   end
   subgraph era1["1 Stone, clay and cloth"]
+    p_cheese["Cheese"]
+    p_salted_fish["Salted fish"]
+    p_salted_meat["Salted meat"]
+    p_salt["Salt"]
+    p_candles["Candles"]
+    p_dairy[["Dairy"]]
+    p_smokehouse[["Smokehouse"]]
+    p_saltern[["Saltern"]]
     p_yarn["Yarn"]
     p_cloth["Cloth"]
     p_clothes["Clothes"]
@@ -123,6 +136,9 @@ flowchart LR
     n_coal_seam{{"Coal seam"}}
     n_hunting_ground{{"Hunting ground"}}
     n_fishing_water{{"Fishing water"}}
+    n_garden{{"Garden"}}
+    n_orchard{{"Orchard"}}
+    n_salt_spring{{"Salt spring"}}
   end
   n_clay_pit --> p_clay
   n_coal_seam --> p_coal
@@ -133,12 +149,18 @@ flowchart LR
   n_flax_field --> p_flax
   n_flax_field --> p_woad
   n_forest --> p_wood
+  n_garden --> p_vegetables
   n_hunting_ground --> p_meat
+  n_orchard --> p_fruit
   n_ore_vein --> p_ore
   n_pasture --> p_horse
+  n_pasture --> p_meat
+  n_pasture --> p_milk
+  n_pasture --> p_tallow
   n_pasture --> p_wool
   n_quarry --> p_sand
   n_quarry --> p_stone
+  n_salt_spring --> p_salt
   n_silver_vein --> p_silver_ore
   n_tin_vein --> p_tin_ore
   p_ale --> p_evening_out
@@ -146,6 +168,7 @@ flowchart LR
   p_beam --> p_bakery
   p_beam --> p_brewery
   p_beam --> p_cottage
+  p_beam --> p_dairy
   p_beam --> p_furnace
   p_beam --> p_kiln
   p_beam --> p_machine_shop
@@ -154,6 +177,7 @@ flowchart LR
   p_beam --> p_mint
   p_beam --> p_pike
   p_beam --> p_smithy
+  p_beam --> p_smokehouse
   p_beam --> p_stable
   p_beam --> p_stone_house
   p_beam --> p_tavern
@@ -163,6 +187,7 @@ flowchart LR
   p_brick --> p_brewery
   p_brick --> p_machine_shop
   p_brick --> p_roller_mill
+  p_brick --> p_saltern
   p_brick --> p_textile_mill
   p_bronze --> p_bronze_scale
   p_bronze --> p_bronze_spear
@@ -190,9 +215,11 @@ flowchart LR
   p_cut_stone --> p_textile_mill
   p_dye --> p_dyed_cloth
   p_dyed_cloth --> p_fine_clothes
+  p_fish --> p_salted_fish
   p_flax --> p_yarn
   p_flour --> p_bread
   p_grain --> p_ale
+  p_grain --> p_eggs
   p_grain --> p_flour
   p_grain --> p_horse
   p_hilt --> p_longsword_1
@@ -223,6 +250,8 @@ flowchart LR
   p_lime --> p_mortar
   p_machine_parts --> p_roller_mill
   p_machine_parts --> p_textile_mill
+  p_meat --> p_salted_meat
+  p_milk --> p_cheese
   p_mortar --> p_blast_furnace
   p_mortar --> p_brewery
   p_mortar --> p_machine_shop
@@ -237,6 +266,9 @@ flowchart LR
   p_roof_tile --> p_roller_mill
   p_roof_tile --> p_stone_house
   p_roof_tile --> p_textile_mill
+  p_salt --> p_cheese
+  p_salt --> p_salted_fish
+  p_salt --> p_salted_meat
   p_sand --> p_mortar
   p_sharp_blade --> p_longsword_3
   p_silver --> p_coin
@@ -251,10 +283,13 @@ flowchart LR
   p_stone --> p_cut_stone
   p_stone --> p_kiln
   p_stone --> p_lime
+  p_stone --> p_smokehouse
   p_straw --> p_thatch
+  p_tallow --> p_candles
   p_tempered_blade --> p_sharp_blade
   p_thatch --> p_bakery
   p_thatch --> p_cottage
+  p_thatch --> p_dairy
   p_thatch --> p_hut
   p_thatch --> p_masons_yard
   p_thatch --> p_mill
@@ -275,6 +310,7 @@ flowchart LR
   p_blast_furnace -.-> p_iron
   p_blast_furnace -.-> p_steel
   p_brewery -.-> p_ale
+  p_dairy -.-> p_cheese
   p_kiln -.-> p_brick
   p_kiln -.-> p_coke
   p_kiln -.-> p_lime
@@ -285,6 +321,9 @@ flowchart LR
   p_masons_yard -.-> p_mortar
   p_mint -.-> p_coin
   p_roller_mill -.-> p_flour
+  p_saltern -.-> p_salt
+  p_smokehouse -.-> p_salted_fish
+  p_smokehouse -.-> p_salted_meat
   p_stable -.-> p_horse
   p_tavern -.-> p_evening_out
   p_textile_mill -.-> p_cloth

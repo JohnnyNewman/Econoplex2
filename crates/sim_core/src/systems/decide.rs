@@ -42,7 +42,7 @@ pub fn target_stock(db: &Db, town: &crate::world::Town, params: &Params, p: usiz
         return keep.max(1.0) + town.policy.ordered(p);
     }
     let per_capita = if db.is_food[p] {
-        mp.food_target_per_capita
+        food_per_capita(db, town, params, p)
     } else {
         mp.target_per_capita
     };
@@ -57,6 +57,41 @@ pub fn target_stock(db: &Db, town: &crate::world::Town, params: &Params, p: usiz
     } else {
         // What the town's store still lacks is wanted on top of the market's own.
         base + (stockpile - town.granary.get(p).copied().unwrap_or(0.0)).max(0.0)
+    }
+}
+
+/// Units of food `p` a town's market aims to hold per resident: the market's
+/// days of food (`food_target_per_capita`, in loaves of food value 1), split
+/// among the foods by the share of the town's eating each has had, and
+/// turned into units of this food. A town eating only bread aims for the
+/// full days in bread; with many foods, the days are shared, not repeated.
+pub fn food_per_capita(db: &Db, town: &crate::world::Town, params: &Params, p: usize) -> f32 {
+    let share = town
+        .food_share
+        .get(p)
+        .copied()
+        .unwrap_or(1.0 / db.foods.len().max(1) as f32);
+    params.market.food_target_per_capita * share / db.food_value[p].max(1e-3)
+}
+
+/// Refreshes each town's food shares from what it has eaten (once a day).
+pub fn refresh_food_shares(towns: &mut crate::world::Towns, db: &Db) {
+    let np = db.content.products.len();
+    for town in towns.0.iter_mut() {
+        let eaten = |f: usize| {
+            town.flows.get(crate::goods::Flow::Eaten, f).max(0.0) * db.food_value[f] as f64
+        };
+        let total: f64 = db.foods.iter().map(|x| eaten(x.0 as usize)).sum();
+        let mut share = vec![0.0f32; np];
+        for &(f, _) in &db.foods {
+            let f = f as usize;
+            share[f] = if total > 0.0 {
+                (eaten(f) / total) as f32
+            } else {
+                1.0 / db.foods.len().max(1) as f32
+            };
+        }
+        town.food_share = share;
     }
 }
 
