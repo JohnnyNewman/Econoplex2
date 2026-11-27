@@ -28,6 +28,7 @@ flowchart LR
     r_make_dye["Make dye"]
     r_dye_cloth["Dye cloth"]
     r_sew_fine_clothes["Sew fine clothes"]
+    r_weave_blanket["Weave blanket"]
   end
   subgraph d4["masonry"]
     r_quarry_stone(["Quarry stone"])
@@ -298,6 +299,7 @@ flowchart LR
   r_dye_cloth --> r_sew_fine_clothes
   r_refine_silver --> r_make_silver_jewellery
   r_cast_bronze --> r_make_bronze_jewellery
+  r_spin_wool --> r_weave_blanket
   style d0 fill:#e8f0d8,stroke:#888
   style d1 fill:#efe3d3,stroke:#888
   style d2 fill:#f3dcc4,stroke:#888
