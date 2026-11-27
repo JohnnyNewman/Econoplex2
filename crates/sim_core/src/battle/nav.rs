@@ -851,7 +851,8 @@ impl Shapes {
             b.at(-b.hx - m, -b.hy - m),
         ];
         // The outermost corners to the left and to the right of the way.
-        let (mut left, mut right): (Option<(f32, V2)>, Option<(f32, V2)>) = (None, None);
+        let mut left: Option<(f32, V2)> = None;
+        let mut right: Option<(f32, V2)> = None;
         for c in corners {
             let to = c - me;
             let l = to.len();

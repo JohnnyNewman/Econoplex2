@@ -97,37 +97,39 @@ fn an_order_onto_a_house_goes_to_the_nearest_free_spot() {
 
 #[test]
 fn a_gate_lets_one_side_through_and_a_change_plans_again() {
-    let mut field = Field::default();
     // A wall across the field at x = 300 with a gate in the middle.
-    field.obstacles = vec![
-        Obstacle {
-            id: 1,
-            shape: Shape::Segment {
-                a: (300.0, 0.0),
-                b: (300.0, 195.0),
-                half_width: 0.5,
+    let field = Field {
+        obstacles: vec![
+            Obstacle {
+                id: 1,
+                shape: Shape::Segment {
+                    a: (300.0, 0.0),
+                    b: (300.0, 195.0),
+                    half_width: 0.5,
+                },
+                passage: Passage::Blocked,
             },
-            passage: Passage::Blocked,
-        },
-        Obstacle {
-            id: 2,
-            shape: Shape::Segment {
-                a: (300.0, 195.0),
-                b: (300.0, 205.0),
-                half_width: 0.5,
+            Obstacle {
+                id: 2,
+                shape: Shape::Segment {
+                    a: (300.0, 195.0),
+                    b: (300.0, 205.0),
+                    half_width: 0.5,
+                },
+                passage: Passage::Gate(1),
             },
-            passage: Passage::Gate(1),
-        },
-        Obstacle {
-            id: 3,
-            shape: Shape::Segment {
-                a: (300.0, 205.0),
-                b: (300.0, 400.0),
-                half_width: 0.5,
+            Obstacle {
+                id: 3,
+                shape: Shape::Segment {
+                    a: (300.0, 205.0),
+                    b: (300.0, 400.0),
+                    half_width: 0.5,
+                },
+                passage: Passage::Blocked,
             },
-            passage: Passage::Blocked,
-        },
-    ];
+        ],
+        ..Field::default()
+    };
     let nav = Nav::new(&field, 0).unwrap();
     let (a, b) = (V2::new(250.0, 200.0), V2::new(350.0, 200.0));
     assert!(nav
@@ -251,11 +253,13 @@ fn the_ghost_line_goes_round_a_house() {
 /// A squad narrows to pass between two houses, and widens again past them.
 #[test]
 fn a_line_narrows_to_pass_an_alley() {
-    let mut field = Field::default();
-    field.obstacles = vec![
-        Obstacle::rect(1, (300.0, 186.0), (10.0, 10.0), (1.0, 0.0)),
-        Obstacle::rect(2, (300.0, 214.0), (10.0, 10.0), (1.0, 0.0)),
-    ];
+    let field = Field {
+        obstacles: vec![
+            Obstacle::rect(1, (300.0, 186.0), (10.0, 10.0), (1.0, 0.0)),
+            Obstacle::rect(2, (300.0, 214.0), (10.0, 10.0), (1.0, 0.0)),
+        ],
+        ..Field::default()
+    };
     let specs = vec![
         swordsmen(0, 60, (240.0, 200.0)),
         swordsmen(1, 20, (580.0, 20.0)),
@@ -318,7 +322,7 @@ fn watch_a_town_battle() {
     let (field, specs) = parse_lineup(&format!("{s} vs town {s}")).unwrap();
     let mut b = Battle::new(params(BattleModel::Soldiers), field, specs, 1);
     while !b.finished() {
-        if (b.seconds() as u32) % 120 == 0 {
+        if (b.seconds() as u32).is_multiple_of(120) {
             let mut n = std::collections::BTreeMap::new();
             for q in 0..100 {
                 *n.entry((b.side(q).unwrap(), format!("{:?}", b.state(q))))

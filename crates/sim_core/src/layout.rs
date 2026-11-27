@@ -137,8 +137,11 @@ pub fn house_footprint(ti: usize, spot: &HouseSpot) -> Footprint {
     }
 }
 
+/// A stretch of road: from one map point to the next.
+pub type Road = ((f32, f32), (f32, f32));
+
 /// Distance from `p` to the segment `a`..`b`.
-fn to_segment(p: (f32, f32), (a, b): ((f32, f32), (f32, f32))) -> f32 {
+fn to_segment(p: (f32, f32), (a, b): Road) -> f32 {
     let (dx, dy) = (b.0 - a.0, b.1 - a.1);
     let l2 = dx * dx + dy * dy;
     let t = if l2 > 0.0 {
@@ -159,7 +162,7 @@ pub fn house_spots(
     town: (f32, f32),
     count: usize,
     taken: &[(f32, f32)],
-    roads: &[((f32, f32), (f32, f32))],
+    roads: &[Road],
     water: impl Fn((f32, f32)) -> bool,
 ) -> Vec<HouseSpot> {
     let mut spots = Vec::with_capacity(count);
@@ -189,7 +192,7 @@ pub fn house_spots(
 /// town a road connects to it and of the way out to it (`Terrain::path`:
 /// each follows its own town's road field, so they can part), within
 /// `REACH`.
-pub fn roads_into(terrain: &Terrain, towns: &Towns, ti: usize) -> Vec<((f32, f32), (f32, f32))> {
+pub fn roads_into(terrain: &Terrain, towns: &Towns, ti: usize) -> Vec<Road> {
     let here = towns.0[ti].pos;
     let near = |p: (f32, f32)| (p.0 - here.0).hypot(p.1 - here.1) < REACH;
     let mut segs = Vec::new();

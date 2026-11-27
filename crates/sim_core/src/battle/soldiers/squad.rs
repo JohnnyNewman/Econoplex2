@@ -82,7 +82,7 @@ impl SoldierBattle {
             }
             // Once a battle second.
             let every = (1.0 / dt.max(1e-3)).round().max(1.0) as u64;
-            if self.nav.is_some() && self.substep % every == 0 {
+            if self.nav.is_some() && self.substep.is_multiple_of(every) {
                 self.squeeze(c, goal.to.is_some());
             }
         }

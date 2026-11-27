@@ -59,6 +59,7 @@ impl Plugin for BattlesPlugin {
 const PLAYBACK: f32 = 30.0;
 /// 3D units per metre of battlefield, as the sim lays a field over a town (a
 /// figure is about 0.75 units tall), and between figures in a formation.
+#[cfg(test)]
 const METRE: f32 = sim_core::battle::MAP_PER_METRE / SCALE;
 const SPACING: f32 = 0.45;
 /// Real seconds a scene stays after its battle ends.
