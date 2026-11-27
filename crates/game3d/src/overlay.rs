@@ -172,24 +172,36 @@ fn tint_terrain(
     }
 }
 
-/// A progress bar over each building with a batch under way: grey for the
-/// whole batch, green for the part done (`BuildingView::progress`).
+/// A bar over each building in use. While a run is under way and the
+/// snapshot catches it (`BuildingView::progress`), green shows the part of
+/// the run done. Otherwise a dimmer blue shows how busy the building has been
+/// lately (`BuildingView::load`, a month's average). Runs only happen in
+/// working hours and fast game speeds mostly see the snapshot at the end of
+/// the day, so without the load the bars would hardly ever show.
 fn draw_progress(mut gizmos: Gizmos, live: Res<LiveSim>, world: Res<World3d>) {
     let t = &world.terrain;
     for town in &live.snapshot.towns {
         for b in &town.buildings {
-            let Some(p) = b.progress else { continue };
+            let Some((fill, colour)) = bar(b.progress, b.load) else {
+                continue;
+            };
             let at = Vec3::new(b.pos.0 / SCALE, height(t, b.pos) + 3.0, -b.pos.1 / SCALE);
             let (half, left) = (1.2, Vec3::new(-1.2, 0.0, 0.0));
             let start = at + left;
             gizmos.line(start, at - left, Color::linear_rgb(0.25, 0.25, 0.25));
-            let done = start + Vec3::new(2.0 * half * p.clamp(0.0, 1.0), 0.05, 0.0);
-            gizmos.line(
-                start + Vec3::Y * 0.05,
-                done,
-                Color::linear_rgb(0.3, 2.0, 0.4),
-            );
+            let done = start + Vec3::new(2.0 * half * fill, 0.05, 0.0);
+            gizmos.line(start + Vec3::Y * 0.05, done, colour);
         }
+    }
+}
+
+/// A building's bar: how full and in which colour, or `None` for no bar (an
+/// idle building, used less than a twentieth of the time lately).
+pub fn bar(progress: Option<f32>, load: f32) -> Option<(f32, Color)> {
+    match progress {
+        Some(p) => Some((p.clamp(0.0, 1.0), Color::linear_rgb(0.3, 2.0, 0.4))),
+        None if load > 0.05 => Some((load.clamp(0.0, 1.0), Color::linear_rgb(0.25, 0.6, 1.4))),
+        None => None,
     }
 }
 
@@ -218,6 +230,13 @@ fn draw_why(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_run_shows_its_progress_and_otherwise_the_load() {
+        assert_eq!(bar(Some(0.4), 0.9).unwrap().0, 0.4);
+        assert_eq!(bar(None, 0.7).unwrap().0, 0.7);
+        assert!(bar(None, 0.01).is_none());
+    }
 
     #[test]
     fn the_overlay_key_cycles_through_all_four() {
