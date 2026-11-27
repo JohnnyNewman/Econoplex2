@@ -3580,3 +3580,61 @@ fn trade_is_paid_in_the_buyers_coin_and_moves_its_value() {
         values[most]
     );
 }
+
+#[test]
+fn early_industry_starts_unknown_and_gets_invented() {
+    use sim_core::history::EventKind;
+    use sim_core::knowledge::{era, knows};
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    scenario.seed = 5;
+    params.knowledge.enabled = true;
+    params.knowledge.invention.enabled = true;
+    // Ten times the usual rate, so a few years are enough.
+    params.knowledge.invention.rate = 0.01;
+    let mut s = Simulation::new(db, params, &scenario);
+    let kp = s
+        .world
+        .resource::<sim_core::world::Params>()
+        .knowledge
+        .clone();
+    let later = {
+        let db = s.world.resource::<sim_core::Db>();
+        let store = s.world.resource::<sim_core::AgentStore>();
+        // A recipe is as late as what it needs: blast iron makes plain iron
+        // but needs coke.
+        let blast = db.content.recipe("blast_iron").unwrap() as usize;
+        assert_eq!(era(db, blast), 4);
+        let later: Vec<usize> = (0..db.recipes.len())
+            .filter(|&r| era(db, r) > kp.start_era)
+            .collect();
+        assert!(!later.is_empty());
+        for &r in &later {
+            assert!(
+                (0..store.len()).all(|i| !knows(&kp, db, store, i, r)),
+                "a founder knows {}",
+                db.recipes[r].name
+            );
+        }
+        later
+    };
+    run_years(&mut s, 5);
+    let h = s.world.resource::<sim_core::history::History>();
+    let inventions: Vec<&str> = h
+        .events
+        .iter()
+        .filter(|e| e.kind == EventKind::Invented)
+        .map(|e| e.text.as_str())
+        .collect();
+    assert!(!inventions.is_empty(), "nothing invented in 5 years");
+    let db = s.world.resource::<sim_core::Db>();
+    let store = s.world.resource::<sim_core::AgentStore>();
+    let known_later = later
+        .iter()
+        .filter(|&&r| (0..store.len()).any(|i| knows(&kp, db, store, i, r)))
+        .count();
+    assert!(
+        known_later > 0,
+        "inventions: {inventions:?}, yet nobody knows a later recipe"
+    );
+}

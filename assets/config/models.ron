@@ -574,5 +574,24 @@
         foreign_share: 0.2,
         learn_per_day: 0.03,
         school_share: 0.3,
+        // Recipes making goods of a later era (index into the eras: 3 = iron and
+        // steel) are known by nobody at the start; they have to be invented.
+        start_era: 3,
+        // Inventing (needs knowledge on): after a day's work a worker may think
+        // of a recipe-skill on their frontier that nobody in town knows, among
+        // the `max_checks` closest to the work (skill cosine >= `related`).
+        // p per day = rate * success(c . v, difficulty + margin) * materials
+        // (no_materials if the town holds none of an input) * need (output
+        // price against the town's price level, ^need_weight, 0.5 .. 2) * rest
+        // (1 - fatigue). Each invention goes to the event log.
+        invention: (
+            enabled: false,
+            rate: 1e-3,
+            margin: 0.1,
+            related: 0.4,
+            max_checks: 4,
+            no_materials: 0.3,
+            need_weight: 1.0,
+        ),
     ),
 )

@@ -37,6 +37,8 @@ pub enum EventKind {
     FamineEnded,
     MigrationWave,
     Order,
+    /// Someone thought of a recipe-skill nobody in their town knew.
+    Invented,
 }
 
 impl EventKind {
@@ -52,6 +54,7 @@ impl EventKind {
             EventKind::FamineEnded => "famine over",
             EventKind::MigrationWave => "migration wave",
             EventKind::Order => "order",
+            EventKind::Invented => "invention",
         }
     }
 }
