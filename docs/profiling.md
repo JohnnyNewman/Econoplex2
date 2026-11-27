@@ -61,3 +61,32 @@ GPU busy only about 2 ms.
 
 Named spans of our own: `sim tick` and `sim snapshot` on the simulation thread
 (`live.rs`).
+
+## Measurements of 2026-11-27
+
+After the look work (water, grounding, fields, smoke, cloud shadows,
+grading, people, sheep) the frame is GPU-bound: the render thread spends
+about 3 ms a frame in `prepare_windows`, waiting for the next swapchain
+image. GPU per frame was about 6 ms, of which:
+
+| pass | ms |
+| --- | --- |
+| main opaque pass | 4.3 |
+| sun shadows (all cascades) | 0.3 |
+| clustering | 0.3 |
+| tonemapping | 0.26 |
+
+So caching the shadow map would save at most 0.3 ms; it was dropped. The
+main pass shaded about 9 million fragments for 3.2 million pixels: each
+pixel was shaded almost three times, under houses, trees and grass. A
+**depth prepass** (`DepthPrepass` on the camera) cut the main pass to 2.0 ms
+for 0.25 ms of prepass. Materials whose vertex shader moves the geometry
+(grass, swaying trees, people, sheep) opt out (`enable_prepass` returns
+false). Otherwise the default prepass would write their depth where they
+stand still, and the main pass would lose the parts that moved (pale
+patches in the tree crowns). The terrain has its own prepass vertex shader,
+so it takes part and gains the most.
+
+Frame rates in these runs swing between about 85 and 150 fps from one run to
+the next, as the laptop throttles. Compare GPU pass times, not fps.
+
