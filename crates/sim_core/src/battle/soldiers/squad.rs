@@ -20,8 +20,10 @@ struct Goal {
 }
 
 impl SoldierBattle {
+    #[inline(never)]
     pub(super) fn command(&mut self) {
         let dt = self.params.soldiers.substep;
+        self.find_near_foes();
         for c in 0..self.squads.len() {
             if !self.squads[c].fighting() || self.squads[c].in_line == 0 {
                 continue;
@@ -88,6 +90,30 @@ impl SoldierBattle {
         }
     }
 
+    /// Each commanded squad's nearest fighting enemy into `near_foe`, as
+    /// [`Self::nearest`] would find it, from one list of the squads fighting.
+    fn find_near_foes(&mut self) {
+        let fighting: Vec<(u8, usize, V2)> = (0..self.squads.len())
+            .filter(|&j| self.squads[j].fighting())
+            .map(|j| (self.squads[j].spec.side, j, self.squads[j].centre))
+            .collect();
+        let mut near_foe = std::mem::take(&mut self.near_foe);
+        near_foe.clear();
+        near_foe.extend(self.squads.iter().map(|s| {
+            if !s.fighting() || s.in_line == 0 {
+                return None;
+            }
+            let (side, at) = (s.spec.side, s.centre);
+            closest(
+                fighting
+                    .iter()
+                    .filter(|e| e.0 != side)
+                    .map(|&(_, j, q)| ((at - q).len(), j)),
+            )
+        }));
+        self.near_foe = near_foe;
+    }
+
     /// Between obstacles a squad narrows to the clear ground ahead of its
     /// front (once a second), so it passes an alley in a column, and takes
     /// its own width again once there is room for it.
@@ -136,9 +162,11 @@ impl SoldierBattle {
     }
 
     fn nearest(&self, c: usize, keep: impl Fn(&SquadCtl) -> bool) -> Option<usize> {
-        self.enemies(c)
-            .filter(|&j| keep(&self.squads[j]))
-            .min_by(|&a, &b| self.dist(c, a).total_cmp(&self.dist(c, b)).then(a.cmp(&b)))
+        closest(
+            self.enemies(c)
+                .filter(|&j| keep(&self.squads[j]))
+                .map(|j| (self.dist(c, j), j)),
+        )
     }
 
     fn home_x(&self, c: usize) -> f32 {
@@ -178,9 +206,7 @@ impl SoldierBattle {
             pace: 0.0,
             backing: false,
         };
-        let nearest_face = self
-            .nearest(c, |q| q.fighting())
-            .map(|j| self.squads[j].centre);
+        let nearest_face = self.near_foe[c].map(|j| self.squads[j].centre);
         // Riders that ran onto a spear wall ride back, then charge again.
         if let Some(r) = s.rally {
             if (r - s.anchor).len() > 2.0 {
@@ -233,10 +259,7 @@ impl SoldierBattle {
                 Order::Attack(_) | Order::MoveTo { .. } | Order::Withdraw
             )
         {
-            if let Some(j) = self
-                .nearest(c, |q| q.fighting())
-                .filter(|&j| self.ahead(c, j) < p.skirmish_distance)
-            {
+            if let Some(j) = self.near_foe[c].filter(|&j| self.ahead(c, j) < p.skirmish_distance) {
                 let e = self.squads[j].centre;
                 return Goal {
                     to: Some(s.anchor + (s.anchor - e).norm_or(-s.facing) * 20.0),
@@ -315,9 +338,7 @@ impl SoldierBattle {
         let kit = &s.spec.kit;
         // A cautious side's squads hold until an enemy comes close.
         if self.doctrine_of(c).posture == Posture::Cautious
-            && self
-                .nearest(c, |q| q.fighting())
-                .is_none_or(|j| self.ahead(c, j) > self.params.cautious_wait)
+            && self.near_foe[c].is_none_or(|j| self.ahead(c, j) > self.params.cautious_wait)
         {
             return None;
         }
@@ -326,30 +347,30 @@ impl SoldierBattle {
             // them), and steer clear of a spear wall while softer targets
             // are about.
             let pursue = s.chases();
-            self.enemies(c)
-                .filter(|&j| {
-                    let q = &self.squads[j];
-                    q.fighting() || (pursue && q.on_field())
-                })
-                .min_by(|&a, &b| {
-                    let score = |j: usize| {
+            let score = |j: usize| {
+                let q = &self.squads[j];
+                let mut d = self.dist(c, j);
+                if q.state == SquadState::Routing && d > 150.0 {
+                    d += 1000.0;
+                }
+                if !q.mounted() && q.spec.kit.reach >= kit.reach && q.fighting() {
+                    d += 250.0;
+                }
+                if q.has_bow() {
+                    d -= 50.0;
+                }
+                d
+            };
+            closest(
+                self.enemies(c)
+                    .filter(|&j| {
                         let q = &self.squads[j];
-                        let mut d = self.dist(c, j);
-                        if q.state == SquadState::Routing && d > 150.0 {
-                            d += 1000.0;
-                        }
-                        if !q.mounted() && q.spec.kit.reach >= kit.reach && q.fighting() {
-                            d += 250.0;
-                        }
-                        if q.has_bow() {
-                            d -= 50.0;
-                        }
-                        d
-                    };
-                    score(a).total_cmp(&score(b)).then(a.cmp(&b))
-                })
+                        q.fighting() || (pursue && q.on_field())
+                    })
+                    .map(|j| (score(j), j)),
+            )
         } else {
-            self.nearest(c, |q| q.fighting())
+            self.near_foe[c]
         }?;
         // Archers stand and shoot once in range.
         if s.has_bow() && self.dist(c, target) <= 0.9 * kit.range {
@@ -381,10 +402,11 @@ impl SoldierBattle {
         };
         match s.order() {
             Order::Shoot(j) | Order::Attack(j) if j < self.squads.len() && ok(j) => Some(j),
-            _ => self
-                .enemies(c)
-                .filter(|&j| ok(j))
-                .min_by(|&a, &b| self.dist(c, a).total_cmp(&self.dist(c, b)).then(a.cmp(&b))),
+            _ => closest(
+                self.enemies(c)
+                    .filter(|&j| ok(j))
+                    .map(|j| (self.dist(c, j), j)),
+            ),
         }
     }
 
@@ -613,4 +635,11 @@ impl SoldierBattle {
         }
         self.squads[c].files = cols.len() as u16;
     }
+}
+
+/// The squad of the least score, the lower index on a tie: each score taken once.
+fn closest(scored: impl Iterator<Item = (f32, usize)>) -> Option<usize> {
+    scored
+        .min_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)))
+        .map(|(_, j)| j)
 }

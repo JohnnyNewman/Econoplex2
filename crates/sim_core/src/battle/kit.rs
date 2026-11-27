@@ -45,6 +45,9 @@ pub struct Kit {
     pub charge: PerType,
     /// Added to attack rolls: the weapons' quality, over the squad.
     pub quality: f32,
+    /// Added to initiative: the weapons' speed, over the squad.
+    #[serde(default)]
+    pub speed: f32,
     /// Bows: range in metres, shots per second, the dice and type of an
     /// arrow, its mean hit points by type, arrows per fighter.
     pub range: f32,
@@ -143,6 +146,7 @@ impl Kit {
             damage: typed(t, dice.mean()),
             charge: typed(t, dice.mean()),
             quality: quality as f32,
+            speed: 0.0,
             range: 0.0,
             shot_rate: 0.0,
             shot_dice: Dice::default(),
@@ -155,6 +159,11 @@ impl Kit {
             mounted,
             weight,
         }
+    }
+
+    /// The same kit with weapons of initiative `speed` (a knife +2).
+    fn quick(self, speed: f32) -> Kit {
+        Kit { speed, ..self }
     }
 
     /// The same kit with a bow: range, shots per second, dice, arrows.
@@ -241,7 +250,7 @@ impl Kit {
                 false,
                 17.5,
             ),
-            // Archers fight hand to hand with a knife.
+            // Archers fight hand to hand with a knife, a quick weapon.
             "archers" => k(
                 name,
                 0.5,
@@ -253,7 +262,8 @@ impl Kit {
                 false,
                 5.0,
             )
-            .with_bow(150.0, 0.1, d(1, 6, 0), 24),
+            .with_bow(150.0, 0.1, d(1, 6, 0), 24)
+            .quick(2.0),
             "horse_archers" => k(
                 name,
                 0.5,
@@ -265,7 +275,8 @@ impl Kit {
                 true,
                 5.0,
             )
-            .with_bow(120.0, 0.08, d(1, 6, 0), 20),
+            .with_bow(120.0, 0.08, d(1, 6, 0), 20)
+            .quick(2.0),
             _ => return None,
         })
     }
@@ -299,6 +310,7 @@ impl Kit {
             damage: [0.0; 3],
             charge: [0.0; 3],
             quality: 0.0,
+            speed: 0.0,
             range: 0.0,
             shot_rate: 0.0,
             shot_dice: Dice::default(),
@@ -339,6 +351,7 @@ impl Kit {
                 kit.charge[t.index()] += charge.mean() / n;
             }
             kit.quality += weapon.quality as f32 / n;
+            kit.speed += weapon.speed as f32 / n;
             kit.strike_rate += weapon.strike_rate / n;
             kit.close_penalty += weapon.close_penalty / n;
             if weapon.range > 0.0 {

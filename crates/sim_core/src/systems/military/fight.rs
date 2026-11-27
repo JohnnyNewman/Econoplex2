@@ -385,7 +385,7 @@ fn field_battle(
         }
         None => b.run(),
     };
-    let (fa, fd) = settle_field_battle(store, bp, &b, &groups);
+    let (fa, fd) = settle_field_battle(store, &b, &groups);
     (report.winner == Some(0), fa, fd, Some((b, groups)))
 }
 
@@ -579,20 +579,20 @@ pub(super) fn setup_field_battle(
     )
 }
 
-/// Health after a field battle goes back to the people: the dead die, the
-/// badly wounded are hurt. Returns how many died on each side.
+/// Health after a field battle goes back to the people: the dead (killed
+/// outright, or down and losing their roll: `rules::dies`) die, the badly
+/// wounded are hurt. Returns how many died on each side.
 pub(super) fn settle_field_battle(
     store: &mut AgentStore,
-    bp: &crate::battle::BattleParams,
     b: &crate::battle::Battle,
     groups: &[(u8, Vec<u32>)],
 ) -> (u32, u32) {
     let mut fallen = [0u32; 2];
     for (g, (side, people)) in groups.iter().enumerate() {
-        for (m, &i) in b.members(g).iter().zip(people) {
+        for (m_index, (m, &i)) in b.members(g).iter().zip(people).enumerate() {
             let k = i as usize;
             let st = &mut store.state[k];
-            if m.health <= bp.death_below {
+            if b.dies(g, m_index) {
                 st[state::HEALTH] = 0.0;
                 fallen[(*side as usize).min(1)] += 1;
             } else if m.health <= 0.0 {

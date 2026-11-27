@@ -119,6 +119,11 @@ pub struct BattleParams {
     pub hp_per_experience: f32,
     /// Attack bonus lost per level of exhaustion.
     pub exhaustion_penalty: f32,
+    /// Initiative when blows meet (`rules::initiative`): agility per ln(1 +
+    /// battles survived), and the bonus of a longer weapon against a man
+    /// coming into its reach.
+    pub initiative_experience: f32,
+    pub reach_initiative: f32,
     /// Battles after which experience gives full discipline.
     pub experience_full: f32,
     /// Metres per second at which a shorter weapon closes inside a longer one's reach.
@@ -137,8 +142,14 @@ pub struct BattleParams {
     pub range_penalty: f32,
     pub rider_target: f32,
     pub mounted_size: f32,
-    /// A fighter whose health falls below this is dead; above it, wounded.
-    pub death_below: f32,
+    /// Death (`rules::fate`): a fighter whose damage past 0 hit points
+    /// reaches their hit points dies outright; one who is down otherwise
+    /// dies after the battle with chance `wound_death`, times `tended` when
+    /// their own side holds the field or their captors tend them, and times
+    /// `no_quarter` when the winners kill those they catch.
+    pub wound_death: f32,
+    pub tended: f32,
+    pub no_quarter: f32,
     /// Morale lost per share of the squad lost, per second of being hit in the
     /// flank, and regained per second out of the fight.
     pub morale_per_loss: f32,
@@ -184,6 +195,8 @@ impl Default for BattleParams {
             hit_points: 8.0,
             hp_per_experience: 2.0,
             exhaustion_penalty: 1.0,
+            initiative_experience: 1.0,
+            reach_initiative: 2.0,
             experience_full: 10.0,
             close_speed: 0.5,
             charge_damage: 0.6,
@@ -192,7 +205,9 @@ impl Default for BattleParams {
             range_penalty: 8.0,
             rider_target: 2.0,
             mounted_size: 1.5,
-            death_below: -0.5,
+            wound_death: 0.25,
+            tended: 0.5,
+            no_quarter: 2.0,
             morale_per_loss: 1.5,
             flank_drain: 0.01,
             morale_regen: 0.002,
@@ -401,6 +416,9 @@ trait Model {
     fn stance(&self, squad: usize) -> Stance;
     /// A side's doctrine; its squads take its `prisoners` as their pursuit.
     fn set_doctrine(&mut self, side: u8, doctrine: Doctrine);
+    fn doctrine(&self, side: u8) -> Doctrine;
+    /// The seed the battle was set up with.
+    fn seed(&self) -> u64;
     /// A squad's marching and running pace now, metres per second.
     fn pace(&self, squad: usize) -> (f32, f32);
     /// Stand a squad with its front at `anchor` before the battle starts.
@@ -796,15 +814,55 @@ impl Battle {
         &self.model().spec(squad).members
     }
 
-    pub fn report(&self) -> Report {
-        let m = self.model();
-        let winner = match sides_fighting(m) {
+    /// The side left holding the field, if one is.
+    fn winner(&self) -> Option<u8> {
+        match sides_fighting(self.model()) {
             [true, false] => Some(0),
             [false, true] => Some(1),
             [false, false] => Some(1), // nobody left: the defenders keep their town
             _ => None,
+        }
+    }
+
+    /// Who has squad `squad`'s fallen once the battle is over: their own
+    /// side, or the winners, as their doctrine takes those they catch.
+    pub fn care(&self, squad: usize) -> rules::Care {
+        let m = self.model();
+        match self.winner() {
+            Some(w) if self.finished() && m.spec(squad).side != w => {
+                match m.doctrine(w).prisoners {
+                    Pursuit::Kill => rules::Care::NoQuarter,
+                    Pursuit::Capture => rules::Care::Captors,
+                    Pursuit::LetGo => rules::Care::LeftLying,
+                }
+            }
+            _ => rules::Care::Friends,
+        }
+    }
+
+    /// Whether member `k` of squad `squad` dies of the battle
+    /// (`rules::dies`). Before the end, only the killed outright.
+    pub fn dies(&self, squad: usize, k: usize) -> bool {
+        let m = self.model();
+        let Some(member) = m.spec(squad).members.get(k) else {
+            return false;
         };
-        let death = m.params().death_below;
+        if !self.finished() {
+            return rules::killed_outright(member.health);
+        }
+        rules::dies(
+            m.params(),
+            m.seed(),
+            squad,
+            k,
+            member.health,
+            self.care(squad),
+        )
+    }
+
+    pub fn report(&self) -> Report {
+        let m = self.model();
+        let winner = self.winner();
         Report {
             winner,
             seconds: m.seconds(),
@@ -820,9 +878,10 @@ impl Battle {
                         standing: standing(spec),
                         wounded: members
                             .iter()
-                            .filter(|m| m.health <= 0.0 && m.health > death)
+                            .enumerate()
+                            .filter(|(k, m)| m.health <= 0.0 && !self.dies(s, *k))
                             .count(),
-                        dead: members.iter().filter(|m| m.health <= death).count(),
+                        dead: (0..members.len()).filter(|&k| self.dies(s, k)).count(),
                         state: m.state(s),
                         morale: m.morale(s),
                     }

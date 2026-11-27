@@ -60,7 +60,7 @@ outside the world, as today.
 | `pos` | `Vec2` (m) | position on the field |
 | `facing` | `Vec2`, unit | where they look. Kept as a vector, so the hot path needs no `sin` or `cos`. |
 | `vel` | `Vec2` (m/s) | last step's velocity, used for charges and impact |
-| `health` | `f32` | the share of hit points left: 1 is unhurt, ≤ 0 is down, ≤ `death_below` is dead (as `Member.health`) |
+| `health` | `f32` | the share of hit points left: 1 is unhurt, ≤ 0 is down, ≤ −1 is dead outright; the rest of the down roll after the battle (see "Combat rules", as `Member.health`) |
 | `morale` | `f32` 0..1 | the soldier's own nerve. It starts at the squad's morale. |
 | `fatigue` | `f32` 0..1 | 0 is rested, 1 is spent. It starts from the person's `fatigue` state. |
 | `kit` | `u16` | index into the battle's kit table (below) |
@@ -68,6 +68,7 @@ outside the world, as today.
 | `slot` | `u16` | their place in the squad's formation (file and rank) |
 | `bonus` | `f32` | attack bonus before exhaustion: proficiency + the weapon's quality (see "Combat rules") |
 | `max_hp` | `f32` | hit points unhurt: `hit_points` + `hp_per_experience` · ln(1 + battles) |
+| `seasoned` | `f32` | initiative from experience: `initiative_experience` · ln(1 + battles) |
 | `restrained` | `bool` | in a crush last substep (pressed by `crush_bodies` bodies or more) |
 | `target` | `u32` or none | the enemy they are fighting |
 | `cooldown` | `f32` (s) | time until their next blow or shot |
@@ -868,22 +869,22 @@ as well as to the attack roll. A lance rolls `charge_dice` in a charge; any
 charge adds its impact (`charge_damage` hit points per m/s of closing
 speed).
 
-| Item | Dice | Type | Quality | AC | Resists |
-| --- | --- | --- | --- | --- | --- |
-| bronze spear | 1d6 | piercing (reach 3 m) | 0 | | |
-| iron spear | 1d6 | piercing (reach 3 m) | +1 | | |
-| pike | 1d8 | piercing (reach 4.5 m) | 0 | | |
-| lance | 1d8, 1d12 on a charge | piercing | +1 | | |
-| longsword (lvl 1, 2, 3) | 1d8 | slashing | 0, +1, +2 | | |
-| war axe | 1d8 | slashing | +1 | | |
-| mace | 1d6 | bludgeoning | +1 | | |
-| bow (arrows; knife in melee) | 1d6 (1d4) | piercing (slashing) | 0 | | |
-| crossbow (bolts) | 1d8 | piercing | +1 | | |
-| padded coat | | | | +1 | bludgeoning |
-| bronze scale | | | | +4 | slashing |
-| mail shirt | | | | +5 | slashing |
-| plate armour | | | | +8 | slashing, piercing |
-| shield, iron-rimmed shield | | | | +2, +3 (front) | |
+| Item | Dice | Type | Quality | Speed | AC | Resists |
+| --- | --- | --- | --- | --- | --- | --- |
+| bronze spear | 1d6 | piercing (reach 3 m) | 0 | 0 | | |
+| iron spear | 1d6 | piercing (reach 3 m) | +1 | 0 | | |
+| pike | 1d8 | piercing (reach 4.5 m) | 0 | 0 | | |
+| lance | 1d8, 1d12 on a charge | piercing | +1 | 0 | | |
+| longsword (lvl 1, 2, 3) | 1d8 | slashing | 0, +1, +2 | 0 | | |
+| war axe | 1d8 | slashing | +1 | −2 | | |
+| mace | 1d6 | bludgeoning | +1 | −2 | | |
+| bow (arrows; knife in melee) | 1d6 (1d4) | piercing (slashing) | 0 | +2 (the knife) | | |
+| crossbow (bolts; knife in melee) | 1d8 (1d4) | piercing (bludgeoning) | +1 | +2 (the knife) | | |
+| padded coat | | | | | +1 | bludgeoning |
+| bronze scale | | | | | +4 | slashing |
+| mail shirt | | | | | +5 | slashing |
+| plate armour | | | | | +8 | slashing, piercing |
+| shield, iron-rimmed shield | | | | | +2, +3 (front) | |
 
 Resisted damage is halved and a vulnerable piece doubles it (`resist`,
 `vulnerable`; no item in the content is vulnerable yet). Layers of armour
@@ -893,6 +894,49 @@ add their AC and multiply what they let through.
 (2) more per ln(1 + battles survived): about 14 after 20 battles. `health`
 in 0..1 is still the share of hit points left, so the rest of the code and
 the views read it as before.
+
+**Initiative.** Blows struck in the same moment (the same substep on the
+soldier model) do not all land: when two men's blows meet, each rolls his
+own d20 + agility + his weapon's `speed` (`rules::initiative`), and the
+higher lands first. A man downed by a blow that lands before his own does
+not strike. Rolls are per man, never per side, so neither side and neither
+end of the soldier list goes first.
+
+- *Agility* is `initiative_experience` (1) per ln(1 + battles survived),
+  less a point per level of exhaustion (`rules::agility`).
+- *Weapon speed* is the content's `speed`: a knife +2, a sword or a spear
+  0, an axe or a mace −2 (table above). A spear, or any weapon a good half
+  metre longer, adds `reach_initiative` (+2) against a man coming into its
+  reach.
+- *A charge* strikes first, whatever the dice say (`rules::FIRST`), unless
+  it runs onto braced spears: then the spears' blow, which carries the
+  horse's speed, lands first.
+- *The soldier model* sorts the substep's blows by initiative, highest
+  first. Blows of exactly the same initiative land together, and who is
+  still up is read before any of them lands. So the order the blows were
+  booked in never matters, and nobody is struck after he is down: the
+  damage past zero is that of the blows that downed him.
+- *The squad model* has no single blows to sort. When both squads strike
+  each other in a step, the share of a squad's blows lost is the chance its
+  enemy strikes first (`rules::first_chance`, from the two squads' mean
+  initiative) times the share of its front the enemy's blows down that
+  step.
+
+**Death.** Down is not dead. One rule decides on both models
+(`rules::dies`), after the battle or when the battle leaves a fighter
+behind:
+
+- *Massive damage*: a fighter whose damage past 0 hit points reaches their
+  hit point maximum (health ≤ −1) dies outright.
+- *Anyone else down* rolls once against `wound_death` (0.25), times
+  `tended` (0.5) when their own side holds the field or their captors tend
+  them, and times `no_quarter` (2) when the winners kill those they catch
+  (a doctrine of `Kill`). A side that lets its enemies go leaves them lying,
+  at the plain chance. A battle with no winner counts as their side's.
+- The roll is the fighter's own, drawn from the battle's seed, the squad and
+  the member, so neither the order anybody is settled in nor the order the
+  blows were booked in changes who dies. While a battle runs only massive
+  damage counts as dead (`Battle::dies`).
 
 **Advantage and disadvantage.** Roll two d20 and take the higher, or the
 lower; one of each cancel out. A blow in the flank or the rear or on a runner
@@ -1052,11 +1096,114 @@ into a share. Before, it divided columns that had moved since: it divided
 `conq`, `moves`, `capab` and `reserve`, and left `glut%`, `gwork%`,
 `foodwk%` and `farmwk%` as percentages.
 
+## Death, initiative and headroom
+
+This follows step 6's recommendation. Death is one rule on both models,
+blows that meet land by initiative, and the soldier model has headroom
+under its budget again. The rules are under "Combat rules" above.
+
+**The matchups.** `--compare`, 50 seeds, attackers' wins (squad model /
+soldier model), before (the combat rules above) and after:
+
+| Battle | Before | After |
+| --- | --- | --- |
+| `swordsmen*30 vs swordsmen*30` | 25 / 24 | 28 / 17 |
+| `spearmen*400 vs spearmen*400` | 23 / 20 | 20 / 29 |
+| `cavalry*200 vs cavalry*200` | 26 / 32 | 23 / 25 |
+| `cavalry*20 vs spearmen*30` | 0 / 5 | 0 / 9 |
+| `cavalry*20 vs archers*30` | 48 / 49 | 48 / 49 |
+| `levy*40 vs archers*30` | 0 / 0 | 0 / 0 |
+| `swordsmen*30 vs spearmen*30` | 50 / 50 | 50 / 50 |
+| `swordsmen*25+20 vs swordsmen*30` | 50 / 50 | 50 / 50 |
+| `swordsmen*45,archers*20 vs walls spearmen*30+5!0.6` | 33 / 33 | 30 / 30 |
+| `swordsmen*30,archers*20 vs spearmen*30` | 50 / 50 | 50 / 50 |
+| `heavy*30 vs swordsmen*30` | 50 / 50 | 50 / 50 |
+| `horse_archers*20 vs levy*40` | 11 / 48 | 9 / 48 |
+
+The mirrors moved within what 50 seeds can tell apart. At 400 seeds,
+attackers' wins of 400 (squad model / soldier model):
+
+| Mirror | Squads | Soldiers |
+| --- | --- | --- |
+| `swordsmen*30` | 202 | 184 |
+| `swordsmen*200` | 207 | 193 |
+| `spearmen*30` | 194 | 166 |
+| `cavalry*200` | 194 | 200 |
+| `archers*30` | 218 | 175 (26 draws) |
+
+Attackers and defenders are not the same here: the defenders' line holds
+and the attackers' walks up to it, so a spear line that braces keeps its
+edge, as on main. Whether a side or the order of the soldiers decides is
+the swapped-sides test (`equal_armies_win_about_half_the_time`). It now
+runs 200 seeds, since at 100 one run of seeds moved a count by 14 with no
+bias behind it. `swordsmen*200`, side 0 listed and swapped: 92 and 91 of
+200, and 192 and 191 of 400. The flank test now runs 100 seeds: at 200 the
+flank wins 84% (frontally 48%), but at 50 one bad run of seeds put it
+under its old bar of 40.
+
+**Step 6 again.** `econoplex-sim --years 40 --seeds 16 --sweep
+battle.model=Squads,Soldiers --bands assets/config/health_bands.ron`, on
+this change merged with main (whose leather and bands changed the world
+since step 6, so compare the two columns, not these with step 6's). Means
+over the 16 seeds, ± one standard deviation:
+
+| Metric | Squads | Soldiers |
+| --- | --- | --- |
+| pop | 3235 ± 227 | 3390 ± 249 |
+| food/cap | 0.72 ± 0.17 | 0.75 ± 0.22 |
+| raids | 95.6 ± 12.7 | 88.4 ± 17.9 |
+| raids won | 81.3% ± 4.8 | 84.5% ± 2.9 |
+| conquests | 16.8 ± 5.8 | 16.6 ± 4.0 |
+| revolts | 5.6 ± 3.0 | 6.0 ± 2.4 |
+| captives | 445 ± 74 | 438 ± 93 |
+| soldiers fallen (both sides) | 443 ± 74 | 386 ± 90 |
+| swords at the end | 74 ± 29 | 88 ± 40 |
+| armour and shields at the end | 2462 ± 370 | 2393 ± 349 |
+| ms per economy day | 925 ± 152 | 767 ± 65 |
+| military system, ms per raid | 64.9 ± 13.2 | 63.9 ± 15.0 |
+
+Both models pass all five health bands. The fallen now agree: 386 against
+443, a ratio of 0.87 (0.94 per raid: 4.4 against 4.6 dead per raid), well
+within a standard deviation, where step 6 found 3.1. Population agrees too
+(the soldier runs have 155 more people, under one standard deviation).
+Every other column agrees within a standard deviation. The squad model
+now kills by the roll as well, so both kill more than step 6's squad model
+did.
+
+**Headroom.** The soldier model runs the same battles bit for bit, in
+about 17% fewer instructions per substep of the 4,000-soldier battle
+(callgrind: 2.58 million before, 2.14 million after, the cost of death and
+initiative included). Initiative itself is cheap: sorting and landing a
+substep's blows is 0.1% of the battle. The savings:
+
+- the per-soldier loops of phases 5 and 6 index slices of one length, so
+  each index needs no bounds check and no reload of the vector's length
+  after every store (−11%);
+- the squad controllers score each enemy squad once per query, and find
+  each squad's nearest fighting enemy once per substep from a list of the
+  squads still fighting, instead of up to four times over every squad
+  (−4%);
+- the grid clamps a point's cell before the cast, so the cast needs no
+  checks, and stops counting the foes around a soldier at the first
+  (−1.5%).
+
+The budget test (`cargo test --release --test battle_budget`, best of
+three on one core; its battle lasts 410 battle seconds), five runs on this
+shared 4-core machine at a load of about 5: 0.800, 0.851, 0.820, 0.888
+and 0.871 ms per battle second; one run a few minutes earlier, at a load
+near 10, gave 1.14. Timed the same way and interleaved, main took 1.01 to
+1.15 and this change 0.81 to 0.91. The test now prints its figure.
+
+Tried and dropped: a finer grid and a 3 m cell (more cells to build than
+neighbours saved), a nine-cell count table per box cell (the box holds
+about 4,000 cells, most of them empty), and a vectorised distance filter
+(most soldiers in the box are within range, so it only added work).
+
 ## Open questions
 
 - Should auto-resolved raids ever use the soldier model, or only battles the
-  player watches? Step 6 found it affordable. It waits on death being one
-  rule on both models (see "Step 6").
+  player watches? Step 6 found it affordable, and death is now one rule on
+  both models (see "Death, initiative and headroom").
 - Should friendly fire from arrows be on by default?
 - Should a soldier who is down but alive be carried off (captives, or the
   wounded saved by their side), or does that wait for the aftermath?

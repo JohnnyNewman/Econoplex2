@@ -5,14 +5,18 @@ use super::*;
 
 impl SoldierBattle {
     /// Phase 5: damage, movement with collision, morale, fatigue and state.
+    #[inline(never)]
     pub(super) fn apply(&mut self, plans: &[Plan], blows: &[(u32, Blow)], dt: f32) {
         let n = self.pos.len();
         let ns = self.squads.len();
         let turn = self.params.soldiers.soldier_turn * dt;
         let (turn_c, turn_s) = (turn.cos(), turn.sin());
-        // Blows add up per soldier, in soldier order, so two on one soldier
-        // give the same result whoever struck first.
-        for (i, b) in blows {
+        self.land(blows);
+        let lands = std::mem::take(&mut self.lands);
+        for ((i, b), &landed) in blows.iter().zip(&lands) {
+            if !landed {
+                continue;
+            }
             let (i, t) = (*i as usize, b.target as usize);
             let (si, st) = (self.squad[i] as usize, self.squad[t] as usize);
             if b.capture {
@@ -21,16 +25,8 @@ impl SoldierBattle {
                 }
             } else if b.counter_by != NONE {
                 // A charge onto braced spears.
-                if b.counter > 0.0 {
-                    self.hurt[i].damage += b.counter;
-                    self.hurt[i].wounds += 1;
-                }
                 self.charge_event(si, st, true);
             } else {
-                if b.hit {
-                    self.hurt[t].damage += b.damage;
-                    self.hurt[t].wounds += 1;
-                }
                 if b.angle > 0 && self.side[i] != self.side[t] {
                     self.hurt[t].side_blows += 1;
                 }
@@ -49,6 +45,8 @@ impl SoldierBattle {
             }
         }
 
+        self.lands = lands;
+
         // Runners laid hands on are taken: off the field, unhurt.
         let captured = std::mem::take(&mut self.captured);
         for &t in &captured {
@@ -62,45 +60,80 @@ impl SoldierBattle {
         self.captured = captured;
         self.captured.clear();
 
-        let p = &self.params;
-        let sp = &p.soldiers;
         self.fallen.clear();
         self.broke.clear();
+        // The soldiers' columns as slices of one length, so the loop below
+        // indexes them without a check each time.
+        let Self {
+            params: p,
+            field,
+            squads,
+            kits,
+            hurt: hurts,
+            state: states,
+            squad,
+            kit,
+            restrained,
+            health,
+            pos,
+            vel,
+            facing,
+            target,
+            fatigue,
+            morale: morales,
+            cooldown,
+            arrows,
+            quiet: quiets,
+            side: sides,
+            nav,
+            fallen,
+            broke,
+            ..
+        } = self;
+        let sp = &p.soldiers;
+        let hurts = &mut hurts[..n];
+        let states = &mut states[..n];
+        let (squad, kit, plans, sides) = (&squad[..n], &kit[..n], &plans[..n], &sides[..n]);
+        let (restrained, health) = (&mut restrained[..n], &mut health[..n]);
+        let (pos, vel, facing) = (&mut pos[..n], &mut vel[..n], &mut facing[..n]);
+        let (target, fatigues) = (&mut target[..n], &mut fatigue[..n]);
+        let (morales, cooldown) = (&mut morales[..n], &mut cooldown[..n]);
+        let (arrows, quiets) = (&mut arrows[..n], &mut quiets[..n]);
         for i in 0..n {
-            let hurt = std::mem::take(&mut self.hurt[i]);
-            let state = self.state[i];
+            let hurt = std::mem::take(&mut hurts[i]);
+            let state = states[i];
             if !state.present() {
                 continue;
             }
-            let c = self.squad[i] as usize;
+            let c = squad[i] as usize;
             let plan = &plans[i];
-            let k = &self.kits[self.kit[i] as usize];
-            self.restrained[i] = plan.crush >= sp.crush_bodies;
+            let k = &kits[kit[i] as usize];
+            restrained[i] = plan.crush >= sp.crush_bodies;
             if hurt.damage > 0.0 {
-                self.health[i] -= hurt.damage;
-                let s = &mut self.squads[c];
-                s.spec.members[i - s.first].health = self.health[i];
+                health[i] -= hurt.damage;
+                let s = &mut squads[c];
+                s.spec.members[i - s.first].health = health[i];
             }
-            if self.health[i] <= 0.0 {
-                self.state[i] = SoldierState::Down;
-                self.vel[i] = V2::ZERO;
-                self.target[i] = NONE;
-                self.squads[c].losses += 1;
+            if health[i] <= 0.0 {
+                states[i] = SoldierState::Down;
+                vel[i] = V2::ZERO;
+                target[i] = NONE;
+                squads[c].losses += 1;
                 if state.in_line() {
-                    self.squads[c].left += 1;
+                    squads[c].left += 1;
                 }
-                self.fallen.push(i);
+                fallen.push(i);
                 continue;
             }
             // Fatigue and morale are read once and written once below.
-            let (fatigue, morale) = (self.fatigue[i], self.morale[i]);
+            let (fatigue, morale) = (fatigues[i], morales[i]);
             // Move, as far as the wall lets them.
-            let from = self.pos[i];
+            let from = pos[i];
             let mut to = from + plan.vel * dt + plan.push;
-            if let Some(w) = self.field.wall_x {
-                if self.squads[c].spec.behind_wall && state != SoldierState::Routing {
+            if let Some(w) = field.wall_x {
+                if squads[c].spec.behind_wall && state != SoldierState::Routing {
                     to.x = to.x.max(w + WALL_HALF + k.body);
-                } else if self.wall_between(from, to, self.params.breach_width) {
+                } else if wall_between(field, from, to, p.breach_width) {
                     to.x = if from.x < w {
                         to.x.min(w - WALL_HALF - 0.01)
                     } else {
@@ -108,29 +141,29 @@ impl SoldierBattle {
                     };
                 }
                 // In the breach, between its sides.
-                if (to.x - w).abs() < WALL_HALF && !self.in_breach(to.y) {
-                    let half = self.params.breach_width * 0.5;
-                    let mid = self.field.height * 0.5;
+                if (to.x - w).abs() < WALL_HALF && !in_breach(field, p, to.y) {
+                    let half = p.breach_width * 0.5;
+                    let mid = field.height * 0.5;
                     to.y = to.y.clamp(mid - half, mid + half);
                 }
             }
             // Nobody walks into a building: out of it, along its wall.
-            if let Some(nav) = self.nav.as_deref() {
+            if let Some(nav) = nav.as_deref() {
                 if nav.any_near(to) || nav.any_near(from) {
-                    to = nav.resolve(from, to, k.body, self.side[i]);
+                    to = nav.resolve(from, to, k.body, sides[i]);
                 }
             }
-            self.pos[i] = to;
-            self.vel[i] = plan.vel;
-            self.facing[i] = self.facing[i].turned(plan.facing, turn_c, turn_s);
+            pos[i] = to;
+            vel[i] = plan.vel;
+            facing[i] = facing[i].turned(plan.facing, turn_c, turn_s);
             // Morale: wounds and blows from the side shake a soldier, more
             // so a tired one.
-            let steady = self.squads[c].steady * (1.0 + fatigue);
+            let steady = squads[c].steady * (1.0 + fatigue);
             let shock = (hurt.wounds as f32 * sp.hit_morale
                 + hurt.side_blows as f32 * sp.flank_drain)
                 * steady;
             let morale = (morale + plan.morale - shock).clamp(0.0, 1.0);
-            self.morale[i] = morale;
+            morales[i] = morale;
             // Fatigue: running, fighting and marching tire; standing rests.
             let speed = plan.vel.len();
             let mut rise = 0.0;
@@ -148,41 +181,40 @@ impl SoldierBattle {
             } else {
                 (fatigue - sp.fatigue_rest * dt).max(0.0)
             };
-            self.fatigue[i] = fatigue;
-            // The next blow or arrow.
+            fatigues[i] = fatigue;
+            // The next blow or arrow, at the pace (`vigour`) they have left.
+            let pace = 1.0 - sp.fatigue_effect * fatigue;
             match plan.act {
                 Act::Strike | Act::Charge => {
-                    let pace = self.vigour(i);
-                    self.cooldown[i] = 1.0 / (k.kit.strike_rate * pace).max(1e-3);
+                    cooldown[i] = 1.0 / (k.kit.strike_rate * pace).max(1e-3);
                 }
                 Act::Capture => {
-                    let pace = self.vigour(i) * self.nerve(i);
-                    self.cooldown[i] = 1.0 / (k.kit.strike_rate * pace).max(1e-3);
+                    let pace = pace * nerve(p, morale);
+                    cooldown[i] = 1.0 / (k.kit.strike_rate * pace).max(1e-3);
                 }
                 Act::Shoot => {
-                    let pace = self.vigour(i);
-                    self.cooldown[i] = 1.0 / (k.kit.shot_rate * pace).max(1e-3);
-                    self.arrows[i] = self.arrows[i].saturating_sub(1);
-                    let s = &mut self.squads[c];
+                    cooldown[i] = 1.0 / (k.kit.shot_rate * pace).max(1e-3);
+                    arrows[i] = arrows[i].saturating_sub(1);
+                    let s = &mut squads[c];
                     s.arrows = s.arrows.saturating_sub(1);
                 }
-                Act::None => self.cooldown[i] -= dt,
+                Act::None => cooldown[i] -= dt,
             }
             let quiet = plan.act == Act::None && plan.target == NONE && hurt.wounds == 0;
-            self.quiet[i] = if quiet { self.quiet[i] + dt } else { 0.0 };
-            self.target[i] = plan.target;
+            quiets[i] = if quiet { quiets[i] + dt } else { 0.0 };
+            target[i] = plan.target;
             // State.
-            let gone = self.off_field(to);
-            self.state[i] = if gone {
+            let gone = off_field(field, to);
+            states[i] = if gone {
                 if state.in_line() {
-                    self.squads[c].left += 1;
+                    squads[c].left += 1;
                 }
                 SoldierState::Fled
             } else if state == SoldierState::Routing {
                 SoldierState::Routing
             } else if morale < p.rout_at {
-                self.squads[c].left += 1;
-                self.broke.push(i);
+                squads[c].left += 1;
+                broke.push(i);
                 SoldierState::Routing
             } else if morale < p.waver_at {
                 SoldierState::Wavering
@@ -192,6 +224,8 @@ impl SoldierBattle {
                 SoldierState::Formed
             };
         }
+        let p = &self.params;
+        let sp = &p.soldiers;
 
         // Friends near the fallen and the broken lose heart.
         let fallen = std::mem::take(&mut self.fallen);
@@ -200,12 +234,9 @@ impl SoldierBattle {
             for &f in list.iter() {
                 let side = self.side[f] as usize;
                 let r2 = sp.near_radius * sp.near_radius;
-                let near: Vec<usize> = self.grids[side]
-                    .near(self.pos[f], sp.near_radius)
-                    .filter(|&j| j != f && (self.pos[j] - self.pos[f]).len2() <= r2)
-                    .collect();
-                for j in near {
-                    if self.state[j].present() {
+                let pf = self.pos[f];
+                for j in self.grids[side].near(pf, sp.near_radius) {
+                    if j != f && (self.pos[j] - pf).len2() <= r2 && self.state[j].present() {
                         let steady = self.squads[self.squad[j] as usize].steady;
                         self.morale[j] = (self.morale[j] - loss * steady).max(0.0);
                         self.quiet[j] = 0.0;
@@ -217,18 +248,83 @@ impl SoldierBattle {
         for &f in broke.iter() {
             let foes = 1 - (self.side[f] as usize).min(1);
             let r2 = sp.near_radius * sp.near_radius;
-            let near: Vec<usize> = self.grids[foes]
-                .near(self.pos[f], sp.near_radius)
-                .filter(|&j| (self.pos[j] - self.pos[f]).len2() <= r2)
-                .collect();
-            for j in near {
-                if self.state[j].in_line() {
+            let pf = self.pos[f];
+            for j in self.grids[foes].near(pf, sp.near_radius) {
+                if (self.pos[j] - pf).len2() <= r2 && self.state[j].in_line() {
                     self.morale[j] = (self.morale[j] + sp.foe_breaks).min(1.0);
                 }
             }
         }
         self.fallen = fallen;
         self.broke = broke;
+    }
+
+    /// Which of the substep's blows land, into `lands`, with their damage
+    /// booked in `hurt`. Blows land by initiative, highest first; blows of
+    /// the same initiative land together. A blow lands only if its striker
+    /// and its target are still up when its turn comes: a man downed first
+    /// does not strike, and nobody strikes a man already down. So damage
+    /// past zero comes from the blows that downed him, and the order the
+    /// blows were listed in does not matter.
+    #[inline(never)]
+    pub(super) fn land(&mut self, blows: &[(u32, Blow)]) {
+        let n = blows.len();
+        self.lands.clear();
+        self.lands.resize(n, false);
+        // Who a blow hurts, and who strikes it (who must be up).
+        let who = |b: &Blow, i: u32| -> (usize, usize) {
+            if b.counter_by != NONE {
+                (i as usize, b.counter_by as usize)
+            } else {
+                (b.target as usize, i as usize)
+            }
+        };
+        let down = |hurt: &[Hurt], health: &[f32], k: usize| health[k] - hurt[k].damage <= 0.0;
+        let order = &mut self.order;
+        order.clear();
+        order.extend(0..n as u32);
+        order.sort_unstable_by(|&a, &b| {
+            blows[b as usize]
+                .1
+                .init
+                .total_cmp(&blows[a as usize].1.init)
+                .then(a.cmp(&b))
+        });
+        let mut g = 0;
+        while g < n {
+            let init = blows[order[g] as usize].1.init;
+            let mut e = g;
+            while e < n && blows[order[e] as usize].1.init == init {
+                e += 1;
+            }
+            // Who is still up is read before any blow of the group lands.
+            for &k in &order[g..e] {
+                let (i, b) = &blows[k as usize];
+                let (hurts, by) = who(b, *i);
+                let up = !down(&self.hurt, &self.health, hurts)
+                    && (b.capture || b.counter_by != NONE || !down(&self.hurt, &self.health, by));
+                self.lands[k as usize] = up;
+            }
+            for &k in &order[g..e] {
+                let (i, b) = &blows[k as usize];
+                if !self.lands[k as usize] {
+                    continue;
+                }
+                let (hurts, _) = who(b, *i);
+                let damage = if b.counter_by != NONE {
+                    b.counter
+                } else if b.hit && !b.capture {
+                    b.damage
+                } else {
+                    0.0
+                };
+                if damage > 0.0 {
+                    self.hurt[hurts].damage += damage;
+                    self.hurt[hurts].wounds += 1;
+                }
+            }
+            g = e;
+        }
     }
 
     fn charge_event(&mut self, by: usize, into: usize, braced: bool) {
@@ -241,6 +337,7 @@ impl SoldierBattle {
 
     /// Phase 6: recount each squad's soldiers and morale, and tell the report
     /// about contact, wavering, routing, running out of arrows and fleeing.
+    #[inline(never)]
     pub(super) fn recount(&mut self) {
         let p = &self.params;
         let (rout, waver, per_loss) = (p.rout_at, p.waver_at, p.morale_per_loss);
@@ -254,9 +351,10 @@ impl SoldierBattle {
             // Each loss shakes the whole squad, as on the squad model.
             if s.losses > 0 {
                 let dm = per_loss * s.losses as f32 / n.max(1) as f32 * s.steady;
-                for i in first..first + n {
-                    if self.state[i].present() {
-                        self.morale[i] = (self.morale[i] - dm).max(0.0);
+                let r = first..first + n;
+                for (m, st) in self.morale[r.clone()].iter_mut().zip(&self.state[r]) {
+                    if st.present() {
+                        *m = (*m - dm).max(0.0);
                     }
                 }
             }
@@ -265,29 +363,43 @@ impl SoldierBattle {
             let (mut centre, mut front, mut fronts) = (V2::ZERO, V2::ZERO, 0);
             let (mut morale, mut vigour) = (0.0, 0.0);
             let mut runners = V2::ZERO;
-            for i in first..first + n {
-                if self.health[i] > 0.0 && !self.squads[c].spec.members[i - first].captured {
+            let members = &self.squads[c].spec.members;
+            let r = first..first + n;
+            let fatigue_effect = self.params.soldiers.fatigue_effect;
+            let (healths, states, at) = (
+                &self.health[r.clone()],
+                &self.state[r.clone()],
+                &self.pos[r.clone()],
+            );
+            let (morales, ranks, targets) = (
+                &self.morale[r.clone()],
+                &self.rank[r.clone()],
+                &self.target[r.clone()],
+            );
+            let fatigues = &self.fatigue[r];
+            for (k, m) in members.iter().enumerate() {
+                if healths[k] > 0.0 && !m.captured {
                     standing += 1;
                 }
-                match self.state[i] {
+                match states[k] {
                     st if st.in_line() => {
                         in_line += 1;
-                        centre += self.pos[i];
-                        morale += self.morale[i];
-                        vigour += self.vigour(i);
-                        if self.rank[i] == 0 {
-                            front += self.pos[i];
+                        centre += at[k];
+                        morale += morales[k];
+                        vigour += 1.0 - fatigue_effect * fatigues[k];
+                        if ranks[k] == 0 {
+                            front += at[k];
                             fronts += 1;
                         }
-                        if self.target[i] != NONE {
+                        if targets[k] != NONE {
                             contact += 1;
-                            self.tally[self.squad[self.target[i] as usize] as usize] += 1;
+                            self.tally[self.squad[targets[k] as usize] as usize] += 1;
                         }
                     }
                     SoldierState::Routing => {
                         routing += 1;
-                        runners += self.pos[i];
-                        morale += self.morale[i];
+                        runners += at[k];
+                        morale += morales[k];
                     }
                     _ => {}
                 }

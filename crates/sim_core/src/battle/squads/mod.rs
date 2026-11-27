@@ -52,6 +52,11 @@ struct Squad {
     eff: f32,
     exhaustion: f32,
     discipline: f32,
+    /// The fighters' mean battles survived, initiative before the d20
+    /// (`rules::agility`), and mean health, refreshed every step.
+    experience: f32,
+    agility: f32,
+    health: f32,
 }
 
 impl Squad {
@@ -116,6 +121,7 @@ pub struct SquadBattle {
     events: Vec<Event>,
     /// Each side's doctrine.
     doctrine: [Doctrine; 2],
+    seed: u64,
     /// Hits of this phase of the step, by squad, landed together at its end
     /// so that no squad strikes first because it comes first in the list.
     wounds: Vec<(usize, f32)>,
@@ -148,6 +154,9 @@ impl SquadBattle {
                 eff: 0.0,
                 exhaustion: 0.0,
                 discipline: 0.0,
+                experience: 0.0,
+                agility: 0.0,
+                health: 1.0,
             })
             .collect();
         let nav = Nav::new(&field, 0).map(Arc::new);
@@ -168,6 +177,7 @@ impl SquadBattle {
             events: Vec::new(),
             doctrine: [Doctrine::default(); 2],
             wounds: Vec::new(),
+            seed,
         }
     }
 
@@ -248,6 +258,12 @@ impl Model for SquadBattle {
         for s in self.squads.iter_mut().filter(|s| s.spec.side == side) {
             s.stance.pursuit = doctrine.prisoners;
         }
+    }
+    fn doctrine(&self, side: u8) -> Doctrine {
+        self.doctrine[(side as usize).min(1)]
+    }
+    fn seed(&self) -> u64 {
+        self.seed
     }
     fn pace(&self, squad: usize) -> (f32, f32) {
         self.squads[squad].paces(&self.params)
