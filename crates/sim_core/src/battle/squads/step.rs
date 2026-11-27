@@ -162,8 +162,25 @@ impl SquadBattle {
         self.t += dt;
     }
 
-    /// Effective skill and discipline from the members still standing.
+    /// Effective skill and discipline from the members still standing, and
+    /// among obstacles the clear ground across each squad's way.
     fn refresh(&mut self) {
+        if let Some(nav) = self.nav.clone() {
+            for i in 0..self.squads.len() {
+                let s = &self.squads[i];
+                let at = soldiers::V2::new(s.spec.pos.0, s.spec.pos.1);
+                let toward = s
+                    .primary
+                    .or_else(|| self.nearest(i, |q| q.on_field()))
+                    .map(|j| self.squads[j].spec.pos);
+                let ahead = soldiers::V2::new(if s.spec.side == 0 { 1.0 } else { -1.0 }, 0.0);
+                let dir = toward
+                    .map(|q| (soldiers::V2::new(q.0, q.1) - at).norm_or(ahead))
+                    .unwrap_or(ahead);
+                let max = self.params.frontage + 2.0;
+                self.squads[i].room = nav.room(at, dir, s.spec.side, max);
+            }
+        }
         let p = &self.params;
         for s in &mut self.squads {
             let (mut sum, mut exp, mut n) = (0.0, 0.0, 0.0);
@@ -357,14 +374,46 @@ impl SquadBattle {
     }
 
     fn step_toward(&mut self, i: usize, to: (f32, f32), speed: f32, target: Option<usize>) {
-        let dt = self.params.dt;
         let from = self.squads[i].spec.pos;
+        // Round the obstacles: toward the next corner of the way.
+        let (to, corner) = match self.nav.as_deref() {
+            Some(nav) => {
+                let s = &mut self.squads[i];
+                let at = soldiers::V2::new(from.0, from.1);
+                let goal = soldiers::V2::new(to.0, to.1);
+                let way = s.route.next(nav, at, goal, s.spec.side);
+                if (way - goal).len() > 0.01 {
+                    ((way.x, way.y), Some((way - at).len()))
+                } else {
+                    (to, None)
+                }
+            }
+            None => (to, None),
+        };
+        self.step_along(i, from, to, corner, speed, target)
+    }
+
+    /// One step from `from` toward `to`, which is a corner of the way
+    /// `corner` metres off (`None`: the goal itself).
+    fn step_along(
+        &mut self,
+        i: usize,
+        from: (f32, f32),
+        to: (f32, f32),
+        corner: Option<f32>,
+        speed: f32,
+        target: Option<usize>,
+    ) {
+        let dt = self.params.dt;
         let (dx, dy) = (to.0 - from.0, to.1 - from.1);
         let d = (dx * dx + dy * dy).sqrt();
         let mut step = speed * dt;
         if let Some(j) = target {
             // Stop at the enemy's edge.
             step = step.min((self.gap(i, j) - 0.5).max(0.0));
+            if let Some(c) = corner {
+                step = step.min(c);
+            }
         } else {
             step = step.min(d);
         }

@@ -122,11 +122,14 @@ pub enum Command {
 }
 
 /// Where a list of orders would put a squad: the slot of every soldier in
-/// line at the last move (metres on the field) and the seconds to get there.
+/// line at the last move (metres on the field), the seconds to get there,
+/// and the way its front goes, from where it stands now (round the
+/// obstacles, if the field has any).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Preview {
     pub slots: Vec<(f32, f32)>,
     pub eta: f32,
+    pub path: Vec<(f32, f32)>,
 }
 
 /// How a soldier is, for the overlay: morale and fatigue, each 0 to 1 in
@@ -373,27 +376,43 @@ impl LiveView {
     /// The ghost line of `orders` for squad `q`: the slots of its soldiers in
     /// line where the last move leaves them, and the seconds to walk (or run)
     /// the moves from its front now, at the squad's pace now (`paces`).
+    /// Among obstacles, each move goes where the battle would send it (off
+    /// a building, to the nearest free spot), by the way round the
+    /// obstacles a squad would take, and no slot stands in a building.
     /// `None` if the orders have no move.
     pub fn preview(&self, q: usize, orders: &[Order]) -> Option<Preview> {
         let line = *self.lines.get(q)?;
         let (walk, run) = *self.paces.get(q)?;
         let standing = self.frame.squads.get(q).map_or(0, |f| f.2 as usize);
+        let side = self.squads.get(q).map_or(0, |s| s.side);
+        let nav = self.nav.as_deref();
         let mut at = line.anchor;
+        let mut path = vec![at];
         let (mut facing, mut width, mut eta, mut moved) = (line.facing, line.width, 0.0, false);
         for o in orders {
+            let o = match nav {
+                Some(nav) => o.clear_of(nav, side),
+                None => *o,
+            };
             let Order::MoveTo {
                 anchor,
                 facing: f,
                 width: w,
                 run: r,
-            } = *o
+            } = o
             else {
                 continue;
             };
-            let (dx, dy) = (anchor.0 - at.0, anchor.1 - at.1);
-            let d = dx.hypot(dy);
+            let from = soldiers::V2::new(at.0, at.1);
+            let to = soldiers::V2::new(anchor.0, anchor.1);
+            let way = nav
+                .and_then(|n| n.path(from, to, side))
+                .unwrap_or_else(|| vec![to]);
+            let d = Nav::length(from, &way);
+            let last = if way.len() > 1 { way[way.len() - 2] } else { from };
+            path.extend(way.iter().map(|p| (p.x, p.y)));
             eta += d / if r { run } else { walk }.max(0.1);
-            facing = f.unwrap_or(unit((dx, dy), facing));
+            facing = f.unwrap_or(unit((to.x - last.x, to.y - last.y), facing));
             width = w.unwrap_or(width);
             at = anchor;
             moved = true;
@@ -403,18 +422,30 @@ impl LiveView {
         }
         let files = ((width / line.spacing).round() as usize).clamp(1, standing.max(1));
         let (rx, ry) = right(facing);
+        let body = if self.kits.get(q).is_some_and(|k| k.mounted) {
+            0.9
+        } else {
+            0.4
+        };
         let slots = (0..standing)
             .map(|k| {
                 let (rank, file) = ((k / files) as f32, (k % files) as f32);
                 let lat = (file - (files as f32 - 1.0) * 0.5) * line.spacing;
                 let back = rank * line.spacing;
-                (
+                let p = (
                     at.0 + rx * lat - facing.0 * back,
                     at.1 + ry * lat - facing.1 * back,
-                )
+                );
+                match nav {
+                    Some(n) => {
+                        let c = n.push_out(soldiers::V2::new(p.0, p.1), body, side);
+                        (c.x, c.y)
+                    }
+                    None => p,
+                }
             })
             .collect();
-        Some(Preview { slots, eta })
+        Some(Preview { slots, eta, path })
     }
 
     /// Where side `side` may deploy (`deploy_zone`).
@@ -424,6 +455,7 @@ impl LiveView {
                 width: self.field.0,
                 height: self.field.1,
                 wall_x: self.wall_x,
+                obstacles: Vec::new(),
             },
             side,
         )

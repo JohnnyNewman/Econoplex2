@@ -27,6 +27,14 @@ impl SoldierBattle {
                 continue;
             }
             let goal = self.goal(c);
+            // Round the obstacles: head for the next corner of the way.
+            let way = match (self.nav.as_deref(), goal.to) {
+                (Some(nav), Some(g)) => {
+                    let s = &mut self.squads[c];
+                    Some(s.route.next(nav, s.anchor, g, s.spec.side))
+                }
+                _ => goal.to,
+            };
             let s = &self.squads[c];
             let near = goal
                 .target
@@ -34,8 +42,7 @@ impl SoldierBattle {
             let formation = self.formation_for(c, goal.to, near);
             let sp = &self.params.soldiers;
             // Turn toward the goal, or toward what it faces while it stands.
-            let want = goal
-                .to
+            let want = way
                 .filter(|_| !goal.backing)
                 .map(|g| g - s.anchor)
                 .filter(|d| d.len2() > 1.0)
@@ -48,7 +55,7 @@ impl SoldierBattle {
             // front rank than `lead`: the line presses, it does not run on.
             // Riders charge home through the enemy.
             let mut anchor = s.anchor;
-            if let Some(g) = goal.to {
+            if let Some(g) = way {
                 let d = g - anchor;
                 let step = (goal.pace * s.vigour * dt).min(d.len());
                 anchor += d.norm_or(facing) * step;
@@ -73,7 +80,42 @@ impl SoldierBattle {
             if formation != s.formation || std::mem::take(&mut s.reform_due) {
                 self.reform(c, formation);
             }
+            if self.nav.is_some() && self.substep % 4 == 0 {
+                self.squeeze(c, goal.to.is_some());
+            }
         }
+    }
+
+    /// Between obstacles a squad narrows to the clear ground ahead of its
+    /// front (once a second), so it passes an alley in a column, and takes
+    /// its own width again once there is room for it.
+    fn squeeze(&mut self, c: usize, moving: bool) {
+        let Some(nav) = self.nav.as_deref() else {
+            return;
+        };
+        let s = &self.squads[c];
+        if s.formation == Formation::Wedge || s.in_contact > 0 || s.in_line == 0 {
+            return;
+        }
+        let own = self.files_for(c, s.formation).min(s.in_line);
+        let room = nav.room(
+            s.anchor,
+            s.facing,
+            s.spec.side,
+            own as f32 * s.spacing + 2.0,
+        );
+        let fit = ((room - 0.5) / s.spacing).floor().max(1.0) as usize;
+        let files = s.files as usize;
+        let squeeze = if moving && fit < files {
+            Some(fit as u16)
+        } else if s.squeeze.is_some() && fit >= own {
+            None
+        } else {
+            return;
+        };
+        self.squads[c].squeeze = squeeze;
+        let formation = self.squads[c].formation;
+        self.reform(c, formation);
     }
 
     fn dist(&self, a: usize, b: usize) -> f32 {
@@ -389,7 +431,17 @@ impl SoldierBattle {
             .collect()
     }
 
+    /// Files of a formation: as wide as it would be, or as it squeezed to.
     fn max_files(&self, c: usize, formation: Formation) -> usize {
+        let own = self.files_for(c, formation);
+        match self.squads[c].squeeze {
+            Some(q) => own.min(q as usize).max(1),
+            None => own,
+        }
+    }
+
+    /// Files of a formation, without squeezing between obstacles.
+    fn files_for(&self, c: usize, formation: Formation) -> usize {
         let p = &self.params;
         let s = &self.squads[c];
         let base = if s.mounted() {

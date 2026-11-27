@@ -3,6 +3,11 @@
 //! flanked when an enemy it does not face is in contact, and its front is
 //! `min(alive, frontage / spacing)`.
 //!
+//! Among obstacles a disc does the nearest thing to a line of soldiers: it
+//! goes round them by the same ways the soldier model's squads take
+//! (`nav::Route`), and its front is no wider than the clear ground across
+//! its way (`Nav::room`), so in a built-up town fewer fight at once.
+//!
 //! It takes the soldier model's orders and stances as nearly as a disc can:
 //! a move's facing and width and the spacing stance change nothing, a move
 //! at a run runs, archers who skirmish back away, and a squad that lets
@@ -38,6 +43,10 @@ struct Squad {
     quiet: f32,
     engaged: bool,
     wavering: bool,
+    /// Its way round the obstacles, and the width of clear ground where it
+    /// stands, metres (infinite on an open field).
+    route: Route,
+    room: f32,
     /// Effective skill and discipline, refreshed every step.
     eff: f32,
     discipline: f32,
@@ -65,7 +74,12 @@ impl Squad {
         (self.alive() as f32).sqrt() * self.spacing(p) * 0.5 + 0.5
     }
     fn front(&self, p: &BattleParams) -> f32 {
-        (self.alive() as f32).min(p.frontage / self.spacing(p))
+        let front = (self.alive() as f32).min(p.frontage / self.spacing(p));
+        if self.room.is_finite() {
+            front.min((self.room / self.spacing(p)).floor().max(1.0))
+        } else {
+            front
+        }
     }
     fn has_bow(&self) -> bool {
         self.spec.kit.range > 0.0 && self.arrows > 0
@@ -92,6 +106,8 @@ impl Squad {
 pub struct SquadBattle {
     params: BattleParams,
     field: Field,
+    /// The field's obstacles (`None`: an open field).
+    nav: Option<Arc<Nav>>,
     squads: Vec<Squad>,
     t: f32,
     rng: ChaCha8Rng,
@@ -122,12 +138,23 @@ impl SquadBattle {
                 quiet: 0.0,
                 engaged: false,
                 wavering: false,
+                route: Route::default(),
+                room: f32::INFINITY,
                 eff: 0.0,
                 discipline: 0.0,
             })
             .collect();
+        let nav = Nav::new(&field, 0).map(Arc::new);
+        let mut squads: Vec<Squad> = squads;
+        if let Some(nav) = &nav {
+            for s in &mut squads {
+                let p = nav.free_spot(soldiers::V2::new(s.spec.pos.0, s.spec.pos.1), s.spec.side);
+                s.spec.pos = (p.x, p.y);
+            }
+        }
         Self {
             params,
+            nav,
             field,
             squads,
             t: 0.0,
@@ -244,5 +271,15 @@ impl Model for SquadBattle {
     }
     fn members_mut(&mut self, squad: usize) -> &mut [Member] {
         &mut self.squads[squad].spec.members
+    }
+    fn nav(&self) -> Option<&Arc<Nav>> {
+        self.nav.as_ref()
+    }
+    fn set_obstacles(&mut self, obstacles: Vec<Obstacle>) {
+        self.field.obstacles = obstacles;
+        self.nav = renav(&self.field, self.nav.as_ref());
+        for s in &mut self.squads {
+            s.route.clear();
+        }
     }
 }

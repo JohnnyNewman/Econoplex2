@@ -133,6 +133,10 @@ pub struct TownView {
     /// (0..1 of what it can hold). Flocks graze there (3D view).
     #[serde(default)]
     pub pastures: Vec<((f32, f32), f32)>,
+    /// Where its workplaces and houses stand, how they are turned and the
+    /// ground they cover (`layout::TownLayout`): the view draws them so.
+    #[serde(default)]
+    pub layout: crate::layout::TownLayout,
 }
 
 /// A building being put up (a construction recipe under way).
@@ -560,6 +564,10 @@ impl ViewSnapshot {
                     crops: crops.get(ti).copied().unwrap_or(0.0),
                     sites: sites.get(ti).cloned().unwrap_or_default(),
                     pastures: pastures.get(ti).cloned().unwrap_or_default(),
+                    layout: world
+                        .get_resource::<crate::terrain::Terrain>()
+                        .map(|terrain| crate::layout::TownLayout::of(towns, ti, db, terrain))
+                        .unwrap_or_default(),
                     name: t.name.clone(),
                     pos: t.pos,
                     population: t.residents.len() as u32,

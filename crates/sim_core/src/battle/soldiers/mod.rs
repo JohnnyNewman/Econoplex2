@@ -348,6 +348,11 @@ struct SquadCtl {
     width: Option<f32>,
     /// The width changed: re-form, even in the same formation.
     reform_due: bool,
+    /// Files it narrowed to, to pass between obstacles (`None`: as wide as
+    /// it would be).
+    squeeze: Option<u16>,
+    /// Its way round the obstacles to where it goes.
+    route: Route,
     /// The centre of the front rank, and where the front faces (unit).
     anchor: V2,
     facing: V2,
@@ -537,6 +542,8 @@ impl Profile {
 pub struct SoldierBattle {
     params: BattleParams,
     field: Field,
+    /// The field's obstacles (`None`: an open field).
+    nav: Option<Arc<Nav>>,
     seed: u64,
     t: f32,
     substep: u64,
@@ -604,6 +611,7 @@ impl SoldierBattle {
                 Grid::new(field.width, field.height, sp.cell),
             ],
             params,
+            nav: Nav::new(&field, 0).map(Arc::new),
             field,
             seed,
             t: 0.0,
@@ -770,6 +778,8 @@ impl SoldierBattle {
             formation: Formation::Line,
             width: None,
             reform_due: false,
+            squeeze: None,
+            route: Route::default(),
             anchor: centre,
             facing,
             files: 1,
@@ -817,11 +827,23 @@ impl SoldierBattle {
                 s.anchor.x.min(w - WALL_HALF - 0.5)
             };
         }
+        if let Some(nav) = &self.nav {
+            s.anchor = nav.free_spot(s.anchor, s.spec.side);
+        }
         s.front = s.anchor;
         let s = &self.squads[c];
         for i in first..first + n {
-            self.pos[i] = s.slot(self.file[i], self.rank[i]);
+            self.pos[i] = self.clear_slot(s.slot(self.file[i], self.rank[i]), i);
             self.facing[i] = s.facing;
+        }
+    }
+
+    /// Where soldier `i` can stand nearest to `p`: out of every obstacle.
+    #[inline]
+    fn clear_slot(&self, p: V2, i: usize) -> V2 {
+        match &self.nav {
+            Some(nav) => nav.push_out(p, self.body[i], self.side[i]),
+            None => p,
         }
     }
 
@@ -842,7 +864,7 @@ impl SoldierBattle {
         let (first, n) = (s.first, s.spec.members.len());
         let (mut sum, mut k) = (V2::ZERO, 0.0);
         for i in first..first + n {
-            self.pos[i] = self.squads[c].slot(self.file[i], self.rank[i]);
+            self.pos[i] = self.clear_slot(self.squads[c].slot(self.file[i], self.rank[i]), i);
             self.facing[i] = facing;
             if self.state[i].present() {
                 sum += self.pos[i];
@@ -1125,5 +1147,15 @@ impl Model for SoldierBattle {
     }
     fn members_mut(&mut self, squad: usize) -> &mut [Member] {
         &mut self.squads[squad].spec.members
+    }
+    fn nav(&self) -> Option<&Arc<Nav>> {
+        self.nav.as_ref()
+    }
+    fn set_obstacles(&mut self, obstacles: Vec<Obstacle>) {
+        self.field.obstacles = obstacles;
+        self.nav = renav(&self.field, self.nav.as_ref());
+        for s in &mut self.squads {
+            s.route.clear();
+        }
     }
 }

@@ -7,7 +7,7 @@
         (id: "innkeeping", name: "Innkeeping", domain: "food", prereqs: ["brewing"]),
     ],
     products: [
-        (id: "tavern", name: "Tavern", category: Building, era: 1, base_price: 220.0, slots: 6),
+        (id: "tavern", name: "Tavern", category: Building, era: 1, base_price: 220.0, slots: 6, footprint: Some((24.0, 24.0))),
         // An evening at the tavern: company, a song, a drink.
         (id: "evening_out", name: "Evening at the tavern", category: Material, era: 1, base_price: 2.5,
             household: Some((life_days: 7.0,

@@ -763,7 +763,7 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
                 .spawn((
                     Product { def, quality: 0.6 },
                     Structure {
-                        footprint: (24.0, 24.0),
+                        footprint: db.content.products[def as usize].footprint.unwrap_or_default(),
                     },
                     TownId(t),
                     Pos { x: pos.0, y: pos.1 },

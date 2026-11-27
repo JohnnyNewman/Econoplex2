@@ -26,8 +26,8 @@ use sim_core::Towns;
 
 /// Battle seconds shown per real second.
 const PLAYBACK: f32 = 30.0;
-/// Map units per metre of battlefield.
-pub const SCALE: f32 = 0.35;
+/// Map units per metre of battlefield, as the sim lays a field over a town.
+pub const SCALE: f32 = sim_core::battle::MAP_PER_METRE;
 /// Real seconds a finished battle stays on the map.
 const LINGER: f32 = 4.0;
 
@@ -108,7 +108,7 @@ impl BattleScenes {
 /// on the map the lines meet.
 pub fn stage_battle(world: &mut World, lineup: &str) -> (f32, f32) {
     use sim_core::battle::{parse_lineup, Battle};
-    let (field, specs) = parse_lineup(lineup).unwrap_or_else(|e| {
+    let (mut field, specs) = parse_lineup(lineup).unwrap_or_else(|e| {
         eprintln!("error: --battle: {e}");
         std::process::exit(2);
     });
@@ -123,17 +123,33 @@ pub fn stage_battle(world: &mut World, lineup: &str) -> (f32, f32) {
         .get(k)
         .map_or((0.0, 0.0), |t| t.pos);
     let size = (field.width, field.height);
+    // A battle `in town` is fought in the player's own town, among its real
+    // buildings and houses, where a raid on it would be; otherwise below
+    // the town, clear of its houses.
+    let in_town = !field.obstacles.is_empty();
+    let (at, facing) = if in_town {
+        ((town.0 - 60.0, town.1), (1.0, 0.0))
+    } else {
+        ((town.0, town.1 - 0.5 * size.1 * SCALE - 60.0), (1.0, 0.0))
+    };
+    if in_town {
+        let layout = sim_core::layout::TownLayout::of(
+            world.resource::<Towns>(),
+            k,
+            world.resource::<sim_core::Db>(),
+            world.resource::<sim_core::terrain::Terrain>(),
+        );
+        field.obstacles = layout.obstacles_on(at, facing, size);
+    }
     let (report, squads, frames) = Battle::new(params, field, specs, 1).run_recorded(5.0);
     info!(
         "--battle {lineup}: {:?} after {:.0} s",
         report.winner, report.seconds
     );
-    // Below the town, clear of its houses.
-    let at = (town.0, town.1 - 0.5 * size.1 * SCALE - 60.0);
     let mut replay = Replay {
         town: k as u16,
         at,
-        facing: (1.0, 0.0),
+        facing,
         field: size,
         squads,
         frames,
@@ -181,10 +197,7 @@ pub fn field_to_map(
     facing: (f32, f32),
     field: (f32, f32),
 ) -> impl Fn(Vec2) -> Vec2 {
-    let centre = Vec2::new(at.0, at.1);
-    let x = Vec2::new(facing.0, facing.1).normalize_or(Vec2::X);
-    let y = x.perp();
-    move |p: Vec2| centre + (x * (p.x - 0.5 * field.0) + y * (p.y - 0.5 * field.1)) * SCALE
+    move |p: Vec2| Vec2::from(sim_core::battle::field_to_map(at, facing, field, p.into()))
 }
 
 /// The other way round: where a point of the map lies on the battlefield
@@ -194,13 +207,7 @@ pub fn map_to_field(
     facing: (f32, f32),
     field: (f32, f32),
 ) -> impl Fn(Vec2) -> Vec2 {
-    let centre = Vec2::new(at.0, at.1);
-    let x = Vec2::new(facing.0, facing.1).normalize_or(Vec2::X);
-    let y = x.perp();
-    move |p: Vec2| {
-        let d = (p - centre) / SCALE;
-        Vec2::new(d.dot(x) + 0.5 * field.0, d.dot(y) + 0.5 * field.1)
-    }
+    move |p: Vec2| Vec2::from(sim_core::battle::map_to_field(at, facing, field, p.into()))
 }
 
 /// Draw one battlefield: its outline, and a block per squad where `squad`

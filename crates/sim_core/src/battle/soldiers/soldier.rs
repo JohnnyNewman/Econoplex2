@@ -32,7 +32,13 @@ impl SoldierBattle {
         if state == SoldierState::Routing {
             // Away from the nearest enemies, toward their own edge of the
             // field; round the enemy when they stand in the way.
-            let home = V2::new(if side == 0 { -1.0 } else { 1.0 }, 0.0);
+            let edge = V2::new(if side == 0 { -1.0 } else { 1.0 }, 0.0);
+            // Among obstacles, down the side's flow field to its edge.
+            let home = self
+                .nav
+                .as_deref()
+                .and_then(|n| n.home_dir(me, side as u8))
+                .unwrap_or(edge);
             let mut away = V2::ZERO;
             if foes_near {
                 let cell2 = sp.cell * sp.cell;
@@ -57,7 +63,11 @@ impl SoldierBattle {
                 } else {
                     1.0
                 };
-                dir = V2::new(home.x * 0.3, round);
+                dir = if home == edge {
+                    V2::new(home.x * 0.3, round)
+                } else {
+                    home * 0.3 + V2::new(-home.y, home.x) * (round * home.x.signum())
+                };
             }
             let dir = dir.norm_or(home);
             plan.vel = dir * top;
@@ -76,6 +86,10 @@ impl SoldierBattle {
             if over > 0.0 {
                 slot -= c.facing * over;
             }
+        }
+        // Where a slot falls on an obstacle, the nearest place beside it.
+        if self.nav.as_deref().is_some_and(|n| n.any_near(slot)) {
+            slot = self.clear_slot(slot, i);
         }
         let front = ahead == NONE as usize || !self.state[ahead].in_line();
         let reach = k.kit.reach;
@@ -185,7 +199,16 @@ impl SoldierBattle {
                     }
                 }
             }
-            plan.vel = ((slot - me) * (1.0 / dt)).clamp_len(top);
+            // Round an obstacle between them and their slot, by its nearer corner.
+            let mut to = slot;
+            if let Some(nav) = self.nav.as_deref() {
+                if (slot - me).len2() > 1.0 && nav.any_near(me) {
+                    if let Some(corner) = nav.steer(me, slot, k.body, side as u8) {
+                        to = corner;
+                    }
+                }
+            }
+            plan.vel = ((to - me) * (1.0 / dt)).clamp_len(top);
         }
 
         // Friends give way to the front rank. A soldier standing in their

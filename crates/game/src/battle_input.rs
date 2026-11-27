@@ -259,6 +259,10 @@ pub fn draw_battle_controls(
     }
     let r = 0.45 * crate::battles::SCALE;
     for (_, g) in &ghosts {
+        // The way the front goes, round the town's buildings.
+        if g.path.len() > 2 {
+            gizmos.linestrip_2d(g.path.iter().map(|&p| at(p)), GHOST.with_alpha(0.45));
+        }
         for &s in &g.slots {
             gizmos
                 .circle_2d(Isometry2d::from_translation(at(s)), r, GHOST)

@@ -40,3 +40,45 @@ fn four_thousand_soldiers_within_budget() {
         "{per:.3} ms per battle second ({ms:.0} ms for {seconds:.0} s)"
     );
 }
+
+/// The same armies with the defenders in a town (`town`: sixty houses and
+/// eight workplaces), timed over the first 400 battle seconds, while
+/// everyone is still on the field. A town costs more than open ground: not
+/// the obstacle queries (a few per soldier and substep) but the fighting
+/// they make, soldiers pressed out of their slots and squads jammed in the
+/// streets. Its budget is 4 ms per battle second, four times the open one.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "a timing: release builds only")]
+fn four_thousand_soldiers_in_a_town_within_budget() {
+    let side = vec!["swordsmen*40"; 50].join(",");
+    let params = BattleParams {
+        model: BattleModel::Soldiers,
+        ..BattleParams::default()
+    };
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(1)
+        .build()
+        .unwrap();
+    let time = |lineup: &str| {
+        (0..3)
+            .map(|_| {
+                pool.install(|| {
+                    let (field, specs) = parse_lineup(lineup).unwrap();
+                    let mut b = Battle::new(params.clone(), field, specs, 1);
+                    let start = Instant::now();
+                    while b.seconds() < 400.0 && !b.finished() {
+                        b.step();
+                    }
+                    start.elapsed().as_secs_f64() * 1e3 / b.seconds() as f64
+                })
+            })
+            .fold(f64::INFINITY, f64::min)
+    };
+    let open = time(&format!("{side} vs {side}"));
+    let town = time(&format!("{side} vs town {side}"));
+    println!("first 400 s: open {open:.3}, town {town:.3} ms per battle second");
+    assert!(
+        town <= 4.0,
+        "town {town:.3} ms per battle second (open {open:.3})"
+    );
+}

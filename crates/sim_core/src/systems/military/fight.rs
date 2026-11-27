@@ -70,6 +70,7 @@ pub(super) fn battle(
     params: &Params,
     fight: &CapVec,
     gear_defs: &Query<&Product, Without<Stored>>,
+    terrain: &crate::terrain::Terrain,
     rng: &mut ChaCha8Rng,
     log: Option<&mut crate::battle::BattleLog>,
 ) -> Vec<u32> {
@@ -91,12 +92,9 @@ pub(super) fn battle(
     // Townsfolk take up arms beside the soldiers at home.
     let militia = muster_militia(store, &towns.0[d], &defenders, mp);
     let seed = rng.random::<u64>();
-    // The field lies outside the defenders' town, toward the attackers.
-    let (home, there) = (towns.0[attacker].pos, towns.0[d].pos);
-    let (dx, dy) = (there.0 - home.0, there.1 - home.1);
-    let len = dx.hypot(dy).max(1e-3);
-    let facing = (dx / len, dy / len);
-    let at = (there.0 - facing.0 * 60.0, there.1 - facing.1 * 60.0);
+    // The field reaches from outside the defenders' town, toward the
+    // attackers, into it: its buildings and houses stand on it.
+    let (field, at, facing) = crate::layout::battle_field(towns, d, attacker, db, terrain);
     let (won, fallen_a, fallen_d) = field_battle(
         store,
         db,
@@ -106,6 +104,7 @@ pub(super) fn battle(
         &raid.soldiers,
         &defenders,
         &militia,
+        field,
         seed,
         log.map(|log| Record {
             log,
@@ -342,12 +341,14 @@ fn field_battle(
     attackers: &[u32],
     defenders: &[u32],
     militia: &[u32],
+    field: crate::battle::Field,
     seed: u64,
     record: Option<Record<'_>>,
 ) -> (bool, u32, u32) {
     let bp = &params.battle;
     let (mut b, groups) = match setup_field_battle(
-        store, db, params, bp.model, fight, gear_defs, attackers, defenders, militia, seed,
+        store, db, params, bp.model, field, fight, gear_defs, attackers, defenders, militia,
+        seed,
     ) {
         Setup::Decided(won) => return (won, 0, 0),
         Setup::Battle(b, groups) => (*b, groups),
@@ -394,6 +395,7 @@ pub(super) fn setup_field_battle(
     db: &Db,
     params: &Params,
     model: crate::battle::BattleModel,
+    field: crate::battle::Field,
     fight: &CapVec,
     gear_defs: &Query<&Product, Without<Stored>>,
     attackers: &[u32],
@@ -401,10 +403,9 @@ pub(super) fn setup_field_battle(
     militia: &[u32],
     seed: u64,
 ) -> Setup {
-    use crate::battle::{Battle, Field, Kit, Member, SquadSpec};
+    use crate::battle::{Battle, Kit, Member, SquadSpec};
     use crate::goods::Slot;
     let bp = &params.battle;
-    let field = Field::default();
     let gear_slots = [Slot::Weapon, Slot::Armour, Slot::Shield, Slot::Mount];
     let fight_of = |i: usize, slot: Slot| -> Option<(u32, &sim_data::FightDef)> {
         let e = crate::goods::gear(store, i, slot)?;

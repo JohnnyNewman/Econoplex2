@@ -111,6 +111,19 @@ pub fn validate(c: &Content) -> Report {
     }
 
     for p in &c.products {
+        match p.footprint {
+            Some((w, d)) if !(w > 0.0 && d > 0.0) => r
+                .errors
+                .push(format!("building `{}` has an empty footprint", p.id)),
+            Some(_) if !p.workplace() => r.errors.push(format!(
+                "product `{}` has a footprint but is no workplace",
+                p.id
+            )),
+            None if p.workplace() => r
+                .errors
+                .push(format!("building `{}` needs a footprint", p.id)),
+            _ => {}
+        }
         if let Some(n) = &p.opens {
             if c.nature_kind(n).is_none() {
                 r.errors

@@ -21,14 +21,19 @@ const ROUND_GAP: f32 = 30.0;
 /// `kit*count`, optionally `+battles` of experience, `@skill`, `!morale`,
 /// `%fatigue` (0 rested, 1 spent) and `#flank` or `#rear` (deploy beside or
 /// behind the enemy, facing in). `walls` before the defenders puts them
-/// behind a wall. A side with more squads than fit across the field stands
-/// in several lines, one behind the other.
+/// behind a wall, `town` fights in a town of the size the scenario starts
+/// with (`sample_town`). A side with more squads than fit across the field
+/// stands in several lines, one behind the other.
 pub fn parse_lineup(text: &str) -> Result<(Field, Vec<SquadSpec>), String> {
     let (att, def) = text
         .split_once(" vs ")
         .ok_or("a line-up needs `ATTACKERS vs DEFENDERS`")?;
     let mut def = def.trim();
     let mut field = Field::default();
+    if let Some(rest) = def.strip_prefix("town ") {
+        def = rest.trim();
+        field.obstacles = sample_town(&field);
+    }
     let walls = def.starts_with("walls ");
     if walls {
         def = def["walls ".len()..].trim();
@@ -157,4 +162,16 @@ fn take(rest: &mut String, c: char) -> Option<String> {
     let v = rest[at + 1..end].to_string();
     rest.replace_range(at..end, "");
     Some(v)
+}
+
+/// The obstacles of a battle in a town without a world: a town of eight
+/// workplaces and sixty houses, its centre where a raid's field has the
+/// target town (60 map units past the field's centre, toward the defenders).
+pub fn sample_town(field: &Field) -> Vec<Obstacle> {
+    let (at, facing) = ((0.0, 0.0), (1.0, 0.0));
+    crate::layout::TownLayout::sample((60.0, 0.0), 8, 60).obstacles_on(
+        at,
+        facing,
+        (field.width, field.height),
+    )
 }
