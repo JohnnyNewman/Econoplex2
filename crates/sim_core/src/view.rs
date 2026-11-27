@@ -191,6 +191,19 @@ pub struct Seen {
     pub samples: usize,
     /// Battles fought (`BattleLog::total`) when last captured.
     pub battles: usize,
+    /// Recipe-skills revealed to the player (`History::revealed`) when last captured.
+    pub revealed: usize,
+}
+
+/// A recipe-skill the player's people have come to know (a node of the
+/// knowledge graph that is no longer hidden).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RevealedView {
+    /// Recipe id, as in the content and `--tech-graph`.
+    pub recipe: String,
+    pub name: String,
+    /// Simulated day it was first known (the first day: from the start).
+    pub day: u64,
 }
 
 /// Everything a view needs for one tick.
@@ -230,6 +243,11 @@ pub struct ViewSnapshot {
     /// Battles fought since the previous capture, to play back.
     #[serde(default)]
     pub battles: Vec<crate::battle::Replay>,
+    /// Knowledge-graph nodes revealed to the player since the previous capture
+    /// (all of them on the first). A view keeps them: they are never hidden
+    /// again. Empty without a player town or with knowledge off.
+    #[serde(default)]
+    pub revealed: Vec<RevealedView>,
 }
 
 /// The product space's fixed part: the skills, their domains, and the links
@@ -516,6 +534,24 @@ impl ViewSnapshot {
                 (new, samples)
             })
             .unwrap_or_default();
+        let revealed = world
+            .get_resource::<History>()
+            .map(|h| {
+                let new: Vec<RevealedView> = h
+                    .revealed
+                    .get(seen.revealed..)
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|&(r, day)| RevealedView {
+                        recipe: db.content.recipes[r as usize].id.clone(),
+                        name: db.recipes[r as usize].name.clone(),
+                        day,
+                    })
+                    .collect();
+                seen.revealed = h.revealed.len();
+                new
+            })
+            .unwrap_or_default();
         let battles = world
             .get_resource::<crate::battle::BattleLog>()
             .map(|log| {
@@ -641,6 +677,7 @@ impl ViewSnapshot {
             why: None,
             skills: None,
             battles,
+            revealed,
         }
     }
 

@@ -39,6 +39,9 @@ pub enum EventKind {
     Order,
     /// Someone thought of a recipe-skill nobody in their town knew.
     Invented,
+    /// The player's people came to know a recipe-skill for the first time
+    /// (by inventing it, or from an immigrant or a captive).
+    Discovered,
 }
 
 impl EventKind {
@@ -55,6 +58,7 @@ impl EventKind {
             EventKind::MigrationWave => "migration wave",
             EventKind::Order => "order",
             EventKind::Invented => "invention",
+            EventKind::Discovered => "discovered",
         }
     }
 }
@@ -106,6 +110,15 @@ pub struct History {
     snapshots: Vec<Snapshot>,
     /// Orders already logged (index into `OrderQueue::log`).
     orders_seen: usize,
+    /// The knowledge graph as the player has seen it: each recipe-skill any of
+    /// the player's people (in the player's town or a town it rules) has known,
+    /// with the day it was first known, in that order. Never shrinks, so a
+    /// node stays visible after its last holder dies. Empty without a player
+    /// town or with knowledge off (then the whole graph is open).
+    #[serde(default)]
+    pub revealed: Vec<(u32, u64)>,
+    #[serde(default)]
+    revealed_started: bool,
 }
 
 impl History {
@@ -113,6 +126,52 @@ impl History {
     pub fn recent(&self, n: usize) -> impl Iterator<Item = &Event> {
         self.events.iter().rev().take(n)
     }
+}
+
+/// Reveal to the player what their people know today (see `History::revealed`).
+/// What the founders know shows from the start without an event; every later
+/// first is logged.
+fn reveal(
+    h: &mut History,
+    towns: &Towns,
+    store: &AgentStore,
+    db: &Db,
+    kp: &crate::knowledge::KnowledgeParams,
+    player: Option<u16>,
+    tick: u64,
+) {
+    let Some(p) = player else {
+        return;
+    };
+    if !kp.enabled {
+        return;
+    }
+    let mut seen = vec![false; db.recipes.len()];
+    for &(r, _) in &h.revealed {
+        seen[r as usize] = true;
+    }
+    for (t, town) in towns.0.iter().enumerate() {
+        if t as u16 != p && town.ruler != Some(p) {
+            continue;
+        }
+        let known = crate::knowledge::union(db, store, &town.residents);
+        for (r, s) in seen.iter_mut().enumerate() {
+            if *s || !(db.requires[r].is_empty() || crate::knowledge::in_set(&known, r)) {
+                continue;
+            }
+            *s = true;
+            h.revealed.push((r as u32, tick));
+            if h.revealed_started {
+                h.events.push(Event {
+                    tick,
+                    town: t as u16,
+                    kind: EventKind::Discovered,
+                    text: format!("{}: your people now know {}", town.name, db.recipes[r].name),
+                });
+            }
+        }
+    }
+    h.revealed_started = true;
 }
 
 /// A short description of an order.
@@ -205,6 +264,8 @@ pub fn record(
     db: Res<Db>,
     clock: Res<SimClock>,
     queue: Res<OrderQueue>,
+    params: Res<crate::world::Params>,
+    player: Res<crate::policy::PlayerTown>,
 ) {
     let tick = clock.tick;
     let h = &mut *history;
@@ -223,6 +284,7 @@ pub fn record(
         });
     }
     h.orders_seen = queue.log.len();
+    reveal(h, &towns, &store, &db, &params.knowledge, player.0, tick);
 
     let first = h.snapshots.len() != towns.0.len();
     if first {

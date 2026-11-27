@@ -731,6 +731,26 @@ fn print_eras(sim: &Simulation) {
             .collect();
         println!("  {:<11} {}", ts.name, firsts.join(", "));
     }
+    // The knowledge graph as the player has seen it.
+    let h = sim.world.resource::<sim_core::history::History>();
+    if !h.revealed.is_empty() {
+        let dpy = sim.world.resource::<sim_core::SimClock>().months_per_year as u64;
+        let start = h.revealed[0].1;
+        let later: Vec<String> = h
+            .revealed
+            .iter()
+            .filter(|&&(_, day)| day > start)
+            .map(|&(r, day)| format!("{} y{}", db.recipes[r as usize].name, day / dpy))
+            .collect();
+        println!(
+            "\nRecipe-skills the player has seen: {} of {} ({} from the start{}{})",
+            h.revealed.len(),
+            db.recipes.len(),
+            h.revealed.len() - later.len(),
+            if later.is_empty() { "" } else { "; then " },
+            later.join(", ")
+        );
+    }
 }
 
 fn print_match(sim: &Simulation) {

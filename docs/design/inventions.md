@@ -174,7 +174,7 @@ is cached. The nightly pass checks at most `max_checks` related items per workin
 2. Knowledge bits per person, starting profiles, gating job choice by knowledge (save format) (done)
 3. Apprenticeship and migration carry knowledge; loss on death; town knowledge = union of residents (done with step 2)
 4. Nightly invention check with context factors; event log (done)
-5. Player reveal and the hidden graph in the UI
+5. Player reveal (simulation side done: `History::revealed`, `ViewSnapshot::revealed`) and the hidden graph in the UI
 6. Schools (pupils learn their teacher's recipes: done with step 2) and guild secrets
 7. New levels and new items toward the steampunk end; writing and libraries
 
@@ -217,6 +217,15 @@ is cached. The nightly pass checks at most `max_checks` related items per workin
 - With the default rate, in one 30-year run on the scenario's seed, about 20 inventions
   happen across the four towns. They include coke, blast iron and steel, machine parts,
   machine spinning and weaving, and roller milling.
+
+## As built (step 5, simulation side)
+
+- `History::revealed` lists every recipe-skill that anyone in the player's town, or in a
+  town it rules, has known, with the day it was first known. It only grows. What the
+  founders know shows from the start; every later first is a "discovered" event.
+- `ViewSnapshot::revealed` hands a view the newly revealed nodes (all of them on the
+  first capture). The CLI prints how many the player has seen, and when the later ones came.
+- Without a player town, or with knowledge off, nothing is hidden.
 
 ## Open questions
 
