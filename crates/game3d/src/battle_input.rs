@@ -335,6 +335,9 @@ fn draw_battle_controls(
 fn controls_tip(mut contexts: EguiContexts, live: Res<LiveSim>, controls: Res<BattleControls>) {
     let Some(v) = live.live_battle() else { return };
     let Ok(ctx) = contexts.ctx_mut() else { return };
+    if controls.overlay && v.on_soldiers() {
+        overlay_legend(ctx);
+    }
     let (gesture, ghosts) = ghost_of(&v, &controls);
     if let Gesture::Box(a, b) = gesture {
         let rect = egui::Rect::from_two_pos(egui::pos2(a.0, a.1), egui::pos2(b.0, b.1));
@@ -368,6 +371,38 @@ fn controls_tip(mut contexts: EguiContexts, live: Res<LiveSim>, controls: Res<Ba
         .show(ctx, |ui| {
             egui::Frame::popup(ui.style()).show(ui, |ui| {
                 ui.label(words);
+            });
+        });
+}
+
+/// What the overlay's colours mean, at the foot of the screen.
+fn overlay_legend(ctx: &egui::Context) {
+    let colour = |m: f32, f: f32| {
+        let [r, g, b] = rts::condition_colour(sim_core::battle::Condition::new(m, f));
+        let c = Color::linear_rgb(r, g, b).to_srgba();
+        egui::Color32::from_rgb(
+            (c.red * 255.0) as u8,
+            (c.green * 255.0) as u8,
+            (c.blue * 255.0) as u8,
+        )
+    };
+    egui::Area::new(egui::Id::new("overlay legend"))
+        .anchor(egui::Align2::CENTER_BOTTOM, egui::vec2(0.0, -8.0))
+        .order(egui::Order::Foreground)
+        .interactable(false)
+        .show(ctx, |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Overlay (O):");
+                    for (words, m, f) in [
+                        ("## breaking", 0.05, 0.0),
+                        ("## wavering", 0.5, 0.0),
+                        ("## steady", 1.0, 0.0),
+                        ("## steady, worn out", 1.0, 1.0),
+                    ] {
+                        ui.colored_label(colour(m, f), words);
+                    }
+                });
             });
         });
 }

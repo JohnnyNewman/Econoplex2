@@ -27,7 +27,9 @@
 //! once. Under the title, the squads selected with the mouse
 //! (battle_input.rs) and buttons for their stance: fire at will, hold fire
 //! or skirmish; tight, loose or their own order; and whether they kill,
-//! capture or let go enemies who run.
+//! capture or let go enemies who run. While the battle waits, the summary,
+//! economy and policy panels fold away (`fold_panels`), so nothing lies under
+//! the battle panel.
 
 use crate::battle_input::BattleControls;
 use crate::ui_compat::Interaction;
@@ -245,7 +247,8 @@ pub fn spawn_battle_panel(mut commands: Commands) {
                 padding: UiRect::all(Val::Px(8.0)),
                 ..default()
             },
-            BackgroundColor(Color::srgba(0.05, 0.04, 0.02, 0.85)),
+            BackgroundColor(Color::srgb(0.05, 0.04, 0.02)),
+            GlobalZIndex(10),
             Visibility::Hidden,
             BattleRoot,
         ))
@@ -280,6 +283,25 @@ pub fn spawn_battle_panel(mut commands: Commands) {
                 SquadRows,
             ));
         });
+}
+
+/// While a battle waits, the summary, economy and policy panels fold away
+/// (`hud::FoldsInBattle`), so nothing is drawn under the battle panel; they
+/// come back when it is settled.
+pub fn fold_panels(
+    live: Res<LiveBattle>,
+    mut panels: Query<&mut Node, With<crate::hud::FoldsInBattle>>,
+) {
+    let display = if live.view.is_some() {
+        Display::None
+    } else {
+        Display::Flex
+    };
+    for mut n in &mut panels {
+        if n.display != display {
+            n.display = display;
+        }
+    }
 }
 
 /// Enemy squads still on the field (targets for attack and shoot orders).

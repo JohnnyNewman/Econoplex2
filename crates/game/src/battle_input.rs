@@ -265,8 +265,10 @@ pub fn draw_battle_controls(
                 .resolution(6);
         }
     }
-    // The overlay: each soldier on their feet in the colour of their morale,
-    // darker the more tired.
+    // The overlay: each soldier on their feet a disc in the colour of their
+    // morale, darker the more tired, at least a few pixels wide.
+    let px = camera.1.compute_transform().scale.x;
+    let disc = (1.1 * r).max(3.5 * px);
     if controls.overlay && v.on_soldiers() {
         for (men, cond) in v.frame.soldiers.iter().zip(&v.condition) {
             for (m, c) in men.iter().zip(cond) {
@@ -279,23 +281,76 @@ pub fn draw_battle_controls(
                 }
                 let [r_, g_, b_] = rts::condition_colour(*c);
                 let p = at(m.pos());
-                gizmos
-                    .circle_2d(
-                        Isometry2d::from_translation(p),
-                        0.55 * r,
-                        Color::linear_rgb(r_, g_, b_),
-                    )
-                    .resolution(5);
-                gizmos
-                    .circle_2d(
-                        Isometry2d::from_translation(p),
-                        0.3 * r,
-                        Color::linear_rgb(r_, g_, b_),
-                    )
-                    .resolution(4);
+                // Rings close together, to read as a filled disc.
+                for k in 1..=4 {
+                    gizmos
+                        .circle_2d(
+                            Isometry2d::from_translation(p),
+                            disc * k as f32 / 4.0,
+                            Color::linear_rgb(r_, g_, b_),
+                        )
+                        .resolution(8);
+                }
             }
         }
     }
+}
+
+/// What the overlay's colours mean, at the foot of the screen while it is on.
+#[derive(Component)]
+pub struct OverlayLegend;
+
+pub fn spawn_overlay_legend(mut commands: Commands) {
+    let font = TextFont {
+        font_size: FontSize::Px(13.0),
+        ..default()
+    };
+    let rgb = |m: f32, f: f32| {
+        let [r, g, b] = rts::condition_colour(sim_core::battle::Condition::new(m, f));
+        TextColor(Color::linear_rgb(r, g, b))
+    };
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                bottom: Val::Px(8.0),
+                left: Val::Percent(30.0),
+                padding: UiRect::axes(Val::Px(8.0), Val::Px(4.0)),
+                column_gap: Val::Px(10.0),
+                flex_direction: FlexDirection::Row,
+                ..default()
+            },
+            BackgroundColor(Color::srgb(0.05, 0.04, 0.02)),
+            GlobalZIndex(10),
+            Visibility::Hidden,
+            bevy::picking::Pickable::IGNORE,
+            OverlayLegend,
+        ))
+        .with_children(|p| {
+            p.spawn((Text::new("Overlay (O):"), font.clone()));
+            p.spawn((Text::new("## breaking"), font.clone(), rgb(0.05, 0.0)));
+            p.spawn((Text::new("## wavering"), font.clone(), rgb(0.5, 0.0)));
+            p.spawn((Text::new("## steady"), font.clone(), rgb(1.0, 0.0)));
+            p.spawn((
+                Text::new("## steady, worn out"),
+                font.clone(),
+                rgb(1.0, 1.0),
+            ));
+        });
+}
+
+/// Shows the legend while the overlay is on in a live battle.
+pub fn update_overlay_legend(
+    live: Res<LiveBattle>,
+    controls: Res<BattleControls>,
+    mut legend: Single<&mut Visibility, With<OverlayLegend>>,
+) {
+    let on = controls.overlay && live.view.as_ref().is_some_and(|v| v.on_soldiers());
+    legend.set_if_neq(if on {
+        Visibility::Inherited
+    } else {
+        Visibility::Hidden
+    });
 }
 
 /// The text by the pointer: the matchup hint, or the ghost's arrival time.

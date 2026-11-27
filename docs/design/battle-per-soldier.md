@@ -663,7 +663,10 @@ turns the mouse into field metres and draws.
 | Space | pauses the battle; orders still go in |
 
 Pursuit (kill, capture, let go) is in the battle panel only, beside the
-stance buttons, which show the selection's stance.
+stance buttons, which show the selection's stance. With the overlay on, a
+legend at the foot of the screen says what the colours mean. In the 2D
+client the summary, economy and policy panels fold away while a battle
+waits, so nothing lies under the battle panel.
 
 **Conflicts with the camera and other keys.** The battle reads input
 before anything else (`PreUpdate`) and clears the presses it takes. Without

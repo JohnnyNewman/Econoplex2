@@ -25,6 +25,12 @@ pub struct LeftColumn;
 #[derive(Component)]
 pub struct RightColumn;
 
+/// Panels folded away while a live battle waits (the economy holds still
+/// then): the left-hand column and the policy panel, so the battle panel
+/// has the top of the screen to itself (live_battle.rs `fold_panels`).
+#[derive(Component)]
+pub struct FoldsInBattle;
+
 /// The controls help, one line until `F1` opens it.
 #[derive(Component)]
 pub struct HelpText;
@@ -85,6 +91,7 @@ pub fn spawn_hud(mut commands: Commands, db: Res<Db>) {
                 ..default()
             },
             LeftColumn,
+            FoldsInBattle,
         ))
         .with_children(|c| {
             c.spawn((

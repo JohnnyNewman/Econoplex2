@@ -206,6 +206,7 @@ pub fn spawn_policy_panel(
                 ..default()
             },
             BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.7)),
+            crate::hud::FoldsInBattle,
         ))
         .with_children(|p| {
             p.spawn((Text::new(""), font.clone(), Field::Title));

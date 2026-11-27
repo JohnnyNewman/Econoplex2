@@ -196,6 +196,7 @@ fn main() {
                 seasons::spawn_night_veil,
                 live_battle::spawn_battle_panel,
                 battle_input::spawn_controls_tip,
+                battle_input::spawn_overlay_legend,
             ),
         )
         .add_systems(
@@ -265,6 +266,8 @@ fn main() {
                 live_battle::draw_live_battle,
                 battle_input::draw_battle_controls.after(live_battle::draw_live_battle),
                 battle_input::update_controls_tip,
+                battle_input::update_overlay_legend,
+                live_battle::fold_panels,
                 live_battle::battle_buttons,
                 live_battle::update_battle_panel.after(live_battle::battle_buttons),
             ),
