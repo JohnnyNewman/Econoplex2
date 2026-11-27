@@ -35,6 +35,7 @@ fn four_thousand_soldiers_within_budget() {
         .min_by(|a, b| a.0.total_cmp(&b.0))
         .unwrap();
     let per = ms / seconds as f64;
+    eprintln!("{per:.3} ms per battle second ({ms:.0} ms for {seconds:.0} s)");
     assert!(
         per <= 1.0,
         "{per:.3} ms per battle second ({ms:.0} ms for {seconds:.0} s)"
