@@ -809,16 +809,17 @@ about a third from run to run):
 
 | Battle | ms per battle second |
 | --- | --- |
-| open field, whole battle | 1.0 (1,536 substeps) |
-| in a town (`vs town`), whole battle | 2.3 (2,004 substeps: it lasts longer) |
-| open field, first 400 s | 0.95 |
-| in a town, first 400 s | 2.6 |
+| open field, whole battle | 1.0–1.1 (1,500 substeps) |
+| in a town (`vs town`), whole battle | 3.2–3.6 (2,060 substeps: it lasts longer) |
+| open field, first 400 s | 1.0–1.1 |
+| in a town, first 400 s | 2.7–3.0 |
 
 The obstacle queries themselves are cheap: about 0.6 shape queries and 0.1
 corner choices per soldier and substep. The extra time is the fighting a town
 makes: soldiers pressed out of their slots and squads jammed in the streets
-fight longer and closer. So a town battle gets its own budget, 4 ms per
-battle second (`battle_budget.rs`), and the open-field budget stays at 1 ms.
+fight longer and closer, and routers find their way out between the houses.
+So a town battle gets its own budget, four times the open battle's cost timed
+in the same run (`battle_budget.rs`), and the open-field budget stays at 1 ms.
 
 **`--battle`.** `town` before the defenders (`"swordsmen*40 vs town
 spearmen*40"`) puts a sample town on their half: eight workplaces and sixty
