@@ -392,18 +392,7 @@ pub fn record(
             ..Default::default()
         };
         s.food_per_capita = town.food_stock(&db) / s.population.max(1) as f32;
-        let firms: f32 = db
-            .foods
-            .iter()
-            .map(|&(f, v)| town.firm_stock(f as usize) * v)
-            .sum();
-        let larders: f32 = town
-            .residents
-            .iter()
-            .flat_map(|&i| store.larder[i as usize].iter())
-            .map(|&(f, q)| q * db.content.products[f as usize].food)
-            .sum();
-        let held = town.food_stock(&db) + crate::granary::held(town, &db) + firms + larders;
+        let held = crate::world::food_held(&store, town, &db);
         let month = params.needs.hunger_per_day * clock.days_per_month as f32;
         s.reserve_months = held / (s.population.max(1) as f32 * month).max(1e-6);
         let worked: f32 = town.recipe_days_last_year.iter().sum();

@@ -234,7 +234,11 @@
         tax_free_wealth: 10.0,
         treasury_reserve_per_capita: 3.0,
         public_spending: 2.0,
-        food_spoilage: 0.5,
+        // Goods rot in store: each keeps its `keeping` days (content/14_keeping.ron)
+        // at 15 °C, twice as fast each 10 °C warmer, slower in the cold down to
+        // the rate at 0 °C. Foods without an entry keep 240 days. The market holds
+        // a rotting food for at most max_waste of its keeping days.
+        spoilage: (food_days: 240.0, reference_c: 15.0, q10: 2.0, q10_c: 10.0, floor_c: 0.0, max_waste: 0.1),
         tool_credit: 40.0,
         // Money: every town starts with this many coins. New coin comes only from a
         // mint (content/60_money.ron), which a town builds and works while its

@@ -151,8 +151,9 @@ pub struct MarketParams {
     /// per year is paid out to residents, so towns don't hoard money either.
     pub treasury_reserve_per_capita: f32,
     pub public_spending: f32,
-    /// Fraction of food stock that spoils per year.
-    pub food_spoilage: f32,
+    /// How goods rot in store (`crate::spoilage`).
+    #[serde(default)]
+    pub spoilage: SpoilageParams,
     /// Spoilage in a granary, as a share of the market's.
     #[serde(default = "granary_spoilage")]
     pub granary_spoilage: f32,
@@ -238,5 +239,48 @@ impl Default for ExchangeParams {
             speed: 0.3,
             max_monthly: 0.05,
         }
+    }
+}
+
+/// `market.spoilage`: a good keeps its `keeping` days (content) at
+/// `reference_c`; each `q10_c` degrees warmer it rots `q10` times as fast,
+/// colder slower, down to the rate at `floor_c` (frozen or a cold cellar).
+/// A food without a `keeping` entry keeps `food_days`. A market holds a
+/// rotting food for at most `max_waste` of its keeping days (so at most that
+/// share of what is eaten of it rots first).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpoilageParams {
+    pub food_days: f32,
+    pub reference_c: f32,
+    pub q10: f32,
+    pub q10_c: f32,
+    pub floor_c: f32,
+    #[serde(default = "default_max_waste")]
+    pub max_waste: f32,
+}
+
+fn default_max_waste() -> f32 {
+    0.1
+}
+
+impl Default for SpoilageParams {
+    fn default() -> Self {
+        SpoilageParams {
+            food_days: 240.0,
+            reference_c: 15.0,
+            q10: 2.0,
+            q10_c: 10.0,
+            floor_c: 0.0,
+            max_waste: 0.1,
+        }
+    }
+}
+
+impl SpoilageParams {
+    /// How much faster than at the reference temperature goods rot at `c` °C.
+    pub fn speed(&self, c: f32) -> f32 {
+        self.q10
+            .max(1.0)
+            .powf((c.max(self.floor_c) - self.reference_c) / self.q10_c.max(1e-3))
     }
 }

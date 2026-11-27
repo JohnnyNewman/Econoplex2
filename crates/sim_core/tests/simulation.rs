@@ -3929,3 +3929,39 @@ fn better_ways_start_unknown_and_lift_quality() {
         .iter()
         .any(|g| g.contains(&(weld as u32)) && g.contains(&(forge as u32))));
 }
+
+#[test]
+fn fresh_fish_rots_within_days_and_salted_fish_keeps() {
+    // Spoilage: fish keeps 3 days, salted fish 300. A pile of each laid in
+    // the market in spring: within a month much of the fish has rotted (what
+    // was not eaten or carried off first), next to none of the salted fish.
+    let mut s = full(3);
+    let (fish, salted) = {
+        let db = s.world.resource::<sim_core::Db>();
+        (
+            db.content.product("fish").unwrap() as usize,
+            db.content.product("salted_fish").unwrap() as usize,
+        )
+    };
+    let spoiled = |s: &Simulation, p: usize| -> f64 {
+        s.world.resource::<sim_core::Towns>().0[0]
+            .flows
+            .get(sim_core::goods::Flow::Spoiled, p)
+    };
+    let (f0, s0) = (spoiled(&s, fish), spoiled(&s, salted));
+    {
+        let mut towns = s.world.resource_mut::<sim_core::Towns>();
+        towns.0[0].stock[fish] += 1000.0;
+        towns.0[0].stock[salted] += 1000.0;
+    }
+    // One simulated day: a month of ten days.
+    s.step();
+    let rotted_fish = spoiled(&s, fish) - f0;
+    let rotted_salted = spoiled(&s, salted) - s0;
+    eprintln!("rotted fish {rotted_fish:.0}, salted fish {rotted_salted:.0}");
+    assert!(rotted_fish > 250.0, "fish rotted {rotted_fish:.0} of 1000");
+    assert!(
+        rotted_fish > 20.0 * rotted_salted,
+        "salted fish rotted {rotted_salted:.0}, fish {rotted_fish:.0}"
+    );
+}

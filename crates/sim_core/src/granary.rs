@@ -22,7 +22,7 @@
 //! hold. While the market holds more than its food target, the granary takes
 //! the surplus (grain first: it keeps); when the market falls below half its
 //! food target, the granary releases food into it. Grain keeps better in a
-//! granary (`granary_spoilage` of the market's rate). Moving food between the
+//! granary (`granary_spoilage` of the market's rate, see `crate::spoilage`). Moving food between the
 //! market and the granary costs nothing: both belong to the town.
 
 use crate::db::Db;
@@ -135,7 +135,7 @@ pub fn season_scale(town: &crate::world::Town, np: usize, month: usize) -> Vec<f
 
 /// Each simulated day: the granary takes the market's food surplus up to its target, or
 /// releases food into a hungry market; and its store slowly spoils.
-pub fn tend(towns: &mut Towns, db: &Db, params: &Params, per_year: f32, season: f32) {
+pub fn tend(towns: &mut Towns, db: &Db, params: &Params, season: f32) {
     let np = db.content.products.len();
     // Each simulated day is a month of daily observations.
     let rate = params.calendar().share(PROFILE_RATE);
@@ -148,7 +148,6 @@ pub fn tend(towns: &mut Towns, db: &Db, params: &Params, per_year: f32, season: 
         }
     }
     tend_stockpiles(towns, db, params);
-    let mp = &params.market;
     let np = db.content.products.len();
     // Grain first (lowest food value per unit keeps longest), then the rest.
     let mut order: Vec<(u32, f32)> = db.foods.clone();
@@ -160,7 +159,7 @@ pub fn tend(towns: &mut Towns, db: &Db, params: &Params, per_year: f32, season: 
         town.granary.resize(np, 0.0);
         let pop = town.residents.len() as f32;
         let target = town.policy.granary_days.max(0.0) * pop * params.needs.hunger_per_day;
-        let market_target = mp.food_target_per_capita * pop;
+        let market_target = crate::systems::decide::market_food_target(db, town, params) * pop;
         let market = town.food_stock(db);
         let have = held(town, db);
         if have < target && market > market_target {
@@ -188,13 +187,6 @@ pub fn tend(towns: &mut Towns, db: &Db, params: &Params, per_year: f32, season: 
                 town.stock[f] = old + q;
                 want -= q * v;
             }
-        }
-        let rate = mp.food_spoilage / per_year * mp.granary_spoilage;
-        for &(f, _) in &db.foods {
-            let f = f as usize;
-            let rotted = town.granary[f] * rate;
-            town.granary[f] -= rotted;
-            town.flows.add(crate::goods::Flow::Spoiled, f, rotted);
         }
     }
 }

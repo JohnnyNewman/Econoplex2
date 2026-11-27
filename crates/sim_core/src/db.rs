@@ -73,6 +73,9 @@ pub struct Db {
     pub food_value: Vec<f32>,
     /// Protein, fat and vitamins of each product against its calories.
     pub nutrients: Vec<[f32; 3]>,
+    /// Days each product keeps in store at the reference temperature (0: it
+    /// has no entry; a food without one keeps `market.spoilage.food_days`).
+    pub keep_days: Vec<f32>,
     /// Houses: (people each holds, how well it shelters them).
     pub house: Vec<Option<(u32, f32)>>,
     /// Face value of coin products (0 for everything else).
@@ -187,6 +190,17 @@ impl Db {
 
         let coin = content.products.iter().map(|p| p.coin).collect();
         let food_value = content.products.iter().map(|p| p.food).collect();
+        let keep_days = content
+            .products
+            .iter()
+            .map(|p| {
+                content
+                    .keeping
+                    .iter()
+                    .find(|k| k.product == p.id)
+                    .map_or(0.0, |k| k.days)
+            })
+            .collect();
         let nutrients = content
             .products
             .iter()
@@ -310,6 +324,7 @@ impl Db {
             house,
             food_value,
             nutrients,
+            keep_days,
             content,
             embedding,
             skill_vecs,

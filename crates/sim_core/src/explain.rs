@@ -107,7 +107,7 @@ impl Ctx<'_> {
     fn target(&self, p: u32) -> f32 {
         let mp = &self.params.market;
         let per_capita = if self.db.is_food[p as usize] {
-            mp.food_target_per_capita
+            crate::systems::decide::food_per_capita(self.db, self.t, self.params, p as usize)
         } else {
             mp.target_per_capita
         };
@@ -121,7 +121,7 @@ impl Ctx<'_> {
 
     fn hunger(&self) -> Option<Finding> {
         let per_capita = self.t.food_stock(self.db) / self.pop();
-        let aim = self.params.market.food_target_per_capita;
+        let aim = crate::systems::decide::market_food_target(self.db, self.t, self.params);
         if per_capita >= aim * SHORT && self.t.starving == 0 {
             return None;
         }

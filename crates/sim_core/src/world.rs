@@ -543,7 +543,7 @@ impl Town {
     /// than its market aims for. Orders are never capped; this is the warning.
     pub fn orders_eating_food(&self, db: &Db, params: &crate::config::ModelParams) -> Vec<u32> {
         let per_capita = self.food_stock(db) / self.residents.len().max(1) as f32;
-        if per_capita >= params.market.food_target_per_capita {
+        if per_capita >= crate::systems::decide::market_food_target(db, self, params) {
             return Vec::new();
         }
         let feeds = |p: usize| {
@@ -1091,6 +1091,25 @@ fn one() -> f32 {
 /// How well a town's people are fed, need by need (0..1): calories (the share
 /// not starving), then protein, fat and vitamins (a store half full counts as
 /// enough).
+/// Food value the town holds in all its stores: the market, the granary,
+/// firms' unsold stock and its residents' larders. Fresh food is not kept in
+/// the market for long (it rots), so this, not the market alone, is what
+/// parents and movers count on.
+pub fn food_held(store: &AgentStore, town: &Town, db: &Db) -> f32 {
+    let firms: f32 = db
+        .foods
+        .iter()
+        .map(|&(f, v)| town.firm_stock(f as usize) * v)
+        .sum();
+    let larders: f32 = town
+        .residents
+        .iter()
+        .flat_map(|&i| store.larder[i as usize].iter())
+        .map(|&(f, q)| q * db.food_value[f as usize])
+        .sum();
+    town.food_stock(db) + crate::granary::held(town, db) + firms + larders
+}
+
 pub fn town_nutrition(store: &AgentStore, town: &Town) -> [f32; 4] {
     use sim_data::dims::state::HUNGER;
     let n = town.residents.len();
