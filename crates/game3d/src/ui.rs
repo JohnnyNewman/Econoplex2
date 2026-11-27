@@ -132,8 +132,23 @@ fn panels(
                 ui.label(town.population.to_string());
                 ui.end_row();
                 ui.label("treasury");
-                ui.label(format!("{:.0}", town.treasury));
+                ui.label(format!("{:.0} of its own coin", town.treasury));
                 ui.end_row();
+                ui.label("coin worth");
+                ui.label(format!("{:.2} (1 = the average coin)", town.coin_value));
+                ui.end_row();
+                let held: Vec<String> = town
+                    .foreign
+                    .iter()
+                    .enumerate()
+                    .filter(|&(_, &c)| c >= 1.0)
+                    .map(|(o, &c)| format!("{:.0} {}", c, snap.towns[o].name))
+                    .collect();
+                if !held.is_empty() {
+                    ui.label("holds coin of");
+                    ui.label(held.join(", "));
+                    ui.end_row();
+                }
                 ui.label("rules itself");
                 ui.label(match town.ruler {
                     Some(r) => format!("no, pays tribute to {}", snap.towns[r as usize].name),
