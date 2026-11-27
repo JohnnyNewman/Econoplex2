@@ -235,6 +235,10 @@ pub struct Town {
     /// own coin pays abroad with before its own.
     #[serde(default)]
     pub metal: crate::coin::Coin,
+    /// Each food's share of what the town has eaten (food value), refreshed
+    /// once a day: how the market splits its days of food among the foods.
+    #[serde(default)]
+    pub food_share: Vec<f32>,
     /// Houses the town has, by product (only house products count).
     #[serde(default)]
     pub houses: Vec<u32>,
@@ -896,6 +900,7 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
             coin_value: 1.0,
             foreign: Vec::new(),
             houses: Vec::new(),
+            food_share: Vec::new(),
             metal: crate::coin::Coin::ZERO,
             goods_today: Vec::new(),
             goods_use: Vec::new(),

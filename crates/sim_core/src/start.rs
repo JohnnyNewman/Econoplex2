@@ -57,6 +57,23 @@ pub fn food_per_day(hunger_per_day: f32, _eat_threshold: f32, _value: f32) -> f3
     hunger_per_day
 }
 
+/// The staple food a town starts with, and its food value: the best food
+/// made in a building towns start with (bread from the bakery), else the best
+/// food there is.
+pub fn staple(db: &Db) -> Option<(u32, f32)> {
+    db.foods
+        .iter()
+        .find(|&&(f, _)| {
+            db.recipes.iter().any(|m| {
+                m.outputs.iter().any(|o| o.0 == f)
+                    && m.building
+                        .is_some_and(|b| db.content.products[b as usize].starter)
+            })
+        })
+        .or(db.foods.first())
+        .copied()
+}
+
 /// Stock of each good a town of `pop` people starts with (market and workplaces).
 pub fn market_stock(db: &Db, params: &crate::config::ModelParams, pop: f32) -> Vec<f32> {
     let np = db.content.products.len();
@@ -69,7 +86,7 @@ pub fn market_stock(db: &Db, params: &crate::config::ModelParams, pop: f32) -> V
     else {
         return stock;
     };
-    let Some(&(food, value)) = db.foods.first() else {
+    let Some((food, value)) = staple(db) else {
         return stock;
     };
     let n = &params.needs;
@@ -139,7 +156,7 @@ pub fn households(
     let crate::consumption::ConsumptionParams::Needs(lp) = &params.market.consumption else {
         return;
     };
-    let Some(&(food, value)) = db.foods.first() else {
+    let Some((food, value)) = staple(db) else {
         return;
     };
     let n = &params.needs;

@@ -6,6 +6,12 @@ flowchart LR
   subgraph d1["agriculture"]
     r_farm_grain(["Farm grain"])
     r_mill_flour["Mill flour"]
+    r_milk_cows["Milk cows"]
+    r_keep_hens["Keep hens"]
+    r_grow_vegetables["Grow vegetables"]
+    r_pick_fruit["Pick fruit"]
+    r_plant_garden["Plant garden"]
+    r_plant_orchard["Plant orchard"]
     r_shear_sheep(["Shear sheep"])
     r_harvest_flax["Harvest flax"]
     r_bind_thatch["Bind thatch"]
@@ -15,10 +21,23 @@ flowchart LR
   end
   subgraph d2["food"]
     r_bake_bread["Bake bread"]
+    r_slaughter_cattle["Slaughter cattle"]
+    r_make_cheese["Make cheese"]
+    r_salt_fish["Salt fish"]
+    r_cure_meat["Cure meat"]
+    r_dip_candles["Dip candles"]
     r_brew_ale["Brew ale"]
     r_keep_tavern["Keep the tavern"]
   end
-  subgraph d3["textiles"]
+  subgraph d3["mining"]
+    r_boil_salt["Boil salt"]
+    r_mine_ore(["Mine ore"])
+    r_mine_copper(["Mine copper"])
+    r_mine_tin(["Mine tin"])
+    r_mine_coal["Mine coal"]
+    r_mine_silver["Mine silver"]
+  end
+  subgraph d4["textiles"]
     r_spin_wool["Spin wool"]
     r_spin_flax["Spin flax"]
     r_weave_cloth["Weave cloth"]
@@ -31,7 +50,7 @@ flowchart LR
     r_sew_fine_clothes["Sew fine clothes"]
     r_weave_blanket["Weave blanket"]
   end
-  subgraph d4["masonry"]
+  subgraph d5["masonry"]
     r_quarry_stone(["Quarry stone"])
     r_cut_stone["Cut stone"]
     r_dig_clay(["Dig clay"])
@@ -42,12 +61,12 @@ flowchart LR
     r_mix_mortar["Mix mortar"]
     r_fire_tiles["Fire roof tiles"]
   end
-  subgraph d5["forestry"]
+  subgraph d6["forestry"]
     r_chop_wood(["Chop wood"])
     r_burn_charcoal["Burn charcoal"]
     r_plant_woodlot["Plant woodlot"]
   end
-  subgraph d6["woodworking"]
+  subgraph d7["woodworking"]
     r_hew_beams["Hew beams"]
     r_saw_planks["Saw planks"]
     r_carve_hilt["Carve hilt"]
@@ -58,13 +77,6 @@ flowchart LR
     r_make_furniture["Make furniture"]
     r_make_barrels["Make barrels"]
     r_turn_handles["Turn tool handles"]
-  end
-  subgraph d7["mining"]
-    r_mine_ore(["Mine ore"])
-    r_mine_copper(["Mine copper"])
-    r_mine_tin(["Mine tin"])
-    r_mine_coal["Mine coal"]
-    r_mine_silver["Mine silver"]
   end
   subgraph d8["metallurgy"]
     r_smelt_iron["Smelt iron"]
@@ -109,6 +121,9 @@ flowchart LR
     r_make_bronze_jewellery["Make bronze jewellery"]
   end
   subgraph d10["construction"]
+    r_build_dairy["Build dairy"]
+    r_build_smokehouse["Build smokehouse"]
+    r_build_saltern["Build saltern"]
     r_build_weaving_shed["Build weaving shed"]
     r_build_brewery["Build brewery"]
     r_build_masons_yard["Build mason's yard"]
@@ -135,6 +150,31 @@ flowchart LR
   end
   r_farm_grain --> r_mill_flour
   r_mill_flour --> r_bake_bread
+  r_shear_sheep --> r_milk_cows
+  r_milk_cows --> r_slaughter_cattle
+  r_farm_grain --> r_keep_hens
+  r_milk_cows --> r_make_cheese
+  r_boil_salt --> r_make_cheese
+  r_build_dairy --> r_make_cheese
+  r_farm_grain --> r_grow_vegetables
+  r_grow_vegetables --> r_pick_fruit
+  r_chop_wood --> r_boil_salt
+  r_catch_fish --> r_salt_fish
+  r_boil_salt --> r_salt_fish
+  r_build_smokehouse --> r_salt_fish
+  or_cure_meat_0((or))
+  r_hunt_game -.-> or_cure_meat_0
+  r_slaughter_cattle -.-> or_cure_meat_0
+  or_cure_meat_0 --> r_cure_meat
+  r_boil_salt --> r_cure_meat
+  r_build_smokehouse --> r_cure_meat
+  r_slaughter_cattle --> r_dip_candles
+  r_farm_grain --> r_plant_garden
+  r_grow_vegetables --> r_plant_orchard
+  r_build_workshop --> r_build_dairy
+  r_build_workshop --> r_build_smokehouse
+  r_build_workshop --> r_build_saltern
+  r_fire_bricks --> r_build_saltern
   r_farm_grain --> r_harvest_flax
   r_shear_sheep --> r_spin_wool
   r_harvest_flax --> r_spin_flax

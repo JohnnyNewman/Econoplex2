@@ -1162,7 +1162,18 @@ fn the_run_does_not_depend_on_the_number_of_threads() {
 #[test]
 fn an_order_that_eats_into_food_is_flagged_but_not_capped() {
     let mut s = full(8);
-    s.order("procure Greenvale bread 30000").unwrap();
+    // Orders for every food, so the town's food runs short (one food alone
+    // no longer does it: there are many).
+    let foods: Vec<String> = {
+        let db = s.world.resource::<sim_core::Db>();
+        db.foods
+            .iter()
+            .map(|f| db.content.products[f.0 as usize].id.clone())
+            .collect()
+    };
+    for f in &foods {
+        s.order(&format!("procure Greenvale {f} 30000")).unwrap();
+    }
     s.order("procure Greenvale cloth 50").unwrap();
     let mut flagged = false;
     for _ in 0..24 {
@@ -1220,7 +1231,8 @@ fn governors_pull_the_players_levers_through_the_order_queue() {
 
 #[test]
 fn a_hungry_town_subsidizes_food_then_winds_it_down() {
-    // Brassmoor with two fields and no bread to start: it goes hungry in year one.
+    // Brassmoor with one field, no other food land and no bread to start: it
+    // goes hungry in year one.
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
     // Calibrated with first-come jobs: skilled matching keeps this town fed.
@@ -1234,7 +1246,11 @@ fn a_hungry_town_subsidizes_food_then_winds_it_down() {
     let b = &mut scenario.towns[3];
     for n in &mut b.nature {
         if n.0 == "field" {
-            n.1 = 2;
+            n.1 = 1;
+        }
+        // No other food land either (gardens, game, fish would feed it).
+        if ["garden", "hunting_ground", "fishing_water", "pasture"].contains(&n.0.as_str()) {
+            n.1 = 0;
         }
     }
     b.stock.retain(|s| s.0 != "bread");
@@ -2293,7 +2309,7 @@ fn a_hungry_broke_town_imports_food_on_credit_and_recovers() {
         // itself well enough that imports hardly matter.
         let b = &mut scenario.towns[3];
         for n in &mut b.nature {
-            if n.0 == "field" {
+            if n.0 == "field" || n.0 == "garden" {
                 n.1 = 0;
             }
         }
@@ -2348,8 +2364,9 @@ fn a_hungry_broke_town_imports_food_on_credit_and_recovers() {
         starving_with < starving_without,
         "imports didn't help: {starving_with} vs {starving_without}"
     );
-    // Fed from its neighbours, the town keeps most of its people.
-    assert!(pop_with > pop_without + 50, "{pop_with} vs {pop_without}");
+    // Fed from its neighbours, the town keeps more of its people (with hens,
+    // game and fish beside bread it starves less without imports, too).
+    assert!(pop_with > pop_without + 20, "{pop_with} vs {pop_without}");
 }
 
 #[test]
@@ -2919,11 +2936,17 @@ fn a_stockpile_fills_the_town_store_and_draws_production() {
         w.resource::<sim_core::world::Params>(),
         grain,
     );
-    let lacks = 150.0 - g.granary[grain];
-    assert!(
-        lacks <= 0.0 || target > before - 1e-3,
-        "{target} vs {before}"
-    );
+    // (The market's own aim for grain moves with what the town eats, so
+    // compare against today's: the store's lack comes on top of it.)
+    let _ = before;
+    let own = sim_core::systems::decide::food_per_capita(
+        w.resource::<sim_core::Db>(),
+        g,
+        w.resource::<sim_core::world::Params>(),
+        grain,
+    ) * g.residents.len() as f32;
+    let lacks = g.stockpile_target(grain) - g.granary[grain];
+    assert!(lacks <= 0.0 || target > own + 1e-3, "{target} vs {own}");
     check_goods(&s);
     s.order("stockpile Greenvale grain 0").unwrap();
     s.step();

@@ -57,6 +57,11 @@ pub fn settle(
     }
     firm_finances(&mut towns, &mut store, &db, &params);
     crate::consumption::spend(&mut towns, &mut store, &db, &params, &env, clock.steps());
+    // How the market's days of food are split among the foods: by what the
+    // town has eaten, refreshed once a day.
+    if clock.day_start() || towns.0.iter().any(|t| t.food_share.is_empty()) {
+        super::decide::refresh_food_shares(&mut towns, &db);
+    }
     let derived = derived_targets(&towns, &db, &params, &sites);
     // Prices move once a day of time, by that day's calendar.
     let pcal = cal.every(clock.steps_per_day_of_time());
@@ -218,7 +223,7 @@ pub fn settle(
                     continue;
                 }
                 let per_capita = if db.is_food[p] {
-                    mp.food_target_per_capita
+                    super::decide::food_per_capita(&db, town, &params, p)
                 } else {
                     mp.target_per_capita
                 };
