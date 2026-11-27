@@ -1,0 +1,62 @@
+// Military gear (plan Phase 4, gear batch): weapons against armour and better
+// armour, with the damage types of the battle code (Pierce, Slash, Blunt; an
+// armour stops a share of each). Its own file, so it can change or go on its
+// own. Arrows as stacks, helmets and siege gear wait for the battle and siege
+// work that will use them.
+(
+    products: [
+        // A long spear for a wall of points: outreaches every other weapon but
+        // is clumsy once an enemy is inside it.
+        (id: "pike", name: "Pike", category: Weapon, era: 3, tier: 2, base_price: 35.0, kg: 3.5,
+            fight: Some((reach: 4.5, damage: 0.45, damage_type: Some(Pierce), strike_rate: 0.25, close_penalty: 0.6))),
+        (id: "war_axe", name: "War axe", category: Weapon, era: 3, tier: 2, base_price: 50.0, kg: 2.0,
+            fight: Some((reach: 1.0, damage: 0.55, damage_type: Some(Slash), strike_rate: 0.30))),
+        // Blunt: mail and plate stop least of it.
+        (id: "mace", name: "Mace", category: Weapon, era: 3, tier: 2, base_price: 45.0, kg: 2.5,
+            fight: Some((reach: 1.0, damage: 0.55, damage_type: Some(Blunt), strike_rate: 0.33))),
+        // Slower than a bow, but its bolts hit harder.
+        (id: "crossbow", name: "Crossbow", category: Weapon, era: 3, tier: 2, base_price: 90.0, kg: 4.0,
+            equip: Some((domain: "military", bonus: 0.0, durability: 80)),
+            fight: Some((reach: 0.5, damage: 0.20, damage_type: Some(Blunt), strike_rate: 0.30, range: 180.0,
+                shot_rate: 0.05, shot_damage: 0.60, shot_type: Pierce, arrows: 20))),
+        (id: "bronze_scale", name: "Bronze scale", category: Weapon, era: 2, base_price: 90.0, kg: 9.0,
+            equip: Some((domain: "military", bonus: 0.0, durability: 100, slot: Some("armour"))),
+            fight: Some((armour: (pierce: 0.3, slash: 0.5, blunt: 0.25)))),
+        (id: "plate", name: "Plate armour", category: Weapon, era: 4, tier: 3, base_price: 400.0, kg: 20.0,
+            equip: Some((domain: "military", bonus: 0.0, durability: 250, slot: Some("armour"))),
+            fight: Some((armour: (pierce: 0.7, slash: 0.75, blunt: 0.35)))),
+        (id: "rimmed_shield", name: "Iron-rimmed shield", category: Weapon, era: 3, base_price: 22.0, kg: 6.0,
+            equip: Some((domain: "military", bonus: 0.0, durability: 60, slot: Some("shield"))),
+            fight: Some((shield: 0.55))),
+    ],
+    recipes: [
+        (id: "make_pike", name: "Make pike", skill: "spear_making", difficulty: 0.35,
+            requires: ["make_iron_spear", "hew_beams"],
+            inputs: [("iron", 1), ("beam", 1)], outputs: [("pike", 1)],
+            building: Some("smithy"), duration: 1.0, max_team: 2, physique: [("strength", 0.2), ("dexterity", 0.1)]),
+        (id: "forge_war_axe", name: "Forge war axe", skill: "bladesmithing", difficulty: 0.50,
+            requires: ["forge_iron_blade"],
+            inputs: [("iron", 2), ("plank", 1)], outputs: [("war_axe", 1)],
+            building: Some("smithy"), duration: 1.5, max_team: 2, physique: [("strength", 0.3), ("dexterity", 0.1)]),
+        (id: "forge_mace", name: "Forge mace", skill: "smithing", difficulty: 0.40,
+            requires: ["forge_hammer"],
+            inputs: [("iron", 2), ("plank", 1)], outputs: [("mace", 1)],
+            building: Some("smithy"), duration: 1.0, max_team: 2, physique: [("strength", 0.3)]),
+        (id: "make_crossbow", name: "Make crossbow", skill: "bowyery", difficulty: 0.60,
+            requires: ["make_bow", "make_steel"],
+            inputs: [("plank", 2), ("steel", 1)], outputs: [("crossbow", 1)],
+            building: Some("workshop"), duration: 2.0, max_team: 2, physique: [("dexterity", 0.3), ("strength", 0.1)]),
+        (id: "make_bronze_scale", name: "Make bronze scale", skill: "armouring", difficulty: 0.50,
+            requires: ["cast_bronze", "weave_cloth"],
+            inputs: [("bronze", 4), ("cloth", 1)], outputs: [("bronze_scale", 1)],
+            building: Some("smithy"), duration: 3.0, max_team: 2, physique: [("dexterity", 0.3), ("endurance", 0.1)]),
+        (id: "make_plate", name: "Make plate armour", skill: "armouring", difficulty: 0.80,
+            requires: ["make_mail", "make_steel"],
+            inputs: [("steel", 4), ("cloth", 1)], outputs: [("plate", 1)],
+            building: Some("smithy"), duration: 6.0, max_team: 2, physique: [("strength", 0.2), ("dexterity", 0.3)]),
+        (id: "make_rimmed_shield", name: "Make iron-rimmed shield", skill: "carpentry", difficulty: 0.35,
+            requires: ["make_shield", "forge_nails"],
+            inputs: [("plank", 3), ("iron", 1), ("nails", 10)], outputs: [("rimmed_shield", 1)],
+            building: Some("workshop"), duration: 1.0, max_team: 2, physique: [("dexterity", 0.2)]),
+    ],
+)
