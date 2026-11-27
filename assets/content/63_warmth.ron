@@ -1,0 +1,17 @@
+// Warmth (plan Phase 4, warmth batch): a wool blanket keeps a household warm
+// at night: a layer like clothes (it counts toward the pieces a person
+// wears), so the household burns less fuel. Peat waits for bog land on the
+// map. Its own file, so it can change or go on its own.
+(
+    products: [
+        (id: "blanket", name: "Blanket", category: Material, era: 1, base_price: 12.0,
+            household: Some((life_days: 480.0,
+                serves: [(need: Warmth, amount: 1.5, by: Wear)]))),
+    ],
+    recipes: [
+        (id: "weave_blanket", name: "Weave blanket", skill: "weaving", difficulty: 0.35,
+            requires: ["spin_wool"],
+            inputs: [("yarn", 4)], outputs: [("blanket", 1)], building: Some("weaving_shed"),
+            duration: 1.0, physique: [("dexterity", 0.3)]),
+    ],
+)

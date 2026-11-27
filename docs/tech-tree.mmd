@@ -56,6 +56,7 @@ flowchart LR
     p_dye["Dye"]
     p_dyed_cloth["Dyed cloth"]
     p_fine_clothes["Fine clothes"]
+    p_blanket["Blanket"]
   end
   subgraph era2["2 Bronze"]
     p_shears["Shears"]
@@ -264,6 +265,7 @@ flowchart LR
   p_tool_handle --> p_plough
   p_woad --> p_dye
   p_wool --> p_yarn
+  p_yarn --> p_blanket
   p_yarn --> p_cloth
   p_blast_furnace -.-> p_iron
   p_blast_furnace -.-> p_steel
@@ -281,6 +283,7 @@ flowchart LR
   p_stable -.-> p_horse
   p_textile_mill -.-> p_cloth
   p_textile_mill -.-> p_yarn
+  p_weaving_shed -.-> p_blanket
   p_weaving_shed -.-> p_cloth
   p_weaving_shed -.-> p_dye
   p_weaving_shed -.-> p_dyed_cloth
