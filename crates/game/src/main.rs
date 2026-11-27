@@ -291,6 +291,7 @@ fn main() {
                 hud::update_inspector,
                 hud::update_legend,
                 hud::toggle_help,
+                hud::demo_help,
                 policy_ui::policy_buttons,
                 policy_ui::update_policy_panel,
                 policy_ui::place_building.after(view::select_agent),

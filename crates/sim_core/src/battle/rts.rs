@@ -445,6 +445,26 @@ pub fn demo_queue(v: &LiveView, sel: &[usize]) -> Vec<(usize, Command)> {
         .collect()
 }
 
+/// Where `--rts-demo inspect` points: at the enemy squad nearest the
+/// player's squads, at its soldier nearest them on the soldier model.
+pub fn demo_inspect(v: &LiveView) -> Option<(f32, f32)> {
+    let mine: Vec<usize> = (0..v.squads.len()).filter(|&q| selectable(v, q)).collect();
+    let c = centre(v, &mine)?;
+    let d2 = |p: (f32, f32)| (p.0 - c.0).powi(2) + (p.1 - c.1).powi(2);
+    let pos = |q: usize| (v.frame.squads[q].0, v.frame.squads[q].1);
+    let e = (0..v.squads.len())
+        .filter(|&q| v.squads[q].side != v.player_side && v.frame.squads[q].2 > 0)
+        .min_by(|&a, &b| d2(pos(a)).total_cmp(&d2(pos(b))))?;
+    let soldiers = v.frame.soldiers.get(e).into_iter().flatten();
+    Some(
+        soldiers
+            .filter(|s| s.state == FighterState::Standing)
+            .map(|s| s.pos())
+            .min_by(|&a, &b| d2(a).total_cmp(&d2(b)))
+            .unwrap_or(pos(e)),
+    )
+}
+
 /// The commands of a right-click or drag as given: deployments before the
 /// battle starts, queued after each squad's moves with `queue`, else as
 /// they are.
@@ -513,32 +533,68 @@ pub fn stance(v: &LiveView, sel: &[usize], key: StanceKey) -> Vec<(usize, Comman
         .collect()
 }
 
-/// What an armour is called, for the hints.
+/// What an armour is called, for the hints, by its armour class and what
+/// it resists.
 fn armour_name(k: &Kit) -> &'static str {
-    if k.armour == MAIL {
+    let resists = |t: usize| k.taken[t] < 0.9;
+    if k.ac >= 7.5 {
+        "plate"
+    } else if k.ac >= 4.5 && resists(1) {
         "mail"
-    } else if k.armour == PADDED {
+    } else if k.ac >= 3.5 && resists(1) {
+        "scale"
+    } else if k.ac >= 0.5 && resists(2) {
         "padded coats"
-    } else if k.armour.iter().all(|&a| a <= 0.0) {
+    } else if k.ac < 0.5 && k.shield < 0.5 {
         "bare skin"
+    } else if k.ac < 0.5 {
+        "shields"
     } else {
         "armour"
     }
 }
 
-/// What a weapon's damage is called, by its main damage type.
-fn weapon_name(damage: &PerType) -> &'static str {
-    let main = (0..3)
-        .max_by(|&a, &b| damage[a].total_cmp(&damage[b]))
-        .unwrap_or(0);
-    ["points", "blades", "blows"][main]
+/// What a squad's weapons are called, for the hints: by their damage type,
+/// reach and mount.
+fn weapon_name(k: &Kit) -> &'static str {
+    use sim_data::DamageType::{Blunt, Pierce, Slash};
+    match k.damage_type {
+        Pierce if k.mounted => "lances",
+        Pierce if k.reach >= 2.5 => "spears",
+        Pierce => "points",
+        Slash if k.reach >= 1.0 => "swords",
+        Slash => "knives",
+        Blunt if k.quality > 0.5 => "maces",
+        Blunt => "clubs",
+    }
 }
 
-/// A squad with `mine` against one with `theirs`, in words: "strong",
-/// "even" or "weak", and why, e.g. "weak: their mail turns your blades".
-pub fn matchup_words(mine: &Kit, theirs: &Kit) -> String {
-    let (m, t) = (mine.against(theirs), theirs.against(mine));
-    let archer = mine.range > 0.0 && m.shots_per_second > m.melee_per_second;
+/// What armour does to a damage type, for the hints: ", resistant to
+/// slashing", ", vulnerable to ...", or nothing.
+fn resistance_words(k: &Kit, t: sim_data::DamageType) -> String {
+    let taken = k.taken[t.index()];
+    if taken < 0.9 {
+        format!(", resistant to {}", t.word())
+    } else if taken > 1.1 {
+        format!(", vulnerable to {}", t.word())
+    } else {
+        String::new()
+    }
+}
+
+/// A squad with `mine` (attack bonus `bonus` in melee, `shot_bonus` with
+/// arrows) against one with `theirs` (`their_bonus`), in words: "strong",
+/// "even" or "weak", and why in the combat rules' terms, e.g. "weak: your
+/// swords hit their mail on 14+ (35%), resistant to slashing".
+pub fn matchup_words(
+    mine: &Kit,
+    (bonus, shot_bonus): (f32, f32),
+    theirs: &Kit,
+    (their_bonus, their_shot): (f32, f32),
+) -> String {
+    let m = mine.against(theirs, bonus, shot_bonus);
+    let t = theirs.against(mine, their_bonus, their_shot);
+    let archer = mine.range > 0.0 && mine.arrows > 0;
     let give = m.melee_per_second.max(m.shots_per_second);
     let take = t.melee_per_second.max(t.shots_per_second);
     let mut r = give / take.max(1e-6);
@@ -560,29 +616,17 @@ pub fn matchup_words(mine: &Kit, theirs: &Kit) -> String {
         "even"
     };
     let why = why.unwrap_or_else(|| {
-        let (through, weapon) = if archer {
-            let raw: f32 = mine.shot_damage.iter().sum();
-            (m.arrow.iter().sum::<f32>() / raw.max(1e-6), "arrows")
+        let (weapon, needs, hit, t) = if archer {
+            ("arrows", m.shot_needs, m.shot_hit, mine.shot_type)
         } else {
-            (
-                m.blow.iter().sum::<f32>() / mine.melee_damage().max(1e-6),
-                weapon_name(&mine.damage),
-            )
+            (weapon_name(mine), m.needs, m.hit, mine.damage_type)
         };
-        let armour = armour_name(theirs);
-        if archer && theirs.shield >= 0.3 && through < 0.6 {
-            format!("their shields and {armour} stop your arrows")
-        } else if through < 0.6 {
-            format!("their {armour} turns your {weapon}")
-        } else if through > 0.85 {
-            format!("your {weapon} go through their {armour}")
-        } else if r >= 1.4 {
-            "you strike harder than they do".to_string()
-        } else if r <= 0.7 {
-            "they strike harder than you do".to_string()
-        } else {
-            "blow for blow".to_string()
-        }
+        format!(
+            "your {weapon} hit their {} on {needs}+ ({:.0}%){}",
+            armour_name(theirs),
+            100.0 * hit,
+            resistance_words(theirs, t)
+        )
     });
     format!("{verdict}: {why}")
 }
@@ -596,13 +640,70 @@ pub fn hint(v: &LiveView, mine: &[usize], enemy: usize) -> Option<String> {
     }
     let all: Vec<usize> = (0..v.squads.len()).filter(|&q| selectable(v, q)).collect();
     let mine = if mine.is_empty() { &all } else { mine };
+    let theirs_bonus = *v.bonus.get(enemy)?;
     let lines: Vec<String> = mine
         .iter()
-        .filter_map(|&q| Some((q, v.kits.get(q)?)))
+        .filter_map(|&q| Some((q, v.kits.get(q)?, *v.bonus.get(q)?)))
         .take(4)
-        .map(|(q, k)| format!("{}: {}", v.squads[q].name, matchup_words(k, theirs)))
+        .map(|(q, k, b)| {
+            let words = matchup_words(k, b, theirs, theirs_bonus);
+            format!("{}: {words}", v.squads[q].name)
+        })
         .collect();
     (!lines.is_empty()).then(|| format!("{}\n{}", v.squads[enemy].name, lines.join("\n")))
+}
+
+/// The soldier standing nearest field point `at`, within `within` metres:
+/// their squad and place in it (the soldier model; none on the squad model).
+pub fn soldier_at(v: &LiveView, at: (f32, f32), within: f32) -> Option<(usize, usize)> {
+    let mut best = None;
+    let mut best_d2 = within * within;
+    for (q, soldiers) in v.frame.soldiers.iter().enumerate() {
+        for (k, s) in soldiers.iter().enumerate() {
+            if !matches!(s.state, FighterState::Standing | FighterState::Routing) {
+                continue;
+            }
+            let (x, y) = s.pos();
+            let d2 = (x - at.0).powi(2) + (y - at.1).powi(2);
+            if d2 <= best_d2 {
+                best_d2 = d2;
+                best = Some((q, k));
+            }
+        }
+    }
+    best
+}
+
+/// Soldier `k` of squad `q` in the combat rules' terms, e.g. "a soldier of
+/// swordsmen1: AC 17, +3 to hit, HP 6/8, 1d8+1 slashing".
+pub fn soldier_words(v: &LiveView, q: usize, k: usize) -> Option<String> {
+    let sheet = v.sheets.get(q)?.get(k)?;
+    Some(format!(
+        "a soldier of {}: {}",
+        v.squads.get(q)?.name,
+        sheet.words()
+    ))
+}
+
+/// What the pointer at field point `at` inspects: the soldier under it (on
+/// the soldier model; elsewhere the first of the squad under it still on
+/// their feet), and for an enemy squad how the squads `mine` fare against
+/// it ([`hint`]).
+pub fn inspect(v: &LiveView, mine: &[usize], at: (f32, f32)) -> Option<String> {
+    let squad = squad_at(v, at);
+    let soldier = soldier_at(v, at, 1.0).or_else(|| {
+        let q = squad?;
+        let k = v.sheets.get(q)?.iter().position(|s| s.hp > 0)?;
+        Some((q, k))
+    });
+    let sheet = soldier.and_then(|(q, k)| soldier_words(v, q, k));
+    let hint = squad
+        .filter(|&e| v.squads[e].side != v.player_side)
+        .and_then(|e| hint(v, mine, e));
+    match (sheet, hint) {
+        (Some(s), Some(h)) => Some(format!("{s}\n{h}")),
+        (s, h) => s.or(h),
+    }
 }
 
 /// The overlay's colour for a soldier: red when breaking, through yellow,
@@ -1068,16 +1169,27 @@ mod tests {
     #[test]
     fn matchup_hints_say_why() {
         let k = |n: &str| Kit::preset(n).unwrap();
+        // Recruits of skill 0.5: proficiency +2, and the weapon's quality.
+        let b = |n: &str| {
+            let q = 2.0 + k(n).quality;
+            (q, q - 4.0)
+        };
+        let words = |a: &str, t: &str| matchup_words(&k(a), b(a), &k(t), b(t));
         assert_eq!(
-            matchup_words(&k("swordsmen"), &k("swordsmen")),
-            "even: their mail turns your blades"
+            words("swordsmen", "swordsmen"),
+            "even: your swords hit their mail on 14+ (35%), resistant to slashing"
         );
-        assert!(matchup_words(&k("levy"), &k("swordsmen")).starts_with("weak: "));
+        assert!(words("levy", "swordsmen").starts_with("weak: your clubs hit their mail on 15+"));
         assert_eq!(
-            matchup_words(&k("cavalry"), &k("spearmen")),
+            words("cavalry", "spearmen"),
             "weak: their spears brace against your riders"
         );
-        assert!(matchup_words(&k("spearmen"), &k("cavalry")).starts_with("strong"));
+        assert!(words("spearmen", "cavalry").starts_with("strong"));
+        assert!(
+            words("archers", "levy").starts_with("strong: your arrows hit their bare skin on 12+"),
+            "{}",
+            words("archers", "levy")
+        );
         let v = view(BattleModel::Squads, LINEUP);
         let h = hint(&v, &[0], 3).unwrap();
         assert!(
@@ -1086,6 +1198,24 @@ mod tests {
         );
         assert!(hint(&v, &[], 3).unwrap().lines().count() == 4);
         assert!(hint(&v, &[0], 1).is_none());
+        // Pointing at a squad inspects its soldiers too, an enemy's with the hint.
+        let own = inspect(&v, &[], at(&v, 0)).unwrap();
+        assert!(
+            own.starts_with("a soldier of swordsmen")
+                && own.ends_with(": AC 17, +3 to hit, HP 8/8, 1d8+1 slashing"),
+            "{own}"
+        );
+        let enemy = inspect(&v, &[0], at(&v, 3)).unwrap();
+        assert!(
+            enemy.lines().count() == 3 && enemy.contains("AC 13") && enemy.contains("on 10+"),
+            "{enemy}"
+        );
+        // On the soldier model, the soldier under the pointer.
+        let v = view(BattleModel::Soldiers, LINEUP);
+        let (x, y) = v.frame.soldiers[3][5].pos();
+        assert_eq!(soldier_at(&v, (x + 0.2, y), 1.0), Some((3, 5)));
+        let words = inspect(&v, &[], (x, y)).unwrap();
+        assert!(words.contains("1d6+1 piercing"), "{words}");
     }
 
     #[test]

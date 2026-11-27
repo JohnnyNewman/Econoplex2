@@ -41,8 +41,9 @@ pub(super) const KIT_SLOTS: [crate::goods::Slot; 4] = [
 ];
 
 /// How much a piece of kit is worth to a soldier, before quality: weapons by
-/// their tier, armour by the mean share it stops over the damage types,
-/// shields by the share they stop, a mount by itself.
+/// their tier; armour and shields by the armour class they add (a point is
+/// worth a tenth) and the damage types armour resists (a tenth each, less a
+/// tenth per type it is vulnerable to); a mount by itself.
 pub(super) fn kit_value(def: &sim_data::ProductDef) -> f32 {
     let Some(f) = &def.fight else {
         return def.tier.max(1) as f32;
@@ -50,8 +51,8 @@ pub(super) fn kit_value(def: &sim_data::ProductDef) -> f32 {
     match crate::goods::Slot::of(def) {
         Some(crate::goods::Slot::Weapon) | None => def.tier.max(1) as f32,
         _ => {
-            f.armour.shares().iter().sum::<f32>() / 3.0
-                + f.shield
+            0.1 * (f.ac as f32 + f.shield as f32)
+                + 0.1 * (f.resist.len() as f32 - f.vulnerable.len() as f32)
                 + if f.mounted { 1.0 } else { 0.0 }
         }
     }
