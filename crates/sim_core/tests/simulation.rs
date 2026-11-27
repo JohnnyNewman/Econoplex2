@@ -289,11 +289,10 @@ fn food_comes_first_and_gluts_stop_production() {
     let ran = |r: usize| after[r] - before[r];
     assert_eq!(ran(mill), 0, "mills kept making flour nobody needs");
     assert!(ran(bake) > 0, "no bread was baked");
-    assert_eq!(
-        ran(charcoal) + ran(planks),
-        0,
-        "other trades took the bakeries' wood"
-    );
+    // Planks now feed food too (barrels for the brewers, 58_household_goods),
+    // so only the charcoal burners must leave the wood alone.
+    let _ = planks;
+    assert_eq!(ran(charcoal), 0, "other trades took the bakeries' wood");
 }
 
 #[test]

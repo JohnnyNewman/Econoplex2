@@ -1,0 +1,56 @@
+// Household goods (plan Phase 4, household batch): furniture for homes,
+// barrels for the brewer and tool handles for the toolsmith, all from the
+// carpenter's workshop. Its own file: it loads after the chains whose recipes
+// it changes (brew_ale, the tools with wooden handles) and overrides them by
+// id, so deleting it brings the old recipes back. Carts wait for the army
+// wagon; candles for tallow from the food batch.
+(
+    skills: [
+        (id: "coopering", name: "Coopering", domain: "woodworking", prereqs: ["carpentry"]),
+    ],
+    products: [
+        // A home's tables, beds and chests: a comfort that lasts for years.
+        (id: "furniture", name: "Furniture", category: Material, era: 1, base_price: 20.0,
+            household: Some((life_days: 3000.0,
+                serves: [(need: Shelter, amount: 0.1, by: Own), (need: Esteem, amount: 0.05, by: Own)]))),
+        (id: "barrel", name: "Barrel", category: Material, era: 1, base_price: 3.0),
+        (id: "tool_handle", name: "Tool handle", category: Material, base_price: 1.0),
+    ],
+    recipes: [
+        (id: "make_furniture", name: "Make furniture", skill: "carpentry", difficulty: 0.35,
+            requires: ["saw_planks"],
+            inputs: [("plank", 4)], outputs: [("furniture", 1)], building: Some("workshop"),
+            duration: 2.0, max_team: 2, physique: [("dexterity", 0.3), ("strength", 0.1)]),
+        (id: "make_barrels", name: "Make barrels", skill: "coopering", difficulty: 0.35,
+            requires: ["saw_planks"],
+            inputs: [("plank", 3)], outputs: [("barrel", 2)], building: Some("workshop"),
+            duration: 1.0, max_team: 2, physique: [("dexterity", 0.2), ("strength", 0.1)]),
+        (id: "turn_handles", name: "Turn tool handles", skill: "carpentry", difficulty: 0.20,
+            requires: ["saw_planks"],
+            inputs: [("plank", 1)], outputs: [("tool_handle", 3)], building: Some("workshop"),
+            duration: 0.5, max_team: 2, physique: [("dexterity", 0.2)]),
+        // Overrides 12_husbandry_textiles.ron: ale is brewed into barrels.
+        (id: "brew_ale", name: "Brew ale", skill: "brewing", difficulty: 0.40,
+            requires: ["farm_grain", "make_barrels"],
+            inputs: [("grain", 3), ("barrel", 1), ("wood", 1)], outputs: [("ale", 5)],
+            building: Some("brewery"), duration: 1.0, physique: [("strength", 0.1)]),
+        // Override 30_metalworking.ron and 55_industry.ron: tools take a turned
+        // handle instead of a plank.
+        (id: "forge_hammer", name: "Forge hammer", skill: "toolmaking", difficulty: 0.50,
+            requires: ["forge_sickle", "turn_handles"],
+            inputs: [("iron", 1), ("tool_handle", 1)], outputs: [("hammer", 1)], building: Some("smithy"),
+            duration: 1.0, max_team: 2, physique: [("strength", 0.3)]),
+        (id: "forge_pickaxe", name: "Forge pickaxe", skill: "toolmaking", difficulty: 0.50,
+            requires: ["forge_hammer"],
+            inputs: [("iron", 1), ("tool_handle", 1)], outputs: [("pickaxe", 1)], building: Some("smithy"),
+            duration: 1.0, max_team: 2, physique: [("strength", 0.3)]),
+        (id: "forge_axe", name: "Forge axe", skill: "toolmaking", difficulty: 0.45,
+            requires: ["forge_sickle", "turn_handles"],
+            inputs: [("iron", 1), ("tool_handle", 1)], outputs: [("axe", 1)], building: Some("smithy"),
+            duration: 1.0, max_team: 2, physique: [("strength", 0.3)]),
+        (id: "forge_plough", name: "Forge plough", skill: "toolmaking", difficulty: 0.50,
+            requires: ["forge_axe", "farm_grain"],
+            inputs: [("iron", 2), ("tool_handle", 2)], outputs: [("plough", 1)], building: Some("smithy"),
+            duration: 1.0, max_team: 2, physique: [("strength", 0.3)]),
+    ],
+)

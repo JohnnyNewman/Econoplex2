@@ -49,6 +49,9 @@ flowchart LR
     r_make_shield["Make shield"]
     r_make_crossbow["Make crossbow"]
     r_make_rimmed_shield["Make iron-rimmed shield"]
+    r_make_furniture["Make furniture"]
+    r_make_barrels["Make barrels"]
+    r_turn_handles["Turn tool handles"]
   end
   subgraph d7["mining"]
     r_mine_ore(["Mine ore"])
@@ -132,7 +135,7 @@ flowchart LR
   or_weave_cloth_0 --> r_weave_cloth
   r_weave_cloth --> r_sew_clothes
   r_farm_grain --> r_brew_ale
-  r_throw_pots --> r_brew_ale
+  r_make_barrels --> r_brew_ale
   r_forge_sickle --> r_forge_shears
   r_build_workshop --> r_build_weaving_shed
   r_weave_cloth --> r_build_weaving_shed
@@ -162,10 +165,10 @@ flowchart LR
   r_burn_charcoal --> r_smelt_iron
   r_smelt_iron --> r_make_steel
   r_forge_sickle --> r_forge_hammer
-  r_saw_planks --> r_forge_hammer
+  r_turn_handles --> r_forge_hammer
   r_forge_hammer --> r_forge_pickaxe
   r_forge_sickle --> r_forge_axe
-  r_saw_planks --> r_forge_axe
+  r_turn_handles --> r_forge_axe
   r_smelt_iron --> r_forge_sickle
   r_forge_sickle --> r_forge_iron_blade
   r_forge_iron_blade --> r_forge_steel_blade
@@ -259,6 +262,9 @@ flowchart LR
   r_make_machine_parts --> r_build_roller_mill
   r_build_weaving_shed --> r_build_textile_mill
   r_make_machine_parts --> r_build_textile_mill
+  r_saw_planks --> r_make_furniture
+  r_saw_planks --> r_make_barrels
+  r_saw_planks --> r_turn_handles
   or_mine_silver_0((or))
   r_mine_ore -.-> or_mine_silver_0
   r_mine_copper -.-> or_mine_silver_0
