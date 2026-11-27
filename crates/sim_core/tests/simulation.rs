@@ -2346,10 +2346,11 @@ fn a_hungry_broke_town_imports_food_on_credit_and_recovers() {
         let pop = m.latest().unwrap().towns[3].population;
         (starving, pop, owed_once)
     };
-    // Summed over four seeds: on a single one, the town's luck can outweigh the imports.
+    // Summed over eight seeds: on a single one, or four, the town's luck can
+    // outweigh the imports.
     let (mut starving_without, mut pop_without) = (0.0, 0);
     let (mut starving_with, mut pop_with, mut owed) = (0.0, 0, false);
-    for seed in 1..=4 {
+    for seed in 1..=8 {
         let (s, p, _) = run(false, seed);
         starving_without += s;
         pop_without += p;
