@@ -42,6 +42,9 @@ flowchart LR
     r_spin_flax["Spin flax"]
     r_weave_cloth["Weave cloth"]
     r_sew_clothes["Sew clothes"]
+    r_tan_hides["Tan hides"]
+    r_make_shoes["Make shoes"]
+    r_make_leather_armour["Make leather armour"]
     r_sew_padded_coat["Sew padded coat"]
     r_mill_spin["Spin yarn by machine"]
     r_mill_weave["Weave cloth by machine"]
@@ -131,6 +134,7 @@ flowchart LR
     r_build_brewery["Build brewery"]
     r_build_masons_yard["Build mason's yard"]
     r_build_kiln["Build kiln"]
+    r_build_tannery["Build tannery"]
     r_build_workshop["Build workshop"]
     r_build_mill["Build mill"]
     r_build_bakery["Build bakery"]
@@ -210,6 +214,16 @@ flowchart LR
   r_dig_sand --> r_mix_mortar
   r_fire_bricks --> r_fire_tiles
   r_forge_sickle --> r_forge_nails
+  or_tan_hides_0((or))
+  r_hunt_game -.-> or_tan_hides_0
+  r_slaughter_cattle -.-> or_tan_hides_0
+  or_tan_hides_0 --> r_tan_hides
+  r_build_tannery --> r_tan_hides
+  r_tan_hides --> r_make_shoes
+  r_build_workshop --> r_make_shoes
+  r_tan_hides --> r_make_leather_armour
+  r_build_workshop --> r_make_leather_armour
+  r_build_workshop --> r_build_tannery
   r_chop_wood --> r_burn_charcoal
   r_chop_wood --> r_saw_planks
   r_saw_planks --> r_carve_hilt

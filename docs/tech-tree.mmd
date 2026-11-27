@@ -22,6 +22,7 @@ flowchart LR
     p_straw(["Straw"])
     p_thatch["Thatch"]
     p_beam["Beam"]
+    p_hide["Hide"]
     p_wood(["Wood"])
     p_plank["Plank"]
     p_charcoal["Charcoal"]
@@ -59,6 +60,10 @@ flowchart LR
     p_lime["Lime"]
     p_mortar["Mortar"]
     p_roof_tile["Roof tile"]
+    p_leather["Leather"]
+    p_shoes["Shoes"]
+    p_leather_armour["Leather armour"]
+    p_tannery[["Tannery"]]
     p_stone_house[["Stone house"]]
     p_bow["Bow"]
     p_shield["Shield"]
@@ -150,9 +155,11 @@ flowchart LR
   n_flax_field --> p_woad
   n_forest --> p_wood
   n_garden --> p_vegetables
+  n_hunting_ground --> p_hide
   n_hunting_ground --> p_meat
   n_orchard --> p_fruit
   n_ore_vein --> p_ore
+  n_pasture --> p_hide
   n_pasture --> p_horse
   n_pasture --> p_meat
   n_pasture --> p_milk
@@ -180,6 +187,7 @@ flowchart LR
   p_beam --> p_smokehouse
   p_beam --> p_stable
   p_beam --> p_stone_house
+  p_beam --> p_tannery
   p_beam --> p_tavern
   p_beam --> p_weaving_shed
   p_beam --> p_workshop
@@ -222,6 +230,7 @@ flowchart LR
   p_grain --> p_eggs
   p_grain --> p_flour
   p_grain --> p_horse
+  p_hide --> p_leather
   p_hilt --> p_longsword_1
   p_hilt --> p_longsword_2
   p_hilt --> p_longsword_3
@@ -248,6 +257,8 @@ flowchart LR
   p_iron --> p_steel_blade
   p_iron --> p_war_axe
   p_iron_blade --> p_longsword_1
+  p_leather --> p_leather_armour
+  p_leather --> p_shoes
   p_lime --> p_mortar
   p_machine_parts --> p_roller_mill
   p_machine_parts --> p_textile_mill
@@ -285,6 +296,7 @@ flowchart LR
   p_stone --> p_kiln
   p_stone --> p_lime
   p_stone --> p_smokehouse
+  p_stone --> p_tannery
   p_straw --> p_thatch
   p_tallow --> p_candles
   p_tempered_blade --> p_sharp_blade
@@ -326,6 +338,7 @@ flowchart LR
   p_smokehouse -.-> p_salted_fish
   p_smokehouse -.-> p_salted_meat
   p_stable -.-> p_horse
+  p_tannery -.-> p_leather
   p_tavern -.-> p_evening_out
   p_textile_mill -.-> p_cloth
   p_textile_mill -.-> p_yarn
