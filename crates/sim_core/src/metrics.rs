@@ -44,6 +44,9 @@ pub struct TownStats {
     pub ideology_spread: f32,
     /// Longswords in the armory or carried by soldiers, by level 1, 2, 3.
     pub swords: [u32; 3],
+    /// Pieces of armour and shields in the armory or worn by soldiers.
+    #[serde(default)]
+    pub armour: u32,
     pub tools_in_use: usize,
     /// Value of last year's production (at base prices), and the part of it
     /// made while the town already held more than its target stock of the
@@ -582,6 +585,21 @@ pub fn record(
                     if *id == Some(p.def) {
                         s.swords[lvl] += 1;
                     }
+                }
+            }
+        }
+        use crate::goods::Slot;
+        let st: &AgentStore = &store;
+        let worn = town.squad.iter().flat_map(|&i| {
+            [Slot::Armour, Slot::Shield]
+                .into_iter()
+                .filter_map(move |slot| crate::goods::gear(st, i as usize, slot))
+        });
+        for e in town.armory.iter().copied().chain(worn) {
+            if let Ok(p) = weapons.get(e) {
+                let def = &db.content.products[p.def as usize];
+                if matches!(Slot::of(def), Some(Slot::Armour | Slot::Shield)) {
+                    s.armour += 1;
                 }
             }
         }

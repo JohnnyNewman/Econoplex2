@@ -70,17 +70,27 @@ struct Summary {
     food_work: f64,
     farm_work: f64,
     ms_per_tick: f64,
+    /// Raids won, soldiers fallen (on both sides of every battle), over the
+    /// run; pieces of armour and shields held at the end; and wall time of
+    /// the military system (musters, forecasts and the battles it
+    /// auto-resolves) per raid.
+    raids_won: f64,
+    fallen: f64,
+    armour: f64,
+    war_ms_per_raid: f64,
 }
 
 /// The table's column names; health bands name metrics by these.
-pub const COLUMNS: [&str; 27] = [
+pub const COLUMNS: [&str; NCOL] = [
     "pop", "starve%", "food/cap", "div", "ECI rng", "spec", "masters", "swords", "wealth", "gini",
     "raids", "captv", "prisn", "conq", "revolts", "ruled%", "moves", "glut%", "gwork%", "hh use",
-    "in use", "happy", "capab", "reserve", "foodwk%", "farmwk%", "ms/day",
+    "in use", "happy", "capab", "reserve", "foodwk%", "farmwk%", "ms/day", "won%", "fallen",
+    "armour", "war ms",
 ];
+pub const NCOL: usize = 31;
 
 impl Summary {
-    fn values(&self) -> [f64; 27] {
+    fn values(&self) -> [f64; NCOL] {
         [
             self.population,
             self.starving * 100.0,
@@ -109,10 +119,14 @@ impl Summary {
             self.food_work * 100.0,
             self.farm_work * 100.0,
             self.ms_per_tick,
+            self.raids_won / self.raids.max(1.0) * 100.0,
+            self.fallen,
+            self.armour,
+            self.war_ms_per_raid,
         ]
     }
 
-    fn of(m: &Metrics, ms_per_tick: f64) -> Self {
+    fn of(m: &Metrics, ms_per_tick: f64, war_ms: f64) -> Self {
         let mut s = Summary {
             ms_per_tick,
             ..Default::default()
@@ -211,6 +225,8 @@ impl Summary {
                 town_years += 1.0;
                 ruled += t.ruler.is_some() as u8 as f64;
                 s.raids += t.war.raids as f64;
+                s.raids_won += t.war.raids_won as f64;
+                s.fallen += t.war.fallen as f64;
                 s.captives += t.war.captives_taken as f64;
                 s.prisoners += t.war.prisoners_taken as f64;
                 s.conquests += t.war.conquests as f64;
@@ -220,6 +236,8 @@ impl Summary {
         }
         s.starving = starve / people.max(1.0);
         s.ruled = ruled / town_years.max(1.0);
+        s.armour = last.towns.iter().map(|t| t.armour as f64).sum();
+        s.war_ms_per_raid = war_ms / s.raids.max(1.0);
         s
     }
 }
@@ -317,7 +335,12 @@ pub fn run(
                     sim.step();
                 }
                 let ms = t0.elapsed().as_secs_f64() * 1000.0 / ticks.max(1) as f64;
-                let s = Summary::of(sim.world.resource::<Metrics>(), ms);
+                let war = sim.world.resource::<sim_core::profile::Profile>().total[9];
+                let s = Summary::of(
+                    sim.world.resource::<Metrics>(),
+                    ms,
+                    war.as_secs_f64() * 1000.0,
+                );
                 results.lock().unwrap()[j] = Some(s);
             });
         }
@@ -354,7 +377,7 @@ pub fn run(
     println!();
     let mut means = Vec::new();
     for c in 0..settings.len() {
-        let rows: Vec<[f64; 27]> = (0..jobs.len())
+        let rows: Vec<[f64; NCOL]> = (0..jobs.len())
             .filter(|&j| jobs[j].0 == c)
             .map(|j| results[j].values())
             .collect();
@@ -414,6 +437,10 @@ pub fn run(
             "food_work",
             "farm_work",
             "ms_per_tick",
+            "raids_won_share",
+            "fallen",
+            "armour",
+            "war_ms_per_raid",
         ];
         writeln!(
             f,
@@ -429,12 +456,12 @@ pub fn run(
             let mut row: Vec<String> = settings[c].iter().map(|s| s.1.clone()).collect();
             row.push(seed.to_string());
             let mut v = results[j].values();
-            v[1] /= 100.0;
-            v[13] /= 100.0;
-            v[15] /= 100.0;
-            v[16] /= 100.0;
-            v[22] /= 100.0;
-            v[23] /= 100.0;
+            // The CSV has shares where the table has percentages.
+            for (x, c) in v.iter_mut().zip(COLUMNS) {
+                if c.ends_with('%') {
+                    *x /= 100.0;
+                }
+            }
             row.extend(v.iter().map(|x| format!("{x:.4}")));
             writeln!(f, "{}", row.join(","))?;
         }

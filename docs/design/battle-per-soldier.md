@@ -887,10 +887,82 @@ swordsmen 275 / 287, spearmen 277 / 241 (a line that holds and braces has
 the better of one that walks up to it, as on main), and cavalry, soldier
 model, 310.
 
+## Step 6: auto-resolve on soldiers, measured
+
+`econoplex-sim --years 40 --seeds 16 --sweep battle.model=Squads,Soldiers`, a
+release build on 4 threads (`live_model` stays Soldiers in both). Means over
+the 16 seeds, ± one standard deviation:
+
+| Metric | Squads | Soldiers |
+| --- | --- | --- |
+| pop | 4024 ± 121 | 3562 ± 159 |
+| food/cap | 5.00 ± 2.16 | 8.05 ± 2.40 |
+| raids | 99.0 ± 8.0 | 101.8 ± 10.4 |
+| raids won | 80.7% ± 4.7 | 82.8% ± 5.4 |
+| conquests | 19.0 ± 5.2 | 19.9 ± 5.9 |
+| revolts | 7.7 ± 4.9 | 9.2 ± 5.0 |
+| captives | 554 ± 55 | 523 ± 80 |
+| soldiers fallen (both sides) | 112 ± 40 | 345 ± 41 |
+| swords at the end | 117 ± 38 | 112 ± 27 |
+| armour and shields at the end | 3236 ± 336 | 3119 ± 298 |
+| ms per economy day | 736 ± 48 | 713 ± 39 |
+| military system, ms per raid | 53.3 ± 5.8 | 57.9 ± 5.7 |
+
+Health bands: the soldier model passes all five. The squad model fails
+`pop` (4024 against 4000 at most), but the bands are set for 30-year runs,
+and its population is still growing at 40.
+
+**Affordable: yes.** The military system costs 4.6 ms more per raid on
+soldiers, about 9%. Most of the military system's time goes to the
+planner's forecasts, which stay on squads. A run is no slower: 713 ms
+against 736 per economy day, because the soldier runs have fewer people.
+
+The 4,000-soldier budget test (`cargo test --release --test battle_budget`)
+is at its limit on this shared 4-core machine. Its battle now lasts 375
+battle seconds, and its best of three runs came in at or under 1 ms per
+battle second in two test runs out of three (1.19 ms in the third). Just before the
+combat rules it measured 1.00 ms per battle second, failing once and
+passing once. That budget is for the largest battles. The raids
+auto-resolved here are far smaller.
+
+**Outcomes: not yet comparable.** Raids, wins, conquests, revolts, captives
+and the stocks of swords and armour agree within a standard deviation. The
+deaths do not. The soldier model kills three times as many (3.4 against 1.1
+per raid), and 40 years of that costs 460 people (−11%, about 3 standard
+deviations).
+
+The gap comes from how each model books damage, not from tactics:
+
+- A fighter dies when health falls to `death_below` (−0.5) or lower: half
+  their hit points past zero.
+- On the squad model a hit lands only on a fighter still standing, and one
+  hit rarely takes half the hit points past zero (a mean hit is about 0.56
+  of them). So the squad model almost never kills. Twelve sides of
+  `swordsmen*30 vs swordsmen*30` (6 seeds): 142 down, none dead.
+- On the soldier model, every blow aimed at a soldier in the same substep
+  lands together, so several at once take them well past zero. The same 12
+  sides: 120 down, 10 dead.
+
+**Recommendation: keep `battle.model: Squads` for now.** First make death a
+rule of its own that both models share, instead of a side effect of
+overkill. A candidate is the SRD's: a hit that leaves damage of at least the
+fighter's hit points past zero kills outright, and otherwise a fighter who
+is down dies on a roll. Then run this comparison again. Without that, a
+switch would cut the population by a tenth through a bookkeeping
+difference.
+
+The batch table now has the columns used here: `won%`, `fallen`, `armour`
+(pieces of armour and shields held at the end) and `war ms` (military
+system time per raid). The batch CSV now turns every percentage column back
+into a share. Before, it divided columns that had moved since: it divided
+`conq`, `moves`, `capab` and `reserve`, and left `glut%`, `gwork%`,
+`foodwk%` and `farmwk%` as percentages.
+
 ## Open questions
 
 - Should auto-resolved raids ever use the soldier model, or only battles the
-  player watches? It depends on the step 6 measurement.
+  player watches? Step 6 found it affordable. It waits on death being one
+  rule on both models (see "Step 6").
 - Should friendly fire from arrows be on by default?
 - Should a soldier who is down but alive be carried off (captives, or the
   wounded saved by their side), or does that wait for the aftermath?
