@@ -15,7 +15,12 @@
 //! - O colours the soldiers by morale (red breaking, green steady), darker
 //!   the more tired;
 //! - hovering an enemy squad says how your squads fare against it;
-//! - Space still pauses, and orders can be given while paused.
+//! - Space still pauses, and orders can be given while paused;
+//! - shift with a right-click or drag queues the move after the squad's
+//!   moves (the queued path is drawn with a marker at each waypoint), and
+//!   Backspace drops the selected squads' queues;
+//! - before the battle starts, the player's half is drawn as a zone and the
+//!   same clicks and drags stand the squads there, until "Start battle".
 //!
 //! The mouse and keys are read in `PreUpdate`, after picking: a press the
 //! battle takes is cleared, so the agent selection and the speed keys never
@@ -38,6 +43,11 @@ pub enum Demo {
     Ghost,
     /// The morale and fatigue overlay.
     Overlay,
+    /// The deployment zone, and a line dragged in it (with
+    /// `--shot-battle 0`, before the battle starts).
+    Deploy,
+    /// Every squad of yours with two waypoints queued, and their paths.
+    Queue,
 }
 
 impl std::str::FromStr for Demo {
@@ -46,7 +56,9 @@ impl std::str::FromStr for Demo {
         match s {
             "ghost" => Ok(Self::Ghost),
             "overlay" => Ok(Self::Overlay),
-            _ => Err(format!("--rts-demo {s}: ghost or overlay")),
+            "deploy" => Ok(Self::Deploy),
+            "queue" => Ok(Self::Queue),
+            _ => Err(format!("--rts-demo {s}: ghost, overlay, deploy or queue")),
         }
     }
 }
@@ -115,10 +127,24 @@ pub fn battle_input(
         controls.hint = None;
         return;
     };
-    if let Some(Demo::Ghost) = controls.demo {
+    if matches!(
+        controls.demo,
+        Some(Demo::Ghost | Demo::Deploy | Demo::Queue)
+    ) {
         controls.rts.selection.squads = (0..v.squads.len())
             .filter(|&q| rts::selectable(&v, q))
             .collect();
+    }
+    // The demo's queue, given again whenever the squads have used it up.
+    let used_up = controls
+        .rts
+        .selection
+        .squads
+        .iter()
+        .all(|&q| v.orders.get(q).map_or(0, Vec::len) < 2);
+    if controls.demo == Some(Demo::Queue) && !v.deploying && used_up {
+        live.commands
+            .extend(rts::demo_queue(&v, &controls.rts.selection.squads));
     }
     controls.overlay |= controls.demo == Some(Demo::Overlay);
     controls.rts.selection.tidy(&v);
@@ -186,6 +212,24 @@ pub fn battle_input(
     if keys.just_pressed(KeyCode::Escape) {
         controls.rts.selection.squads.clear();
     }
+    if keys.just_pressed(KeyCode::Backspace) && !controls.rts.selection.squads.is_empty() {
+        keys.clear_just_pressed(KeyCode::Backspace);
+        commands.extend(rts::clear_queue(&v, &controls.rts.selection.squads));
+    }
+    // The demos are shown from where they happen: the zone, or the paths.
+    let look = look.or_else(|| match controls.demo? {
+        Demo::Deploy if v.deploying => {
+            let sel = &controls.rts.selection.squads;
+            let (from, to) = rts::line_ahead(&v, sel, 25.0)?;
+            let c = rts::centre(&v, sel)?;
+            Some((
+                0.5 * (c.0 + 0.5 * (from.0 + to.0)),
+                0.5 * (c.1 + 0.5 * (from.1 + to.1)),
+            ))
+        }
+        Demo::Queue => rts::centre(&v, &controls.rts.selection.squads),
+        _ => None,
+    });
     if let Some(f) = look {
         follow.0 = false;
         let m = field_to_map(v.at, v.facing, v.field)(Vec2::new(f.0, f.1));
@@ -214,6 +258,15 @@ fn ghost_of(
             );
         }
     }
+    if c.demo == Some(Demo::Deploy) && v.deploying {
+        let sel = &c.rts.selection.squads;
+        if let Some((from, to)) = rts::line_ahead(v, sel, 25.0) {
+            return (
+                vec![Gesture::Line(from, to, false)],
+                rts::deploy_ghost(v, sel, from, to),
+            );
+        }
+    }
     let Some(p) = c.pointer else {
         return (Vec::new(), Vec::new());
     };
@@ -221,6 +274,8 @@ fn ghost_of(
 }
 
 const SELECTED: Color = Color::srgb(1.0, 0.95, 0.35);
+const ZONE: Color = Color::srgba(0.45, 0.9, 0.5, 0.7);
+const PATH: Color = Color::srgba(1.0, 0.75, 0.3, 0.85);
 const GHOST: Color = Color::srgba(0.75, 0.95, 1.0, 0.8);
 
 /// Draw the selection, the box or the ghost line, and the overlay.
@@ -233,6 +288,45 @@ pub fn draw_battle_controls(
     let Some(v) = &live.view else { return };
     let to_map = field_to_map(v.at, v.facing, v.field);
     let at = |p: (f32, f32)| to_map(Vec2::new(p.0, p.1));
+    let px = camera.1.compute_transform().scale.x;
+    // Before the battle: the player's half, outlined and hatched.
+    if v.deploying {
+        let (x0, x1, y0, y1) = v.deploy_zone(v.player_side);
+        let c = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)];
+        for k in 0..4 {
+            gizmos.line_2d(at(c[k]), at(c[(k + 1) % 4]), ZONE);
+        }
+        let step = 25.0;
+        let mut s = 0.0;
+        while s < (x1 - x0) + (y1 - y0) {
+            // A hatch line where x + y is constant, clipped to the zone.
+            let a = (x0 + s.min(x1 - x0), y0 + (s - (x1 - x0)).max(0.0));
+            let b = (x0 + (s - (y1 - y0)).max(0.0), y0 + s.min(y1 - y0));
+            gizmos.line_2d(at(a), at(b), ZONE.with_alpha(0.2));
+            s += step;
+        }
+    }
+    // Queued paths of the player's squads, a marker at each waypoint;
+    // brighter for the selected.
+    for q in (0..v.squads.len()).filter(|&q| rts::selectable(v, q)) {
+        let path = rts::queued_path(v, q);
+        let colour = if controls.rts.selection.squads.contains(&q) {
+            PATH
+        } else {
+            PATH.with_alpha(0.35)
+        };
+        for w in path.windows(2) {
+            gizmos.line_2d(at(w[0]), at(w[1]), colour);
+        }
+        let m = (1.5 * crate::battles::SCALE).max(7.0 * px);
+        for &p in path.iter().skip(1) {
+            let c = at(p);
+            for (dx, dy) in [(m, 0.0), (0.0, m), (-m, 0.0), (0.0, -m)] {
+                let (ex, ey) = (-dy, dx);
+                gizmos.line_2d(c + Vec2::new(dx, dy), c + Vec2::new(ex, ey), colour);
+            }
+        }
+    }
     for &q in &controls.rts.selection.squads {
         if let Some(c) = rts::outline(v, q) {
             for k in 0..4 {
@@ -267,7 +361,6 @@ pub fn draw_battle_controls(
     }
     // The overlay: each soldier on their feet a disc in the colour of their
     // morale, darker the more tired, at least a few pixels wide.
-    let px = camera.1.compute_transform().scale.x;
     let disc = (1.1 * r).max(3.5 * px);
     if controls.overlay && v.on_soldiers() {
         for (men, cond) in v.frame.soldiers.iter().zip(&v.condition) {
@@ -377,15 +470,24 @@ pub fn spawn_controls_tip(mut commands: Commands) {
     ));
 }
 
-/// Words for the tip: the arrival time of a ghost, else the hint.
+/// Words for the tip: where a ghost deploys or when it arrives (queued with
+/// shift), else the hint.
 pub fn tip_text(v: &LiveView, c: &BattleControls) -> Option<String> {
     let (_, ghosts) = ghost_of(v, c);
+    if v.deploying && !ghosts.is_empty() {
+        return Some("deploy here".into());
+    }
     if let Some(eta) = ghosts.iter().map(|g| g.1.eta).reduce(f32::max) {
         let run = c
             .pointer
             .is_some_and(|p| matches!(c.rts.gesture(p), Gesture::Line(_, _, true)));
         let how = if run { "running" } else { "marching" };
-        return Some(format!("there in {eta:.0} s, {how}"));
+        let queued = if c.pointer.is_some_and(|p| p.shift) {
+            "queued: "
+        } else {
+            ""
+        };
+        return Some(format!("{queued}there in {eta:.0} s, {how}"));
     }
     c.hint.clone()
 }

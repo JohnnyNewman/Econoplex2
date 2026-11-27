@@ -16,6 +16,10 @@
 //! - **Guild charter**: a chartered guild's masters teach faster.
 //! - **Army**: the share of adults kept under arms, and whether the squad raids on
 //!   its own judgment or only defends; a raid order sends it against a chosen town.
+//! - **Doctrine**: how the town's squads fight on their own judgment
+//!   (cautious, balanced or aggressive) and what they do to enemies who run
+//!   (kill, capture or let go), in every battle it fights; a live battle
+//!   starts from it as its squads' stances.
 //! - **Construction**: a commissioned building is paid for at full price whatever
 //!   the market thinks, and goes up where the order placed it.
 
@@ -92,6 +96,8 @@ pub struct Policy {
     /// Share of adults under arms; `None` keeps the default from `models.ron`.
     pub army_share: Option<f32>,
     pub war: War,
+    /// How the town's squads fight in its battles (`battle::Doctrine`).
+    pub doctrine: crate::battle::Doctrine,
     /// A raid ordered against this town, launched as soon as the squad can march.
     pub raid_order: Option<u16>,
     /// Buildings ordered and not yet built, in order.
@@ -195,6 +201,10 @@ pub enum Order {
         town: u16,
         war: War,
     },
+    Doctrine {
+        town: u16,
+        doctrine: crate::battle::Doctrine,
+    },
     Raid {
         town: u16,
         target: u16,
@@ -279,6 +289,7 @@ impl Order {
             | Order::Charter { town, .. }
             | Order::Army { town, .. }
             | Order::War { town, .. }
+            | Order::Doctrine { town, .. }
             | Order::Raid { town, .. }
             | Order::Build { town, .. }
             | Order::Mint { town, .. }
@@ -303,6 +314,7 @@ impl Order {
     /// charter <town> <domain> on|off
     /// army <town> <share>|auto               e.g. army Greenvale 0.1
     /// war <town> auto|defend
+    /// doctrine <town> cautious|balanced|aggressive kill|capture|letgo
     /// raid <town> <target>
     /// build <town> <building> [<x> <y>]
     /// mint <town> auto|on|off
@@ -382,6 +394,31 @@ impl Order {
             ["war", t, w @ ("auto" | "defend")] => Ok(Order::War {
                 town: town(t)?,
                 war: if *w == "auto" { War::Auto } else { War::Defend },
+            }),
+            ["doctrine", t, posture, prisoners] => Ok(Order::Doctrine {
+                town: town(t)?,
+                doctrine: crate::battle::Doctrine {
+                    posture: match posture.to_ascii_lowercase().as_str() {
+                        "cautious" => crate::battle::Posture::Cautious,
+                        "balanced" => crate::battle::Posture::Balanced,
+                        "aggressive" => crate::battle::Posture::Aggressive,
+                        _ => {
+                            return Err(format!(
+                                "a doctrine is cautious, balanced or aggressive, not `{posture}`"
+                            ))
+                        }
+                    },
+                    prisoners: match prisoners.to_ascii_lowercase().as_str() {
+                        "kill" => crate::battle::Pursuit::Kill,
+                        "capture" => crate::battle::Pursuit::Capture,
+                        "letgo" => crate::battle::Pursuit::LetGo,
+                        _ => {
+                            return Err(format!(
+                                "prisoners are kill, capture or letgo, not `{prisoners}`"
+                            ))
+                        }
+                    },
+                },
             }),
             ["tax", t, kind @ ("wealth" | "income" | "profit"), rate] => Ok(Order::Tax {
                 town: town(t)?,
@@ -536,6 +573,7 @@ pub fn apply_orders(
                 p.army_share = share.map(|s| s.clamp(0.0, params.policy.max_army_share));
             }
             Order::War { war, .. } => p.war = war,
+            Order::Doctrine { doctrine, .. } => p.doctrine = doctrine,
             Order::Mint { minting, .. } => p.minting = minting,
             Order::Tax { tax, rate, .. } => match tax {
                 Tax::Wealth => {

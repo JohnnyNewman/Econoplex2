@@ -69,7 +69,7 @@ pub enum Pursuit {
     #[default]
     Kill,
     /// Take them prisoner: chase them, and lay hands on those in reach
-    /// instead of striking them (`Member::captured`). After a live battle
+    /// instead of striking them (`Member::captured`). After a battle
     /// the winners' prisoners go to the winning town (military
     /// `take_prisoners`).
     Capture,
@@ -99,12 +99,50 @@ pub enum Posture {
 }
 
 /// A side's way of fighting: its squads' posture on their own judgment, and
-/// what they do to enemies who run. A town sets it in governance for its
-/// auto-resolved battles (build order, B).
+/// what they do to enemies who run. A town sets it in governance
+/// (`Policy::doctrine`); every battle it fights starts from it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Doctrine {
     pub posture: Posture,
     pub prisoners: Pursuit,
+}
+
+impl Doctrine {
+    /// The posture after this one (cautious, balanced, aggressive, round),
+    /// for a governance button.
+    pub fn next_posture(self) -> Self {
+        let posture = match self.posture {
+            Posture::Cautious => Posture::Balanced,
+            Posture::Balanced => Posture::Aggressive,
+            Posture::Aggressive => Posture::Cautious,
+        };
+        Self { posture, ..self }
+    }
+
+    /// The prisoner policy after this one (kill, capture, let go, round).
+    pub fn next_prisoners(self) -> Self {
+        let prisoners = match self.prisoners {
+            Pursuit::Kill => Pursuit::Capture,
+            Pursuit::Capture => Pursuit::LetGo,
+            Pursuit::LetGo => Pursuit::Kill,
+        };
+        Self { prisoners, ..self }
+    }
+}
+
+/// A doctrine in words, e.g. "doctrine cautious, take prisoners".
+pub fn doctrine_words(d: Doctrine) -> String {
+    let posture = match d.posture {
+        Posture::Cautious => "cautious",
+        Posture::Balanced => "balanced",
+        Posture::Aggressive => "aggressive",
+    };
+    let prisoners = match d.prisoners {
+        Pursuit::Kill => "kill runners",
+        Pursuit::Capture => "take prisoners",
+        Pursuit::LetGo => "let runners go",
+    };
+    format!("doctrine {posture}, {prisoners}")
 }
 
 /// What the player tells one squad of the live battle.

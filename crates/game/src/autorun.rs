@@ -17,7 +17,9 @@
 //! waits instead for a live battle to have been fought S battle seconds, and
 //! looks at its field; with `--battle`, for the staged battle's playback to
 //! reach S battle seconds. Either way it then stops the clock, so the battle
-//! holds still for the shot. Used to make the README and PR screenshots.
+//! holds still for the shot. A live battle waiting for its deployment is
+//! started for the shot, except with `--shot-battle 0`, which shows the
+//! deployment. Used to make the README and PR screenshots.
 
 use crate::view::WorldCamera;
 use crate::SimControl;
@@ -144,6 +146,7 @@ pub fn parse() -> GameArgs {
                      --shot FILE      save a PNG screenshot once the game reaches --shot-day\n\
                      --shot-day N     simulated day (month) of the screenshot (default: at once)\n\
                      --shot-battle S  instead, once a live (or --battle) battle has been fought S seconds\n\
+                     \x20                (0: while it waits for the deployment)\n\
                      --exit           quit after the screenshot\n\
                      --town NAME      town shown in the economy panel at start\n\
                      --camera X Y     center the camera on a world position\n\
@@ -155,7 +158,9 @@ pub fn parse() -> GameArgs {
                      --set PATH=VALUE change models.ron for this run (repeatable)\n\
                      --battle LINEUP  fight a line-up on battle.model and play it back\n\
                      --rts-demo WHAT  in a live battle, show `ghost` (your squads selected, a line\n\
-                     \x20                laid out ahead of them) or `overlay` (morale and fatigue)"
+                     \x20                laid out ahead of them), `overlay` (morale and fatigue), `deploy`\n\
+                     \x20                (the zone and a line dragged in it; with --shot-battle 0) or\n\
+                     \x20                `queue` (two waypoints queued for each squad, and their paths)"
                 );
                 std::process::exit(0);
             }
@@ -215,7 +220,7 @@ pub fn autoshot(
     mut commands: Commands,
     args: Res<GameArgs>,
     clock: Res<sim_core::SimClock>,
-    live: Res<crate::live_battle::LiveBattle>,
+    mut live: ResMut<crate::live_battle::LiveBattle>,
     scenes: Res<crate::battles::BattleScenes>,
     mut time: ResMut<Time<Virtual>>,
     mut camera: Single<&mut Transform, With<WorldCamera>>,
@@ -237,7 +242,16 @@ pub fn autoshot(
                 time.pause();
             }
             Some(s) => {
-                let Some(v) = live.view.as_ref().filter(|v| v.frame.t >= s || v.finished) else {
+                // A scripted shot starts the battle itself, unless it is to
+                // show the deployment (`--shot-battle 0`).
+                if live.view.as_ref().is_some_and(|v| v.deploying) && s > 0.0 {
+                    live.start = true;
+                }
+                let Some(v) = live
+                    .view
+                    .as_ref()
+                    .filter(|v| v.frame.t >= s || v.finished || (v.deploying && s <= 0.0))
+                else {
                     return;
                 };
                 follow.0 = false;

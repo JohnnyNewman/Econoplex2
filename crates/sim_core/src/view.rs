@@ -52,6 +52,10 @@ pub struct PolicyView {
     pub minting: String,
     /// "auto" or "defend".
     pub war: String,
+    /// The doctrine: "cautious", "balanced" or "aggressive", and "kill",
+    /// "capture" or "letgo" (as the `doctrine` order takes them).
+    pub posture: String,
+    pub prisoners: String,
     /// Buildings ordered and not yet built.
     pub commissions: u32,
 }
@@ -622,6 +626,8 @@ impl ViewSnapshot {
                             immigration: format!("{:?}", pol.immigration).to_lowercase(),
                             minting: format!("{:?}", pol.minting).to_lowercase(),
                             war: format!("{:?}", pol.war).to_lowercase(),
+                            posture: format!("{:?}", pol.doctrine.posture).to_lowercase(),
+                            prisoners: format!("{:?}", pol.doctrine.prisoners).to_lowercase(),
                             commissions: pol.commissions.len() as u32,
                         }
                     },

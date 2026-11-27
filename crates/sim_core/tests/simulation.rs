@@ -200,6 +200,44 @@ fn sword_towns_raise_squads_and_raid() {
     assert!(settled > 0, "no captive lives in the captor's town");
 }
 
+/// Auto-resolved raids follow the towns' doctrines: with every town on
+/// capture, beaten soldiers are taken prisoner and change towns.
+#[test]
+fn a_doctrine_of_capture_takes_prisoners_in_auto_resolved_raids() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let mut s = Simulation::from_paths(&AssetPaths::from_root(&root)).unwrap();
+    let names: Vec<String> = s
+        .world
+        .resource::<sim_core::Towns>()
+        .0
+        .iter()
+        .map(|t| t.name.clone())
+        .collect();
+    for n in &names {
+        s.order(&format!("doctrine {n} balanced capture")).unwrap();
+    }
+    let dpy = s.world.resource::<sim_core::SimClock>().months_per_year;
+    // Yearly counters: add up what each step adds.
+    let mut last = vec![0u32; names.len()];
+    let mut prisoners = 0;
+    for _ in 0..20 * dpy {
+        s.step();
+        let towns = s.world.resource::<sim_core::Towns>();
+        for (t, town) in towns.0.iter().enumerate() {
+            let now = town.war.prisoners_taken;
+            prisoners += now.saturating_sub(last[t]);
+            last[t] = now;
+        }
+        if prisoners > 0 {
+            break;
+        }
+    }
+    assert!(
+        prisoners > 0,
+        "no prisoners in 20 years of raids on capture"
+    );
+}
+
 #[test]
 fn households_migrate_and_carry_their_skills() {
     // Households decide together and know only some towns, so moves are rare: use
@@ -3156,7 +3194,7 @@ fn a_live_battle_waits_for_the_player_then_settles() {
     use sim_core::battle::{Command, Order};
     use sim_core::systems::military::{
         command_live_battle, live_battle_view, live_battle_waiting, resolve_live_battle,
-        LiveBattles,
+        start_live_battle, step_live_battle, LiveBattles,
     };
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     let mut s = Simulation::from_paths(&AssetPaths::from_root(&root)).unwrap();
@@ -3172,9 +3210,21 @@ fn a_live_battle_waits_for_the_player_then_settles() {
         (towns.0[player].name.clone(), towns.0[other].name.clone())
     };
     s.order(&format!("army {me} 0.15")).unwrap();
+    // The town's doctrine: its squads take prisoners.
+    s.order(&format!("doctrine {me} aggressive capture"))
+        .unwrap();
     for _ in 0..4 {
         s.step();
     }
+    assert_eq!(
+        s.world.resource::<sim_core::Towns>().0[player]
+            .policy
+            .doctrine,
+        sim_core::battle::Doctrine {
+            posture: sim_core::battle::Posture::Aggressive,
+            prisoners: sim_core::battle::Pursuit::Capture,
+        }
+    );
     s.order(&format!("raid {me} {them}")).unwrap();
     let mut waited = false;
     for _ in 0..20 {
@@ -3188,6 +3238,42 @@ fn a_live_battle_waits_for_the_player_then_settles() {
     let view = live_battle_view(&s.world).unwrap();
     assert_eq!(view.player_side, 0);
     let mine = view.squads.iter().position(|q| q.side == 0).unwrap();
+    // It starts from the town's doctrine.
+    for q in (0..view.squads.len()).filter(|&q| view.squads[q].side == 0) {
+        assert_eq!(view.stances[q].pursuit, sim_core::battle::Pursuit::Capture);
+    }
+    // Deployment: nothing moves until the player starts it; a squad stands
+    // where it is put in its own half, and nowhere else.
+    assert!(view.deploying);
+    step_live_battle(&mut s.world, 5.0);
+    assert_eq!(live_battle_view(&s.world).unwrap().frame.t, 0.0);
+    let (x0, x1, y0, y1) = view.deploy_zone(0);
+    let spot = (0.5 * (x0 + x1), 0.5 * (y0 + y1));
+    command_live_battle(
+        &mut s.world,
+        mine,
+        Command::Deploy {
+            anchor: spot,
+            facing: (1.0, 0.0),
+            width: None,
+        },
+    )
+    .unwrap();
+    let line = live_battle_view(&s.world).unwrap().lines[mine];
+    assert!(
+        (line.anchor.0 - spot.0).hypot(line.anchor.1 - spot.1) < 1.0,
+        "{line:?}"
+    );
+    let beyond = Command::Deploy {
+        anchor: (x1 + 50.0, spot.1),
+        facing: (1.0, 0.0),
+        width: None,
+    };
+    assert!(command_live_battle(&mut s.world, mine, beyond).is_err());
+    start_live_battle(&mut s.world);
+    assert!(!live_battle_view(&s.world).unwrap().deploying);
+    step_live_battle(&mut s.world, 1.0);
+    assert!(live_battle_view(&s.world).unwrap().frame.t > 0.0);
     // The raid holds while the battle waits.
     let progress = |s: &Simulation| {
         s.world.resource::<sim_core::Towns>().0[player]
@@ -3210,14 +3296,6 @@ fn a_live_battle_waits_for_the_player_then_settles() {
     // Only the player's own squads take commands.
     let theirs = view.squads.iter().position(|q| q.side == 1).unwrap();
     assert!(command_live_battle(&mut s.world, theirs, Command::Orders(vec![Order::Hold])).is_err());
-    // The player's squads take prisoners.
-    for q in (0..view.squads.len()).filter(|&q| view.squads[q].side == 0) {
-        let capture = sim_core::battle::Stance {
-            pursuit: sim_core::battle::Pursuit::Capture,
-            ..Default::default()
-        };
-        command_live_battle(&mut s.world, q, Command::Stance(capture)).unwrap();
-    }
     resolve_live_battle(&mut s.world);
     assert!(!live_battle_waiting(&s.world));
     let (prisoners, won) = {

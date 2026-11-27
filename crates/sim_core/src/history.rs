@@ -162,6 +162,7 @@ pub fn describe(order: &Order, db: &Db, towns: &Towns) -> String {
             None => "army auto".into(),
         },
         Order::War { war, .. } => format!("war {war:?}").to_lowercase(),
+        Order::Doctrine { doctrine, .. } => crate::battle::doctrine_words(*doctrine),
         Order::Wages { share, .. } => match share {
             Some(s) => format!("wages {:.0}% of value", s * 100.0),
             None => "wages auto".into(),
