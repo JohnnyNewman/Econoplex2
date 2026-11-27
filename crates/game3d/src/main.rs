@@ -10,7 +10,7 @@
 //!     [--no-ui] [--no-lod] [--lod-view] [--fps] [--render-scale F] [--shot FILE] [--quit-after S] [--select ID]
 //!     [--weather clear|cloudy|rain|storm|snow|fog] [--season spring|summer|autumn|winter]
 //!     [--preset FILE] [--set PATH=VALUE]... [--order TEXT]... [--shot-battle S] [--battle LINEUP]
-//!     [--rts-demo ghost|overlay]
+//!     [--rts-demo ghost|overlay|deploy|queue]
 //!
 //! `--preset` and `--set` change models.ron for this run, as in the CLI (e.g.
 //! `--set battle.model=Soldiers`). `--battle` fights a line-up (as
@@ -23,8 +23,11 @@
 //! the staged battle's playback to reach S seconds, where its lines meet).
 //! `--rts-demo` shows a battle control without a mouse, for screenshots:
 //! `ghost` selects your squads and lays out a line ahead of them, `overlay`
-//! colours the soldiers by morale and fatigue (battle_input.rs; F1 lists the
-//! controls).
+//! colours the soldiers by morale and fatigue, `deploy` shows the deployment
+//! zone with a line dragged in it (with `--shot-battle 0`, which shoots
+//! before the battle starts; any other S starts it), `queue` queues two
+//! waypoints for each squad and draws their paths (battle_input.rs; F1
+//! lists the controls).
 //!
 //! econoplex3d --playground [--hour H] [--view N] [--toon-view N] [--pbr] [--face-sun] [--shot FILE]
 //!     (shader playground)
@@ -799,7 +802,15 @@ fn shoot(
                 cam.distance = cam.distance.min(10.0);
             }
         } else {
-            let Some(v) = live.live_battle().filter(|v| v.frame.t >= s || v.finished) else {
+            // A scripted shot starts the battle itself, unless it is to show
+            // the deployment (`--shot-battle 0`).
+            if live.live_battle().is_some_and(|v| v.deploying) && s > 0.0 {
+                live.start_battle();
+            }
+            let Some(v) = live
+                .live_battle()
+                .filter(|v| v.frame.t >= s || v.finished || (v.deploying && s <= 0.0))
+            else {
                 return;
             };
             for mut cam in &mut cameras {

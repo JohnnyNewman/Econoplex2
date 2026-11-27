@@ -41,6 +41,10 @@ struct Summary {
     /// Gini coefficient of the towns' mean wealth (inequality between towns).
     wealth_gini: f64,
     raids: f64,
+    /// People carried off in raids, and of them soldiers taken prisoner in
+    /// battle (a doctrine of capture), over the run.
+    captives: f64,
+    prisoners: f64,
     conquests: f64,
     revolts: f64,
     /// Share of town-years spent paying tribute.
@@ -69,14 +73,14 @@ struct Summary {
 }
 
 /// The table's column names; health bands name metrics by these.
-pub const COLUMNS: [&str; 25] = [
+pub const COLUMNS: [&str; 27] = [
     "pop", "starve%", "food/cap", "div", "ECI rng", "spec", "masters", "swords", "wealth", "gini",
-    "raids", "conq", "revolts", "ruled%", "moves", "glut%", "gwork%", "hh use", "in use", "happy",
-    "capab", "reserve", "foodwk%", "farmwk%", "ms/day",
+    "raids", "captv", "prisn", "conq", "revolts", "ruled%", "moves", "glut%", "gwork%", "hh use",
+    "in use", "happy", "capab", "reserve", "foodwk%", "farmwk%", "ms/day",
 ];
 
 impl Summary {
-    fn values(&self) -> [f64; 25] {
+    fn values(&self) -> [f64; 27] {
         [
             self.population,
             self.starving * 100.0,
@@ -89,6 +93,8 @@ impl Summary {
             self.mean_wealth,
             self.wealth_gini,
             self.raids,
+            self.captives,
+            self.prisoners,
             self.conquests,
             self.revolts,
             self.ruled * 100.0,
@@ -205,6 +211,8 @@ impl Summary {
                 town_years += 1.0;
                 ruled += t.ruler.is_some() as u8 as f64;
                 s.raids += t.war.raids as f64;
+                s.captives += t.war.captives_taken as f64;
+                s.prisoners += t.war.prisoners_taken as f64;
                 s.conquests += t.war.conquests as f64;
                 s.revolts += t.war.revolts as f64;
                 s.migrants += t.moves.arrived as f64;
@@ -346,7 +354,7 @@ pub fn run(
     println!();
     let mut means = Vec::new();
     for c in 0..settings.len() {
-        let rows: Vec<[f64; 25]> = (0..jobs.len())
+        let rows: Vec<[f64; 27]> = (0..jobs.len())
             .filter(|&j| jobs[j].0 == c)
             .map(|j| results[j].values())
             .collect();
@@ -390,6 +398,8 @@ pub fn run(
             "mean_wealth",
             "wealth_gini",
             "raids",
+            "captives",
+            "prisoners",
             "conquests",
             "revolts",
             "ruled",

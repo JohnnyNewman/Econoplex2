@@ -389,6 +389,28 @@ fn panels(
                 "mint",
             );
             choice(ui, &mut state, "war", &pol.war, &["auto", "defend"], "war");
+            // The doctrine its squads fight by, in every battle.
+            let (posture, prisoners) = (pol.posture.as_str(), pol.prisoners.as_str());
+            ui.horizontal(|ui| {
+                ui.label(format!("{:<16}", "doctrine"));
+                for o in ["cautious", "balanced", "aggressive"] {
+                    if ui.selectable_label(posture == o, o).clicked() && posture != o {
+                        send(&mut state, format!("doctrine {name} {o} {prisoners}"));
+                    }
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.label(format!("{:<16}", "runners"));
+                for (o, words) in [
+                    ("kill", "kill"),
+                    ("capture", "capture"),
+                    ("letgo", "let go"),
+                ] {
+                    if ui.selectable_label(prisoners == o, words).clicked() && prisoners != o {
+                        send(&mut state, format!("doctrine {name} {posture} {o}"));
+                    }
+                }
+            });
             ui.separator();
             // Raids.
             let others: Vec<usize> = (0..snap.towns.len()).filter(|&o| o != ti).collect();
