@@ -44,7 +44,7 @@ use std::collections::HashMap;
 pub type CrowdMaterial = ExtendedMaterial<StandardMaterial, CrowdExt>;
 
 /// Vertices of the full figure.
-pub const FIGURE_VERTS: usize = 180;
+pub const FIGURE_VERTS: usize = 216;
 /// Vertices of one person in the crowd mesh: the figure, then the card (two
 /// triangles) for the middle distance. Must match `VERTS_PER_PERSON` in
 /// people.wesl.
@@ -230,6 +230,59 @@ pub fn figure() -> (Vec<[f32; 3]>, Vec<[f32; 3]>) {
     }
     for x in [0.17, -0.17] {
         limb(Vec3::new(x, 0.53, 0.0), Vec3::new(x, 0.27, 0.0), 0.03);
+    }
+    // A bundle on the back (36 vertices), shown only while carrying: a box
+    // behind the shoulders.
+    let (lo, hi) = (Vec3::new(-0.1, 0.36, -0.24), Vec3::new(0.1, 0.56, -0.12));
+    let at = |x: bool, y: bool, z: bool| {
+        Vec3::new(
+            if x { hi.x } else { lo.x },
+            if y { hi.y } else { lo.y },
+            if z { hi.z } else { lo.z },
+        )
+    };
+    // Each face as four corners, clockwise seen from outside.
+    let faces = [
+        [
+            at(true, false, false),
+            at(true, true, false),
+            at(true, true, true),
+            at(true, false, true),
+        ],
+        [
+            at(false, false, true),
+            at(false, true, true),
+            at(false, true, false),
+            at(false, false, false),
+        ],
+        [
+            at(false, true, false),
+            at(false, true, true),
+            at(true, true, true),
+            at(true, true, false),
+        ],
+        [
+            at(false, false, true),
+            at(false, false, false),
+            at(true, false, false),
+            at(true, false, true),
+        ],
+        [
+            at(true, false, true),
+            at(true, true, true),
+            at(false, true, true),
+            at(false, false, true),
+        ],
+        [
+            at(false, false, false),
+            at(false, true, false),
+            at(true, true, false),
+            at(true, false, false),
+        ],
+    ];
+    for f in faces {
+        tri(f[0], f[1], f[2]);
+        tri(f[0], f[2], f[3]);
     }
     assert_eq!(pos.len(), FIGURE_VERTS);
     (pos, nrm)
@@ -516,6 +569,29 @@ fn home_of(id: u32, town_pos: (f32, f32), town_index: usize, population: u32) ->
     )
 }
 
+/// Added to a person's motion while they carry a bundle (people.wesl).
+pub const CARRY: f32 = 8.0;
+
+/// Clothes by wealth: `rel` is a person's savings over their town's mean.
+/// The poor wear undyed, drab cloth (the trade's colour only a hint), the
+/// rich brighter, fully dyed colours.
+pub fn dressed(rgb: [f32; 3], rel: f32) -> [f32; 3] {
+    let rich = smooth(0.25, 3.0, rel);
+    let undyed = [0.30, 0.24, 0.16];
+    let grey = (rgb[0] + rgb[1] + rgb[2]) / 3.0;
+    std::array::from_fn(|k| {
+        // Poor: mostly undyed. Rich: more saturated and a little brighter.
+        let poor = undyed[k] * 0.7 + rgb[k] * 0.3;
+        let fine = (grey + (rgb[k] - grey) * 1.35).max(0.0) * 1.15;
+        poor + (fine - poor) * rich
+    })
+}
+
+fn smooth(a: f32, b: f32, x: f32) -> f32 {
+    let t = ((x - a) / (b - a)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
 /// The colour of a person (linear RGB) and their size.
 fn look(doing: Doing, domains: u32) -> ([f32; 3], f32) {
     let lin = |c: Color| c.to_linear().to_f32_array_no_alpha();
@@ -602,15 +678,26 @@ fn update_targets(
                 .map_or(work, |t| Vec2::new(t.pos.0, -t.pos.1) / SCALE);
             let plan = day_plan(id, doing, clock.hour, work, home, centre);
             let (mut rgb, size) = look(doing, snap.domains);
+            // Clothes by wealth (soldiers and captives keep their colours).
+            if matches!(doing, Doing::Working(_) | Doing::Idle | Doing::Resting) {
+                let mean = snap.towns.get(ti).map_or(1.0, |t| t.mean_wealth).max(1e-3);
+                let rel = people.wealth.get(k).copied().unwrap_or(mean) / mean;
+                rgb = dressed(rgb, rel);
+            }
             if let (true, Some(c)) = (by_culture, people.culture.get(k)) {
                 rgb = crate::overlay::culture_colour(c);
             }
             // The trade's motion only at work; elsewhere they just stand.
-            let motion = if plan.at_work {
+            let mut motion = if plan.at_work {
                 Motion::of(doing, &snap.domain_names) as u32 as f32
             } else {
                 0.0
             };
+            // Workers on their way home carry the day's goods (a bundle on
+            // their back; people.wesl reads it as motion + 8).
+            if matches!(doing, Doing::Working(_)) && plan.out && !plan.at_work {
+                motion += CARRY;
+            }
             let occupied = if plan.out { 1.0 } else { 0.0 };
             data[slots.of[&id]] = [
                 plan.goal.x,

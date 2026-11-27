@@ -53,8 +53,8 @@ struct Crowd {
 @group(constants::MATERIAL_BIND_GROUP) @binding(101) var<storage, read> people: array<Person>;
 @group(constants::MATERIAL_BIND_GROUP) @binding(102) var<storage, read> env: Env; // the shared fog and lamps (src/fog.rs, FOG_BUFFER)
 
-const FIGURE_VERTS: u32 = 180u;
-const VERTS_PER_PERSON: u32 = 186u;
+const FIGURE_VERTS: u32 = 216u;
+const VERTS_PER_PERSON: u32 = 222u;
 // The card's half width and height, in figure units (the figure is 0.77 tall).
 const CARD: vec2<f32> = vec2<f32>(0.25, 0.8);
 // Joints (figure space: x across, y up, z forward), see crowd.rs `figure`.
@@ -203,13 +203,19 @@ fn vertex(vertex_in: Vertex, @builtin(vertex_index) vertex_index: u32) -> Vertex
         return nothing();
     }
     let size = abs(p.size);
-    let kind = u32(p.motion.x + 0.5);
+    // The work motion, plus 8 while carrying a bundle (crowd.rs `CARRY`).
+    let code = u32(p.motion.x + 0.5);
+    let kind = code & 7u;
+    let carrying = code >= 8u;
     let phase = p.motion.y;
     let w = p.motion.z; // 0 standing .. 1 walking
 
     // Which part this vertex belongs to (the figure's layout in crowd.rs).
-    // 0 body and head, 1 and 2 legs, 3 and 4 arms.
-    let part = select(0u, (corner - 60u) / 30u + 1u, corner >= 60u);
+    // 0 body and head, 1 and 2 legs, 3 and 4 arms, 5 the bundle on the back.
+    let part = select(select(0u, (corner - 60u) / 30u + 1u, corner >= 60u), 5u, corner >= 180u);
+    if part == 5u && !carrying {
+        return nothing();
+    }
 
     // Walking: legs swing opposite each other with the stride; each arm swings
     // with the opposite leg. Soldiers march stiff-armed.
@@ -248,7 +254,7 @@ fn vertex(vertex_in: Vertex, @builtin(vertex_index) vertex_index: u32) -> Vertex
     out.position = position_world_to_clip(world);
     out.world_normal = normalize(turn(normal, p.heading));
 @if(VERTEX_UVS_A)
-    out.uv = vec2<f32>(f32(index), 0.0);  // the fragment stage looks the colour up; y 0: the figure
+    out.uv = vec2<f32>(f32(index), select(0.0, 0.25, part == 5u));  // the fragment stage looks the colour up; y 0: the figure, 0.25 the bundle
 @if(VERTEX_OUTPUT_INSTANCE_INDEX)
     out.instance_index = vertex_in.instance_index;
     return out;
@@ -322,6 +328,10 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         tint = vec3<f32>(1.0, 0.55, 0.2); // orange cards
     }
     var albedo = person.color;
+    // The bundle: sackcloth.
+    if in.uv.y > 0.1 && !card {
+        albedo = vec3<f32>(0.42, 0.32, 0.18);
+    }
     if crowd.lod.w > 0.5 {
         albedo = tint;
     }

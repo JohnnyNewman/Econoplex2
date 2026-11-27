@@ -159,6 +159,9 @@ pub struct PeopleView {
     /// mind (tradition, faith, liberty; 0..1, 0.5 neutral).
     #[serde(default)]
     pub culture: Vec<[f32; 3]>,
+    /// Each person's savings (coin), for how well they dress.
+    #[serde(default)]
+    pub wealth: Vec<f32>,
 }
 
 /// How much of the event log and the monthly history a view already has.
@@ -429,6 +432,7 @@ impl ViewSnapshot {
             people.culture.push(std::array::from_fn(|k| {
                 ideology.get(k).copied().unwrap_or(0.5)
             }));
+            people.wealth.push(store.wealth[i].coins());
             // Workers are Idle again by the end of the tick; what they did is
             // in `worked_today`.
             people
