@@ -1027,13 +1027,13 @@ fn public_spending_pays_out_the_treasury_surplus() {
 #[test]
 fn a_government_order_is_delivered_and_lifts_a_glut() {
     // Scarce goods (cloth sells at its highest price in Greenvale): the order takes
-    // the town's output into public use until it is filled (in four years: the
+    // the town's output into public use until it is filled (in six years: the
     // weavers' trade grows by apprentices and newcomers, not overnight).
     let base = with_orders(8, &[], 2);
     let db = base.world.resource::<sim_core::Db>();
     let cloth = db.content.product("cloth").unwrap() as usize;
     let plank = db.content.product("plank").unwrap() as usize;
-    let s = with_orders(8, &["procure Greenvale cloth 100"], 4);
+    let s = with_orders(8, &["procure Greenvale cloth 100"], 6);
     let town = &s.world.resource::<sim_core::Towns>().0[1];
     assert_eq!(town.procured[cloth], 100.0);
     assert!(
