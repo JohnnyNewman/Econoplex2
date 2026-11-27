@@ -41,13 +41,15 @@ impl SquadBattle {
         }
     }
 
-    /// Melee blows of squad `i` on squad `t` for one step.
-    pub(super) fn melee(&mut self, i: usize, t: usize) {
-        let p = self.params.clone();
+    /// Squad `i`'s melee on squad `t` this step, before the dice: blows
+    /// expected, whether they are flank blows, their chance to hit and the
+    /// mean hit points of a hit.
+    fn exchange(&self, i: usize, t: usize) -> (f32, bool, f32, f32) {
+        let p = &self.params;
         let (si, st) = (&self.squads[i], &self.squads[t]);
-        let mut front = si.front(&p);
+        let mut front = si.front(p);
         if self.across_wall(i, t) {
-            let breach = p.breach_width / si.spacing(&p);
+            let breach = p.breach_width / si.spacing(p);
             front = front.min(if si.spec.behind_wall {
                 2.0 * breach
             } else {
@@ -75,7 +77,42 @@ impl SquadBattle {
         };
         let flank = st.primary != Some(i) || st.state == SquadState::Routing;
         let blows = front * si.spec.kit.strike_rate * p.dt * reach_factor;
-        let n = self.count(blows);
+        let (chance, damage) = self.blow_odds(i, t, false, 0.0, flank);
+        (blows, flank, chance, damage)
+    }
+
+    /// Squad `i`'s initiative before the d20 against squad `t`: agility,
+    /// the weapons' speed, and the longer weapon's edge on men coming into
+    /// its reach.
+    fn initiative(&self, i: usize, t: usize) -> f32 {
+        let (si, st) = (&self.squads[i], &self.squads[t]);
+        let outreach = if si.spec.kit.reach > st.spec.kit.reach + 0.5 {
+            self.params.reach_initiative
+        } else {
+            0.0
+        };
+        si.agility + si.spec.kit.speed + outreach
+    }
+
+    /// Melee blows of squad `i` on squad `t` for one step. When `t` strikes
+    /// back in the same step, the blows meet: each man of `i` whose
+    /// opponent wins the initiative and downs him first does not strike.
+    /// The share of `i`'s blows lost is the chance `t` strikes first times
+    /// the share of `i`'s front its blows down this step.
+    pub(super) fn melee(&mut self, i: usize, t: usize) {
+        let (blows, flank, _, _) = self.exchange(i, t);
+        let st = &self.squads[t];
+        let back = st.fighting() && st.primary == Some(i) && st.contacts.contains(&i);
+        let lost = if back {
+            let (tb, _, tc, td) = self.exchange(t, i);
+            let si = &self.squads[i];
+            let hp = rules::max_hp(&self.params, si.experience) * si.health;
+            let downed = (tb * tc * td / (si.front(&self.params) * hp).max(1e-3)).min(1.0);
+            rules::first_chance(self.initiative(t, i), self.initiative(i, t)) * downed
+        } else {
+            0.0
+        };
+        let n = self.count(blows * (1.0 - lost));
         self.strikes(i, t, n as f32, false, 0.0, flank);
     }
 
@@ -112,6 +149,18 @@ impl SquadBattle {
     /// climbing the wall or pushing through the breach can't hold up his
     /// shield, and the defender on it has the higher ground (`wall_ground`).
     fn strikes(&mut self, i: usize, t: usize, n: f32, charge: bool, extra: f32, flank: bool) {
+        let (chance, damage) = self.blow_odds(i, t, charge, extra, flank);
+        let n = n.round() as u32;
+        for _ in 0..n {
+            if self.rng.random::<f32>() < chance {
+                self.hit(t, damage);
+            }
+        }
+    }
+
+    /// The chance a blow of squad `i` on squad `t` hits, and the mean hit
+    /// points of a hit (see [`Self::strikes`]).
+    fn blow_odds(&self, i: usize, t: usize, charge: bool, extra: f32, flank: bool) -> (f32, f32) {
         let (si, st) = (&self.squads[i], &self.squads[t]);
         let on_wall = si.spec.behind_wall && self.across_wall(i, t);
         let ground = if on_wall {
@@ -123,13 +172,10 @@ impl SquadBattle {
         let ac = st.spec.kit.armour_class(!flank && !on_wall);
         let chance = rules::hit_chance(self.bonus(i) + ground, ac, roll);
         let crit = rules::crit_chance(roll).min(chance) / chance.max(1e-6);
-        let damage = si.spec.kit.blow(charge, extra, crit, &st.spec.kit.taken);
-        let n = n.round() as u32;
-        for _ in 0..n {
-            if self.rng.random::<f32>() < chance {
-                self.hit(t, damage);
-            }
-        }
+        (
+            chance,
+            si.spec.kit.blow(charge, extra, crit, &st.spec.kit.taken),
+        )
     }
 
     /// One hit of `damage` hit points on squad `t`, landed with the rest of

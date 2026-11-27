@@ -366,6 +366,8 @@
         hit_points: 8.0,           // a townsperson unhurt,
         hp_per_experience: 2.0,    // more per ln(1 + battles survived)
         exhaustion_penalty: 1.0,   // attack bonus lost per level of exhaustion (a fifth of fatigue)
+        initiative_experience: 1.0, // initiative per ln(1 + battles survived), when blows meet,
+        reach_initiative: 2.0,     // and for a longer weapon against a man coming into its reach
         experience_full: 10.0,     // battles for full discipline from experience
         close_speed: 0.5,          // m/s a short weapon closes inside a long one
         charge_damage: 0.6,        // hit points per m/s of a horse's (or braced spear's) impact
@@ -374,7 +376,9 @@
         range_penalty: 8.0,        // attack bonus an arrow loses at full range
         rider_target: 2.0,         // attack bonus against a rider (squad model)
         mounted_size: 1.5,         // a rider is a bigger target where arrows land (soldier model)
-        death_below: -0.5,         // health below this is death, above it a wound
+        wound_death: 0.25,         // chance a fighter left down dies after the battle (massive damage kills outright),
+        tended: 0.5,               // times this when their side holds the field, or their captors tend them,
+        no_quarter: 2.0,           // and times this when the winners kill those they catch
         morale_per_loss: 1.5,      // morale lost per share of the squad lost
         flank_drain: 0.01,         // morale per second of blows in the flank
         morale_regen: 0.002,       // morale per second out of the fight

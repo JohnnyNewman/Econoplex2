@@ -11,8 +11,8 @@ use super::V2;
 pub(super) struct Grid {
     inv: f32,
     /// The last cell across and down.
-    xmax: i32,
-    ymax: i32,
+    xmax: f32,
+    ymax: f32,
     /// The box of cells this build covers: first cell across and down, and
     /// its size. Empty when nobody is listed.
     x0: usize,
@@ -46,8 +46,8 @@ impl Grid {
         let h = (height / cell).ceil().max(1.0) as usize;
         Self {
             inv: 1.0 / cell,
-            xmax: (w - 1) as i32,
-            ymax: (h - 1) as i32,
+            xmax: (w - 1) as f32,
+            ymax: (h - 1) as f32,
             x0: 0,
             y0: 0,
             bw: 0,
@@ -64,8 +64,10 @@ impl Grid {
     /// The field cell a point falls in; points off the field fall in its edge cells.
     #[inline]
     pub(super) fn cell(&self, p: V2) -> (usize, usize) {
-        let x = ((p.x * self.inv) as i32).max(0).min(self.xmax);
-        let y = ((p.y * self.inv) as i32).max(0).min(self.ymax);
+        // Clamped first, so the cast needs no checks: `max` takes the 0
+        // when the product is not a number.
+        let x = (p.x * self.inv).max(0.0).min(self.xmax) as u32;
+        let y = (p.y * self.inv).max(0.0).min(self.ymax) as u32;
         (x as usize, y as usize)
     }
 
@@ -161,15 +163,18 @@ impl Grid {
         (&self.items[span.clone()], &self.at[span])
     }
 
-    /// How many soldiers stand in the cells around `(x, y)`, itself included.
+    /// Whether anybody stands in the cells around `(x, y)`, itself included.
     #[inline]
-    pub(super) fn around(&self, (x, y): (usize, usize)) -> u32 {
+    pub(super) fn anyone_around(&self, (x, y): (usize, usize)) -> bool {
         let Some([xa, ya, xb, yb]) =
             self.clip(x.saturating_sub(1), y.saturating_sub(1), x + 1, y + 1)
         else {
-            return 0;
+            return false;
         };
-        (ya..=yb).map(|y| self.row(y, xa, xb).len() as u32).sum()
+        (ya..=yb).any(|y| {
+            let r = y * self.bw;
+            self.start[r + xb + 1] > self.start[r + xa]
+        })
     }
 
     /// Every soldier within `r` of `p` (and some a little further), cell by

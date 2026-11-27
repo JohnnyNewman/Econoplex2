@@ -285,8 +285,7 @@ pub fn military(
                 .is_some_and(|b| b.battle.finished());
             if done {
                 let live = links.pending.as_mut().and_then(|p| p.0.take()).unwrap();
-                let (fallen_a, fallen_d) =
-                    settle_field_battle(store, &params.battle, &live.battle, &live.groups);
+                let (fallen_a, fallen_d) = settle_field_battle(store, &live.battle, &live.groups);
                 take_prisoners(
                     &mut commands,
                     &mut raid,

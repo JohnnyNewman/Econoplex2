@@ -180,6 +180,16 @@ impl SquadBattle {
             if n > 0.0 {
                 s.eff = sum / n;
                 s.exhaustion = tired / n;
+                s.experience = exp / n;
+                s.agility = p.initiative_experience * (1.0 + exp / n).ln() - s.exhaustion;
+                s.health = s
+                    .spec
+                    .members
+                    .iter()
+                    .filter(|m| m.fights())
+                    .map(|m| m.health)
+                    .sum::<f32>()
+                    / n;
                 let seasoned = ((1.0 + exp / n).ln() / (1.0 + p.experience_full).ln()).min(1.0);
                 s.discipline =
                     (0.5 * s.spec.drill.clamp(0.0, 1.0) + 0.5 * seasoned).clamp(0.0, 1.0);

@@ -140,6 +140,108 @@ pub fn exhaustion(fatigue: f32) -> u8 {
     (fatigue.clamp(0.0, 1.0) * 5.0).floor() as u8
 }
 
+/// Initiative when blows meet in the same moment: the higher lands first,
+/// and a man downed before his blow lands does not strike. Each man rolls
+/// his own d20 (`face`, 1 to 20) and adds his agility, his weapon's speed,
+/// and `reach_initiative` when his weapon is the longer and the other is
+/// coming into its reach.
+pub fn initiative(face: i32, agility: f32, speed: f32, outreach: f32) -> f32 {
+    face as f32 + agility + speed + outreach
+}
+
+/// Agility: `initiative_experience` per ln(1 + battles survived), less one
+/// per level of exhaustion.
+pub fn agility(p: &BattleParams, experience: f32, fatigue: f32) -> f32 {
+    p.initiative_experience * (1.0 + experience.max(0.0)).ln() - exhaustion(fatigue) as f32
+}
+
+/// Initiative of a blow that comes first whatever the dice say: a charge,
+/// a braced spear's blow on a charger, an arrow already loosed.
+pub const FIRST: f32 = 1000.0;
+
+/// The chance that one man's blow lands before another's: his d20 plus `a`
+/// beats the other's plus `b` (a tie is even).
+pub fn first_chance(a: f32, b: f32) -> f32 {
+    // P(X - Y > b - a) for X, Y uniform on 1..=20, a fractional gap shared
+    // between the two faces it falls between.
+    let gap = b - a;
+    let lo = gap.floor();
+    let w = gap - lo;
+    let beats = |g: i32| -> f32 {
+        // P(X - Y > g) and P(X - Y = g).
+        let (mut more, mut equal) = (0, 0);
+        for d in -19i32..=19 {
+            let ways = 20 - d.abs();
+            if d > g {
+                more += ways;
+            } else if d == g {
+                equal += ways;
+            }
+        }
+        (more as f32 + 0.5 * equal as f32) / 400.0
+    };
+    let g = lo as i32;
+    (1.0 - w) * beats(g) + w * beats(g + 1)
+}
+
+/// Massive damage: a fighter whose damage past 0 hit points reaches their
+/// hit point maximum (health at or below -1) dies outright.
+pub fn killed_outright(health: f32) -> bool {
+    health <= -1.0
+}
+
+/// Who has a fighter left down when the battle is over.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Care {
+    /// Their own side holds the field (or nobody does): friends tend them.
+    Friends,
+    /// The enemy holds it, and takes the fallen prisoner: captors tend them.
+    Captors,
+    /// The enemy holds it, and lets them lie.
+    LeftLying,
+    /// The enemy holds it, and kills those it catches.
+    NoQuarter,
+}
+
+/// The chance that a fighter left down, not killed outright, dies of the
+/// battle.
+pub fn death_chance(p: &BattleParams, care: Care) -> f32 {
+    let m = match care {
+        Care::Friends | Care::Captors => p.tended,
+        Care::LeftLying => 1.0,
+        Care::NoQuarter => p.no_quarter,
+    };
+    (p.wound_death * m).clamp(0.0, 1.0)
+}
+
+/// Whether member `member` of squad `squad`, at `health`, dies of the
+/// battle of `seed`: killed outright, or down and losing their roll. The
+/// roll is their own (from the seed, the squad and the member), made once,
+/// so it does not matter in what order anybody is settled.
+pub fn dies(
+    p: &BattleParams,
+    seed: u64,
+    squad: usize,
+    member: usize,
+    health: f32,
+    care: Care,
+) -> bool {
+    if health > 0.0 {
+        return false;
+    }
+    if killed_outright(health) {
+        return true;
+    }
+    let mut z = seed ^ 0xD1B5_4A32_D192_ED03;
+    z = z.wrapping_add((squad as u64) << 32 | member as u64);
+    z = z.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^= z >> 31;
+    let u = (z >> 40) as f32 / (1u64 << 24) as f32;
+    u < death_chance(p, care)
+}
+
 /// What a soldier is, in the rules' terms, for the views: armour class
 /// from the front, attack bonus, hit points left and when unhurt, and their
 /// weapon's dice and damage type.
@@ -216,6 +318,13 @@ AC: 10 + armour + shield (a shield only from the front) + cover on a wall
 damage: the weapon's dice (mace 1d6 bludgeoning, longsword 1d8 slashing, lance 1d12 on a charge)
 armour resists some damage types (half): mail slashing, padded coats bludgeoning
 hit points: about 8 for a townsperson, more with experience; at 0 they are down (prone)
+initiative: when blows meet, each man rolls d20 + agility (experience, less exhaustion)
+  + weapon speed (knife +2, sword or spear 0, axe or mace -2; +2 for the longer weapon
+  on a man coming into its reach); the higher lands first, and a man downed first does
+  not strike; a charge strikes first, unless it runs onto braced spears
+death: damage past 0 that reaches the hit point maximum kills outright; anyone else
+  left down rolls once after the battle (worse if the enemy holds the field, better
+  if their own side or captors tend them, much worse if the enemy gives no quarter)
 advantage (two d20, the higher): blows in the flank or rear, or on a man in a crush
 disadvantage (two d20, the lower): frightened (wavering), or restrained in a crush
 exhaustion: a level per fifth of fatigue, each -1 to attack rolls";
@@ -248,6 +357,60 @@ mod tests {
             }
         }
         assert!((hits as f32 / 400.0 - hit_chance(3.0, 17.0, Roll::Advantage)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn the_quicker_man_strikes_first_as_often_as_the_dice_say() {
+        // Even: a tie is shared.
+        assert!((first_chance(3.0, 3.0) - 0.5).abs() < 1e-6);
+        // One ahead: of the 400 pairs of faces he beats the other in the 190
+        // where his face is higher and the 20 where they match, and ties in
+        // the 19 where his is one lower (half of those go to him).
+        let one = (190.0 + 20.0 + 0.5 * 19.0) / 400.0;
+        assert!((first_chance(1.0, 0.0) - one).abs() < 1e-6);
+        // The two chances make one; a fractional edge falls between.
+        for (a, b) in [(2.0, -1.5), (0.0, 7.25), (-3.0, 4.0)] {
+            assert!((first_chance(a, b) + first_chance(b, a) - 1.0).abs() < 1e-5);
+        }
+        let half = first_chance(0.5, 0.0);
+        assert!(half > 0.5 && half < one);
+        // Twenty ahead: always first.
+        assert!((first_chance(20.0, 0.0) - 1.0).abs() < 1e-6);
+        assert!(first_chance(0.0, 20.0).abs() < 1e-6);
+        // A knife against an axe, seasoned against raw.
+        assert_eq!(initiative(10, 1.0, 2.0, 0.0), 13.0);
+        assert_eq!(initiative(10, 0.0, -2.0, 2.0), 10.0);
+    }
+
+    #[test]
+    fn massive_damage_kills_and_the_rest_roll_once() {
+        let p = BattleParams::default();
+        assert!(!dies(&p, 1, 0, 0, 0.2, Care::NoQuarter));
+        assert!(dies(&p, 1, 0, 0, -1.0, Care::Friends));
+        assert!(!killed_outright(-0.99));
+        // The roll is the fighter's own: the same every time it is asked.
+        assert_eq!(
+            dies(&p, 7, 3, 5, -0.5, Care::LeftLying),
+            dies(&p, 7, 3, 5, -0.5, Care::LeftLying)
+        );
+        // As often as the chance says, worse without care.
+        let share = |care: Care| {
+            let n = 20_000;
+            let d = (0..n)
+                .filter(|&k| dies(&p, 11, k / 100, k % 100, -0.5, care))
+                .count();
+            d as f32 / n as f32
+        };
+        for care in [Care::Friends, Care::LeftLying, Care::NoQuarter] {
+            let want = death_chance(&p, care);
+            assert!(
+                (share(care) - want).abs() < 0.015,
+                "{care:?}: {} vs {want}",
+                share(care)
+            );
+        }
+        assert!(death_chance(&p, Care::Friends) < death_chance(&p, Care::LeftLying));
+        assert!(death_chance(&p, Care::LeftLying) < death_chance(&p, Care::NoQuarter));
     }
 
     #[test]

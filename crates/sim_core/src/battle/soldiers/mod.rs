@@ -498,6 +498,9 @@ struct Blow {
     counter_by: u32,
     /// Not a blow: the target, running, is taken prisoner.
     capture: bool,
+    /// Its initiative: blows of the same substep land highest first
+    /// (`rules::initiative`).
+    init: f32,
 }
 
 impl Default for Blow {
@@ -510,6 +513,7 @@ impl Default for Blow {
             counter: 0.0,
             counter_by: NONE,
             capture: false,
+            init: rules::FIRST,
         }
     }
 }
@@ -573,6 +577,8 @@ pub struct SoldierBattle {
     /// substep (restrained).
     bonus: Vec<f32>,
     max_hp: Vec<f32>,
+    /// Initiative from experience (`rules::agility` before exhaustion).
+    seasoned: Vec<f32>,
     restrained: Vec<bool>,
     target: Vec<u32>,
     cooldown: Vec<f32>,
@@ -590,6 +596,9 @@ pub struct SoldierBattle {
     plans: Vec<Plan>,
     /// The substep's blows and shots, by striker, in soldier order.
     blows: Vec<(u32, Blow)>,
+    /// Which of them land, and the order they land in (scratch).
+    lands: Vec<bool>,
+    order: Vec<u32>,
     /// What the substep's blows did to each soldier, emptied as it is read.
     hurt: Vec<Hurt>,
     fallen: Vec<usize>,
@@ -597,6 +606,9 @@ pub struct SoldierBattle {
     /// Runners taken prisoner this substep.
     captured: Vec<usize>,
     tally: Vec<u32>,
+    /// Each squad's nearest enemy squad still fighting, as phase 2 began:
+    /// no squad's centre or state changes during it.
+    near_foe: Vec<Option<usize>>,
     /// Squad pairs that have met, and that have charged, so each is told once.
     met: Vec<bool>,
     charged: Vec<bool>,
@@ -636,6 +648,7 @@ impl SoldierBattle {
             ahead: vec![NONE; n],
             bonus: Vec::with_capacity(n),
             max_hp: Vec::with_capacity(n),
+            seasoned: Vec::with_capacity(n),
             restrained: vec![false; n],
             target: vec![NONE; n],
             cooldown: Vec::with_capacity(n),
@@ -646,11 +659,14 @@ impl SoldierBattle {
             quiet: vec![0.0; n],
             plans: vec![Plan::default(); n],
             blows: Vec::new(),
+            lands: Vec::new(),
+            order: Vec::new(),
             hurt: vec![Hurt::default(); n],
             fallen: Vec::new(),
             broke: Vec::new(),
             captured: Vec::new(),
             tally: vec![0; specs.len()],
+            near_foe: Vec::new(),
             met: vec![false; specs.len() * specs.len()],
             charged: vec![false; specs.len() * specs.len()],
             profile: None,
@@ -730,6 +746,7 @@ impl SoldierBattle {
             self.bonus
                 .push(rules::proficiency(&p, member.skill, e) + kit.quality);
             self.max_hp.push(rules::max_hp(&p, e));
+            self.seasoned.push(rules::agility(&p, e, 0.0));
             let mut d = Draw::new(self.seed, 0, i, Purpose::Start);
             self.cooldown
                 .push(d.f32() / kit.strike_rate.max(kit.shot_rate).max(1e-3));
@@ -945,9 +962,10 @@ impl SoldierBattle {
         for g in &mut self.grids {
             g.clear();
         }
-        for i in 0..self.pos.len() {
-            if self.state[i].present() {
-                self.grids[(self.side[i] as usize).min(1)].push(i, self.pos[i]);
+        let soldiers = self.state.iter().zip(&self.side).zip(&self.pos);
+        for (i, ((st, &side), &at)) in soldiers.enumerate() {
+            if st.present() {
+                self.grids[(side as usize).min(1)].push(i, at);
             }
         }
         for g in &mut self.grids {
@@ -972,7 +990,11 @@ impl SoldierBattle {
                     .map(|(c, chunk)| {
                         let mut list = Vec::new();
                         for (k, p) in chunk.iter_mut().enumerate() {
-                            this.plan_and_blow(c * CHUNK + k, p, &mut list);
+                            let i = c * CHUNK + k;
+                            // Nobody reads the plan of a soldier who is down or gone.
+                            if this.state[i].present() {
+                                this.plan_and_blow(i, p, &mut list);
+                            }
                         }
                         list
                     })
@@ -980,7 +1002,9 @@ impl SoldierBattle {
                 blows.extend(lists.into_iter().flatten());
             } else {
                 for (i, p) in plans.iter_mut().enumerate() {
-                    this.plan_and_blow(i, p, &mut blows);
+                    if this.state[i].present() {
+                        this.plan_and_blow(i, p, &mut blows);
+                    }
                 }
             }
         }
@@ -1023,45 +1047,51 @@ impl SoldierBattle {
         self.bonus[i] - self.params.exhaustion_penalty * rules::exhaustion(self.fatigue[i]) as f32
     }
 
-    /// The share of runners a wavering soldier still lays hands on.
-    #[inline]
-    fn nerve(&self, i: usize) -> f32 {
-        let w = self.params.waver_at.max(1e-3);
-        let m = self.morale[i];
-        if m >= w {
-            1.0
-        } else {
-            0.5 + 0.5 * m / w
-        }
-    }
-
     /// True if the wall stands between two points (outside the breach).
     #[inline]
-    /// `width` is the breach's: a defender on the wall strikes down over
-    /// twice its width.
     fn wall_between(&self, a: V2, b: V2, width: f32) -> bool {
-        let Some(w) = self.field.wall_x else {
+        wall_between(&self.field, a, b, width)
+    }
+}
+
+/// The share of runners a soldier of `morale` still lays hands on: less
+/// when wavering.
+#[inline]
+fn nerve(p: &BattleParams, morale: f32) -> f32 {
+    let w = p.waver_at.max(1e-3);
+    if morale >= w {
+        1.0
+    } else {
+        0.5 + 0.5 * morale / w
+    }
+}
+
+/// True if the wall stands between two points (outside the breach).
+/// `width` is the breach's: a defender on the wall strikes down over
+/// twice its width.
+#[inline]
+fn wall_between(field: &Field, a: V2, b: V2, width: f32) -> bool {
+    let Some(w) = field.wall_x else {
+        return false;
+    };
+    // The wall is a metre thick: through the breach means through both faces.
+    [w - WALL_HALF, w + WALL_HALF].into_iter().any(|x| {
+        if (a.x - x) * (b.x - x) >= 0.0 {
             return false;
-        };
-        // The wall is a metre thick: through the breach means through both faces.
-        [w - WALL_HALF, w + WALL_HALF].into_iter().any(|x| {
-            if (a.x - x) * (b.x - x) >= 0.0 {
-                return false;
-            }
-            let y = a.y + (x - a.x) / (b.x - a.x) * (b.y - a.y);
-            (y - self.field.height * 0.5).abs() > width * 0.5
-        })
-    }
+        }
+        let y = a.y + (x - a.x) / (b.x - a.x) * (b.y - a.y);
+        (y - field.height * 0.5).abs() > width * 0.5
+    })
+}
 
-    /// Whether `y` is within the breach in the wall.
-    #[inline]
-    fn in_breach(&self, y: f32) -> bool {
-        (y - self.field.height * 0.5).abs() <= self.params.breach_width * 0.5
-    }
+/// Whether `y` is within the breach in the wall.
+#[inline]
+fn in_breach(field: &Field, p: &BattleParams, y: f32) -> bool {
+    (y - field.height * 0.5).abs() <= p.breach_width * 0.5
+}
 
-    fn off_field(&self, p: V2) -> bool {
-        p.x < 0.0 || p.y < 0.0 || p.x > self.field.width || p.y > self.field.height
-    }
+fn off_field(field: &Field, p: V2) -> bool {
+    p.x < 0.0 || p.y < 0.0 || p.x > field.width || p.y > field.height
 }
 
 impl Model for SoldierBattle {
@@ -1108,6 +1138,12 @@ impl Model for SoldierBattle {
         for s in self.squads.iter_mut().filter(|s| s.spec.side == side) {
             s.stance.pursuit = doctrine.prisoners;
         }
+    }
+    fn doctrine(&self, side: u8) -> Doctrine {
+        self.doctrine[(side as usize).min(1)]
+    }
+    fn seed(&self) -> u64 {
+        self.seed
     }
     fn pace(&self, squad: usize) -> (f32, f32) {
         let p = &self.params;

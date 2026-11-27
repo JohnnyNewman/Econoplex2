@@ -11,14 +11,14 @@
         (id: "pike", name: "Pike", category: Weapon, era: 3, tier: 2, base_price: 35.0, kg: 3.5,
             fight: Some((reach: 4.5, dice: Some("1d8"), damage_type: Some(Pierce), strike_rate: 0.12, close_penalty: 0.6))),
         (id: "war_axe", name: "War axe", category: Weapon, era: 3, tier: 2, base_price: 50.0, kg: 2.0,
-            fight: Some((reach: 1.0, dice: Some("1d8"), damage_type: Some(Slash), quality: 1, strike_rate: 0.15))),
+            fight: Some((reach: 1.0, dice: Some("1d8"), damage_type: Some(Slash), quality: 1, speed: -2, strike_rate: 0.15))),
         // Bludgeoning: mail and plate resist none of it.
         (id: "mace", name: "Mace", category: Weapon, era: 3, tier: 2, base_price: 45.0, kg: 2.5,
-            fight: Some((reach: 1.0, dice: Some("1d6"), damage_type: Some(Blunt), quality: 1, strike_rate: 0.17))),
+            fight: Some((reach: 1.0, dice: Some("1d6"), damage_type: Some(Blunt), quality: 1, speed: -2, strike_rate: 0.17))),
         // Slower than a bow, but its bolts hit harder.
         (id: "crossbow", name: "Crossbow", category: Weapon, era: 3, tier: 2, base_price: 90.0, kg: 4.0,
             equip: Some((domain: "military", bonus: 0.0, durability: 80)),
-            fight: Some((reach: 0.5, dice: Some("1d4"), damage_type: Some(Blunt), strike_rate: 0.15, range: 180.0,
+            fight: Some((reach: 0.5, dice: Some("1d4"), damage_type: Some(Blunt), speed: 2, strike_rate: 0.15, range: 180.0,
                 shot_rate: 0.05, shot_dice: Some("1d8"), shot_type: Pierce, quality: 1, arrows: 20))),
         (id: "bronze_scale", name: "Bronze scale", category: Weapon, era: 2, base_price: 90.0, kg: 9.0,
             equip: Some((domain: "military", bonus: 0.0, durability: 100, slot: Some("armour"))),

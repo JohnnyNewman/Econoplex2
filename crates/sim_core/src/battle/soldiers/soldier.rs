@@ -10,6 +10,7 @@ const REAR: f32 = -std::f32::consts::FRAC_1_SQRT_2;
 
 impl SoldierBattle {
     /// Phase 3: what soldier `i` means to do.
+    #[inline(always)]
     pub(super) fn plan(&self, i: usize) -> Plan {
         let state = self.state[i];
         let mut plan = Plan {
@@ -26,9 +27,9 @@ impl SoldierBattle {
         let c = &self.squads[self.squad[i] as usize];
         let top = k.top * self.vigour(i);
         let me = self.pos[i];
-        let side = self.side[i] as usize;
-        let (friends, foes) = (&self.grids[side], &self.grids[1 - side]);
-        let foes_near = foes.around(foes.cell(me)) > 0;
+        let side = (self.side[i] as usize).min(1);
+        let (friends, foes) = (&self.grids[side], &self.grids[side ^ 1]);
+        let foes_near = foes.anyone_around(foes.cell(me));
 
         if state == SoldierState::Routing {
             // Away from the nearest enemies, toward their own edge of the
@@ -279,9 +280,9 @@ impl SoldierBattle {
         dm
     }
 
-    /// Phases 3 and 4 for soldier `i`: their plan into `p`, and their blow
-    /// or shot, if they make one that reaches anybody, onto `blows`. Most
-    /// stand idle in any substep.
+    /// Phases 3 and 4 for soldier `i`, who is on the field: their plan into
+    /// `p`, and their blow or shot, if they make one that reaches anybody,
+    /// onto `blows`. Most stand idle in any substep.
     #[inline]
     pub(super) fn plan_and_blow(&self, i: usize, p: &mut Plan, blows: &mut Vec<(u32, Blow)>) {
         *p = self.plan(i);
@@ -388,6 +389,21 @@ impl SoldierBattle {
         let ground = if on_wall { p.wall_ground } else { 0.0 };
         let bonus = self.attack_bonus(i) + ground;
         let (hit, crit) = rules::attack(bonus, kt.armour_class(!open), roll, u, v);
+        // Initiative, if blows meet: his own d20, agility and the weapon's
+        // speed, and the longer weapon's edge on a man coming into its reach.
+        // A charge comes first.
+        b.init = if charge {
+            rules::FIRST
+        } else {
+            let face = d.below(20) as i32 + 1;
+            let agility = self.seasoned[i] - rules::exhaustion(self.fatigue[i]) as f32;
+            let outreach = if ki.reach > kt.reach + 0.5 {
+                p.reach_initiative
+            } else {
+                0.0
+            };
+            rules::initiative(face, agility, ki.speed, outreach)
+        };
         // Once an enemy is well inside a long weapon's reach, it is clumsy;
         // on a wall nobody gets inside a defender's reach.
         let clumsy = dist < ki.reach - 1.0 && !on_wall && d.f32() < ki.close_penalty;

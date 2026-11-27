@@ -60,7 +60,7 @@ outside the world, as today.
 | `pos` | `Vec2` (m) | position on the field |
 | `facing` | `Vec2`, unit | where they look. Kept as a vector, so the hot path needs no `sin` or `cos`. |
 | `vel` | `Vec2` (m/s) | last step's velocity, used for charges and impact |
-| `health` | `f32` | the share of hit points left: 1 is unhurt, ≤ 0 is down, ≤ `death_below` is dead (as `Member.health`) |
+| `health` | `f32` | the share of hit points left: 1 is unhurt, ≤ 0 is down, ≤ −1 is dead outright; the rest of the down roll after the battle (see "Combat rules", as `Member.health`) |
 | `morale` | `f32` 0..1 | the soldier's own nerve. It starts at the squad's morale. |
 | `fatigue` | `f32` 0..1 | 0 is rested, 1 is spent. It starts from the person's `fatigue` state. |
 | `kit` | `u16` | index into the battle's kit table (below) |
@@ -68,6 +68,7 @@ outside the world, as today.
 | `slot` | `u16` | their place in the squad's formation (file and rank) |
 | `bonus` | `f32` | attack bonus before exhaustion: proficiency + the weapon's quality (see "Combat rules") |
 | `max_hp` | `f32` | hit points unhurt: `hit_points` + `hp_per_experience` · ln(1 + battles) |
+| `seasoned` | `f32` | initiative from experience: `initiative_experience` · ln(1 + battles) |
 | `restrained` | `bool` | in a crush last substep (pressed by `crush_bodies` bodies or more) |
 | `target` | `u32` or none | the enemy they are fighting |
 | `cooldown` | `f32` (s) | time until their next blow or shot |
@@ -774,22 +775,22 @@ as well as to the attack roll. A lance rolls `charge_dice` in a charge; any
 charge adds its impact (`charge_damage` hit points per m/s of closing
 speed).
 
-| Item | Dice | Type | Quality | AC | Resists |
-| --- | --- | --- | --- | --- | --- |
-| bronze spear | 1d6 | piercing (reach 3 m) | 0 | | |
-| iron spear | 1d6 | piercing (reach 3 m) | +1 | | |
-| pike | 1d8 | piercing (reach 4.5 m) | 0 | | |
-| lance | 1d8, 1d12 on a charge | piercing | +1 | | |
-| longsword (lvl 1, 2, 3) | 1d8 | slashing | 0, +1, +2 | | |
-| war axe | 1d8 | slashing | +1 | | |
-| mace | 1d6 | bludgeoning | +1 | | |
-| bow (arrows; knife in melee) | 1d6 (1d4) | piercing (slashing) | 0 | | |
-| crossbow (bolts) | 1d8 | piercing | +1 | | |
-| padded coat | | | | +1 | bludgeoning |
-| bronze scale | | | | +4 | slashing |
-| mail shirt | | | | +5 | slashing |
-| plate armour | | | | +8 | slashing, piercing |
-| shield, iron-rimmed shield | | | | +2, +3 (front) | |
+| Item | Dice | Type | Quality | Speed | AC | Resists |
+| --- | --- | --- | --- | --- | --- | --- |
+| bronze spear | 1d6 | piercing (reach 3 m) | 0 | 0 | | |
+| iron spear | 1d6 | piercing (reach 3 m) | +1 | 0 | | |
+| pike | 1d8 | piercing (reach 4.5 m) | 0 | 0 | | |
+| lance | 1d8, 1d12 on a charge | piercing | +1 | 0 | | |
+| longsword (lvl 1, 2, 3) | 1d8 | slashing | 0, +1, +2 | 0 | | |
+| war axe | 1d8 | slashing | +1 | −2 | | |
+| mace | 1d6 | bludgeoning | +1 | −2 | | |
+| bow (arrows; knife in melee) | 1d6 (1d4) | piercing (slashing) | 0 | +2 (the knife) | | |
+| crossbow (bolts; knife in melee) | 1d8 (1d4) | piercing (bludgeoning) | +1 | +2 (the knife) | | |
+| padded coat | | | | | +1 | bludgeoning |
+| bronze scale | | | | | +4 | slashing |
+| mail shirt | | | | | +5 | slashing |
+| plate armour | | | | | +8 | slashing, piercing |
+| shield, iron-rimmed shield | | | | | +2, +3 (front) | |
 
 Resisted damage is halved and a vulnerable piece doubles it (`resist`,
 `vulnerable`; no item in the content is vulnerable yet). Layers of armour
@@ -799,6 +800,49 @@ add their AC and multiply what they let through.
 (2) more per ln(1 + battles survived): about 14 after 20 battles. `health`
 in 0..1 is still the share of hit points left, so the rest of the code and
 the views read it as before.
+
+**Initiative.** Blows struck in the same moment (the same substep on the
+soldier model) do not all land: when two men's blows meet, each rolls his
+own d20 + agility + his weapon's `speed` (`rules::initiative`), and the
+higher lands first. A man downed by a blow that lands before his own does
+not strike. Rolls are per man, never per side, so neither side and neither
+end of the soldier list goes first.
+
+- *Agility* is `initiative_experience` (1) per ln(1 + battles survived),
+  less a point per level of exhaustion (`rules::agility`).
+- *Weapon speed* is the content's `speed`: a knife +2, a sword or a spear
+  0, an axe or a mace −2 (table above). A spear, or any weapon a good half
+  metre longer, adds `reach_initiative` (+2) against a man coming into its
+  reach.
+- *A charge* strikes first, whatever the dice say (`rules::FIRST`), unless
+  it runs onto braced spears: then the spears' blow, which carries the
+  horse's speed, lands first.
+- *The soldier model* sorts the substep's blows by initiative, highest
+  first. Blows of exactly the same initiative land together, and who is
+  still up is read before any of them lands. So the order the blows were
+  booked in never matters, and nobody is struck after he is down: the
+  damage past zero is that of the blows that downed him.
+- *The squad model* has no single blows to sort. When both squads strike
+  each other in a step, the share of a squad's blows lost is the chance its
+  enemy strikes first (`rules::first_chance`, from the two squads' mean
+  initiative) times the share of its front the enemy's blows down that
+  step.
+
+**Death.** Down is not dead. One rule decides on both models
+(`rules::dies`), after the battle or when the battle leaves a fighter
+behind:
+
+- *Massive damage*: a fighter whose damage past 0 hit points reaches their
+  hit point maximum (health ≤ −1) dies outright.
+- *Anyone else down* rolls once against `wound_death` (0.25), times
+  `tended` (0.5) when their own side holds the field or their captors tend
+  them, and times `no_quarter` (2) when the winners kill those they catch
+  (a doctrine of `Kill`). A side that lets its enemies go leaves them lying,
+  at the plain chance. A battle with no winner counts as their side's.
+- The roll is the fighter's own, drawn from the battle's seed, the squad and
+  the member, so neither the order anybody is settled in nor the order the
+  blows were booked in changes who dies. While a battle runs only massive
+  damage counts as dead (`Battle::dies`).
 
 **Advantage and disadvantage.** Roll two d20 and take the higher, or the
 lower; one of each cancel out. A blow in the flank or the rear or on a runner

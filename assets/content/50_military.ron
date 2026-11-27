@@ -8,7 +8,9 @@
 // Reach and range in metres; `dice` the damage dice of a blow (a person has about
 // 8 hit points), `charge_dice` those of a blow at a charge, `shot_dice` those of an
 // arrow; `damage_type` and `shot_type` (Pierce, Slash or Blunt; shots pierce unless
-// given); `quality` added to the weapon's attack rolls and damage; attacks and shots
+// given); `quality` added to the weapon's attack rolls and damage; `speed` added to
+// its wielder's initiative when blows meet (a knife +2, a sword or spear 0, an axe or
+// a mace -2); attacks and shots
 // per second (about one attack per six seconds of fighting); `ac` what armour adds to
 // armour class, `resist` the damage types it halves and `vulnerable` those it doubles;
 // `shield` what a shield adds to armour class from the front; `mounted` for a horse.
@@ -32,7 +34,7 @@
             equip: Some((domain: "military", bonus: 0.0, durability: 80)),
             // A quiver of arrows until arrows are stacks of their own; a knife
             // for hand to hand.
-            fight: Some((reach: 0.5, dice: Some("1d4"), damage_type: Some(Slash), strike_rate: 0.15, range: 150.0,
+            fight: Some((reach: 0.5, dice: Some("1d4"), damage_type: Some(Slash), speed: 2, strike_rate: 0.15, range: 150.0,
                 shot_rate: 0.1, shot_dice: Some("1d6"), shot_type: Pierce, arrows: 24))),
         (id: "shield", name: "Shield", category: Weapon, era: 1, base_price: 12.0, kg: 5.0,
             equip: Some((domain: "military", bonus: 0.0, durability: 40, slot: Some("shield"))),

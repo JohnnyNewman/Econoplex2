@@ -273,6 +273,9 @@ pub struct FightDef {
     pub close_penalty: f32,
     /// A well-made weapon: added to its attack rolls and to its damage.
     pub quality: i8,
+    /// How quick it is: added to its wielder's initiative when blows meet
+    /// (a knife +2, a sword 0, an axe or a mace -2).
+    pub speed: i8,
     /// Shooting: range in metres, shots per second, damage dice and their
     /// kind (Pierce unless given), arrows carried.
     pub range: f32,
