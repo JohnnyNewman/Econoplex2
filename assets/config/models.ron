@@ -244,6 +244,10 @@
         // people in full and may go below zero (trust, not the till, is the
         // limit). Holds: it pays only what it holds.
         treasury: Issues,
+        // How towns' own coins move against each other: a coin aims for
+        // 1 / (1 + pressure x the share of it held unspent abroad), relative to
+        // the average coin, moving speed of the way a month, at most max_monthly.
+        exchange: (pressure: 3.0, speed: 0.3, max_monthly: 0.05),
         mint_below_per_capita: 3.0,
         // Money-supply rule: the mint (auto) also strikes coin while the town's
         // whole money stock per resident is below this (0: off).

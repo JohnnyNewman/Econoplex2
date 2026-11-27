@@ -1027,13 +1027,13 @@ fn public_spending_pays_out_the_treasury_surplus() {
 #[test]
 fn a_government_order_is_delivered_and_lifts_a_glut() {
     // Scarce goods (cloth sells at its highest price in Greenvale): the order takes
-    // the town's output into public use until it is filled (in four years: the
+    // the town's output into public use until it is filled (in six years: the
     // weavers' trade grows by apprentices and newcomers, not overnight).
     let base = with_orders(8, &[], 2);
     let db = base.world.resource::<sim_core::Db>();
     let cloth = db.content.product("cloth").unwrap() as usize;
     let plank = db.content.product("plank").unwrap() as usize;
-    let s = with_orders(8, &["procure Greenvale cloth 100"], 4);
+    let s = with_orders(8, &["procure Greenvale cloth 100"], 6);
     let town = &s.world.resource::<sim_core::Towns>().0[1];
     assert_eq!(town.procured[cloth], 100.0);
     assert!(
@@ -3452,4 +3452,42 @@ fn knowledge_off_draws_nothing_and_stores_nothing() {
     let mut s = full(5);
     run_years(&mut s, 1);
     assert!(s.world.resource::<sim_core::AgentStore>().known.is_empty());
+}
+
+#[test]
+fn trade_is_paid_in_the_buyers_coin_and_moves_its_value() {
+    // Each town issues its own coin: a buyer pays abroad in it, the seller
+    // keeps it as a foreign balance, and coins piling up abroad lose value.
+    let mut s = full(42);
+    run_years(&mut s, 5);
+    let towns = s.world.resource::<sim_core::Towns>();
+    let held: f32 = towns
+        .0
+        .iter()
+        .flat_map(|t| t.foreign.iter())
+        .map(|c| c.coins().max(0.0))
+        .sum();
+    assert!(held > 0.0, "no town holds another town's coin");
+    let values: Vec<f32> = towns.0.iter().map(|t| t.coin_value).collect();
+    assert!(
+        values.iter().any(|&v| (v - 1.0).abs() > 0.01),
+        "no coin moved: {values:?}"
+    );
+    // The coin held most abroad is worth less than the average.
+    let n = towns.0.len();
+    let abroad = |c: usize| -> f32 {
+        (0..n)
+            .filter(|&t| t != c)
+            .map(|t| towns.0[t].holds(c).coins().max(0.0))
+            .sum()
+    };
+    let most = (0..n)
+        .max_by(|&a, &b| abroad(a).total_cmp(&abroad(b)))
+        .unwrap();
+    let mean = values.iter().sum::<f32>() / n as f32;
+    assert!(
+        values[most] < mean,
+        "the coin most held abroad is worth {} against a mean of {mean}",
+        values[most]
+    );
 }

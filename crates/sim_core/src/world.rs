@@ -596,7 +596,11 @@ pub fn total_coin(store: &AgentStore, towns: &Towns) -> crate::coin::Coin {
     let towns: crate::coin::Coin = towns
         .0
         .iter()
-        .map(|t| t.treasury + t.firms.iter().map(|f| f.cash).sum::<crate::coin::Coin>())
+        .map(|t| {
+            t.treasury
+                + t.firms.iter().map(|f| f.cash).sum::<crate::coin::Coin>()
+                + t.foreign.iter().copied().sum::<crate::coin::Coin>()
+        })
         .sum();
     agents + towns
 }
