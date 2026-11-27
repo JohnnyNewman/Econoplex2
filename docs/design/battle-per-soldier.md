@@ -684,8 +684,60 @@ their kit goes to the winner's armory, they leave their squad and their
 raid. Taken by a winning raid, they march home with it as `Captive`, as
 raid captives do, and become the town's people there; taken by winning
 defenders, they join the town at once (there is no town-held captive state
-to keep them in). Auto-resolved battles take no prisoners until doctrine
-(B) gives them a prisoner policy.
+to keep them in). Since build B, auto-resolved battles take prisoners too,
+when a side's doctrine says capture.
+
+## Where build B stands
+
+Build B is in both clients, on the same shared logic.
+
+**Queued waypoints.** With shift held as the right button comes up, a
+right-click or right-drag is queued after the squad's moves
+(`rts::queued`); what followed the last move (its own judgment, holding, an
+attack) is replaced, since only a move gives way to the next order. Each
+squad of the player's with a queue has its path drawn, from its front
+through each waypoint (a marker at each) to the enemy it is sent against
+last, brighter when selected (`rts::queued_path`). Backspace, or "Clear
+queue" in the panel, keeps only the order in force (`rts::clear_queue`).
+The ghost of a shift-drag shows where the queue ends and when.
+
+**Deployment.** A live battle now waits before its first step
+(`LiveBattle::started`, `LiveView::deploying`): the player's half
+(`deploy_zone`) is drawn as a hatched green zone, and the same clicks and
+drags stand the selected squads there (`rts::deployed`: each move's end as a
+`Command::Deploy`, pulled inside the zone; attacks are dropped). "Start
+battle" (`start_live_battle`) begins it; "Fight it out" resolves it deployed
+or not. Auto-resolved battles never wait. A scripted screenshot
+(`--shot-battle S`) starts the battle itself, except `--shot-battle 0`,
+which shows the deployment.
+
+**Town doctrine.** `Policy::doctrine` holds each town's posture (cautious,
+balanced, aggressive) and prisoner policy (kill, capture, let go), set by
+the order `doctrine <town> <posture> <prisoners>` from the governance
+panel of either client, and saved (`SAVE_VERSION` 17). Every town starts
+from `military.doctrine` in models.ron (balanced, kill). Every battle a
+town fights starts from it: `setup_field_battle` sets both sides'
+doctrines, so auto-resolved raids and the raid planner's forecasts fight by
+them on either model, and a live battle's squads start with the doctrine's
+pursuit as their stance. Prisoners of an auto-resolved battle go to the
+winners as those of a live battle do (`take_prisoners`), and are counted
+in `WarCounters::prisoners_taken` (the batch table's `prisn` column;
+`captv` counts every captive carried off).
+
+**What it does to the runs.** With every town left at balanced and kill,
+the battles are fought as before (the health bands pass at 16 seeds, 30
+years). With every town on capture (`--set
+military.doctrine.prisoners=Capture`), 16 seeds over 30 years, means per
+run:
+
+| Doctrine | pop | raids | captives | of them prisoners |
+| --- | --- | --- | --- | --- |
+| balanced, kill (default) | 2780 | 70.4 | 356 | 0 |
+| balanced, capture | 2774 | 74.0 | 411 | 31 |
+
+Prisoners are few next to the civilians raids carry off (only routers a
+squad reaches are taken), and population stays within the seeds' spread
+(about 120 either way).
 
 ## Open questions
 

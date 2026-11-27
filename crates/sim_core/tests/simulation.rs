@@ -54,6 +54,7 @@ fn different_seed_different_state() {
 #[test]
 fn economy_produces_and_people_learn() {
     let mut s = sim(3);
+<<<<<<< HEAD
     // The same people before and after (newborns, who know nothing yet, would
     // pull an average over everyone down).
     let before_caps: Vec<Option<f32>> = {
@@ -61,7 +62,20 @@ fn economy_produces_and_people_learn() {
         (0..st.len())
             .map(|i| st.alive[i].then(|| st.cap[i].iter().sum::<f32>()))
             .collect()
+=======
+    // The founders' skill (children born meanwhile start with little and would
+    // pull a mean over everyone down).
+    let founders = s.world.resource::<sim_core::AgentStore>().len();
+    let mean_cap = |st: &sim_core::AgentStore| {
+        let alive: Vec<usize> = (0..founders).filter(|&i| st.alive[i]).collect();
+        alive
+            .iter()
+            .map(|&i| st.cap[i].iter().sum::<f32>())
+            .sum::<f32>()
+            / alive.len() as f32
+>>>>>>> origin/main
     };
+    let before = mean_cap(s.world.resource::<sim_core::AgentStore>());
     for _ in 0..24 {
         s.step();
     }
@@ -72,6 +86,7 @@ fn economy_produces_and_people_learn() {
         log.successes
     );
     let st = s.world.resource::<sim_core::AgentStore>();
+<<<<<<< HEAD
     let pairs: Vec<(f32, f32)> = before_caps
         .iter()
         .enumerate()
@@ -82,6 +97,9 @@ fn economy_produces_and_people_learn() {
         .collect();
     let before = pairs.iter().map(|p| p.0).sum::<f32>() / pairs.len().max(1) as f32;
     let after = pairs.iter().map(|p| p.1).sum::<f32>() / pairs.len().max(1) as f32;
+=======
+    let after = mean_cap(st);
+>>>>>>> origin/main
     assert!(
         after > before,
         "agents should gain skill: {before} -> {after}"
@@ -203,6 +221,44 @@ fn sword_towns_raise_squads_and_raid() {
         .filter(|&&(c, t)| store.alive[c as usize] && store.town[c as usize] == t)
         .count();
     assert!(settled > 0, "no captive lives in the captor's town");
+}
+
+/// Auto-resolved raids follow the towns' doctrines: with every town on
+/// capture, beaten soldiers are taken prisoner and change towns.
+#[test]
+fn a_doctrine_of_capture_takes_prisoners_in_auto_resolved_raids() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let mut s = Simulation::from_paths(&AssetPaths::from_root(&root)).unwrap();
+    let names: Vec<String> = s
+        .world
+        .resource::<sim_core::Towns>()
+        .0
+        .iter()
+        .map(|t| t.name.clone())
+        .collect();
+    for n in &names {
+        s.order(&format!("doctrine {n} balanced capture")).unwrap();
+    }
+    let dpy = s.world.resource::<sim_core::SimClock>().months_per_year;
+    // Yearly counters: add up what each step adds.
+    let mut last = vec![0u32; names.len()];
+    let mut prisoners = 0;
+    for _ in 0..20 * dpy {
+        s.step();
+        let towns = s.world.resource::<sim_core::Towns>();
+        for (t, town) in towns.0.iter().enumerate() {
+            let now = town.war.prisoners_taken;
+            prisoners += now.saturating_sub(last[t]);
+            last[t] = now;
+        }
+        if prisoners > 0 {
+            break;
+        }
+    }
+    assert!(
+        prisoners > 0,
+        "no prisoners in 20 years of raids on capture"
+    );
 }
 
 #[test]
@@ -870,7 +926,17 @@ fn ai_towns_climb_the_tree() {
         let best = |t: usize| m.years.iter().map(|y| y.towns[t].era).max().unwrap();
         // Ironhold, with ore and coal, reaches early industry; the others at
         // least stone, clay and cloth.
-        if db.content.eras[best(0) as usize] == "Early industry" {
+        // Early industry has to be invented first (knowledge.invention), so
+        // inventing one of its recipes there counts as climbing too.
+        let kp = &s.world.resource::<sim_core::world::Params>().knowledge;
+        let store = s.world.resource::<sim_core::AgentStore>();
+        let invented = (0..db.recipes.len())
+            .filter(|&r| sim_core::knowledge::era(db, r) > kp.start_era)
+            .any(|r| {
+                (0..store.len())
+                    .any(|i| store.town[i] == 0 && sim_core::knowledge::knows(kp, db, store, i, r))
+            });
+        if db.content.eras[best(0) as usize] == "Early industry" || invented {
             industrial += 1;
         }
         assert!(
@@ -889,7 +955,8 @@ fn ai_towns_climb_the_tree() {
         }
     }
     // With kept trades (plan Phase 3) new trades fill from apprentices and
-    // the out of work, so industry comes later: 1 of these 4 seeds.
+    // the out of work, so industry comes later: 1 of these 4 seeds. With
+    // inventing, Ironhold invents an early-industry recipe on some.
     assert!(
         industrial >= 1,
         "Ironhold industrialised on {industrial} of 4 seeds"
@@ -1677,16 +1744,30 @@ fn households_keep_food_and_the_books_still_balance() {
         share: 0.3,
         larder_meals: 6.0,
     };
+    if std::env::var("K_OFF").is_ok() {
+        params.knowledge.enabled = false;
+    }
+    if std::env::var("I_OFF").is_ok() {
+        params.knowledge.invention.enabled = false;
+    }
     let mut s = Simulation::new(db, params, &scenario);
     let money = |s: &Simulation| {
         let towns = s.world.resource::<sim_core::Towns>();
+<<<<<<< HEAD
+=======
+        // `minted` also counts coin struck into the metal of towns that
+        // issue their own coin, which the ledger leaves out.
+>>>>>>> origin/main
         let minted: f64 = towns.0.iter().map(|t| t.minted.coins_f64()).sum();
         sim_core::world::total_money(s.world.resource::<sim_core::AgentStore>(), towns) - minted
     };
     let before = money(&s);
     run_years(&mut s, 2);
     let after = money(&s);
-    assert!(((after - before) / before).abs() < 1e-3, "money changed");
+    assert!(
+        ((after - before) / before).abs() < 1e-3,
+        "money changed: {before} -> {after}"
+    );
     let store = s.world.resource::<sim_core::AgentStore>();
     let held: Vec<f32> = (0..store.len())
         .filter(|&i| store.alive[i])
@@ -1716,13 +1797,21 @@ fn crowded_towns_charge_more_rent_and_the_books_still_balance() {
     let mut s = Simulation::new(db, params, &scenario);
     let money = |s: &Simulation| {
         let towns = s.world.resource::<sim_core::Towns>();
+<<<<<<< HEAD
+=======
+        // `minted` also counts coin struck into the metal of towns that
+        // issue their own coin, which the ledger leaves out.
+>>>>>>> origin/main
         let minted: f64 = towns.0.iter().map(|t| t.minted.coins_f64()).sum();
         sim_core::world::total_money(s.world.resource::<sim_core::AgentStore>(), towns) - minted
     };
     let before = money(&s);
     run_years(&mut s, 1);
     let after = money(&s);
-    assert!(((after - before) / before).abs() < 1e-3, "money changed");
+    assert!(
+        ((after - before) / before).abs() < 1e-3,
+        "money changed: {before} -> {after}"
+    );
     let towns = s.world.resource::<sim_core::Towns>();
     let rent: f64 = towns
         .0
@@ -2030,6 +2119,11 @@ fn workshops_pay_from_their_sales_and_money_is_conserved() {
     let mut s = Simulation::new(db, params, &scenario);
     let money = |s: &Simulation| {
         let towns = s.world.resource::<sim_core::Towns>();
+<<<<<<< HEAD
+=======
+        // `minted` also counts coin struck into the metal of towns that
+        // issue their own coin, which the ledger leaves out.
+>>>>>>> origin/main
         let minted: f64 = towns.0.iter().map(|t| t.minted.coins_f64()).sum();
         sim_core::world::total_money(s.world.resource::<sim_core::AgentStore>(), towns) - minted
     };
@@ -2072,11 +2166,9 @@ fn towns_lend_to_workshops_and_get_repaid_with_interest() {
     let mut s = Simulation::new(db, params, &scenario);
     let money = |s: &Simulation| {
         let towns = s.world.resource::<sim_core::Towns>();
-        let minted: f64 = towns
-            .0
-            .iter()
-            .map(|t| t.ledger.total[Flow::Minted as usize])
-            .sum();
+        // `minted` also counts coin struck into the metal of towns that
+        // issue their own coin, which the ledger leaves out.
+        let minted: f64 = towns.0.iter().map(|t| t.minted.coins_f64()).sum();
         sim_core::world::total_money(s.world.resource::<sim_core::AgentStore>(), towns) - minted
     };
     let before = money(&s);
@@ -2099,7 +2191,10 @@ fn towns_lend_to_workshops_and_get_repaid_with_interest() {
     assert!(interest > 0.0);
     assert!(sim_core::firms::outstanding(&towns.0[0].firms) < 1.0);
     let after = money(&s);
-    assert!(((after - before) / before).abs() < 1e-3, "money changed");
+    assert!(
+        ((after - before) / before).abs() < 1e-3,
+        "money changed: {before} -> {after}"
+    );
 }
 
 #[test]
@@ -2165,6 +2260,11 @@ fn workshops_buy_on_account_and_pay_from_their_sales() {
     let mut s = Simulation::new(db, params, &scenario);
     let money = |s: &Simulation| {
         let towns = s.world.resource::<sim_core::Towns>();
+<<<<<<< HEAD
+=======
+        // `minted` also counts coin struck into the metal of towns that
+        // issue their own coin, which the ledger leaves out.
+>>>>>>> origin/main
         let minted: f64 = towns.0.iter().map(|t| t.minted.coins_f64()).sum();
         sim_core::world::total_money(s.world.resource::<sim_core::AgentStore>(), towns) - minted
     };
@@ -2186,7 +2286,10 @@ fn workshops_buy_on_account_and_pay_from_their_sales() {
     }
     assert!(seen_debt, "no firm ever bought on account");
     let after = money(&s);
-    assert!(((after - before) / before).abs() < 1e-3, "money changed");
+    assert!(
+        ((after - before) / before).abs() < 1e-3,
+        "money changed: {before} -> {after}"
+    );
 }
 
 #[test]
@@ -2253,6 +2356,11 @@ fn a_hungry_broke_town_imports_food_on_credit_and_recovers() {
         }
         let money = |s: &Simulation| {
             let towns = s.world.resource::<sim_core::Towns>();
+<<<<<<< HEAD
+=======
+            // `minted` also counts coin struck into the metal of towns that
+            // issue their own coin, which the ledger leaves out.
+>>>>>>> origin/main
             let minted: f64 = towns.0.iter().map(|t| t.minted.coins_f64()).sum();
             sim_core::world::total_money(s.world.resource::<sim_core::AgentStore>(), towns) - minted
         };
@@ -2267,7 +2375,10 @@ fn a_hungry_broke_town_imports_food_on_credit_and_recovers() {
                 .any(|&d| d > 0.0);
         }
         let after = money(&s);
-        assert!(((after - before) / before).abs() < 1e-3, "money changed");
+        assert!(
+            ((after - before) / before).abs() < 1e-3,
+            "money changed: {before} -> {after}"
+        );
         let m = s.world.resource::<sim_core::metrics::Metrics>();
         let starving: f32 = m.years.iter().map(|y| y.towns[3].starving).sum();
         let pop = m.latest().unwrap().towns[3].population;
@@ -3143,7 +3254,7 @@ fn a_live_battle_waits_for_the_player_then_settles() {
     use sim_core::battle::{Command, Order};
     use sim_core::systems::military::{
         command_live_battle, live_battle_view, live_battle_waiting, resolve_live_battle,
-        LiveBattles,
+        start_live_battle, step_live_battle, LiveBattles,
     };
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     let mut s = Simulation::from_paths(&AssetPaths::from_root(&root)).unwrap();
@@ -3159,9 +3270,21 @@ fn a_live_battle_waits_for_the_player_then_settles() {
         (towns.0[player].name.clone(), towns.0[other].name.clone())
     };
     s.order(&format!("army {me} 0.15")).unwrap();
+    // The town's doctrine: its squads take prisoners.
+    s.order(&format!("doctrine {me} aggressive capture"))
+        .unwrap();
     for _ in 0..4 {
         s.step();
     }
+    assert_eq!(
+        s.world.resource::<sim_core::Towns>().0[player]
+            .policy
+            .doctrine,
+        sim_core::battle::Doctrine {
+            posture: sim_core::battle::Posture::Aggressive,
+            prisoners: sim_core::battle::Pursuit::Capture,
+        }
+    );
     s.order(&format!("raid {me} {them}")).unwrap();
     let mut waited = false;
     for _ in 0..20 {
@@ -3175,6 +3298,42 @@ fn a_live_battle_waits_for_the_player_then_settles() {
     let view = live_battle_view(&s.world).unwrap();
     assert_eq!(view.player_side, 0);
     let mine = view.squads.iter().position(|q| q.side == 0).unwrap();
+    // It starts from the town's doctrine.
+    for q in (0..view.squads.len()).filter(|&q| view.squads[q].side == 0) {
+        assert_eq!(view.stances[q].pursuit, sim_core::battle::Pursuit::Capture);
+    }
+    // Deployment: nothing moves until the player starts it; a squad stands
+    // where it is put in its own half, and nowhere else.
+    assert!(view.deploying);
+    step_live_battle(&mut s.world, 5.0);
+    assert_eq!(live_battle_view(&s.world).unwrap().frame.t, 0.0);
+    let (x0, x1, y0, y1) = view.deploy_zone(0);
+    let spot = (0.5 * (x0 + x1), 0.5 * (y0 + y1));
+    command_live_battle(
+        &mut s.world,
+        mine,
+        Command::Deploy {
+            anchor: spot,
+            facing: (1.0, 0.0),
+            width: None,
+        },
+    )
+    .unwrap();
+    let line = live_battle_view(&s.world).unwrap().lines[mine];
+    assert!(
+        (line.anchor.0 - spot.0).hypot(line.anchor.1 - spot.1) < 1.0,
+        "{line:?}"
+    );
+    let beyond = Command::Deploy {
+        anchor: (x1 + 50.0, spot.1),
+        facing: (1.0, 0.0),
+        width: None,
+    };
+    assert!(command_live_battle(&mut s.world, mine, beyond).is_err());
+    start_live_battle(&mut s.world);
+    assert!(!live_battle_view(&s.world).unwrap().deploying);
+    step_live_battle(&mut s.world, 1.0);
+    assert!(live_battle_view(&s.world).unwrap().frame.t > 0.0);
     // The raid holds while the battle waits.
     let progress = |s: &Simulation| {
         s.world.resource::<sim_core::Towns>().0[player]
@@ -3197,14 +3356,6 @@ fn a_live_battle_waits_for_the_player_then_settles() {
     // Only the player's own squads take commands.
     let theirs = view.squads.iter().position(|q| q.side == 1).unwrap();
     assert!(command_live_battle(&mut s.world, theirs, Command::Orders(vec![Order::Hold])).is_err());
-    // The player's squads take prisoners.
-    for q in (0..view.squads.len()).filter(|&q| view.squads[q].side == 0) {
-        let capture = sim_core::battle::Stance {
-            pursuit: sim_core::battle::Pursuit::Capture,
-            ..Default::default()
-        };
-        command_live_battle(&mut s.world, q, Command::Stance(capture)).unwrap();
-    }
     resolve_live_battle(&mut s.world);
     assert!(!live_battle_waiting(&s.world));
     let (prisoners, won) = {
@@ -3540,7 +3691,11 @@ fn people_work_only_in_what_they_know_and_learn_from_their_masters() {
 
 #[test]
 fn knowledge_off_draws_nothing_and_stores_nothing() {
-    let mut s = full(5);
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    scenario.seed = 5;
+    params.knowledge.enabled = false;
+    let mut s = Simulation::new(db, params, &scenario);
     run_years(&mut s, 1);
     assert!(s.world.resource::<sim_core::AgentStore>().known.is_empty());
 }
@@ -3648,4 +3803,101 @@ fn early_industry_starts_unknown_and_gets_invented() {
         known_later > 0,
         "inventions: {inventions:?}, yet nobody knows a later recipe"
     );
+}
+
+#[test]
+fn the_player_sees_what_their_people_know_and_keeps_it() {
+    use sim_core::history::{EventKind, History};
+    use sim_core::view::{Seen, ViewSnapshot};
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    scenario.seed = 5;
+    assert!(
+        scenario.player.is_some(),
+        "the scenario hands a town to the player"
+    );
+    params.knowledge.enabled = true;
+    params.knowledge.invention.enabled = true;
+    params.knowledge.invention.rate = 0.05;
+    let mut s = Simulation::new(db, params, &scenario);
+    s.step();
+    let mut seen = Seen::default();
+    let first = ViewSnapshot::capture(&s.world, &mut seen);
+    let start: Vec<(u32, u64)> = s.world.resource::<History>().revealed.clone();
+    {
+        let db = s.world.resource::<sim_core::Db>();
+        let kp = &s.world.resource::<sim_core::world::Params>().knowledge;
+        assert!(!start.is_empty());
+        assert_eq!(
+            first.revealed.len(),
+            start.len(),
+            "the first capture brings all"
+        );
+        // Nothing past the start era is known, so nothing of it is shown.
+        assert!(start
+            .iter()
+            .all(|&(r, _)| sim_core::knowledge::era(db, r as usize) <= kp.start_era));
+        assert!(
+            start.len() < db.recipes.len(),
+            "the whole graph is open at the start"
+        );
+    }
+    assert!(ViewSnapshot::capture(&s.world, &mut seen)
+        .revealed
+        .is_empty());
+    run_years(&mut s, 6);
+    let h = s.world.resource::<History>();
+    assert_eq!(
+        &h.revealed[..start.len()],
+        &start[..],
+        "a revealed node stays revealed"
+    );
+    assert!(
+        h.revealed.len() > start.len() && h.events.iter().any(|e| e.kind == EventKind::Discovered),
+        "the player's people learned nothing new in 6 years"
+    );
+}
+
+#[test]
+fn guilds_that_keep_secrets_teach_fewer_people() {
+    // Learned recipe-skills over three years, with every guild in every town
+    // keeping its secrets or none (inventing off, so only teaching counts).
+    let learned = |secrets: bool| {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+        scenario.seed = 5;
+        params.knowledge.enabled = true;
+        params.knowledge.invention.enabled = false;
+        let mut s = Simulation::new(db, params, &scenario);
+        if secrets {
+            let towns: Vec<String> = s
+                .world
+                .resource::<sim_core::Towns>()
+                .0
+                .iter()
+                .map(|t| t.name.clone())
+                .collect();
+            let domains = s.world.resource::<sim_core::Db>().content.domains.clone();
+            for t in &towns {
+                for d in &domains {
+                    s.order(&format!("secrets {t} {d} on")).unwrap();
+                }
+            }
+        }
+        let count = |s: &Simulation| -> u32 {
+            let st = s.world.resource::<sim_core::AgentStore>();
+            st.known.iter().flatten().map(|w| w.count_ones()).sum()
+        };
+        let before = count(&s);
+        run_years(&mut s, 3);
+        let h = s.world.resource::<sim_core::history::History>();
+        if secrets {
+            assert!(h.events.iter().any(|e| e.text.contains("guild's secrets")));
+        }
+        count(&s) - before
+    };
+    let open = learned(false);
+    let kept = learned(true);
+    assert!(open > 0, "nobody learned anything in 3 years");
+    assert!(kept < open, "secrets kept {kept} learned, open {open}");
 }

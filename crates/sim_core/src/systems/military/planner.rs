@@ -76,6 +76,7 @@ pub(super) fn plan_raid(
                 &town.squad,
                 &defenders,
                 &militia,
+                [town.policy.doctrine, other.policy.doctrine],
                 seed,
             ) {
                 Setup::Decided(won) => {

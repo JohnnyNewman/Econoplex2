@@ -11,6 +11,9 @@ pub struct MilitaryParams {
     pub soldier_share: f32,
     /// Daily pay per soldier, from the town treasury.
     pub soldier_pay: f32,
+    /// Every town's doctrine until its government changes it
+    /// (`Policy::doctrine`).
+    pub doctrine: crate::battle::Doctrine,
     /// Oldest age at which adults are recruited.
     pub max_recruit_age: f32,
     /// Learning multiplier for daily drill and for battle.

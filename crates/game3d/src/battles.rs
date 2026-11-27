@@ -696,6 +696,8 @@ fn battle_panel(
                     Some(_) => "Defeat. Your squads fell back.",
                     None => "The fighting is over.",
                 });
+            } else if v.deploying {
+                ui.label("Deploy your squads: right-click or right-drag them into the green zone");
             } else {
                 ui.label(format!("{:.0} min fought", v.frame.t / 60.0));
             }
@@ -704,6 +706,9 @@ fn battle_panel(
                     for mut cam in &mut cameras {
                         look_at_field(&mut cam, &v, &world.terrain, 45.0);
                     }
+                }
+                if v.deploying && ui.button("Start battle").clicked() {
+                    live.start_battle();
                 }
                 if !v.finished && ui.button("Fight it out").clicked() {
                     live.resolve_battle();
@@ -724,6 +729,14 @@ fn battle_panel(
                             for (q, c) in rts::stance(&v, sel, key) {
                                 live.command_battle(q, c);
                             }
+                        }
+                    }
+                    let queued = sel
+                        .iter()
+                        .any(|&q| v.orders.get(q).is_some_and(|o| o.len() > 1));
+                    if queued && ui.button("Clear queue").clicked() {
+                        for (q, c) in rts::clear_queue(&v, sel) {
+                            live.command_battle(q, c);
                         }
                     }
                 });

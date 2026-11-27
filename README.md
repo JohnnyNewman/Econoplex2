@@ -214,18 +214,19 @@ be met, and an entry that is a list is met by any one of its ids. Recipes that n
 nothing start the graph, and validation checks that every recipe can be learned from
 them.
 
-With `knowledge.enabled` in models.ron (off by default), people know only some
+With `knowledge.enabled` in models.ron (on by default), people know only some
 recipe-skills ([inventions](docs/design/inventions.md), step 2). Founders know their
 family trade and a share of what their town can make; a person takes a regular place
 only in work they know, and an apprentice place in work whose `requires` they meet.
 Apprentices and children working beside someone who knows a recipe learn it, pupils
 learn their teacher's recipes, and knowledge moves with migrants and dies with its
 last holder. Nobody knows recipes of an era after `start_era` (early industry):
-with `knowledge.invention.enabled`, a worker may invent a recipe close to the day's
+with `knowledge.invention.enabled` (on by default), a worker may invent a recipe close to the day's
 work that nobody in town knows, if they know part of what it requires and the town
 knows the rest. The chance grows with their skill at it, materials at hand, a high
 price for what it makes and being rested. Inventions go to the event log
-(`--events`).
+(`--events`). The player sees a recipe-skill once any of their people has known it
+(`History::revealed`, `ViewSnapshot::revealed`); the rest of the graph stays hidden.
 
 The content (`assets/content/*.ron`) spans five eras: **wood and grain**, **stone,
 clay and cloth**, **bronze**, **iron and steel**, and **early industry**. Each file
@@ -571,6 +572,9 @@ town's policy:
   day from the treasury.
 - **Guild charter** (`charter TOWN DOMAIN on|off`): the domain's masters teach
   `charter_teaching` faster.
+- **Guild secrets** (`secrets TOWN DOMAIN on|off`): the domain's recipe-skills pass on
+  the job and at school only between members of the town's guild of that domain, so
+  outsiders and pupils no longer pick them up.
 - **Immigration** (`immigration TOWN open|encouraged|closed`): closed borders turn
   migrants away. Encouraged immigration adds `immigration_bonus` to the town's appeal
   and pays each newcomer a `settlement_grant` from the treasury.

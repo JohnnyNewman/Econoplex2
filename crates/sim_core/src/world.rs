@@ -463,6 +463,9 @@ pub struct WarCounters {
     /// People this town carried off, and people carried off from it.
     pub captives_taken: u32,
     pub captives_lost: u32,
+    /// Soldiers this town's squads took prisoner in battle (counted in
+    /// `captives_taken` too).
+    pub prisoners_taken: u32,
     /// Towns this one conquered, and times it was conquered.
     pub conquests: u32,
     pub conquered: u32,
@@ -871,7 +874,10 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
             war: WarCounters::default(),
             ruler: None,
             moves: MoveCounters::default(),
-            policy: crate::policy::Policy::new(db.content.products.len(), db.content.domains.len()),
+            policy: crate::policy::Policy {
+                doctrine: params.military.doctrine,
+                ..crate::policy::Policy::new(db.content.products.len(), db.content.domains.len())
+            },
             ledger: crate::ledger::Ledger::new(scenario.towns.len()),
             procured: vec![0.0; db.content.products.len()],
             granary: Vec::new(),
