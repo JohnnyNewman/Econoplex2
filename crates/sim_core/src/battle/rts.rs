@@ -13,7 +13,13 @@
 //!   the line from where the press was to where it is let go, facing to the
 //!   left of the drag (`LiveView::group_line`), its ghost and arrival time
 //!   shown while dragging. A second click within [`DOUBLE_CLICK`] seconds
-//!   runs (so does a drag started by one).
+//!   runs (so does a drag started by one). With shift held as the button
+//!   comes up, the move or attack is queued after the squad's moves
+//!   ([`queued`]) instead of replacing its orders; Backspace drops the
+//!   queue ([`clear_queue`]).
+//! - **Deployment:** before a live battle's first step (`LiveView::deploying`)
+//!   the same clicks and drags stand the squads where they are to start,
+//!   inside the player's half ([`deployed`]), until the player starts it.
 //! - **Keys:** Ctrl+1..9 make the selection a group, 1..9 select it again,
 //!   twice quickly to look at it; stance keys set the selected squads'
 //!   stance ([`StanceKey`]).
@@ -302,6 +308,161 @@ pub fn ghost(
         .collect()
 }
 
+/// Squad `q`'s orders with `new` queued after its moves. Only a move gives
+/// way to the next order, so what follows the last move (its own judgment,
+/// holding, an attack) is replaced.
+pub fn queued(v: &LiveView, q: usize, new: &[Order]) -> Vec<Order> {
+    let mut orders: Vec<Order> = v
+        .orders
+        .get(q)
+        .map_or(&[][..], Vec::as_slice)
+        .iter()
+        .copied()
+        .take_while(|o| matches!(o, Order::MoveTo { .. }))
+        .collect();
+    orders.extend_from_slice(new);
+    orders
+}
+
+/// The selected squads' queues dropped: each keeps the order in force.
+pub fn clear_queue(v: &LiveView, sel: &[usize]) -> Vec<(usize, Command)> {
+    sel.iter()
+        .filter(|&&q| selectable(v, q) && v.orders.get(q).is_some_and(|o| o.len() > 1))
+        .map(|&q| (q, Command::Orders(vec![v.orders[q][0]])))
+        .collect()
+}
+
+/// The way squad `q`'s orders take it: from its front's centre through each
+/// move's end, to the enemy it is sent against last, if any. Fewer than two
+/// points: nothing queued to draw.
+pub fn queued_path(v: &LiveView, q: usize) -> Vec<(f32, f32)> {
+    let (Some(orders), Some(line)) = (v.orders.get(q), v.lines.get(q)) else {
+        return Vec::new();
+    };
+    let mut path = vec![line.anchor];
+    for o in orders {
+        match *o {
+            Order::MoveTo { anchor, .. } => path.push(anchor),
+            Order::Attack(e) | Order::Shoot(e) => {
+                if let Some(f) = v.frame.squads.get(e) {
+                    path.push((f.0, f.1));
+                }
+            }
+            _ => {}
+        }
+    }
+    if path.len() < 2 {
+        path.clear();
+    }
+    path
+}
+
+/// Orders for squads before the battle starts become where they deploy:
+/// each move's end, pulled inside the player's half, facing as the move
+/// says (else as the squad faces now). Attacks and the like are dropped.
+pub fn deployed(v: &LiveView, cmds: Vec<(usize, Command)>) -> Vec<(usize, Command)> {
+    let (x0, x1, y0, y1) = v.deploy_zone(v.player_side);
+    let margin = 2.0f32.min(0.5 * (x1 - x0)).min(0.5 * (y1 - y0));
+    cmds.into_iter()
+        .filter_map(|(q, c)| {
+            let Command::Orders(o) = c else {
+                return Some((q, c));
+            };
+            let Some(&Order::MoveTo {
+                anchor,
+                facing,
+                width,
+                ..
+            }) = o.last()
+            else {
+                return None;
+            };
+            let facing = facing.or_else(|| v.lines.get(q).map(|l| l.facing))?;
+            Some((
+                q,
+                Command::Deploy {
+                    anchor: (
+                        anchor.0.clamp(x0 + margin, x1 - margin),
+                        anchor.1.clamp(y0 + margin, y1 - margin),
+                    ),
+                    facing,
+                    width,
+                },
+            ))
+        })
+        .collect()
+}
+
+/// The ghost of a line dragged before the battle starts: each squad's slots
+/// where it would deploy (no arrival time: it stands there at once).
+pub fn deploy_ghost(
+    v: &LiveView,
+    sel: &[usize],
+    from: (f32, f32),
+    to: (f32, f32),
+) -> Vec<(usize, Preview)> {
+    deployed(v, right_drag(v, sel, from, to, false))
+        .into_iter()
+        .filter_map(|(q, c)| match c {
+            Command::Deploy {
+                anchor,
+                facing,
+                width,
+            } => {
+                let o = Order::MoveTo {
+                    anchor,
+                    facing: Some(facing),
+                    width,
+                    run: false,
+                };
+                v.preview(q, &[o]).map(|g| (q, Preview { eta: 0.0, ..g }))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// Two waypoints queued for each of squads `sel`: off to one side, then on
+/// toward the enemy. The clients' `--rts-demo queue` shows their path, for
+/// screenshots without a mouse.
+pub fn demo_queue(v: &LiveView, sel: &[usize]) -> Vec<(usize, Command)> {
+    let Some((from, to)) = line_ahead(v, sel, 40.0) else {
+        return Vec::new();
+    };
+    let side = (0.5 * (to.0 - from.0), 0.5 * (to.1 - from.1));
+    sel.iter()
+        .filter_map(|&q| {
+            let a = v.lines.get(q)?.anchor;
+            let mid = (0.5 * (from.0 + to.0), 0.5 * (from.1 + to.1));
+            let ahead = (mid.0 - centre(v, sel)?.0, mid.1 - centre(v, sel)?.1);
+            let first = (a.0 + 0.5 * ahead.0 + side.0, a.1 + 0.5 * ahead.1 + side.1);
+            let second = (a.0 + ahead.0, a.1 + ahead.1);
+            Some((
+                q,
+                Command::Orders(vec![Order::move_to(first), Order::move_to(second)]),
+            ))
+        })
+        .collect()
+}
+
+/// The commands of a right-click or drag as given: deployments before the
+/// battle starts, queued after each squad's moves with `queue`, else as
+/// they are.
+fn as_given(v: &LiveView, cmds: Vec<(usize, Command)>, queue: bool) -> Vec<(usize, Command)> {
+    if v.deploying {
+        return deployed(v, cmds);
+    }
+    if !queue {
+        return cmds;
+    }
+    cmds.into_iter()
+        .map(|(q, c)| match c {
+            Command::Orders(o) => (q, Command::Orders(queued(v, q, &o))),
+            c => (q, c),
+        })
+        .collect()
+}
+
 /// A stance key, for the selected squads.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StanceKey {
@@ -555,16 +716,18 @@ impl Rts {
         self.right.is_some()
     }
 
-    /// The right button comes up: the commands it gives.
+    /// The right button comes up: the commands it gives (queued with
+    /// shift; deployments before the battle starts).
     pub fn right_up(&mut self, v: &LiveView, p: Pointer) -> Vec<(usize, Command)> {
         let Some((from, screen, run)) = self.right.take() else {
             return Vec::new();
         };
         let sel = &self.selection.squads;
-        match p.field {
+        let cmds = match p.field {
             Some(to) if far(screen, p.screen) >= DRAG_PX => right_drag(v, sel, from, to, run),
             _ => right_click(v, sel, from, run),
-        }
+        };
+        as_given(v, cmds, p.shift)
     }
 
     /// What a held button is doing now.
@@ -582,12 +745,26 @@ impl Rts {
         Gesture::None
     }
 
-    /// The ghost of the line being laid out, if one is.
+    /// The ghost of the line being laid out, if one is: with shift, where
+    /// the queue ends; before the battle, where the squads would deploy.
     pub fn ghost(&self, v: &LiveView, p: Pointer) -> Vec<(usize, Preview)> {
-        match self.gesture(p) {
-            Gesture::Line(from, to, run) => ghost(v, &self.selection.squads, from, to, run),
-            _ => Vec::new(),
+        let Gesture::Line(from, to, run) = self.gesture(p) else {
+            return Vec::new();
+        };
+        let sel = &self.selection.squads;
+        if v.deploying {
+            return deploy_ghost(v, sel, from, to);
         }
+        if !p.shift {
+            return ghost(v, sel, from, to, run);
+        }
+        as_given(v, right_drag(v, sel, from, to, run), true)
+            .into_iter()
+            .filter_map(|(q, c)| match c {
+                Command::Orders(o) => v.preview(q, &o).map(|g| (q, g)),
+                _ => None,
+            })
+            .collect()
     }
 
     /// A number key, `n` from 0: with Ctrl it sets the group, without it
@@ -793,6 +970,81 @@ mod tests {
             .map(|(q, o)| (q, Command::Orders(vec![o])))
             .collect();
         assert_eq!(cmds, want);
+    }
+
+    /// Shift queues a move after the squad's moves, the path runs through
+    /// them, and Backspace keeps only the order in force.
+    #[test]
+    fn shift_queues_waypoints_and_backspace_clears_them() {
+        for model in [BattleModel::Squads, BattleModel::Soldiers] {
+            let mut v = view(model, LINEUP);
+            let mut rts = Rts::default();
+            rts.selection.squads = vec![0];
+            let a = (200.0, 150.0);
+            let b = (260.0, 220.0);
+            // A first move, as given.
+            rts.right_down(&v, pointer((0.0, 0.0), Some(a), 0.0));
+            let first = rts.right_up(&v, pointer((0.0, 0.0), Some(a), 0.05));
+            let Command::Orders(o) = &first[0].1 else {
+                panic!()
+            };
+            v.orders[0] = o.clone();
+            // A second, queued with shift, and the ghost shows its end.
+            rts.right_down(&v, pointer((0.0, 0.0), Some(b), 1.0));
+            let shifted = Pointer {
+                shift: true,
+                ..pointer((0.0, 0.0), Some(b), 1.05)
+            };
+            let second = rts.right_up(&v, shifted);
+            let Command::Orders(o) = &second[0].1 else {
+                panic!()
+            };
+            assert_eq!(o.len(), 2, "{model:?}: {o:?}");
+            assert!(matches!(o[1], Order::MoveTo { anchor, .. } if anchor == b));
+            v.orders[0] = o.clone();
+            assert_eq!(queued_path(&v, 0)[1..], [a, b]);
+            // An attack queued after the moves; what followed them goes.
+            v.orders[0].push(Order::Hold);
+            let q = queued(&v, 0, &[Order::Attack(3)]);
+            assert_eq!(q.len(), 3);
+            assert_eq!(q[2], Order::Attack(3));
+            // Backspace: the order in force alone.
+            let cleared = clear_queue(&v, &[0]);
+            assert_eq!(cleared, [(0, Command::Orders(vec![v.orders[0][0]]))]);
+            // Nothing queued: nothing to draw or clear.
+            v.orders[0].truncate(1);
+            assert!(clear_queue(&v, &[0]).is_empty());
+            v.orders[0].clear();
+            assert!(queued_path(&v, 0).is_empty());
+        }
+    }
+
+    /// Before the battle, a right-drag stands the squads in the player's
+    /// half: points beyond it are pulled in, attacks are dropped.
+    #[test]
+    fn before_the_battle_orders_deploy_in_your_half() {
+        let mut v = view(BattleModel::Soldiers, LINEUP);
+        v.deploying = true;
+        let (x0, x1, _, _) = v.deploy_zone(0);
+        let mut rts = Rts::default();
+        rts.selection.squads = vec![0, 1];
+        rts.right_down(&v, pointer((0.0, 0.0), Some((100.0, 100.0)), 0.0));
+        let up = pointer((300.0, 0.0), Some((x1 + 80.0, 300.0)), 0.1);
+        assert!(rts.ghost(&v, up).iter().all(|g| g.1.eta == 0.0));
+        let cmds = rts.right_up(&v, up);
+        assert_eq!(cmds.len(), 2);
+        for (_, c) in &cmds {
+            let Command::Deploy { anchor, .. } = c else {
+                panic!("{c:?}")
+            };
+            assert!((x0..=x1).contains(&anchor.0), "{anchor:?}");
+        }
+        // Right-clicking the enemy deploys nobody.
+        let enemy = at(&v, 3);
+        rts.right_down(&v, pointer((0.0, 0.0), Some(enemy), 5.0));
+        assert!(rts
+            .right_up(&v, pointer((0.0, 0.0), Some(enemy), 5.05))
+            .is_empty());
     }
 
     #[test]

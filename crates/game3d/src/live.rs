@@ -93,6 +93,7 @@ struct Shared {
     /// Orders to the player's squads in it, and a request to auto-resolve it.
     battle_commands: Vec<(usize, sim_core::battle::Command)>,
     battle_resolve: bool,
+    battle_start: bool,
     /// Orders the simulation could not parse, with the reason.
     errors: Vec<String>,
     quit: bool,
@@ -167,6 +168,7 @@ impl LiveSim {
             live_battle: None,
             battle_commands: Vec::new(),
             battle_resolve: false,
+            battle_start: false,
             why_town: None,
             inspect: None,
             person: None,
@@ -225,6 +227,11 @@ impl LiveSim {
     }
 
     /// Fight the waiting battle to its end at once.
+    /// Ends the deployment of the waiting battle: it steps from now on.
+    pub fn start_battle(&self) {
+        self.shared.lock().unwrap().battle_start = true;
+    }
+
     pub fn resolve_battle(&self) {
         self.shared.lock().unwrap().battle_resolve = true;
     }
@@ -338,13 +345,17 @@ fn run(sim: &mut Simulation, shared: &Mutex<Shared>, mut seen: sim_core::view::S
         // time (unless paused) and takes the player's orders.
         {
             use sim_core::systems::military as war;
-            let (battle_commands, resolve) = {
+            let (battle_commands, resolve, start) = {
                 let mut s = shared.lock().unwrap();
                 (
                     std::mem::take(&mut s.battle_commands),
                     std::mem::take(&mut s.battle_resolve),
+                    std::mem::take(&mut s.battle_start),
                 )
             };
+            if start {
+                war::start_live_battle(&mut sim.world);
+            }
             for (squad, command) in battle_commands {
                 if let Err(e) = war::command_live_battle(&mut sim.world, squad, command) {
                     eprintln!("battle command to squad {squad}: {e}");

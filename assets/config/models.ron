@@ -299,6 +299,10 @@
         muster_interval: 1,        // months between musters (and raid plans)
         soldier_share: 0.06,
         soldier_pay: 0.8,
+        // Every town's doctrine until its government sets one: how its squads
+        // fight on their own judgment (Cautious, Balanced, Aggressive) and
+        // what they do to enemies who run (Kill, Capture, LetGo).
+        doctrine: (posture: Balanced, prisoners: Kill),
         max_recruit_age: 45.0,
         drill_rate: 0.5,
         battle_learning: 3.0,
@@ -569,7 +573,7 @@
     // at `learn_per_day`; pupils learn their teacher's recipes at
     // learn_per_day * school_share. Off: everyone knows everything.
     knowledge: (
-        enabled: false,
+        enabled: true,
         start_share: 0.1,
         foreign_share: 0.2,
         learn_per_day: 0.03,
@@ -585,7 +589,7 @@
         // price against the town's price level, ^need_weight, 0.5 .. 2) * rest
         // (1 - fatigue). Each invention goes to the event log.
         invention: (
-            enabled: false,
+            enabled: true,
             rate: 1e-3,
             margin: 0.1,
             related: 0.4,

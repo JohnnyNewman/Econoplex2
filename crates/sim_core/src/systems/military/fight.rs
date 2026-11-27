@@ -95,7 +95,11 @@ pub(super) fn battle(
     // The field reaches from outside the defenders' town, toward the
     // attackers, into it: its buildings and houses stand on it.
     let (field, at, facing) = crate::layout::battle_field(towns, d, attacker, db, terrain);
-    let (won, fallen_a, fallen_d) = field_battle(
+    let doctrines = [
+        towns.0[attacker].policy.doctrine,
+        towns.0[d].policy.doctrine,
+    ];
+    let (won, fallen_a, fallen_d, fought) = field_battle(
         store,
         db,
         params,
@@ -105,6 +109,7 @@ pub(super) fn battle(
         &defenders,
         &militia,
         field,
+        doctrines,
         seed,
         log.map(|log| Record {
             log,
@@ -113,6 +118,10 @@ pub(super) fn battle(
             facing,
         }),
     );
+    // Runners taken prisoner go to the winners (a doctrine of capture).
+    if let Some((b, groups)) = &fought {
+        take_prisoners(commands, raid, attacker, towns, store, rng, b, groups);
+    }
     defenders.extend(militia);
     aftermath(
         commands,
@@ -342,15 +351,17 @@ fn field_battle(
     defenders: &[u32],
     militia: &[u32],
     field: crate::battle::Field,
+    doctrines: [crate::battle::Doctrine; 2],
     seed: u64,
     record: Option<Record<'_>>,
-) -> (bool, u32, u32) {
+) -> FieldOutcome {
     let bp = &params.battle;
     let (mut b, groups) = match setup_field_battle(
         store, db, params, bp.model, field, fight, gear_defs, attackers, defenders, militia,
+        doctrines,
         seed,
     ) {
-        Setup::Decided(won) => return (won, 0, 0),
+        Setup::Decided(won) => return (won, 0, 0, None),
         Setup::Battle(b, groups) => (*b, groups),
     };
     let size = b.field_size();
@@ -376,8 +387,17 @@ fn field_battle(
         None => b.run(),
     };
     let (fa, fd) = settle_field_battle(store, bp, &b, &groups);
-    (report.winner == Some(0), fa, fd)
+    (report.winner == Some(0), fa, fd, Some((b, groups)))
 }
+
+/// Whether the attackers won, each side's dead, and the battle fought with
+/// each squad's side and people (`None`: one side had nobody).
+type FieldOutcome = (
+    bool,
+    u32,
+    u32,
+    Option<(crate::battle::Battle, Vec<(u8, Vec<u32>)>)>,
+);
 
 /// A field battle ready to fight, or decided because one side has nobody.
 pub(super) enum Setup {
@@ -401,6 +421,7 @@ pub(super) fn setup_field_battle(
     attackers: &[u32],
     defenders: &[u32],
     militia: &[u32],
+    doctrines: [crate::battle::Doctrine; 2],
     seed: u64,
 ) -> Setup {
     use crate::battle::{Battle, Kit, Member, SquadSpec};
@@ -541,7 +562,7 @@ pub(super) fn setup_field_battle(
     if !specs.iter().any(|s| s.side == 1) {
         return Setup::Decided(true);
     }
-    let b = Battle::new(
+    let mut b = Battle::new(
         crate::battle::BattleParams {
             model,
             ..bp.clone()
@@ -550,6 +571,9 @@ pub(super) fn setup_field_battle(
         specs,
         seed,
     );
+    for (side, doctrine) in doctrines.into_iter().enumerate() {
+        b.set_doctrine(side as u8, doctrine);
+    }
     Setup::Battle(
         Box::new(b),
         groups.into_iter().map(|(k, p)| (k.0, p)).collect(),
@@ -646,6 +670,7 @@ pub(super) fn take_prisoners(
     }
     let n = prisoners.len() as u32;
     towns.0[to].war.captives_taken += n;
+    towns.0[to].war.prisoners_taken += n;
     towns.0[from].war.captives_lost += n;
     n
 }

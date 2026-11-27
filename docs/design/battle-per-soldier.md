@@ -684,8 +684,137 @@ their kit goes to the winner's armory, they leave their squad and their
 raid. Taken by a winning raid, they march home with it as `Captive`, as
 raid captives do, and become the town's people there; taken by winning
 defenders, they join the town at once (there is no town-held captive state
-to keep them in). Auto-resolved battles take no prisoners until doctrine
-(B) gives them a prisoner policy.
+to keep them in). Since build B, auto-resolved battles take prisoners too,
+when a side's doctrine says capture.
+
+## Where build B stands
+
+Build B is in both clients, on the same shared logic.
+
+**Queued waypoints.** With shift held as the right button comes up, a
+right-click or right-drag is queued after the squad's moves
+(`rts::queued`); what followed the last move (its own judgment, holding, an
+attack) is replaced, since only a move gives way to the next order. Each
+squad of the player's with a queue has its path drawn, from its front
+through each waypoint (a marker at each) to the enemy it is sent against
+last, brighter when selected (`rts::queued_path`). Backspace, or "Clear
+queue" in the panel, keeps only the order in force (`rts::clear_queue`).
+The ghost of a shift-drag shows where the queue ends and when.
+
+**Deployment.** A live battle now waits before its first step
+(`LiveBattle::started`, `LiveView::deploying`): the player's half
+(`deploy_zone`) is drawn as a hatched green zone, and the same clicks and
+drags stand the selected squads there (`rts::deployed`: each move's end as a
+`Command::Deploy`, pulled inside the zone; attacks are dropped). "Start
+battle" (`start_live_battle`) begins it; "Fight it out" resolves it deployed
+or not. Auto-resolved battles never wait. A scripted screenshot
+(`--shot-battle S`) starts the battle itself, except `--shot-battle 0`,
+which shows the deployment.
+
+**Town doctrine.** `Policy::doctrine` holds each town's posture (cautious,
+balanced, aggressive) and prisoner policy (kill, capture, let go), set by
+the order `doctrine <town> <posture> <prisoners>` from the governance
+panel of either client, and saved (`SAVE_VERSION` 17). Every town starts
+from `military.doctrine` in models.ron (balanced, kill). Every battle a
+town fights starts from it: `setup_field_battle` sets both sides'
+doctrines, so auto-resolved raids and the raid planner's forecasts fight by
+them on either model, and a live battle's squads start with the doctrine's
+pursuit as their stance. Prisoners of an auto-resolved battle go to the
+winners as those of a live battle do (`take_prisoners`), and are counted
+in `WarCounters::prisoners_taken` (the batch table's `prisn` column;
+`captv` counts every captive carried off).
+
+**What it does to the runs.** With every town left at balanced and kill,
+the battles are fought as before (the health bands pass at 16 seeds, 30
+years). With every town on capture (`--set
+military.doctrine.prisoners=Capture`), 16 seeds over 30 years, means per
+run:
+
+| Doctrine | pop | raids | captives | of them prisoners |
+| --- | --- | --- | --- | --- |
+| balanced, kill (default) | 2780 | 70.4 | 356 | 0 |
+| balanced, capture | 2774 | 74.0 | 411 | 31 |
+
+Prisoners are few next to the civilians raids carry off (only routers a
+squad reaches are taken), and population stays within the seeds' spread
+(about 120 either way).
+
+## Obstacles: battles in towns
+
+A raid is fought on a field that reaches from outside the defenders' town
+into it (`layout::battle_field`), and the town's workplaces and houses stand
+on it. Nothing that walks passes through them.
+
+**One layout for everyone.** `sim_core::layout` says where each building and
+house stands, how it is turned and how much ground it covers:
+
+- workplaces stand where the simulation put them, their front toward the
+  town centre, covering their kind's `footprint` (content, map units, the
+  walls as the 3D client draws them; validation asks every workplace for
+  one);
+- houses (`Town::houses`, one per house the town has) stand on a spiral
+  round the centre, off water, off workplaces, building sites and the next
+  building places, and off the roads into and out of the town.
+
+The 2D and 3D clients draw from it (`TownView::layout`), battles take it as
+obstacles, and walkers in both clients keep out of it. One map scale,
+`battle::MAP_PER_METRE`, puts a battle on the map in both clients.
+
+**The obstacle layer** (`battle/nav.rs`), shaped for town walls to come:
+
+- `Field::obstacles` is a list of `Obstacle { id, shape, passage }`;
+- `shape` is `Shape::Rect { centre, half, axis }` or `Shape::Segment { a,
+  b, half_width }` (a wall);
+- `id` links it to its building (a workplace's entity bits, or the house's
+  town and number);
+- `passage` is `Blocked`, `Open` (a breach, a gate standing open) or
+  `Gate(side)` (only that side passes).
+
+`Battle::set_passage(id, ..)` and `Battle::remove_obstacle(id)` change the
+layer during a battle. Either builds the `Nav` again with a higher
+`version`, so every squad's cached route and both sides' flow fields are
+found again. Walls are not built yet.
+
+**What uses it.** A field without obstacles has no `Nav`, so an open-field
+battle runs exactly as before.
+
+- `Nav` holds the exact shapes in buckets (8 m) and a 1 m grid of them,
+  grown by 1 m, per side.
+- Each squad's way is found once on that grid (weighted A*, the corners
+  pulled tight) and cached in its `Route`. A moving goal (an enemy squad)
+  only moves the last leg while it stays in sight, so there is about one
+  search per battle second in a 4,000-soldier town battle.
+- Routers flee down a per-side flow field to their own edge.
+- Soldiers step round a building by its nearer corner (`steer`) and never
+  into one (`resolve`, `push_out`, all scaled by the step).
+- A line narrows to the street it is in: every four substeps a moving squad
+  measures the room either side of its anchor and takes fewer files. It
+  widens again once there is room.
+- The squad model approximates the same: squads follow the same routes, and
+  a squad's front is no wider than the room where it stands.
+- Orders onto a building (`MoveTo`, deployment) go to the nearest free spot.
+- The ghost line (`LiveView::preview`) follows the route, and its arrival
+  time is the route's length at the squad's pace. Both clients draw it.
+
+**Cost.** Release builds, one core, 50 squads of 40 a side:
+
+| Battle | ms per battle second |
+| --- | --- |
+| open field, whole battle | OPEN_WHOLE |
+| in a town (`vs town`), whole battle | TOWN_WHOLE |
+| open field, first 400 s | OPEN_400 |
+| in a town, first 400 s | TOWN_400 |
+
+The obstacle queries themselves are cheap: about 0.6 shape queries and 0.1
+corner choices per soldier and substep. The extra time is the fighting a town
+makes: soldiers pressed out of their slots and squads jammed in the streets
+fight longer and closer. So a town battle gets its own budget, 4 ms per
+battle second (`battle_budget.rs`), and the open-field budget stays at 1 ms.
+
+**`--battle`.** `town` before the defenders (`"swordsmen*40 vs town
+spearmen*40"`) puts a sample town on their half: eight workplaces and sixty
+houses (`TownLayout::sample`). The clients' `--battle` places it in the
+player's town instead, with that town's real layout.
 
 ## Open questions
 

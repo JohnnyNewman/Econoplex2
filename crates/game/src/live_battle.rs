@@ -30,6 +30,11 @@
 //! capture or let go enemies who run. While the battle waits, the summary,
 //! economy and policy panels fold away (`fold_panels`), so nothing lies under
 //! the battle panel.
+//!
+//! Before the battle's first step the player deploys: the title says so,
+//! the right-drag line stands squads in their half (battle_input.rs), and
+//! "Start battle" begins it. Squads with waypoints queued offer "Clear
+//! queue" (or Backspace).
 
 use crate::battle_input::BattleControls;
 use crate::ui_compat::Interaction;
@@ -58,6 +63,8 @@ pub struct LiveBattle {
     /// What the player told which squad.
     pub commands: Vec<(usize, Command)>,
     pub resolve: bool,
+    /// The player ended the deployment.
+    pub start: bool,
     /// Battle seconds due and not yet stepped.
     due: f32,
 }
@@ -67,13 +74,17 @@ pub struct LiveBattle {
 /// paused), and refresh the view. Returns whether a battle waits, in which
 /// case the economy's clock holds.
 pub fn run(world: &mut World, real_secs: f32, paused: bool) -> bool {
-    let (commands, resolve) = {
+    let (commands, resolve, start) = {
         let mut live = world.resource_mut::<LiveBattle>();
         (
             std::mem::take(&mut live.commands),
             std::mem::take(&mut live.resolve),
+            std::mem::take(&mut live.start),
         )
     };
+    if start {
+        war::start_live_battle(world);
+    }
     for (squad, command) in commands {
         if let Err(e) = war::command_live_battle(world, squad, command) {
             warn!("battle command to squad {squad}: {e}");
@@ -197,6 +208,10 @@ pub enum BattleAction {
     Orders(usize, Vec<Order>),
     /// A stance for the selected squads.
     Stance(StanceKey),
+    /// End the deployment.
+    Start,
+    /// Drop the selected squads' queued waypoints.
+    ClearQueue,
     Look,
     FightOut,
 }
@@ -363,6 +378,11 @@ pub fn chosen(v: &LiveView, q: usize, plan: &[Order]) -> bool {
     matches!(plan, [o] if left <= 1 && v.order_now(q) == *o && !matches!(o, Order::MoveTo { .. }))
 }
 
+/// What the selection rows are built from: the selection, its stance marks,
+/// whether the battle waits to start, and whether any selected squad has a
+/// queue.
+type StanceLayout = (Vec<usize>, Vec<bool>, bool, bool);
+
 /// What the rows are built from; they are rebuilt only when this changes.
 type Layout = (
     usize,
@@ -384,7 +404,7 @@ pub fn update_battle_panel(
     mut texts: Query<(&mut Text, &SquadText), Without<BattleTitle>>,
     mut layout: Local<Option<Layout>>,
     controls: Res<BattleControls>,
-    mut stance_layout: Local<Option<(Vec<usize>, Vec<bool>)>>,
+    mut stance_layout: Local<Option<StanceLayout>>,
 ) {
     let Some(v) = &live.view else {
         root.set_if_neq(Visibility::Hidden);
@@ -402,10 +422,27 @@ pub fn update_battle_panel(
         .iter()
         .map(|(k, _)| k.chosen(v, sel))
         .collect();
-    let want_stance = (sel.clone(), marks);
+    let queued = sel
+        .iter()
+        .any(|&q| v.orders.get(q).is_some_and(|o| o.len() > 1));
+    let want_stance = (sel.clone(), marks, v.deploying, queued);
     if stance_layout.as_ref() != Some(&want_stance) {
         commands.entity(*stance_rows).despawn_children();
         commands.entity(*stance_rows).with_children(|p| {
+            if v.deploying {
+                p.spawn(Node {
+                    flex_direction: FlexDirection::Row,
+                    align_items: AlignItems::Center,
+                    ..default()
+                })
+                .with_children(|r| {
+                    spawn_button(r, "Start battle", BattleAction::Start, true);
+                    r.spawn((
+                        Text::new(" Deploy: right-click or right-drag your squads into the green zone"),
+                        font(12.0),
+                    ));
+                });
+            }
             if sel.is_empty() {
                 p.spawn((
                     Text::new("Select squads with the mouse: click, shift-click or drag a box (F1: controls)"),
@@ -423,6 +460,9 @@ pub fn update_battle_panel(
             .with_children(|r| {
                 for (&(key, label), &on) in StanceKey::ALL.iter().zip(&want_stance.1) {
                     spawn_button(r, label, BattleAction::Stance(key), on);
+                }
+                if queued {
+                    spawn_button(r, "Clear queue", BattleAction::ClearQueue, false);
                 }
             });
         });
@@ -444,6 +484,8 @@ pub fn update_battle_panel(
             Some(_) => "Defeat. Your squads fell back.".to_string(),
             None => "The fighting is over.".to_string(),
         }
+    } else if v.deploying {
+        "Deploy your squads, then start the battle (the economy waits)".to_string()
     } else {
         format!(
             "{:.0} min fought (the economy waits; Space pauses the battle)",
@@ -543,6 +585,13 @@ pub fn battle_buttons(
                             live.commands.extend(cmds);
                         }
                     }
+                    BattleAction::Start => live.start = true,
+                    BattleAction::ClearQueue => {
+                        if let Some(v) = &live.view {
+                            let cmds = rts::clear_queue(v, &controls.rts.selection.squads);
+                            live.commands.extend(cmds);
+                        }
+                    }
                     BattleAction::FightOut => live.resolve = true,
                     BattleAction::Look => {
                         if let Some(v) = &live.view {
@@ -604,6 +653,7 @@ mod tests {
                 soldiers: Vec::new(),
             },
             player_side: 0,
+            deploying: false,
             finished: false,
             winner: None,
         }
@@ -781,6 +831,15 @@ mod tests {
             "the live battle is not on the soldier model"
         );
         let t0 = v.frame.t;
+        // It waits for the deployment until "Start battle".
+        assert!(v.deploying);
+        assert!(run(&mut s.world, 1.0, false));
+        let view =
+            |s: &sim_core::Simulation| s.world.resource::<LiveBattle>().view.clone().unwrap();
+        assert_eq!(view(&s).frame.t, t0, "it stepped before the start");
+        s.world.resource_mut::<LiveBattle>().start = true;
+        run(&mut s.world, 0.0, false);
+        assert!(!view(&s).deploying);
         // A second of real time steps the battle by BATTLE_SPEED seconds;
         // paused, it holds.
         assert!(run(&mut s.world, 1.0, false));

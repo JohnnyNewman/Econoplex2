@@ -667,6 +667,7 @@ impl Battle {
             },
             frame: self.frame(),
             player_side,
+            deploying: false,
             finished,
             winner: if finished { self.report().winner } else { None },
         }

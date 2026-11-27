@@ -262,6 +262,9 @@ pub struct LiveView {
     pub frame: ReplayFrame,
     /// The side the player fights on (0 attacks, 1 defends).
     pub player_side: u8,
+    /// Before the first step: the player stands their squads in their half
+    /// (`deploy_zone`, `Command::Deploy`) and starts the battle when ready.
+    pub deploying: bool,
     pub finished: bool,
     pub winner: Option<u8>,
 }

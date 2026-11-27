@@ -46,6 +46,10 @@ pub(super) fn prepare_live_battle(
         &raid.soldiers,
         &defenders,
         &militia,
+        [
+            towns.0[attacker].policy.doctrine,
+            towns.0[d].policy.doctrine,
+        ],
         seed,
     ) else {
         return None;
@@ -62,24 +66,38 @@ pub(super) fn prepare_live_battle(
         at,
         facing,
         player_side: if player as usize == attacker { 0 } else { 1 },
+        started: false,
     })
 }
 
 /// The battle waiting for the player, as the game shows it.
 pub fn live_battle_view(world: &World) -> Option<crate::battle::LiveView> {
     let live = world.get_resource::<PendingBattle>()?.0.as_ref()?;
-    Some(
-        live.battle
-            .live_view(live.target as u16, live.at, live.facing, live.player_side),
-    )
+    let mut v = live
+        .battle
+        .live_view(live.target as u16, live.at, live.facing, live.player_side);
+    v.deploying = !live.started;
+    Some(v)
 }
 
-/// Advances the waiting battle by `seconds` (whole steps).
+/// Ends the deployment: the waiting battle steps from now on.
+pub fn start_live_battle(world: &mut World) {
+    if let Some(live) = world
+        .get_resource_mut::<PendingBattle>()
+        .and_then(|p| p.into_inner().0.as_mut())
+    {
+        live.started = true;
+    }
+}
+
+/// Advances the waiting battle by `seconds` (whole steps), once the player
+/// has started it (`start_live_battle`); before that it waits for them to
+/// deploy.
 pub fn step_live_battle(world: &mut World, seconds: f32) {
     let Some(mut pending) = world.get_resource_mut::<PendingBattle>() else {
         return;
     };
-    let Some(live) = pending.0.as_mut() else {
+    let Some(live) = pending.0.as_mut().filter(|l| l.started) else {
         return;
     };
     let steps = (seconds / live.battle.params().dt.max(1e-3))
@@ -108,12 +126,14 @@ pub fn command_live_battle(
     live.battle.command(squad, command)
 }
 
-/// Fights the waiting battle to its end at once (auto-resolve).
+/// Fights the waiting battle to its end at once (auto-resolve), deployed or
+/// not.
 pub fn resolve_live_battle(world: &mut World) {
     let Some(mut pending) = world.get_resource_mut::<PendingBattle>() else {
         return;
     };
     if let Some(live) = pending.0.as_mut() {
+        live.started = true;
         while !live.battle.finished() {
             live.battle.step();
         }

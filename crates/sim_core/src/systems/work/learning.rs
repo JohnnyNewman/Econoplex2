@@ -143,14 +143,21 @@ pub fn learn(
                     .chain(&ev.apprentices)
                     .map(|&a| a as usize)
             };
-            if !team().any(|a| store.alive[a] && knowledge::knows(kp, &db, store, a, r)) {
+            let knowers: Vec<usize> = team()
+                .filter(|&a| store.alive[a] && knowledge::knows(kp, &db, store, a, r))
+                .collect();
+            if knowers.is_empty() {
                 continue;
             }
+            let town = &towns.0[ev.town as usize];
             let p = knowledge::chance(kp.learn_per_day, ev.days);
             for a in team() {
                 if store.alive[a]
                     && !knowledge::knows(kp, &db, store, a, r)
                     && knowledge::can_learn(kp, &db, store, a, r)
+                    && knowers
+                        .iter()
+                        .any(|&k| knowledge::may_teach(&db, store, town, k, a, r))
                     && rng.random::<f32>() < p
                 {
                     knowledge::learn(store, a, r);
@@ -235,6 +242,7 @@ pub fn learn(
                         && !db.requires[r].is_empty()
                         && knowledge::knows(kp, &db, store, teacher, r)
                         && !knowledge::knows(kp, &db, store, c, r)
+                        && knowledge::may_teach(&db, store, town, teacher, c, r)
                         && knowledge::can_learn(kp, &db, store, c, r)
                         && rng.random::<f32>() < p
                     {

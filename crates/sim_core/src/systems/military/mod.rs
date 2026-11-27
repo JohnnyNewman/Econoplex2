@@ -659,6 +659,8 @@ pub struct LiveBattle {
     pub at: (f32, f32),
     pub facing: (f32, f32),
     pub player_side: u8,
+    /// Whether the player has ended the deployment (`start_live_battle`).
+    pub started: bool,
 }
 
 #[derive(Resource, Default)]

@@ -95,6 +95,9 @@ pub enum Action {
     CharterToggle,
     ArmyShare(i32),
     WarToggle,
+    /// The doctrine's posture, then its prisoner policy, each in turn.
+    Posture,
+    Prisoners,
     RaidTarget(i32),
     Raid,
     BuildType(i32),
@@ -120,6 +123,7 @@ pub enum Field {
     CharterState,
     ArmyShare,
     War,
+    Doctrine,
     RaidTarget,
     BuildType,
     Commissions,
@@ -274,6 +278,11 @@ pub fn spawn_policy_panel(
                 button(r, "toggle", Action::WarToggle);
                 value(r, Field::War, 90.0);
             });
+            row(p, "Doctrine", &|r| {
+                button(r, "posture", Action::Posture);
+                button(r, "prisoners", Action::Prisoners);
+                value(r, Field::Doctrine, 200.0);
+            });
             row(p, "Raid", &|r| {
                 button(r, "<", Action::RaidTarget(-1));
                 value(r, Field::RaidTarget, 190.0);
@@ -389,6 +398,14 @@ pub fn policy_buttons(
                             War::Auto => War::Defend,
                             War::Defend => War::Auto,
                         },
+                    }),
+                    Action::Posture => Some(Order::Doctrine {
+                        town,
+                        doctrine: policy.doctrine.next_posture(),
+                    }),
+                    Action::Prisoners => Some(Order::Doctrine {
+                        town,
+                        doctrine: policy.doctrine.next_prisoners(),
                     }),
                     Action::RaidTarget(d) => {
                         cursor.raid_target = step(cursor.raid_target, d, others.len() as i32);
@@ -541,6 +558,9 @@ pub fn update_policy_panel(
                 (War::Auto, None) => "raids freely".into(),
                 (War::Defend, None) => "defends".into(),
             },
+            Field::Doctrine => sim_core::battle::doctrine_words(p.doctrine)
+                .trim_start_matches("doctrine ")
+                .to_string(),
             Field::RaidTarget => match p.raid_order {
                 Some(o) if town.squad.len() < params.military.min_raid_squad => format!(
                     "{} (needs {} soldiers)",
@@ -705,6 +725,7 @@ fn order_text(order: &Order, db: &Db, towns: &Towns) -> String {
         }
         Order::Army { share, .. } => format!("army {}", rate(*share)),
         Order::War { war, .. } => format!("war {war:?}").to_lowercase(),
+        Order::Doctrine { doctrine, .. } => sim_core::battle::doctrine_words(*doctrine),
         Order::Raid { target, .. } => format!(
             "raid {}",
             towns
@@ -942,6 +963,16 @@ mod tests {
                 Action::Raid => {
                     assert!(matches!(one(&orders), Order::Raid { target, .. } if target != town))
                 }
+                Action::Posture => assert!(matches!(
+                    one(&orders),
+                    Order::Doctrine { doctrine, .. }
+                        if doctrine.posture == sim_core::battle::Posture::Aggressive
+                )),
+                Action::Prisoners => assert!(matches!(
+                    one(&orders),
+                    Order::Doctrine { doctrine, .. }
+                        if doctrine.prisoners == sim_core::battle::Pursuit::Capture
+                )),
                 Action::WealthTax(_) => assert!(matches!(
                     one(&orders),
                     Order::Tax {
