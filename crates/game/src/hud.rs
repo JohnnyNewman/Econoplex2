@@ -25,12 +25,18 @@ pub struct LeftColumn;
 #[derive(Component)]
 pub struct RightColumn;
 
+/// Panels folded away while a live battle waits (the economy holds still
+/// then): the left-hand column and the policy panel, so the battle panel
+/// has the top of the screen to itself (live_battle.rs `fold_panels`).
+#[derive(Component)]
+pub struct FoldsInBattle;
+
 /// The controls help, one line until `F1` opens it.
 #[derive(Component)]
 pub struct HelpText;
 
 /// The full controls help (`F1`).
-pub const HELP: &str = "Space pause | 1-9 speed | WASD pan | wheel zoom\nclick select | Esc deselect | F follow | P product space\nK colour by best skill / today's work\nE economy | Tab next town | F5 save | F9 load\nY why | T town | H history | L log | I person\nC culture: red tradition, green faith, blue liberty\nF1 hide this help | F2 hide all panels";
+pub const HELP: &str = "Space pause | 1-9 speed | WASD pan | wheel zoom\nclick select | Esc deselect | F follow | P product space\nK colour by best skill / today's work\nE economy | Tab next town | F5 save | F9 load\nY why | T town | H history | L log | I person\nC culture: red tradition, green faith, blue liberty\nF1 hide this help | F2 hide all panels\n\nIn a live battle:\nclick / shift-click / drag a box: select your squads\nright-click: move, or attack the enemy under it\nright-drag: lay out the line (ghost shows arrival)\ndouble right-click: run | Esc deselect\nCtrl+1-9 set group | 1-9 select it, twice: look\nZ fire at will | X hold fire | C skirmish\nV tight | B loose | N own order | O morale overlay\nhover an enemy: how your squads fare\nSpace pause (orders still go in)";
 /// The one line it shows while folded.
 pub const HELP_FOLDED: &str = "F1 controls";
 
@@ -85,6 +91,7 @@ pub fn spawn_hud(mut commands: Commands, db: Res<Db>) {
                 ..default()
             },
             LeftColumn,
+            FoldsInBattle,
         ))
         .with_children(|c| {
             c.spawn((

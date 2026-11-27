@@ -24,11 +24,18 @@
 //! controls of an RTS will (`sim_core::battle::Command`; design note
 //! battle-per-soldier.md, "Battle controls").
 //! "Look at the field" moves the camera there; "Fight it out" settles it at
-//! once.
+//! once. Under the title, the squads selected with the mouse
+//! (battle_input.rs) and buttons for their stance: fire at will, hold fire
+//! or skirmish; tight, loose or their own order; and whether they kill,
+//! capture or let go enemies who run. While the battle waits, the summary,
+//! economy and policy panels fold away (`fold_panels`), so nothing lies under
+//! the battle panel.
 
+use crate::battle_input::BattleControls;
 use crate::ui_compat::Interaction;
 use crate::view::WorldCamera;
 use bevy::prelude::*;
+use sim_core::battle::rts::{self, StanceKey};
 use sim_core::battle::{Command, LiveView, Order, SquadState};
 use sim_core::systems::military as war;
 use sim_core::Towns;
@@ -180,10 +187,16 @@ pub struct SquadText(usize);
 #[derive(Component)]
 pub struct SquadRows;
 
+/// Where the selection and its stance buttons go.
+#[derive(Component)]
+pub struct StanceRows;
+
 #[derive(Component, Clone, Debug, PartialEq)]
 pub enum BattleAction {
     /// A squad's orders, carried out in turn.
     Orders(usize, Vec<Order>),
+    /// A stance for the selected squads.
+    Stance(StanceKey),
     Look,
     FightOut,
 }
@@ -234,7 +247,8 @@ pub fn spawn_battle_panel(mut commands: Commands) {
                 padding: UiRect::all(Val::Px(8.0)),
                 ..default()
             },
-            BackgroundColor(Color::srgba(0.05, 0.04, 0.02, 0.85)),
+            BackgroundColor(Color::srgb(0.05, 0.04, 0.02)),
+            GlobalZIndex(10),
             Visibility::Hidden,
             BattleRoot,
         ))
@@ -256,11 +270,38 @@ pub fn spawn_battle_panel(mut commands: Commands) {
             p.spawn((
                 Node {
                     flex_direction: FlexDirection::Column,
+                    margin: UiRect::vertical(Val::Px(4.0)),
+                    ..default()
+                },
+                StanceRows,
+            ));
+            p.spawn((
+                Node {
+                    flex_direction: FlexDirection::Column,
                     ..default()
                 },
                 SquadRows,
             ));
         });
+}
+
+/// While a battle waits, the summary, economy and policy panels fold away
+/// (`hud::FoldsInBattle`), so nothing is drawn under the battle panel; they
+/// come back when it is settled.
+pub fn fold_panels(
+    live: Res<LiveBattle>,
+    mut panels: Query<&mut Node, With<crate::hud::FoldsInBattle>>,
+) {
+    let display = if live.view.is_some() {
+        Display::None
+    } else {
+        Display::Flex
+    };
+    for mut n in &mut panels {
+        if n.display != display {
+            n.display = display;
+        }
+    }
 }
 
 /// Enemy squads still on the field (targets for attack and shoot orders).
@@ -339,17 +380,54 @@ pub fn update_battle_panel(
     mut root: Single<&mut Visibility, With<BattleRoot>>,
     mut title: Single<&mut Text, (With<BattleTitle>, Without<SquadText>)>,
     rows: Single<Entity, With<SquadRows>>,
+    stance_rows: Single<Entity, With<StanceRows>>,
     mut texts: Query<(&mut Text, &SquadText), Without<BattleTitle>>,
     mut layout: Local<Option<Layout>>,
+    controls: Res<BattleControls>,
+    mut stance_layout: Local<Option<(Vec<usize>, Vec<bool>)>>,
 ) {
     let Some(v) = &live.view else {
         root.set_if_neq(Visibility::Hidden);
         if layout.is_some() {
             commands.entity(*rows).despawn_children();
+            commands.entity(*stance_rows).despawn_children();
             *layout = None;
+            *stance_layout = None;
         }
         return;
     };
+    // The selection and its stance.
+    let sel = &controls.rts.selection.squads;
+    let marks: Vec<bool> = StanceKey::ALL
+        .iter()
+        .map(|(k, _)| k.chosen(v, sel))
+        .collect();
+    let want_stance = (sel.clone(), marks);
+    if stance_layout.as_ref() != Some(&want_stance) {
+        commands.entity(*stance_rows).despawn_children();
+        commands.entity(*stance_rows).with_children(|p| {
+            if sel.is_empty() {
+                p.spawn((
+                    Text::new("Select squads with the mouse: click, shift-click or drag a box (F1: controls)"),
+                    font(12.0),
+                ));
+                return;
+            }
+            let names: Vec<&str> = sel.iter().map(|&q| v.squads[q].name.as_str()).collect();
+            p.spawn((Text::new(format!("Selected: {}", names.join(", "))), font(12.0)));
+            p.spawn(Node {
+                flex_direction: FlexDirection::Row,
+                flex_wrap: FlexWrap::Wrap,
+                ..default()
+            })
+            .with_children(|r| {
+                for (&(key, label), &on) in StanceKey::ALL.iter().zip(&want_stance.1) {
+                    spawn_button(r, label, BattleAction::Stance(key), on);
+                }
+            });
+        });
+        *stance_layout = Some(want_stance);
+    }
     root.set_if_neq(Visibility::Inherited);
     let town = towns
         .0
@@ -410,10 +488,12 @@ pub fn update_battle_panel(
         let (Some(sq), Some(f)) = (v.squads.get(q), v.frame.squads.get(q)) else {
             continue;
         };
-        let side = if sq.side == v.player_side {
-            "yours"
-        } else {
+        let side = if sq.side != v.player_side {
             "enemy"
+        } else if sel.contains(&q) {
+            "yours, selected"
+        } else {
+            "yours"
         };
         let want = format!(
             "{} ({side})   {}/{}   {:?}   morale {:.0}%",
@@ -444,6 +524,7 @@ pub fn battle_buttons(
     mut live: ResMut<LiveBattle>,
     mut follow: ResMut<crate::view::Follow>,
     mut camera: Single<&mut Transform, With<WorldCamera>>,
+    controls: Res<BattleControls>,
 ) {
     for (interaction, action, mut colour, chosen) in &mut buttons {
         match interaction {
@@ -455,6 +536,12 @@ pub fn battle_buttons(
                 match action {
                     BattleAction::Orders(q, plan) => {
                         live.commands.push((*q, Command::Orders(plan.clone())))
+                    }
+                    BattleAction::Stance(key) => {
+                        if let Some(v) = &live.view {
+                            let cmds = rts::stance(v, &controls.rts.selection.squads, *key);
+                            live.commands.extend(cmds);
+                        }
                     }
                     BattleAction::FightOut => live.resolve = true,
                     BattleAction::Look => {

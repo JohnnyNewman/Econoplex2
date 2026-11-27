@@ -287,6 +287,16 @@ pub fn military(
                 let live = links.pending.as_mut().and_then(|p| p.0.take()).unwrap();
                 let (fallen_a, fallen_d) =
                     settle_field_battle(store, &params.battle, &live.battle, &live.groups);
+                take_prisoners(
+                    &mut commands,
+                    &mut raid,
+                    t,
+                    &mut towns,
+                    store,
+                    &mut rng,
+                    &live.battle,
+                    &live.groups,
+                );
                 let won = live.battle.report().winner == Some(0);
                 let fought = aftermath(
                     &mut commands,
@@ -622,6 +632,15 @@ struct Outcome {
 /// (`LiveBattles(true)`, set by the game) or resolve at once (the default).
 #[derive(Resource, Debug, Clone, Copy, Default)]
 pub struct LiveBattles(pub bool);
+
+impl LiveBattle {
+    /// Once it is decided, the people of the losing side the winners took
+    /// prisoner (`Pursuit::Capture`): settling the battle takes them to the
+    /// winning town (`take_prisoners`).
+    pub fn prisoners(&self) -> Vec<u32> {
+        prisoners(&self.battle, &self.groups)
+    }
+}
 
 /// A battle waiting for the player: the simulation holds still while the game
 /// steps it and gives orders, and settles it once it is over.

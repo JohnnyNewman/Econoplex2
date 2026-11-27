@@ -86,8 +86,12 @@ impl SquadBattle {
             if !contacts[i].contains(&p) {
                 continue;
             }
-            // A squad that lets enemies go strikes nobody who runs.
+            // A squad that lets enemies go strikes nobody who runs; one
+            // that takes prisoners takes them instead.
             if !self.squads[i].pursues() && self.squads[p].state == SquadState::Routing {
+                if self.squads[i].chases() {
+                    self.capture(i, p);
+                }
                 continue;
             }
             if self.squads[p].primary != Some(i) && self.squads[p].fighting() {
@@ -163,7 +167,7 @@ impl SquadBattle {
         let p = &self.params;
         for s in &mut self.squads {
             let (mut sum, mut exp, mut n) = (0.0, 0.0, 0.0);
-            for m in s.spec.members.iter().filter(|m| m.health > 0.0) {
+            for m in s.spec.members.iter().filter(|m| m.fights()) {
                 let e = m.experience.max(0.0);
                 sum += m.skill + p.experience_weight * (1.0 + e).ln();
                 exp += e;
@@ -308,7 +312,7 @@ impl SquadBattle {
             // Riders look for archers and fleeing squads (if they chase
             // them), and steer clear of a spear wall while softer targets
             // are about.
-            let pursue = s.pursues();
+            let pursue = s.chases();
             self.enemies(i)
                 .filter(|&j| {
                     let q = &self.squads[j];

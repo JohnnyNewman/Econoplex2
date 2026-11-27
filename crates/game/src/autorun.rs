@@ -56,6 +56,8 @@ pub struct GameArgs {
     /// The report open at start (reports.rs), and a person selected at start.
     pub report: Option<crate::reports::Report>,
     pub select: Option<u32>,
+    /// Show a battle control without a mouse, for screenshots (`--rts-demo`).
+    pub rts_demo: Option<crate::battle_input::Demo>,
 }
 
 pub fn parse() -> GameArgs {
@@ -133,6 +135,7 @@ pub fn parse() -> GameArgs {
                 a.sets.push((k.to_string(), x.to_string()));
             }
             "--battle" => a.battle = Some(val()),
+            "--rts-demo" => a.rts_demo = Some(val().parse().unwrap_or_else(|e: String| die(&e))),
             "-h" | "--help" => {
                 println!(
                     "econoplex: the Econoplex game\n\n\
@@ -150,7 +153,9 @@ pub fn parse() -> GameArgs {
                      --player NAME    govern this town (default: scenario.ron's player)\n\
                      --order TEXT     give an order on day 0 (repeatable), as in the CLI\n\
                      --set PATH=VALUE change models.ron for this run (repeatable)\n\
-                     --battle LINEUP  fight a line-up on battle.model and play it back"
+                     --battle LINEUP  fight a line-up on battle.model and play it back\n\
+                     --rts-demo WHAT  in a live battle, show `ghost` (your squads selected, a line\n\
+                     \x20                laid out ahead of them) or `overlay` (morale and fatigue)"
                 );
                 std::process::exit(0);
             }

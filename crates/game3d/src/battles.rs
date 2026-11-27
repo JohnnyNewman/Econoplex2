@@ -18,7 +18,15 @@
 //! by default: then each figure stands where its soldier stands, facing their
 //! way, so the squads take the shape their soldiers give them, and the panel
 //! also offers to flank an enemy squad and to set a squad's formation.
+//!
+//! Squads are also selected and ordered with the mouse (battle_input.rs);
+//! the panel then marks the selected squads and offers buttons for their
+//! stance (fire at will, hold fire, skirmish; tight, loose, own order) and
+//! for what they do with enemies who run (kill, capture, let go). With the
+//! overlay on (`O`) the figures take their soldier's morale and fatigue as
+//! colour instead of their side's.
 
+use crate::battle_input::BattleControls;
 use crate::live::LiveSim;
 use crate::toon::{toon, ToonMaterial};
 use crate::{ground, World3d, SCALE};
@@ -26,8 +34,10 @@ use bevy::asset::RenderAssetUsages;
 use bevy::mesh::PrimitiveTopology;
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
+use sim_core::battle::rts::{self, StanceKey};
 use sim_core::battle::{
-    Command, FighterState, FrameSoldier, LiveView, Order, Replay, ReplaySquad, SquadState,
+    Command, Condition, FighterState, FrameSoldier, LiveView, Order, Replay, ReplaySquad,
+    SquadState,
 };
 
 pub struct BattlesPlugin;
@@ -59,7 +69,13 @@ struct Looks {
     mesh: Option<Handle<Mesh>>,
     /// Attackers, defenders, and a routing squad's colour.
     colours: Vec<Handle<ToonMaterial>>,
+    /// The overlay's colours, by morale (`MORALE_STEPS`) then fatigue
+    /// (`FATIGUE_STEPS`).
+    overlay: Vec<Handle<ToonMaterial>>,
 }
+
+const MORALE_STEPS: usize = 6;
+const FATIGUE_STEPS: usize = 3;
 
 impl Looks {
     /// The figure mesh, with the side colours made on first use.
@@ -77,10 +93,25 @@ impl Looks {
             .into_iter()
             .map(|c| toons.add(toon(c)))
             .collect();
+            self.overlay = (0..MORALE_STEPS * FATIGUE_STEPS)
+                .map(|k| {
+                    let m = (k / FATIGUE_STEPS) as f32 / (MORALE_STEPS - 1) as f32;
+                    let f = (k % FATIGUE_STEPS) as f32 / (FATIGUE_STEPS - 1) as f32;
+                    let [r, g, b] = rts::condition_colour(Condition::new(m, f));
+                    toons.add(toon(Color::linear_rgb(r, g, b)))
+                })
+                .collect();
         }
         self.mesh
             .get_or_insert_with(|| meshes.add(figure_mesh()))
             .clone()
+    }
+
+    /// The overlay's colour nearest a soldier's condition.
+    fn condition(&self, c: Condition) -> Handle<ToonMaterial> {
+        let m = (c.morale() * (MORALE_STEPS - 1) as f32).round() as usize;
+        let f = (c.fatigue() * (FATIGUE_STEPS - 1) as f32).round() as usize;
+        self.overlay[m.min(MORALE_STEPS - 1) * FATIGUE_STEPS + f.min(FATIGUE_STEPS - 1)].clone()
     }
 }
 
@@ -236,15 +267,41 @@ fn stage_battle(
 /// Where a battlefield lies: its centre on the map, the attackers' heading,
 /// and its size in metres.
 #[derive(Clone, Copy)]
-struct Geo {
-    at: (f32, f32),
-    facing: (f32, f32),
-    field: (f32, f32),
+pub(crate) struct Geo {
+    pub at: (f32, f32),
+    pub facing: (f32, f32),
+    pub field: (f32, f32),
 }
 
 impl Geo {
+    /// A live battle's field.
+    pub(crate) fn of(v: &LiveView) -> Self {
+        Self {
+            at: v.at,
+            facing: v.facing,
+            field: v.field,
+        }
+    }
+
+    /// Where a point of the map lies on the field (metres), for clicks.
+    pub(crate) fn field_at(&self, (mx, my): (f32, f32)) -> (f32, f32) {
+        let (dx, dy) = (mx - self.at.0, my - self.at.1);
+        let (fx, fy) = self.facing;
+        let k = METRE * SCALE;
+        (
+            (fx * dx + fy * dy) / k + self.field.0 / 2.0,
+            (-fy * dx + fx * dy) / k + self.field.1 / 2.0,
+        )
+    }
+
+    /// A point of the field in 3D, on the ground.
+    pub(crate) fn point_3d(&self, t: &sim_core::terrain::Terrain, (x, y): (f32, f32)) -> Vec3 {
+        let m = self.on_map(x, y);
+        Vec3::new(m.0 / SCALE, ground(t, m), -m.1 / SCALE)
+    }
+
     /// Where a point of the field (metres) lies on the map.
-    fn on_map(&self, x: f32, y: f32) -> (f32, f32) {
+    pub(crate) fn on_map(&self, x: f32, y: f32) -> (f32, f32) {
         let (dx, dy) = (x - self.field.0 / 2.0, y - self.field.1 / 2.0);
         let (fx, fy) = self.facing;
         let k = METRE * SCALE;
@@ -361,12 +418,14 @@ fn soldier_pose(geo: &Geo, m: &FrameSoldier) -> Option<(Vec3, Vec3, bool)> {
 
 /// Stands each figure of a squad on the soldier model where its soldier
 /// stands: upright and facing their way, lying where they fell, grey when
-/// they run, gone when they left the field.
+/// they run, gone when they left the field. With `overlay`, those still on
+/// their feet take their condition's colour.
 #[allow(clippy::too_many_arguments)]
 fn pose_soldiers(
     geo: &Geo,
     sq: &ReplaySquad,
     men: &[FrameSoldier],
+    overlay: Option<&[Condition]>,
     entities: &[Entity],
     figures: &mut Figures,
     looks: &Looks,
@@ -393,7 +452,10 @@ fn pose_soldiers(
             .with_scale(Vec3::splat(size));
         *vis = Visibility::Inherited;
         let running = men[k].state == FighterState::Routing;
-        let colour = if running {
+        let condition = overlay.and_then(|c| c.get(k)).filter(|_| !fallen);
+        let colour = if let Some(&c) = condition {
+            looks.condition(c)
+        } else if running {
             looks.colours[2].clone()
         } else {
             looks.colours[(sq.side as usize).min(1)].clone()
@@ -447,7 +509,7 @@ fn play_battles(
         let men = r.soldiers_at(bt);
         for (q, sq) in r.squads.iter().enumerate() {
             if let Some(men) = men.get(q) {
-                pose_soldiers(&geo, sq, men, &s.figures[q], &mut figures, &looks, t);
+                pose_soldiers(&geo, sq, men, None, &s.figures[q], &mut figures, &looks, t);
                 continue;
             }
             let (Some(fa), Some(fb)) = (a.squads.get(q), b.squads.get(q)) else {
@@ -484,6 +546,7 @@ fn show_live(
     mut toons: ResMut<Assets<ToonMaterial>>,
     mut figures: Figures,
     world: Res<World3d>,
+    controls: Res<BattleControls>,
 ) {
     let view = live.live_battle();
     let same = view.as_ref().map(|v| v.town) == scene.town
@@ -532,10 +595,12 @@ fn show_live(
     };
     for (q, sq) in v.squads.iter().enumerate() {
         if let Some(men) = v.frame.soldiers.get(q) {
+            let overlay = controls.overlay.then(|| v.condition.get(q)).flatten();
             pose_soldiers(
                 &geo,
                 sq,
                 men,
+                overlay.map(Vec::as_slice),
                 &scene.figures[q],
                 &mut figures,
                 &looks,
@@ -604,8 +669,10 @@ fn battle_panel(
     live: Res<LiveSim>,
     world: Res<World3d>,
     mut cameras: Query<&mut crate::camera::WorldCamera>,
+    controls: Res<BattleControls>,
 ) {
     let Some(v) = live.live_battle() else { return };
+    let sel = &controls.rts.selection.squads;
     let Ok(ctx) = contexts.ctx_mut() else { return };
     let town = live
         .snapshot
@@ -643,6 +710,25 @@ fn battle_panel(
                 }
             });
             ui.separator();
+            // The selection and its stance.
+            if sel.is_empty() {
+                ui.label(
+                    "Select squads with the mouse: click, shift-click or drag a box (F1: controls)",
+                );
+            } else if !v.finished {
+                let names: Vec<&str> = sel.iter().map(|&q| v.squads[q].name.as_str()).collect();
+                ui.label(format!("Selected: {}", names.join(", ")));
+                ui.horizontal_wrapped(|ui| {
+                    for &(key, label) in StanceKey::ALL.iter() {
+                        if ui.selectable_label(key.chosen(&v, sel), label).clicked() {
+                            for (q, c) in rts::stance(&v, sel, key) {
+                                live.command_battle(q, c);
+                            }
+                        }
+                    }
+                });
+            }
+            ui.separator();
             let enemies: Vec<usize> = (0..v.squads.len())
                 .filter(|&q| {
                     v.squads[q].side != v.player_side
@@ -657,7 +743,13 @@ fn battle_panel(
                         continue;
                     };
                     let mine = sq.side == v.player_side;
-                    let side = if mine { "yours" } else { "enemy" };
+                    let side = if !mine {
+                        "enemy"
+                    } else if sel.contains(&q) {
+                        "yours, selected"
+                    } else {
+                        "yours"
+                    };
                     ui.label(format!("{} ({side})", sq.name));
                     ui.label(format!("{}/{}", f.2, sq.start));
                     ui.label(format!("{:?}", f.3));
@@ -766,5 +858,22 @@ mod tests {
         assert!(soldier_pose(&geo, &fallen).unwrap().2);
         let fled = man(0.0, 0.0, (1.0, 0.0), FighterState::Fled);
         assert!(soldier_pose(&geo, &fled).is_none());
+    }
+
+    /// A click on the map finds the field point drawn there.
+    #[test]
+    fn a_map_point_goes_back_to_its_field_point() {
+        let geo = Geo {
+            at: (100.0, 50.0),
+            facing: (0.6, 0.8),
+            field: (200.0, 80.0),
+        };
+        for (x, y) in [(0.0, 0.0), (150.0, 40.0), (37.0, 71.0)] {
+            let back = geo.field_at(geo.on_map(x, y));
+            assert!(
+                (back.0 - x).abs() < 1e-3 && (back.1 - y).abs() < 1e-3,
+                "{back:?}"
+            );
+        }
     }
 }

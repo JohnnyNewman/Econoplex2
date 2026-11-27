@@ -29,6 +29,11 @@ pub struct UiCapture {
     pub keyboard: bool,
 }
 
+/// Set by the battle controls while they hold the right button (laying out
+/// a line): the camera does not rotate meanwhile.
+#[derive(Resource, Default)]
+pub struct BattleHolds(pub bool);
+
 /// Where the camera looks from. Attach it to the `Camera3d` entity.
 #[derive(Component, Clone, Copy, Debug)]
 pub struct WorldCamera {
@@ -78,7 +83,9 @@ pub fn world_camera(
     time: Res<Time>,
     mut cams: Query<(&mut WorldCamera, &mut Transform)>,
     ui: Option<Res<UiCapture>>,
+    battle: Option<Res<BattleHolds>>,
 ) {
+    let battle_holds = battle.is_some_and(|b| b.0);
     // While the pointer or the keyboard is on a panel, the camera stays put.
     let (pointer_free, keys_free) = ui.map_or((true, true), |u| (!u.pointer, !u.keyboard));
     let dt = time.delta_secs();
@@ -106,7 +113,7 @@ pub fn world_camera(
         c.focus.z = c.focus.z.clamp(c.bounds.y, c.bounds.w);
 
         c.yaw += (key(KeyCode::KeyQ) - key(KeyCode::KeyE)) * 1.5 * dt;
-        if pointer_free && mouse.pressed(MouseButton::Right) {
+        if pointer_free && !battle_holds && mouse.pressed(MouseButton::Right) {
             c.yaw -= motion.delta.x * 0.005;
             c.pitch += motion.delta.y * 0.005;
         }

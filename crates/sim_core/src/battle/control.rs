@@ -68,8 +68,10 @@ pub enum Pursuit {
     /// Chase them and cut them down.
     #[default]
     Kill,
-    /// Take them prisoner, to be captives in the town's economy. Until the
-    /// capture is built (build order, A), it lets them go, as `LetGo`.
+    /// Take them prisoner: chase them, and lay hands on those in reach
+    /// instead of striking them (`Member::captured`). After a live battle
+    /// the winners' prisoners go to the winning town (military
+    /// `take_prisoners`).
     Capture,
     /// Let them go: strike nobody who runs.
     LetGo,

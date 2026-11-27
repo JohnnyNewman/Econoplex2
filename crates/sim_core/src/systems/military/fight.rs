@@ -499,6 +499,7 @@ pub(super) fn setup_field_battle(
                         experience: 0.0,
                         fatigue: store.state[k][state::FATIGUE].clamp(0.0, 1.0),
                         kit,
+                        captured: false,
                     }
                 })
                 .collect();
@@ -579,6 +580,92 @@ pub(super) fn settle_field_battle(
         }
     }
     (fallen[0], fallen[1])
+}
+
+/// Runners the winners took prisoner in a field battle (`Pursuit::Capture`)
+/// go to the winning town, their kit to its armory:
+///
+/// - the raiders' prisoners march home with the raid as captives
+///   (`Activity::Captive`, in `raid.captives`), as the civilians it carries
+///   off do, and settle in the raiders' town when it gets home;
+/// - the defenders' prisoners are already in the defenders' town: they leave
+///   the raid and settle there at once.
+///
+/// Prisoners the losing side took go free. Returns how many were taken.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn take_prisoners(
+    commands: &mut Commands,
+    raid: &mut Raid,
+    attacker: usize,
+    towns: &mut Towns,
+    store: &mut AgentStore,
+    rng: &mut ChaCha8Rng,
+    b: &crate::battle::Battle,
+    groups: &[(u8, Vec<u32>)],
+) -> u32 {
+    let Some(winner) = b.report().winner else {
+        return 0;
+    };
+    let d = raid.target as usize;
+    let (to, from) = if winner == 0 {
+        (attacker, d)
+    } else {
+        (d, attacker)
+    };
+    let mut prisoners = prisoners(b, groups);
+    prisoners.retain(|&i| store.alive[i as usize]);
+    let home = towns.0[to].pos;
+    for &c in &prisoners {
+        let i = c as usize;
+        for slot in KIT_SLOTS {
+            if let Some(e) = crate::goods::from_person(store, i, slot) {
+                crate::goods::to_armory(commands, &mut towns.0[to].armory, to as u16, e);
+            }
+        }
+        store.weapon_power[i] = 0.0;
+        towns.0[from].squad.retain(|&s| s != c);
+        raid.soldiers.retain(|&s| s != c);
+        if let Some(p) = store.partner[i].take() {
+            store.partner[p as usize] = None;
+        }
+        let st = &mut store.state[i];
+        st[state::HAPPINESS] = (st[state::HAPPINESS] - 0.3).max(0.0);
+        let jitter = (
+            rng.random_range(-40.0..40.0f32),
+            rng.random_range(-40.0..40.0f32),
+        );
+        if winner == 0 {
+            store.activity[i] = Activity::Captive;
+            relocate(commands, store, i, to as u16, home, jitter);
+            raid.captives.push(c);
+        } else {
+            store.activity[i] = Activity::Idle;
+            relocate(commands, store, i, to as u16, home, jitter);
+        }
+    }
+    let n = prisoners.len() as u32;
+    towns.0[to].war.captives_taken += n;
+    towns.0[from].war.captives_lost += n;
+    n
+}
+
+/// The people of the losing side the winners took prisoner.
+pub(super) fn prisoners(b: &crate::battle::Battle, groups: &[(u8, Vec<u32>)]) -> Vec<u32> {
+    let Some(winner) = b.report().winner else {
+        return Vec::new();
+    };
+    groups
+        .iter()
+        .enumerate()
+        .filter(|(_, (side, _))| *side != winner)
+        .flat_map(|(g, (_, people))| {
+            b.members(g)
+                .iter()
+                .zip(people)
+                .filter(|(m, _)| m.captured)
+                .map(|(_, &i)| i)
+        })
+        .collect()
 }
 
 /// After a won fight the raiders carry off what they can: the goods worth most

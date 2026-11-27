@@ -38,6 +38,7 @@ mod control;
 mod kit;
 mod lineup;
 mod report;
+pub mod rts;
 pub mod soldiers;
 pub mod squads;
 #[cfg(test)]
@@ -598,7 +599,7 @@ impl Battle {
         for s in 0..m.count() {
             if m.take_engaged(s) {
                 for member in m.members_mut(s) {
-                    if member.health > 0.0 {
+                    if member.fights() {
                         member.experience += 1.0;
                     }
                 }
@@ -650,5 +651,5 @@ impl Battle {
 
 /// Members of a squad still standing.
 fn standing(spec: &SquadSpec) -> usize {
-    spec.members.iter().filter(|m| m.health > 0.0).count()
+    spec.members.iter().filter(|m| m.fights()).count()
 }

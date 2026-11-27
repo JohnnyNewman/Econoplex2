@@ -187,6 +187,22 @@ pub fn field_to_map(
     move |p: Vec2| centre + (x * (p.x - 0.5 * field.0) + y * (p.y - 0.5 * field.1)) * SCALE
 }
 
+/// The other way round: where a point of the map lies on the battlefield
+/// (metres), for clicks on it.
+pub fn map_to_field(
+    at: (f32, f32),
+    facing: (f32, f32),
+    field: (f32, f32),
+) -> impl Fn(Vec2) -> Vec2 {
+    let centre = Vec2::new(at.0, at.1);
+    let x = Vec2::new(facing.0, facing.1).normalize_or(Vec2::X);
+    let y = x.perp();
+    move |p: Vec2| {
+        let d = (p - centre) / SCALE;
+        Vec2::new(d.dot(x) + 0.5 * field.0, d.dot(y) + 0.5 * field.1)
+    }
+}
+
 /// Draw one battlefield: its outline, and a block per squad where `squad`
 /// says it stands (metres on the field), sized by the fighters standing.
 #[allow(clippy::too_many_arguments)]

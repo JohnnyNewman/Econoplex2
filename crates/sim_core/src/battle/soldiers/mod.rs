@@ -412,9 +412,13 @@ impl SquadCtl {
     fn mounted(&self) -> bool {
         self.spec.kit.mounted
     }
-    /// Whether it chases and strikes enemies who run.
+    /// Whether it strikes enemies who run.
     fn pursues(&self) -> bool {
         self.stance.pursuit == Pursuit::Kill
+    }
+    /// Whether it goes after enemies who run (to cut them down or take them).
+    fn chases(&self) -> bool {
+        self.stance.pursuit != Pursuit::LetGo
     }
     /// A disc for distances between squads, as the squad model has it.
     fn radius(&self) -> f32 {
@@ -469,6 +473,8 @@ enum Act {
     /// The first blow of a run into the enemy.
     Charge,
     Shoot,
+    /// Laying hands on a runner, to take them prisoner.
+    Capture,
 }
 
 /// What a soldier's blow or shot did (phase 4).
@@ -483,6 +489,8 @@ struct Blow {
     /// A braced spear's blow on this soldier as they charged, and whose.
     counter: f32,
     counter_by: u32,
+    /// Not a blow: the target, running, is taken prisoner.
+    capture: bool,
 }
 
 impl Default for Blow {
@@ -494,6 +502,7 @@ impl Default for Blow {
             angle: 0,
             counter: 0.0,
             counter_by: NONE,
+            capture: false,
         }
     }
 }
@@ -574,6 +583,8 @@ pub struct SoldierBattle {
     hurt: Vec<Hurt>,
     fallen: Vec<usize>,
     broke: Vec<usize>,
+    /// Runners taken prisoner this substep.
+    captured: Vec<usize>,
     tally: Vec<u32>,
     /// Squad pairs that have met, and that have charged, so each is told once.
     met: Vec<bool>,
@@ -625,6 +636,7 @@ impl SoldierBattle {
             hurt: vec![Hurt::default(); n],
             fallen: Vec::new(),
             broke: Vec::new(),
+            captured: Vec::new(),
             tally: vec![0; specs.len()],
             met: vec![false; specs.len() * specs.len()],
             charged: vec![false; specs.len() * specs.len()],

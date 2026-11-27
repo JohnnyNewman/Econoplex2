@@ -281,7 +281,7 @@ impl SoldierBattle {
             // Riders look for archers and fleeing squads (if they chase
             // them), and steer clear of a spear wall while softer targets
             // are about.
-            let pursue = s.pursues();
+            let pursue = s.chases();
             self.enemies(c)
                 .filter(|&j| {
                     let q = &self.squads[j];

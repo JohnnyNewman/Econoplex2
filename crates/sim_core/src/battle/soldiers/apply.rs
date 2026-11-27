@@ -15,7 +15,11 @@ impl SoldierBattle {
         for (i, b) in blows {
             let (i, t) = (*i as usize, b.target as usize);
             let (si, st) = (self.squad[i] as usize, self.squad[t] as usize);
-            if b.counter_by != NONE {
+            if b.capture {
+                if self.state[t] == SoldierState::Routing {
+                    self.captured.push(t);
+                }
+            } else if b.counter_by != NONE {
                 // A charge onto braced spears.
                 if b.counter > 0.0 {
                     self.hurt[i].damage += b.counter;
@@ -36,7 +40,7 @@ impl SoldierBattle {
             }
             self.squads[si].engaged = true;
             self.squads[st].engaged = true;
-            if plans[i].act != Act::Shoot && self.side[i] != self.side[t] {
+            if !matches!(plans[i].act, Act::Shoot | Act::Capture) && self.side[i] != self.side[t] {
                 let (a, b) = (si.min(st), si.max(st));
                 if !self.met[a * ns + b] {
                     self.met[a * ns + b] = true;
@@ -44,6 +48,19 @@ impl SoldierBattle {
                 }
             }
         }
+
+        // Runners laid hands on are taken: off the field, unhurt.
+        let captured = std::mem::take(&mut self.captured);
+        for &t in &captured {
+            if self.state[t] == SoldierState::Routing {
+                self.state[t] = SoldierState::Fled;
+                self.vel[t] = V2::ZERO;
+                let s = &mut self.squads[self.squad[t] as usize];
+                s.spec.members[t - s.first].captured = true;
+            }
+        }
+        self.captured = captured;
+        self.captured.clear();
 
         let p = &self.params;
         let sp = &p.soldiers;
@@ -128,6 +145,10 @@ impl SoldierBattle {
             // The next blow or arrow.
             match plan.act {
                 Act::Strike | Act::Charge => {
+                    let pace = self.vigour(i) * self.nerve(i);
+                    self.cooldown[i] = 1.0 / (k.kit.strike_rate * pace).max(1e-3);
+                }
+                Act::Capture => {
                     let pace = self.vigour(i) * self.nerve(i);
                     self.cooldown[i] = 1.0 / (k.kit.strike_rate * pace).max(1e-3);
                 }
@@ -238,7 +259,7 @@ impl SoldierBattle {
             let (mut morale, mut vigour) = (0.0, 0.0);
             let mut runners = V2::ZERO;
             for i in first..first + n {
-                if self.health[i] > 0.0 {
+                if self.health[i] > 0.0 && !self.squads[c].spec.members[i - first].captured {
                     standing += 1;
                 }
                 match self.state[i] {

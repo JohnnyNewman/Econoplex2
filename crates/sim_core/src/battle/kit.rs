@@ -223,6 +223,17 @@ pub struct Member {
     pub fatigue: f32,
     /// Their own kit: an index into the squad's [`SquadSpec::kits`].
     pub kit: u16,
+    /// Taken prisoner while running (by a squad whose pursuit is
+    /// `Pursuit::Capture`): out of the battle, unhurt by it.
+    #[serde(default)]
+    pub captured: bool,
+}
+
+impl Member {
+    /// Still in the battle: on their feet and not taken.
+    pub fn fights(&self) -> bool {
+        self.health > 0.0 && !self.captured
+    }
 }
 
 /// A squad as it enters the battle.
@@ -271,6 +282,7 @@ impl SquadSpec {
                     experience,
                     fatigue: 0.0,
                     kit: 0,
+                    captured: false,
                 };
                 n
             ],
