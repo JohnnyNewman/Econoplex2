@@ -2641,25 +2641,29 @@ fn a_granary_fills_from_a_full_market_and_feeds_a_hungry_one() {
         "the granary took some food"
     );
     check_goods(&s);
-    // Empty the market: the granary releases food into it.
+    // Keep the market empty for a day (what the day makes is taken away step
+    // by step): the granary releases food into it.
     let before = sim_core::granary::held(
         &s.world.resource::<sim_core::Towns>().0[1],
         s.world.resource::<sim_core::Db>(),
     );
-    {
-        let foods: Vec<u32> = s
-            .world
-            .resource::<sim_core::Db>()
-            .foods
-            .iter()
-            .map(|f| f.0)
-            .collect();
-        let mut towns = s.world.resource_mut::<sim_core::Towns>();
-        for f in foods {
-            towns.0[1].stock[f as usize] = 0.0;
+    let foods: Vec<u32> = s
+        .world
+        .resource::<sim_core::Db>()
+        .foods
+        .iter()
+        .map(|f| f.0)
+        .collect();
+    let spd = s.world.resource::<sim_core::SimClock>().steps_per_day;
+    for _ in 0..spd {
+        {
+            let mut towns = s.world.resource_mut::<sim_core::Towns>();
+            for &f in &foods {
+                towns.0[1].stock[f as usize] = 0.0;
+            }
         }
+        s.step_tick();
     }
-    s.step();
     let after = sim_core::granary::held(
         &s.world.resource::<sim_core::Towns>().0[1],
         s.world.resource::<sim_core::Db>(),
