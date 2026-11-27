@@ -27,6 +27,7 @@ flowchart LR
     p_hut[["Hut"]]
     p_cottage[["Cottage"]]
     p_coal(["Coal"])
+    p_tool_handle["Tool handle"]
     p_silver_ore(["Silver ore"])
   end
   subgraph era1["1 Stone, clay and cloth"]
@@ -49,6 +50,8 @@ flowchart LR
     p_bow["Bow"]
     p_shield["Shield"]
     p_padded_coat["Padded coat"]
+    p_furniture["Furniture"]
+    p_barrel["Barrel"]
   end
   subgraph era2["2 Bronze"]
     p_shears["Shears"]
@@ -129,6 +132,7 @@ flowchart LR
   n_quarry --> p_stone
   n_silver_vein --> p_silver_ore
   n_tin_vein --> p_tin_ore
+  p_barrel --> p_ale
   p_beam --> p_bakery
   p_beam --> p_brewery
   p_beam --> p_cottage
@@ -213,7 +217,6 @@ flowchart LR
   p_nails --> p_machine_shop
   p_nails --> p_rimmed_shield
   p_ore --> p_iron
-  p_pot --> p_ale
   p_roof_tile --> p_brewery
   p_roof_tile --> p_machine_shop
   p_roof_tile --> p_roller_mill
@@ -244,6 +247,10 @@ flowchart LR
   p_thatch --> p_workshop
   p_tin --> p_bronze
   p_tin_ore --> p_tin
+  p_tool_handle --> p_axe
+  p_tool_handle --> p_hammer
+  p_tool_handle --> p_pickaxe
+  p_tool_handle --> p_plough
   p_wool --> p_yarn
   p_yarn --> p_cloth
   p_blast_furnace -.-> p_iron
