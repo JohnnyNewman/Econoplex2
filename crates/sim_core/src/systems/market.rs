@@ -890,6 +890,9 @@ fn derived_targets(
             for (p, w) in want.iter_mut().enumerate() {
                 *w = town.input_use.get(p).copied().unwrap_or(0.0);
             }
+            // Ways of making the same thing draw on one stock and fill one
+            // demand, so a group adds what its hungriest way would use.
+            let mut group_want: Vec<Vec<(u32, f32)>> = vec![Vec::new(); db.same_outputs.len()];
             for (r, m) in db.recipes.iter().enumerate() {
                 if m.inputs.is_empty()
                     || m.builds.is_some()
@@ -901,9 +904,13 @@ fn derived_targets(
                 }
                 for &(p, q) in &m.inputs {
                     if town.stock[p as usize] < q {
-                        want[p as usize] += q * blocked_workers / m.duration.max(1.0);
+                        let add = q * blocked_workers / m.duration.max(1.0);
+                        crate::db::add_once(&mut want, &mut group_want, db.group_of[r], p, add);
                     }
                 }
+            }
+            for &(p, add) in group_want.iter().flatten() {
+                want[p as usize] += add;
             }
             want.iter().map(|w| w * cover_days).collect()
         })

@@ -171,6 +171,7 @@ pub fn food_reserve(db: &Db, town: &crate::world::Town, params: &Params) -> Vec<
     let need =
         town.residents.len() as f32 * params.needs.hunger_per_day * params.market.food_reserve_days;
     let mut r = vec![0.0; db.content.products.len()];
+    let mut per_group: Vec<Vec<(u32, f32)>> = vec![Vec::new(); db.same_outputs.len()];
     for (k, m) in db.recipes.iter().enumerate() {
         if !makes_food(db, k)
             || m.outputs
@@ -181,8 +182,11 @@ pub fn food_reserve(db: &Db, town: &crate::world::Town, params: &Params) -> Vec<
         }
         let runs = need / m.food_out.max(1e-6);
         for &(p, q) in &m.inputs {
-            r[p as usize] += q * runs;
+            crate::db::add_once(&mut r, &mut per_group, db.group_of[k], p, q * runs);
         }
+    }
+    for &(p, q) in per_group.iter().flatten() {
+        r[p as usize] += q;
     }
     r
 }
@@ -199,6 +203,7 @@ pub fn job_capacity(
     params: &Params,
     sites: &Query<&NaturalResource>,
     window_days: [f32; 2],
+    known: Option<&[u64]>,
 ) -> Vec<f32> {
     let reserve = food_reserve(db, town, params);
     // Places count a day's inputs and nature per worker, as when the
@@ -226,6 +231,12 @@ pub fn job_capacity(
             }
             if m.outputs.iter().any(|o| db.coin[o.0 as usize] > 0.0)
                 && !town.mint_wanted(&params.market)
+            {
+                return 0.0;
+            }
+            // Work nobody in town knows offers no places (and takes none from
+            // the other ways of making the same goods, below).
+            if known.is_some_and(|k| !db.requires[r].is_empty() && !crate::knowledge::in_set(k, r))
             {
                 return 0.0;
             }
@@ -601,11 +612,32 @@ pub fn decide(
         })
         .collect();
 
-    // Per-town context, computed once.
+    // Per-town context, computed once. What each town's people know between
+    // them (knowledge.rs; empty with it off): nobody takes a place in work
+    // nobody there knows, and an apprentice needs a master who knows it.
+    let town_known: Vec<Vec<u64>> = if params.knowledge.enabled {
+        towns
+            .0
+            .iter()
+            .map(|t| crate::knowledge::union(&db, &store, &t.residents))
+            .collect()
+    } else {
+        Vec::new()
+    };
     let mut capacity: Vec<Vec<f32>> = towns
         .0
         .iter()
-        .map(|t| job_capacity(&db, t, &params, &sites, window_days))
+        .enumerate()
+        .map(|(t, town)| {
+            job_capacity(
+                &db,
+                town,
+                &params,
+                &sites,
+                window_days,
+                town_known.get(t).map(|k| &k[..]),
+            )
+        })
         .collect();
     // Building slots: a building holds `slots` workers, including those on
     // multi-day tasks. Only one crew at a time builds each building type.
@@ -766,15 +798,6 @@ pub fn decide(
             .collect();
         // What each town's people know between them: an apprentice needs a
         // master who knows the work (knowledge.rs; with it off, all is known).
-        let town_known: Vec<Vec<u64>> = if params.knowledge.enabled {
-            towns
-                .0
-                .iter()
-                .map(|t| crate::knowledge::union(&db, store, &t.residents))
-                .collect()
-        } else {
-            Vec::new()
-        };
         // Every idle agent ranks its options (regular and apprentice places above
         // resting), in parallel, with its own random stream.
         let lists: Vec<Vec<Opt>> = {
