@@ -3,6 +3,7 @@
 //! substep's state, so they can run in any order and on any thread.
 
 use super::*;
+use crate::battle::rules::{self, Roll};
 
 /// cos 135°: a blow from further round than this comes from behind.
 const REAR: f32 = -std::f32::consts::FRAC_1_SQRT_2;
@@ -117,7 +118,9 @@ impl SoldierBattle {
                     return;
                 }
                 let bj = self.body[j];
-                plan.push += self.shove(i, j, d, d2, 0.5);
+                let shove = self.shove(i, j, d, d2, 0.5);
+                plan.crush += u8::from(shove != V2::ZERO);
+                plan.push += shove;
                 // A squad that lets enemies go strikes nobody who runs (one
                 // that takes prisoners goes for them, to take them).
                 if !c.chases() && self.state[j] == SoldierState::Routing {
@@ -236,6 +239,8 @@ impl SoldierBattle {
                 } else {
                     0.0
                 };
+                let min = self.body[i] + self.body[j];
+                plan.crush += u8::from(d2 < min * min);
                 if share > 0.0 {
                     plan.push += self.shove(i, j, d, d2, share);
                 }
@@ -319,7 +324,7 @@ impl SoldierBattle {
             Act::None => {}
             Act::Strike => {
                 let mut d = Draw::new(self.seed, self.substep, i, Purpose::Hit);
-                self.strike(i, plan.target as usize, 0.0, &mut d, &mut b);
+                self.strike(i, plan.target as usize, false, 0.0, &mut d, &mut b);
             }
             Act::Charge => {
                 let t = plan.target as usize;
@@ -329,7 +334,7 @@ impl SoldierBattle {
                     // They run onto the spear: its blow carries their speed.
                     let mut d = Draw::new(self.seed, self.substep, i, Purpose::Counter);
                     let mut counter = Blow::default();
-                    self.strike(t, i, p.charge_damage * closing, &mut d, &mut counter);
+                    self.strike(t, i, false, p.charge_damage * closing, &mut d, &mut counter);
                     b.counter = if counter.hit { counter.damage } else { 0.0 };
                     b.counter_by = t as u32;
                     b.target = plan.target;
@@ -340,7 +345,7 @@ impl SoldierBattle {
                     let full = p.soldiers.man_kg + p.soldiers.horse_kg;
                     let extra = p.charge_damage * closing * k.mass / full;
                     let mut d = Draw::new(self.seed, self.substep, i, Purpose::Hit);
-                    self.strike(i, t, extra, &mut d, &mut b);
+                    self.strike(i, t, true, extra, &mut d, &mut b);
                 }
             }
             Act::Shoot => self.shoot(i, plan.aim as usize, &mut b),
@@ -368,8 +373,10 @@ impl SoldierBattle {
             && self.facing[t].dot(toward) > 0.0
     }
 
-    /// One blow from `i` on `t` with `extra` charge damage, rolled on `d`.
-    fn strike(&self, i: usize, t: usize, extra: f32, d: &mut Draw, b: &mut Blow) {
+    /// One blow from `i` on `t`, a `charge` (with its own dice and `extra`
+    /// hit points of impact) or not, rolled on `d`: an attack roll against
+    /// their armour class, then the dice.
+    fn strike(&self, i: usize, t: usize, charge: bool, extra: f32, d: &mut Draw, b: &mut Blow) {
         let p = &self.params;
         let (ki, kt) = (
             &self.kits[self.kit[i] as usize].kit,
@@ -389,34 +396,42 @@ impl SoldierBattle {
         } else {
             0
         };
-        let open = b.angle > 0 || self.state[t] == SoldierState::Routing || on_wall;
-        let (parry, shield) = if open {
-            (0.0, 0.0)
-        } else {
-            (self.skill[t] * self.vigour(t), kt.shield * p.shield_parry)
-        };
-        let x = p.skill_slope * (self.skill[i] - parry);
-        let mut chance = (2.0 * p.base_hit / (1.0 + (-x).exp())).min(0.95) * (1.0 - shield);
+        // A blow in the flank or the rear or on a runner meets no shield and
+        // has advantage; so has one on a man in a crush. A man climbing the
+        // wall can't hold up his shield, and the defender on it has the
+        // higher ground (`wall_ground`). A frightened soldier, or one held in
+        // a crush, strikes with disadvantage.
+        let flank = b.angle > 0 || self.state[t] == SoldierState::Routing;
+        let open = flank || on_wall;
+        let roll = Roll::of(
+            flank || self.restrained[t],
+            self.frightened(i) || self.restrained[i],
+        );
+        let (u, v) = (d.f32(), d.f32());
+        let ground = if on_wall { p.wall_ground } else { 0.0 };
+        let bonus = self.attack_bonus(i) + ground;
+        let (hit, crit) = rules::attack(bonus, kt.armour_class(!open), roll, u, v);
         // Once an enemy is well inside a long weapon's reach, it is clumsy;
         // on a wall nobody gets inside a defender's reach.
-        if dist < ki.reach - 1.0 && !on_wall {
-            chance *= 1.0 - ki.close_penalty;
-        }
+        let clumsy = dist < ki.reach - 1.0 && !on_wall && d.f32() < ki.close_penalty;
         b.target = t as u32;
-        b.hit = d.f32() < chance;
+        b.hit = hit && !clumsy;
         if b.hit {
             let rear = if b.angle == 2 {
                 p.soldiers.rear_damage
             } else {
                 1.0
             };
-            b.damage = ki.blow(extra, &kt.armour) * rear;
+            let dice = if charge { ki.charge_dice } else { ki.dice };
+            let hp = rules::roll_dice(dice, crit, || d.f32()) + extra;
+            b.damage = hp * kt.taken[ki.damage_type.index()] * rear / self.max_hp[t];
         }
     }
 
-    /// One arrow from `i` aimed at `a`. It lands with a scatter that hits a
-    /// lone man with the squad model's chance (point blank `shot_accuracy`,
-    /// less with range, more with skill), and hits whoever stands there.
+    /// One arrow from `i` aimed at `a`. It lands with a scatter that puts
+    /// it on a lone man `arrow_aim` of the time, on whoever stands there;
+    /// then its attack roll, which loses `range_penalty` at full range,
+    /// against their armour class decides whether it wounds.
     fn shoot(&self, i: usize, a: usize, b: &mut Blow) {
         let p = &self.params;
         let sp = &p.soldiers;
@@ -424,9 +439,7 @@ impl SoldierBattle {
         let mut d = Draw::new(self.seed, self.substep, i, Purpose::Scatter);
         let me = self.pos[i];
         let dist = (self.pos[a] - me).len();
-        let skill = (0.5 + self.skill[i]).clamp(0.2, 1.5);
-        let chance = (p.shot_accuracy * (1.0 - p.range_falloff * dist / ki.range.max(1.0)) * skill)
-            .clamp(0.01, 0.95);
+        let chance = p.arrow_aim.clamp(0.01, 0.95);
         // P(|offset| < r) = 1 - exp(-r^2 / 2s^2) for a normal scatter s.
         let s = sp.hit_radius / (-2.0 * (1.0 - chance).ln()).sqrt();
         let land = self.pos[a] + V2::new(d.normal(), d.normal()) * s;
@@ -459,21 +472,22 @@ impl SoldierBattle {
             return;
         };
         let kv = &self.kits[self.kit[v] as usize].kit;
-        // A shield turns arrows from the front; a wall hides a man on it.
+        // A shield counts from the front; a man on the wall has cover from below.
         let from = (me - self.pos[v]).norm_or(self.facing[v]);
-        let shielded = self.state[v] != SoldierState::Routing
-            && self.facing[v].dot(from) > 0.0
-            && d.f32() < kv.shield;
+        let front = self.state[v] != SoldierState::Routing && self.facing[v].dot(from) > 0.0;
         let covered = self.field.wall_x.is_some_and(|w| {
-            self.squads[self.squad[v] as usize].spec.behind_wall
-                && self.pos[v].x > w
-                && me.x < w
-                && d.f32() < p.wall_cover
+            self.squads[self.squad[v] as usize].spec.behind_wall && self.pos[v].x > w && me.x < w
         });
+        let ac = kv.armour_class(front) + if covered { p.wall_cover } else { 0.0 };
+        let bonus = self.attack_bonus(i) - p.range_penalty * dist / ki.range.max(1.0);
+        let roll = Roll::of(self.restrained[v], self.frightened(i));
+        let (u, w) = (d.f32(), d.f32());
+        let (hit, crit) = rules::attack(bonus, ac, roll, u, w);
         b.target = v as u32;
-        b.hit = !shielded && !covered;
+        b.hit = hit;
         if b.hit {
-            b.damage = ki.shot(&kv.armour);
+            let hp = rules::roll_dice(ki.shot_dice, crit, || d.f32());
+            b.damage = hp * kv.taken[ki.shot_type.index()] / self.max_hp[v];
         }
     }
 }

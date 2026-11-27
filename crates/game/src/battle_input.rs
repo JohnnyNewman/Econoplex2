@@ -48,6 +48,9 @@ pub enum Demo {
     Deploy,
     /// Every squad of yours with two waypoints queued, and their paths.
     Queue,
+    /// The pointer on an enemy soldier: their sheet and how your squads
+    /// fare against them, and the help open at how combat works.
+    Inspect,
 }
 
 impl std::str::FromStr for Demo {
@@ -58,7 +61,10 @@ impl std::str::FromStr for Demo {
             "overlay" => Ok(Self::Overlay),
             "deploy" => Ok(Self::Deploy),
             "queue" => Ok(Self::Queue),
-            _ => Err(format!("--rts-demo {s}: ghost, overlay, deploy or queue")),
+            "inspect" => Ok(Self::Inspect),
+            _ => Err(format!(
+                "--rts-demo {s}: ghost, overlay, deploy, queue or inspect"
+            )),
         }
     }
 }
@@ -72,7 +78,8 @@ pub struct BattleControls {
     pub demo: Option<Demo>,
     /// The pointer as last read.
     pointer: Option<Pointer>,
-    /// The matchup hint for the enemy squad under the pointer.
+    /// What the pointer inspects: the soldier under it (armour class,
+    /// attack bonus, hit points, dice), and for an enemy squad the matchup hint.
     hint: Option<String>,
 }
 
@@ -228,6 +235,7 @@ pub fn battle_input(
             ))
         }
         Demo::Queue => rts::centre(&v, &controls.rts.selection.squads),
+        Demo::Inspect => rts::demo_inspect(&v),
         _ => None,
     });
     if let Some(f) = look {
@@ -236,10 +244,11 @@ pub fn battle_input(
         crate::view::look_at(&mut camera.2, (m.x, m.y));
     }
     live.commands.extend(commands);
-    controls.hint = p.and_then(|p| {
-        let e = controls.rts.hover(&v, p)?;
-        rts::hint(&v, &controls.rts.selection.squads, e)
-    });
+    controls.hint = if controls.demo == Some(Demo::Inspect) {
+        rts::demo_inspect(&v).and_then(|at| rts::inspect(&v, &[], at))
+    } else {
+        p.and_then(|p| rts::inspect(&v, &controls.rts.selection.squads, p.field?))
+    };
     controls.pointer = p;
 }
 
@@ -450,7 +459,8 @@ pub fn update_overlay_legend(
     });
 }
 
-/// The text by the pointer: the matchup hint, or the ghost's arrival time.
+/// The text by the pointer: the soldier inspected and the matchup hint, or
+/// the ghost's arrival time.
 #[derive(Component)]
 pub struct ControlsTip;
 

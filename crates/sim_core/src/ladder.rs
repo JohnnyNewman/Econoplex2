@@ -228,6 +228,9 @@ struct Holdings {
     points: [f32; N],
     /// Food value a planned purchase would add to the larder.
     extra_food: f32,
+    /// What a planned food purchase would add to the protein, fat and
+    /// vitamin stores.
+    extra_nutrients: [f32; 3],
 }
 
 /// Adds what `owned` holds to `h`: only home goods (fuel, shelter) when
@@ -606,7 +609,18 @@ fn assess(
     };
     s[idx(Need::Rest)] = (1.0 - st[FATIGUE]).clamp(0.0, 1.0);
     s[idx(Need::Shelter)] = view.housed * (0.7 + 0.3 * held(h.points[idx(Need::Shelter)]));
-    s[idx(Need::Health)] = st[HEALTH].clamp(0.0, 1.0);
+    // Health: the body's, and the protein, fat and vitamins in store (when
+    // foods carry them): a store half full counts as enough.
+    let nourished = if db.nutrients.iter().any(|n| n.iter().any(|&x| x > 0.0)) {
+        let nu = store.nutrition.get(i).copied().unwrap_or([1.0; 3]);
+        (0..3)
+            .map(|k| ((nu[k] + h.extra_nutrients[k]) / 0.5).min(1.0))
+            .sum::<f32>()
+            / 3.0
+    } else {
+        1.0
+    };
+    s[idx(Need::Health)] = st[HEALTH].clamp(0.0, 1.0) * (0.6 + 0.4 * nourished);
     let larder: f32 = store.larder[i]
         .iter()
         .map(|&(f, q)| q * db.foods.iter().find(|x| x.0 == f).map_or(0.0, |x| x.1))
@@ -898,6 +912,14 @@ pub fn spend(
                     }
                     let mut h2 = h;
                     h2.extra_food = value;
+                    // What it would add to the stores: its days of calories
+                    // times what it carries of each, over each store's span.
+                    let np = &params.needs.nutrition;
+                    let days = value / params.needs.hunger_per_day.max(1e-6);
+                    for k in 0..3 {
+                        h2.extra_nutrients[k] =
+                            days * db.nutrients[f][k] / np.drain_days[k].max(1.0);
+                    }
                     let after = score(
                         &assess(
                             store,

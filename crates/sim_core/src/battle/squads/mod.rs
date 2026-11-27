@@ -47,8 +47,10 @@ struct Squad {
     /// stands, metres (infinite on an open field).
     route: Route,
     room: f32,
-    /// Effective skill and discipline, refreshed every step.
+    /// Proficiency (the members' mean), levels of exhaustion (their mean,
+    /// from the fatigue they came with) and discipline, refreshed every step.
     eff: f32,
+    exhaustion: f32,
     discipline: f32,
 }
 
@@ -114,6 +116,9 @@ pub struct SquadBattle {
     events: Vec<Event>,
     /// Each side's doctrine.
     doctrine: [Doctrine; 2],
+    /// Hits of this phase of the step, by squad, landed together at its end
+    /// so that no squad strikes first because it comes first in the list.
+    wounds: Vec<(usize, f32)>,
 }
 
 impl SquadBattle {
@@ -141,6 +146,7 @@ impl SquadBattle {
                 route: Route::default(),
                 room: f32::INFINITY,
                 eff: 0.0,
+                exhaustion: 0.0,
                 discipline: 0.0,
             })
             .collect();
@@ -161,6 +167,7 @@ impl SquadBattle {
             rng: ChaCha8Rng::seed_from_u64(seed),
             events: Vec::new(),
             doctrine: [Doctrine::default(); 2],
+            wounds: Vec::new(),
         }
     }
 

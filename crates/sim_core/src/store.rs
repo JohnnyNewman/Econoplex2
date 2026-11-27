@@ -93,6 +93,9 @@ pub struct AgentStore {
     /// `decision::subsistence`.
     #[serde(default)]
     pub larder: Vec<Vec<(u32, f32)>>,
+    /// Protein, fat and vitamins each person has in store (0..1).
+    #[serde(default)]
+    pub nutrition: Vec<[f32; 3]>,
     /// Towns the agent used to live in, and how well it still remembers them
     /// (see `decision::knowledge`).
     #[serde(default)]
@@ -153,6 +156,7 @@ impl AgentStore {
         st[state::HAPPINESS] = 0.6;
         st[state::HEALTH] = 1.0;
         self.state.push(st);
+        self.nutrition.push([1.0; 3]);
         self.potential.push(a.potential);
         self.temperament.push(a.temperament);
         self.aptitude.push(a.aptitude);

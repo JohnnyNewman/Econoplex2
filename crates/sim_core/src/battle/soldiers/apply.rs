@@ -75,6 +75,7 @@ impl SoldierBattle {
             let c = self.squad[i] as usize;
             let plan = &plans[i];
             let k = &self.kits[self.kit[i] as usize];
+            self.restrained[i] = plan.crush >= sp.crush_bodies;
             if hurt.damage > 0.0 {
                 self.health[i] -= hurt.damage;
                 let s = &mut self.squads[c];
@@ -151,7 +152,7 @@ impl SoldierBattle {
             // The next blow or arrow.
             match plan.act {
                 Act::Strike | Act::Charge => {
-                    let pace = self.vigour(i) * self.nerve(i);
+                    let pace = self.vigour(i);
                     self.cooldown[i] = 1.0 / (k.kit.strike_rate * pace).max(1e-3);
                 }
                 Act::Capture => {
@@ -159,7 +160,7 @@ impl SoldierBattle {
                     self.cooldown[i] = 1.0 / (k.kit.strike_rate * pace).max(1e-3);
                 }
                 Act::Shoot => {
-                    let pace = self.vigour(i) * self.nerve(i);
+                    let pace = self.vigour(i);
                     self.cooldown[i] = 1.0 / (k.kit.shot_rate * pace).max(1e-3);
                     self.arrows[i] = self.arrows[i].saturating_sub(1);
                     let s = &mut self.squads[c];

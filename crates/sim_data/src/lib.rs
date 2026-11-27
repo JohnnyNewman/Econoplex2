@@ -24,6 +24,8 @@ pub struct Content {
     pub nature: Vec<NatureDef>,
     /// Technology era names, oldest first.
     pub eras: Vec<String>,
+    /// Protein, fat and vitamins of foods.
+    pub nutrition: Vec<NutritionDef>,
     /// Distinct skill domains, in order of first appearance.
     pub domains: Vec<String>,
 
@@ -105,6 +107,7 @@ impl Content {
             }
             merge(&mut c.recipes, recipes, |s| &s.id);
             merge(&mut c.nature, f.nature, |s| &s.id);
+            merge(&mut c.nutrition, f.nutrition, |s| &s.food);
             if !f.eras.is_empty() {
                 c.eras = f.eras;
             }

@@ -71,6 +71,8 @@ pub struct Db {
     pub opens: Vec<Option<u32>>,
     /// Food value of each product (0 for non-food).
     pub food_value: Vec<f32>,
+    /// Protein, fat and vitamins of each product against its calories.
+    pub nutrients: Vec<[f32; 3]>,
     /// Houses: (people each holds, how well it shelters them).
     pub house: Vec<Option<(u32, f32)>>,
     /// Face value of coin products (0 for everything else).
@@ -185,6 +187,17 @@ impl Db {
 
         let coin = content.products.iter().map(|p| p.coin).collect();
         let food_value = content.products.iter().map(|p| p.food).collect();
+        let nutrients = content
+            .products
+            .iter()
+            .map(|p| {
+                content
+                    .nutrition
+                    .iter()
+                    .find(|n| n.food == p.id)
+                    .map_or([0.0; 3], |n| [n.protein, n.fat, n.vitamins])
+            })
+            .collect();
         let house = content
             .products
             .iter()
@@ -296,6 +309,7 @@ impl Db {
             requires,
             house,
             food_value,
+            nutrients,
             content,
             embedding,
             skill_vecs,

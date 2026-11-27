@@ -122,6 +122,12 @@ pub struct TownView {
     pub cold_days: u32,
     #[serde(default)]
     pub starving: u32,
+    /// How well the people are fed (0..1): one score, and its four parts
+    /// (calories, protein, fat, vitamins) for a tooltip.
+    #[serde(default)]
+    pub food_score: f32,
+    #[serde(default)]
+    pub nutrition: [f32; 4],
     /// Tools and weapons in the armory: (product def, count).
     #[serde(default)]
     pub armory: Vec<(u32, u32)>,
@@ -600,6 +606,8 @@ impl ViewSnapshot {
                     },
                     cold_days: t.cold_days,
                     starving: t.starving,
+                    food_score: crate::world::food_score(&crate::world::town_nutrition(store, t)),
+                    nutrition: crate::world::town_nutrition(store, t),
                     armory: armories.get(ti).cloned().unwrap_or_default(),
                     crops: crops.get(ti).copied().unwrap_or(0.0),
                     sites: sites.get(ti).cloned().unwrap_or_default(),

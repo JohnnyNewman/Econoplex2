@@ -196,31 +196,45 @@ impl Condition {
     }
 }
 
-/// What one squad's weapons do to another's soldiers, per damage type
-/// (pierce, slash, blunt): health per blow and per arrow after armour (and
-/// for arrows the shield), and the same per second of one fighter.
+/// What one squad's weapons do to another's soldiers, by the combat rules:
+/// the d20 face a blow from the front needs against their armour class and
+/// its chance, the mean hit points of a hit after armour per damage type
+/// (pierce, slash, blunt); the same for an arrow at half range; and hit
+/// points per second of one fighter.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Matchup {
+    pub needs: i32,
+    pub hit: f32,
     pub blow: PerType,
+    pub shot_needs: i32,
+    pub shot_hit: f32,
     pub arrow: PerType,
     pub melee_per_second: f32,
     pub shots_per_second: f32,
 }
 
 impl Kit {
-    /// What this kit does to soldiers wearing `defender`'s armour, for the
-    /// matchup hints. A charge or a flank blow does more; this is a blow
-    /// from the front, as the model strikes it.
-    pub fn against(&self, defender: &Kit) -> Matchup {
-        let a = &defender.armour;
-        let blow: PerType = std::array::from_fn(|t| self.damage[t] * (1.0 - a[t]));
-        let arrow: PerType =
-            std::array::from_fn(|t| self.shot_damage[t] * (1.0 - a[t]) * (1.0 - defender.shield));
+    /// What this kit, with attack bonus `bonus` (and `shot_bonus` for its
+    /// arrows), does to soldiers with `defender`'s armour, for the matchup
+    /// hints. A charge or a flank blow does more; this is a blow from the
+    /// front.
+    pub fn against(&self, defender: &Kit, bonus: f32, shot_bonus: f32) -> Matchup {
+        use super::rules::{crit_chance, hit_chance, needs, Roll};
+        let ac = defender.armour_class(true);
+        let crit = |hit: f32| crit_chance(Roll::Normal).min(hit) / hit.max(1e-6);
+        let hit = hit_chance(bonus, ac, Roll::Normal);
+        let shot_hit = hit_chance(shot_bonus, ac, Roll::Normal);
+        let blow = self.blow_by_type(false, 0.0, crit(hit), &defender.taken);
+        let arrow = self.shot_by_type(crit(shot_hit), &defender.taken);
         Matchup {
+            needs: needs(bonus, ac),
+            hit,
             blow,
+            shot_needs: needs(shot_bonus, ac),
+            shot_hit,
             arrow,
-            melee_per_second: blow.iter().sum::<f32>() * self.strike_rate,
-            shots_per_second: arrow.iter().sum::<f32>() * self.shot_rate,
+            melee_per_second: hit * blow.iter().sum::<f32>() * self.strike_rate,
+            shots_per_second: shot_hit * arrow.iter().sum::<f32>() * self.shot_rate,
         }
     }
 }
@@ -505,6 +519,7 @@ impl LiveView {
 
     /// What squad `a`'s weapons do to squad `b`'s soldiers (`Kit::against`).
     pub fn matchup(&self, a: usize, b: usize) -> Option<Matchup> {
-        Some(self.kits.get(a)?.against(self.kits.get(b)?))
+        let (bonus, shot) = *self.bonus.get(a)?;
+        Some(self.kits.get(a)?.against(self.kits.get(b)?, bonus, shot))
     }
 }

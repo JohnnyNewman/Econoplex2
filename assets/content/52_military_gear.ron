@@ -1,6 +1,7 @@
 // Military gear (plan Phase 4, gear batch): weapons against armour and better
 // armour, with the damage types of the battle code (Pierce, Slash, Blunt; an
-// armour stops a share of each). Its own file, so it can change or go on its
+// armour adds to armour class and resists some types). `fight` as in
+// 50_military.ron. Its own file, so it can change or go on its
 // own. Arrows as stacks, helmets and siege gear wait for the battle and siege
 // work that will use them.
 (
@@ -8,26 +9,26 @@
         // A long spear for a wall of points: outreaches every other weapon but
         // is clumsy once an enemy is inside it.
         (id: "pike", name: "Pike", category: Weapon, era: 3, tier: 2, base_price: 35.0, kg: 3.5,
-            fight: Some((reach: 4.5, damage: 0.45, damage_type: Some(Pierce), strike_rate: 0.25, close_penalty: 0.6))),
+            fight: Some((reach: 4.5, dice: Some("1d8"), damage_type: Some(Pierce), strike_rate: 0.12, close_penalty: 0.6))),
         (id: "war_axe", name: "War axe", category: Weapon, era: 3, tier: 2, base_price: 50.0, kg: 2.0,
-            fight: Some((reach: 1.0, damage: 0.55, damage_type: Some(Slash), strike_rate: 0.30))),
-        // Blunt: mail and plate stop least of it.
+            fight: Some((reach: 1.0, dice: Some("1d8"), damage_type: Some(Slash), quality: 1, strike_rate: 0.15))),
+        // Bludgeoning: mail and plate resist none of it.
         (id: "mace", name: "Mace", category: Weapon, era: 3, tier: 2, base_price: 45.0, kg: 2.5,
-            fight: Some((reach: 1.0, damage: 0.55, damage_type: Some(Blunt), strike_rate: 0.33))),
+            fight: Some((reach: 1.0, dice: Some("1d6"), damage_type: Some(Blunt), quality: 1, strike_rate: 0.17))),
         // Slower than a bow, but its bolts hit harder.
         (id: "crossbow", name: "Crossbow", category: Weapon, era: 3, tier: 2, base_price: 90.0, kg: 4.0,
             equip: Some((domain: "military", bonus: 0.0, durability: 80)),
-            fight: Some((reach: 0.5, damage: 0.20, damage_type: Some(Blunt), strike_rate: 0.30, range: 180.0,
-                shot_rate: 0.05, shot_damage: 0.60, shot_type: Pierce, arrows: 20))),
+            fight: Some((reach: 0.5, dice: Some("1d4"), damage_type: Some(Blunt), strike_rate: 0.15, range: 180.0,
+                shot_rate: 0.05, shot_dice: Some("1d8"), shot_type: Pierce, quality: 1, arrows: 20))),
         (id: "bronze_scale", name: "Bronze scale", category: Weapon, era: 2, base_price: 90.0, kg: 9.0,
             equip: Some((domain: "military", bonus: 0.0, durability: 100, slot: Some("armour"))),
-            fight: Some((armour: (pierce: 0.3, slash: 0.5, blunt: 0.25)))),
+            fight: Some((ac: 4, resist: [Slash]))),
         (id: "plate", name: "Plate armour", category: Weapon, era: 4, tier: 3, base_price: 400.0, kg: 20.0,
             equip: Some((domain: "military", bonus: 0.0, durability: 250, slot: Some("armour"))),
-            fight: Some((armour: (pierce: 0.7, slash: 0.75, blunt: 0.35)))),
+            fight: Some((ac: 8, resist: [Slash, Pierce]))),
         (id: "rimmed_shield", name: "Iron-rimmed shield", category: Weapon, era: 3, base_price: 22.0, kg: 6.0,
             equip: Some((domain: "military", bonus: 0.0, durability: 60, slot: Some("shield"))),
-            fight: Some((shield: 0.55))),
+            fight: Some((shield: 3))),
     ],
     recipes: [
         (id: "make_pike", name: "Make pike", skill: "spear_making", difficulty: 0.35,

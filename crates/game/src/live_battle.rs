@@ -639,6 +639,8 @@ mod tests {
             stances: vec![Stance::default(); 3],
             paces: vec![(1.4, 3.0); 3],
             kits: vec![Kit::preset("archers").unwrap(); 3],
+            bonus: vec![(2.0, -2.0); 3],
+            sheets: Vec::new(),
             wall_x: None,
             nav: None,
             morale: vec![1.0; 3],

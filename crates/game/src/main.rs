@@ -284,8 +284,6 @@ fn main() {
                 view::attach_agent_sprites,
                 view::attach_building_sprites,
                 view::attach_nature_sprites,
-                town_ground::update_town_ground,
-                view::animate_agents.after(town_ground::update_town_ground),
                 view::draw_world,
                 view::draw_batches,
                 view::update_skill_labels,
@@ -294,9 +292,17 @@ fn main() {
                 hud::update_inspector,
                 hud::update_legend,
                 hud::toggle_help,
+                hud::demo_help,
                 policy_ui::policy_buttons,
                 policy_ui::update_policy_panel,
                 policy_ui::place_building.after(view::select_agent),
+            ),
+        )
+        .add_systems(
+            Update,
+            (
+                town_ground::update_town_ground,
+                view::animate_agents.after(town_ground::update_town_ground),
             ),
         );
     app.run();

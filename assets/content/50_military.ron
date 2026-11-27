@@ -2,13 +2,17 @@
 // it; squads are mustered and paid by their town (see `military` in models.ron).
 //
 // Kit is items: each soldier carries a weapon, armour, a shield and a mount if the
-// armory has them (goods::Slot). `fight` says what an item does in a squad battle
-// (sim_core::battle): reach and range in metres, damage in health per hit (a person
-// has 1), strikes and shots per second, `damage_type` and `shot_type` (Pierce,
-// Slash or Blunt; shots pierce unless given), `armour` the share of a hit's damage
-// it stops per type (pierce, slash, blunt), `shield` the share of arrows it stops,
-// `mounted` for a horse. Swords and
-// the bronze spear are in 30_metalworking.ron and 35_bronze.ron.
+// armory has them (goods::Slot). `fight` says what an item does in a battle, in the
+// terms of the combat rules (sim_core::battle::rules, after the open 5e SRD ideas):
+// an attack roll of d20 + attack bonus against armour class, then damage dice.
+// Reach and range in metres; `dice` the damage dice of a blow (a person has about
+// 8 hit points), `charge_dice` those of a blow at a charge, `shot_dice` those of an
+// arrow; `damage_type` and `shot_type` (Pierce, Slash or Blunt; shots pierce unless
+// given); `quality` added to the weapon's attack rolls and damage; attacks and shots
+// per second (about one attack per six seconds of fighting); `ac` what armour adds to
+// armour class, `resist` the damage types it halves and `vulnerable` those it doubles;
+// `shield` what a shield adds to armour class from the front; `mounted` for a horse.
+// Swords and the bronze spear are in 30_metalworking.ron and 35_bronze.ron.
 // Durability is in uses of 8 hours; battles wear kit (goods::wear).
 (
     skills: [
@@ -19,27 +23,28 @@
     ],
     products: [
         (id: "iron_spear", name: "Iron spear (lvl 2)", category: Weapon, era: 3, tier: 2, base_price: 40.0, kg: 2.5,
-            fight: Some((reach: 3.0, damage: 0.45, damage_type: Some(Pierce), strike_rate: 0.30, close_penalty: 0.4))),
+            fight: Some((reach: 3.0, dice: Some("1d6"), damage_type: Some(Pierce), quality: 1, strike_rate: 0.15, close_penalty: 0.4))),
         (id: "lance", name: "Lance", category: Weapon, era: 3, tier: 2, base_price: 45.0, kg: 4.0,
             equip: Some((domain: "military", bonus: 0.0, durability: 40)),
-            fight: Some((reach: 3.0, damage: 0.50, damage_type: Some(Pierce), strike_rate: 0.30, close_penalty: 0.3))),
+            fight: Some((reach: 3.0, dice: Some("1d8"), charge_dice: Some("1d12"), damage_type: Some(Pierce), quality: 1,
+                strike_rate: 0.15, close_penalty: 0.3))),
         (id: "bow", name: "Bow", category: Weapon, era: 1, tier: 1, base_price: 20.0, kg: 1.0,
             equip: Some((domain: "military", bonus: 0.0, durability: 80)),
             // A quiver of arrows until arrows are stacks of their own; a knife
             // for hand to hand.
-            fight: Some((reach: 0.5, damage: 0.25, damage_type: Some(Slash), strike_rate: 0.30, range: 150.0,
-                shot_rate: 0.1, shot_damage: 0.40, shot_type: Pierce, arrows: 24))),
+            fight: Some((reach: 0.5, dice: Some("1d4"), damage_type: Some(Slash), strike_rate: 0.15, range: 150.0,
+                shot_rate: 0.1, shot_dice: Some("1d6"), shot_type: Pierce, arrows: 24))),
         (id: "shield", name: "Shield", category: Weapon, era: 1, base_price: 12.0, kg: 5.0,
             equip: Some((domain: "military", bonus: 0.0, durability: 40, slot: Some("shield"))),
-            fight: Some((shield: 0.4))),
+            fight: Some((shield: 2))),
         (id: "padded_coat", name: "Padded coat", category: Weapon, era: 1, base_price: 30.0, kg: 4.0,
             equip: Some((domain: "military", bonus: 0.0, durability: 60, slot: Some("armour"))),
-            // Soaks up a blow; a point goes through.
-            fight: Some((armour: (pierce: 0.1, slash: 0.2, blunt: 0.3)))),
+            // Soaks up a blow; an edge or a point goes through.
+            fight: Some((ac: 1, resist: [Blunt]))),
         (id: "mail", name: "Mail shirt", category: Weapon, era: 3, tier: 2, base_price: 160.0, kg: 10.0,
             equip: Some((domain: "military", bonus: 0.0, durability: 150, slot: Some("armour"))),
             // Turns an edge, not a point or a weight.
-            fight: Some((armour: (pierce: 0.45, slash: 0.65, blunt: 0.4)))),
+            fight: Some((ac: 5, resist: [Slash]))),
         (id: "horse", name: "Horse", category: Weapon, era: 2, base_price: 120.0, kg: 0.0,
             equip: Some((domain: "military", bonus: 0.0, durability: 400, slot: Some("mount"))),
             fight: Some((mounted: true))),

@@ -75,6 +75,9 @@ pub enum Demo {
     Deploy,
     /// Every squad of yours with two waypoints queued, and their paths.
     Queue,
+    /// The pointer on an enemy soldier: their sheet and how your squads
+    /// fare against them, and the help open at how combat works.
+    Inspect,
 }
 
 impl std::str::FromStr for Demo {
@@ -85,7 +88,10 @@ impl std::str::FromStr for Demo {
             "overlay" => Ok(Self::Overlay),
             "deploy" => Ok(Self::Deploy),
             "queue" => Ok(Self::Queue),
-            _ => Err(format!("--rts-demo {s}: ghost, overlay, deploy or queue")),
+            "inspect" => Ok(Self::Inspect),
+            _ => Err(format!(
+                "--rts-demo {s}: ghost, overlay, deploy, queue or inspect"
+            )),
         }
     }
 }
@@ -291,6 +297,7 @@ fn battle_input(
                 let (x0, x1, y0, y1) = v.deploy_zone(v.player_side);
                 Some((0.5 * (x0 + x1), 0.5 * (y0 + y1)))
             }
+            Demo::Inspect => rts::demo_inspect(v),
         });
         if let Some(f) = look {
             for mut cam in &mut world_cams {
@@ -301,10 +308,12 @@ fn battle_input(
     for (q, c) in commands {
         live.command_battle(q, c);
     }
-    controls.hint = p.and_then(|p| {
-        let e = controls.rts.hover(v, p)?;
-        rts::hint(v, &controls.rts.selection.squads, e)
-    });
+    controls.hint = if controls.demo == Some(Demo::Inspect) {
+        help.0 = true;
+        rts::demo_inspect(v).and_then(|at| rts::inspect(v, &[], at))
+    } else {
+        p.and_then(|p| rts::inspect(v, &controls.rts.selection.squads, p.field?))
+    };
     controls.pointer = p;
 }
 
@@ -540,7 +549,8 @@ before it starts: place your squads in the green zone the same way, then Start b
 Ctrl+1-9: make a group; 1-9: select it, twice: look at it
 Z fire at will, X hold fire, C skirmish; V tight, B loose, N own order
 O: soldiers coloured by morale (red breaking, green steady), darker when tired
-hover an enemy squad: how your squads fare against it
+hover a soldier: their armour class, attack bonus, hit points and weapon dice
+hover an enemy squad: how your squads fare against it (the d20 roll your blows need)
 the battle panel: orders per squad, and the stance and pursuit of the selection
 Space pauses the battle; orders still go in";
 
@@ -557,6 +567,8 @@ fn controls_help(mut contexts: EguiContexts, mut help: ResMut<ControlsHelp>) {
         .collapsible(false)
         .show(ctx, |ui| {
             ui.label(HELP);
+            ui.separator();
+            ui.label(sim_core::battle::rules::HOW_COMBAT_WORKS);
         });
     help.0 = open;
 }

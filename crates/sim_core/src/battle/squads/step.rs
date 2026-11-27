@@ -54,6 +54,7 @@ impl SquadBattle {
                 self.squads[i].closing.push((j, t));
             }
         }
+        self.land_wounds();
         for i in 0..n {
             let s = &mut self.squads[i];
             s.contacts = contacts[i].clone();
@@ -74,6 +75,7 @@ impl SquadBattle {
         for i in 0..n {
             self.shoot(i);
         }
+        self.land_wounds();
 
         // 4. Melee: each squad strikes the enemy it faces.
         for i in 0..n {
@@ -99,6 +101,7 @@ impl SquadBattle {
             }
             self.melee(i, p);
         }
+        self.land_wounds();
 
         // 5. Morale and state.
         let dt = self.params.dt;
@@ -162,8 +165,8 @@ impl SquadBattle {
         self.t += dt;
     }
 
-    /// Effective skill and discipline from the members still standing, and
-    /// among obstacles the clear ground across each squad's way.
+    /// Proficiency, exhaustion and discipline from the members still
+    /// standing, and among obstacles the clear ground across each squad's way.
     fn refresh(&mut self) {
         if let Some(nav) = self.nav.clone() {
             for i in 0..self.squads.len() {
@@ -183,15 +186,17 @@ impl SquadBattle {
         }
         let p = &self.params;
         for s in &mut self.squads {
-            let (mut sum, mut exp, mut n) = (0.0, 0.0, 0.0);
+            let (mut sum, mut tired, mut exp, mut n) = (0.0, 0.0, 0.0, 0.0);
             for m in s.spec.members.iter().filter(|m| m.fights()) {
                 let e = m.experience.max(0.0);
-                sum += m.skill + p.experience_weight * (1.0 + e).ln();
+                sum += rules::proficiency(p, m.skill, e);
+                tired += rules::exhaustion(m.fatigue) as f32;
                 exp += e;
                 n += 1.0;
             }
             if n > 0.0 {
                 s.eff = sum / n;
+                s.exhaustion = tired / n;
                 let seasoned = ((1.0 + exp / n).ln() / (1.0 + p.experience_full).ln()).min(1.0);
                 s.discipline =
                     (0.5 * s.spec.drill.clamp(0.0, 1.0) + 0.5 * seasoned).clamp(0.0, 1.0);
