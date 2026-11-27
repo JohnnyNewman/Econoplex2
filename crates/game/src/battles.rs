@@ -11,15 +11,17 @@
 //!
 //! A battle the player's own town fights is live instead (live_battle.rs):
 //! its squads are drawn here the same way, from the battle's current frame.
+//! On the soldier model the frame puts each squad at its soldiers' centre,
+//! and zoomed in the soldiers themselves are drawn (`draw_soldiers`).
 
 use bevy::prelude::*;
-use sim_core::battle::{BattleLog, Replay, ReplaySquad, SquadState};
+use sim_core::battle::{BattleLog, FighterState, LiveSoldier, Replay, ReplaySquad, SquadState};
 use sim_core::Towns;
 
 /// Battle seconds shown per real second.
 const PLAYBACK: f32 = 30.0;
 /// Map units per metre of battlefield.
-const SCALE: f32 = 0.35;
+pub const SCALE: f32 = 0.35;
 /// Real seconds a finished battle stays on the map.
 const LINGER: f32 = 4.0;
 
@@ -113,6 +115,20 @@ pub fn squad_at(r: &Replay, k: usize, t: f32) -> Option<(Vec2, u16, SquadState)>
     Some((pos, if u < 0.5 { sa.2 } else { sb.2 }, state))
 }
 
+/// Where a point of a battlefield (metres) lies on the map, for a field
+/// centred at `at` whose +x points along `facing`, from the attackers to the
+/// defenders.
+pub fn field_to_map(
+    at: (f32, f32),
+    facing: (f32, f32),
+    field: (f32, f32),
+) -> impl Fn(Vec2) -> Vec2 {
+    let centre = Vec2::new(at.0, at.1);
+    let x = Vec2::new(facing.0, facing.1).normalize_or(Vec2::X);
+    let y = x.perp();
+    move |p: Vec2| centre + (x * (p.x - 0.5 * field.0) + y * (p.y - 0.5 * field.1)) * SCALE
+}
+
 /// Draw one battlefield: its outline, and a block per squad where `squad`
 /// says it stands (metres on the field), sized by the fighters standing.
 #[allow(clippy::too_many_arguments)]
@@ -126,21 +142,8 @@ pub fn draw_field(
     squad: impl Fn(usize) -> Option<(Vec2, u16, SquadState)>,
     outline: Color,
 ) {
-    let centre = Vec2::new(at.0, at.1);
-    // The field's +x points from the attackers to the defenders.
-    let x = Vec2::new(facing.0, facing.1).normalize_or(Vec2::X);
-    let y = x.perp();
-    let to_map = |p: Vec2| centre + (x * (p.x - 0.5 * field.0) + y * (p.y - 0.5 * field.1)) * SCALE;
-    let corners = [
-        Vec2::ZERO,
-        Vec2::new(field.0, 0.0),
-        Vec2::new(field.0, field.1),
-        Vec2::new(0.0, field.1),
-    ]
-    .map(to_map);
-    for k in 0..4 {
-        gizmos.line_2d(corners[k], corners[(k + 1) % 4], outline);
-    }
+    draw_outline(gizmos, at, facing, field, outline);
+    let to_map = field_to_map(at, facing, field);
     for (k, sq) in squads.iter().enumerate() {
         let Some((p, standing, state)) = squad(k) else {
             continue;
@@ -174,6 +177,105 @@ pub fn draw_field(
                 Vec2::splat(side + 4.0),
                 colour,
             );
+        }
+    }
+}
+
+/// A battlefield's outline.
+fn draw_outline(
+    gizmos: &mut Gizmos,
+    at: (f32, f32),
+    facing: (f32, f32),
+    field: (f32, f32),
+    outline: Color,
+) {
+    let to_map = field_to_map(at, facing, field);
+    let corners = [
+        Vec2::ZERO,
+        Vec2::new(field.0, 0.0),
+        Vec2::new(field.0, field.1),
+        Vec2::new(0.0, field.1),
+    ]
+    .map(to_map);
+    for k in 0..4 {
+        gizmos.line_2d(corners[k], corners[(k + 1) % 4], outline);
+    }
+}
+
+/// One soldier as a dot on the map: where, how big (map units) and in what
+/// colour. Routing soldiers are grey and blink, the fallen are dim, and those
+/// who fled are not drawn.
+pub struct Dot {
+    pub at: Vec2,
+    pub radius: f32,
+    pub colour: Color,
+    pub down: bool,
+}
+
+/// The dots for every soldier of a live battle on the soldier model.
+pub fn soldier_dots(
+    now: f32,
+    at: (f32, f32),
+    facing: (f32, f32),
+    field: (f32, f32),
+    squads: &[ReplaySquad],
+    soldiers: &[Vec<LiveSoldier>],
+) -> Vec<Dot> {
+    let to_map = field_to_map(at, facing, field);
+    let mut out = Vec::new();
+    for (sq, men) in squads.iter().zip(soldiers) {
+        let base = if sq.side == 0 { ATTACKER } else { DEFENDER };
+        // A man's body and a horse's, as the soldier model has them.
+        let radius = if sq.mounted { 0.9 } else { 0.4 } * SCALE;
+        for m in men {
+            let (colour, down) = match m.state {
+                FighterState::Standing => (base, false),
+                FighterState::Routing => (
+                    Color::srgb(0.7, 0.68, 0.62).with_alpha(0.5 + 0.5 * (now * 8.0).sin().abs()),
+                    false,
+                ),
+                FighterState::Down => (base.with_alpha(0.3), true),
+                FighterState::Fled => continue,
+            };
+            out.push(Dot {
+                at: to_map(Vec2::new(m.x, m.y)),
+                radius,
+                colour,
+                down,
+            });
+        }
+    }
+    out
+}
+
+/// Draw a live battle's soldiers as dots, with the field's outline.
+/// `px` is map units per screen pixel, so a dot is never smaller than a pixel.
+#[allow(clippy::too_many_arguments)]
+pub fn draw_soldiers(
+    gizmos: &mut Gizmos,
+    now: f32,
+    at: (f32, f32),
+    facing: (f32, f32),
+    field: (f32, f32),
+    squads: &[ReplaySquad],
+    soldiers: &[Vec<LiveSoldier>],
+    outline: Color,
+    px: f32,
+) {
+    draw_outline(gizmos, at, facing, field, outline);
+    for d in soldier_dots(now, at, facing, field, squads, soldiers) {
+        let r = d.radius.max(px);
+        if d.down {
+            // The fallen as a small cross.
+            gizmos.line_2d(d.at - Vec2::splat(r), d.at + Vec2::splat(r), d.colour);
+            gizmos.line_2d(d.at + Vec2::new(-r, r), d.at + Vec2::new(r, -r), d.colour);
+        } else {
+            gizmos
+                .circle_2d(Isometry2d::from_translation(d.at), r, d.colour)
+                .resolution(6);
+            gizmos
+                .circle_2d(Isometry2d::from_translation(d.at), 0.5 * r, d.colour)
+                .resolution(4);
         }
     }
 }

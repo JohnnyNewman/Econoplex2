@@ -492,6 +492,30 @@ within budget, from 1.24 ms and 77 ns on the same machine:
   work, and use a closure rather than an iterator chain.
 - A squad that is not in contact does not tally whom it fights.
 
+## Step 3: live battles on soldiers
+
+- `battle.live_model` in `models.ron` picks the model for battles the player
+  watches and commands, apart from `battle.model`, which still fights
+  auto-resolved raids, the planner's forecasts and `--battle`. It defaults to
+  `Soldiers`, so watched battles fight soldier by soldier while auto-resolve
+  stays on squads (`prepare_live_battle`).
+- `LiveView` carries every soldier of each squad on the soldier model
+  (`soldiers`, empty on the squad model): where they stand, the way they face,
+  and whether they stand, run, lie fallen or have left the field.
+- The squad's place in the frame is its soldiers' centre, so the panels and
+  everything that reads the frame keep working.
+- **3D:** each figure of a live battle stands where its soldier stands, facing
+  their way. The fallen lie where they fell, runners grey, and those who left
+  the field are gone. Replays keep the block formation until step 4.
+- **2D:** zoomed in (below a zoom of 0.3, where a metre of field is over a
+  pixel), every soldier is a dot where they stand. The fallen are a small
+  cross, runners grey and blinking. Zoomed out, a block per squad at its
+  soldiers' centre, as before. "Look at the field" zooms in that far, and the
+  zoom now goes down to 0.05.
+- Both clients take `--shot FILE --shot-battle S`: the screenshot waits for a
+  live battle fought S battle seconds and looks at its field. The 3D client
+  also takes `--order TEXT`, as the 2D one does, so a raid can be scripted.
+
 ## Open questions
 
 - Should auto-resolved raids ever use the soldier model, or only battles the

@@ -84,6 +84,7 @@ the end of this note).
 |---|---|---|---|---|
 | **Live battles** for the player's town: the simulation holds its clock while the battle runs in real time | battles.rs, live.rs (`war::order_live_battle`) | same (group 4): the 2D sim loop holds the economy while the battle waits and steps it 6 battle seconds a second (unless paused), through the sim's own calls (live_battle.rs); the squads are drawn live with battles.rs | | |
 | Squad orders in a live battle (own judgment, hold, withdraw, or attack or shoot at a named enemy squad), fighters left, squad state, "Look at the field", "Fight it out" | battles.rs (`battle_panel`) | same (group 4): a battle panel at the top, one row per squad with its fighters left, state and morale, and order buttons for the player's fighting squads | | |
+| Live battles on the soldier model (`battle.live_model`): each figure stands where its soldier stands, faces their way, lies where they fell, greys when they run | battles.rs (`pose_soldiers`) | same: zoomed in (`SOLDIERS_BELOW`), every soldier is a dot where they stand, the fallen a small cross, runners grey and blinking; zoomed out, a block per squad at its soldiers' centre (live_battle.rs, battles.rs `draw_soldiers`) | | |
 | Armies on the move: soldiers walk to their squad's goal in dark red, captives apart | crowd.rs | partial (group 1): soldiers are red and captives grey; no flag at the squad's goal yet | S | Draw a squad's goal as a small flag. |
 | Battle replays beside the defending town | battles.rs | same (blocks per squad, 2D battles.rs) | | |
 

@@ -11,7 +11,9 @@
 //! it as usual.
 //!
 //! The squads are drawn on the map with battles.rs, from the battle's current
-//! frame. A panel at the top lists every squad: its fighters left, state and
+//! frame. Live battles fight on `battle.live_model` (the soldier model by
+//! default): zoomed in, every soldier is drawn as a dot where they stand,
+//! as the 3D client stands a figure for each. A panel at the top lists every squad: its fighters left, state and
 //! morale, and for the player's fighting squads the orders: own judgment,
 //! hold, withdraw, or attack (archers also shoot) a named enemy squad. "Look
 //! at the field" moves the camera there; "Fight it out" settles it at once.
@@ -25,6 +27,13 @@ use sim_core::Towns;
 
 /// Battle seconds per real second (as the 3D client).
 pub const BATTLE_SPEED: f32 = 6.0;
+
+/// Below this camera zoom (map units per pixel) a live battle on the soldier
+/// model shows its soldiers instead of a block per squad: 1 m of field is
+/// then over a pixel.
+pub const SOLDIERS_BELOW: f32 = 0.3;
+/// The zoom "Look at the field" sets when the soldiers can be shown.
+pub const LOOK_ZOOM: f32 = 0.15;
 
 /// The live battle as the view last saw it, and what the player asked of it
 /// since (applied by the sim loop before its next step).
@@ -76,9 +85,31 @@ pub fn run(world: &mut World, real_secs: f32, paused: bool) -> bool {
     waiting
 }
 
-/// Draw the live battle's squads where they stand now.
-pub fn draw_live_battle(mut gizmos: Gizmos, time: Res<Time>, live: Res<LiveBattle>) {
+/// Draw the live battle where it stands now: a block per squad, or zoomed
+/// in on the soldier model, every soldier.
+pub fn draw_live_battle(
+    mut gizmos: Gizmos,
+    time: Res<Time>,
+    live: Res<LiveBattle>,
+    camera: Single<&Transform, With<WorldCamera>>,
+) {
     let Some(v) = &live.view else { return };
+    let zoom = camera.scale.x;
+    let outline = Color::srgba(1.0, 0.95, 0.5, 0.8);
+    if shows_soldiers(v, zoom) {
+        crate::battles::draw_soldiers(
+            &mut gizmos,
+            time.elapsed_secs(),
+            v.at,
+            v.facing,
+            v.field,
+            &v.squads,
+            &v.soldiers,
+            outline,
+            zoom,
+        );
+        return;
+    }
     crate::battles::draw_field(
         &mut gizmos,
         time.elapsed_secs(),
@@ -92,8 +123,31 @@ pub fn draw_live_battle(mut gizmos: Gizmos, time: Res<Time>, live: Res<LiveBattl
                 .get(k)
                 .map(|f| (Vec2::new(f.0, f.1), f.2, f.3))
         },
-        Color::srgba(1.0, 0.95, 0.5, 0.8),
+        outline,
     );
+}
+
+/// Where on the map to look at a live battle: the centre of the soldiers
+/// still on the field on the soldier model, else the field's centre.
+pub fn look_point(v: &LiveView) -> (f32, f32) {
+    let to_map = crate::battles::field_to_map(v.at, v.facing, v.field);
+    let on: Vec<Vec2> = v
+        .soldiers
+        .iter()
+        .flatten()
+        .filter(|m| m.state != sim_core::battle::FighterState::Fled)
+        .map(|m| to_map(Vec2::new(m.x, m.y)))
+        .collect();
+    if on.is_empty() {
+        return v.at;
+    }
+    let c = on.iter().sum::<Vec2>() / on.len() as f32;
+    (c.x, c.y)
+}
+
+/// Whether a live battle is drawn soldier by soldier at camera zoom `zoom`.
+pub fn shows_soldiers(v: &LiveView, zoom: f32) -> bool {
+    !v.soldiers.is_empty() && zoom < SOLDIERS_BELOW
 }
 
 #[derive(Component)]
@@ -351,8 +405,13 @@ pub fn battle_buttons(
                     BattleAction::Look => {
                         if let Some(v) = &live.view {
                             follow.0 = false;
-                            crate::view::look_at(&mut camera, v.at);
-                            let z = camera.scale.x.min(0.8);
+                            crate::view::look_at(&mut camera, look_point(v));
+                            let most = if v.soldiers.is_empty() {
+                                0.8
+                            } else {
+                                LOOK_ZOOM
+                            };
+                            let z = camera.scale.x.min(most);
                             camera.scale = Vec3::new(z, z, 1.0);
                         }
                     }
@@ -393,6 +452,7 @@ mod tests {
             player_side: 0,
             finished: false,
             winner: None,
+            soldiers: Vec::new(),
         }
     }
 
@@ -414,6 +474,74 @@ mod tests {
         assert!(orderable(&v, 0));
         // A destroyed squad and the enemy take no orders.
         assert!(!orderable(&v, 1) && !orderable(&v, 2));
+    }
+
+    /// A live battle on the soldier model lists every soldier, and zoomed in
+    /// the map draws one dot for each who has not left the field, on the field.
+    #[test]
+    fn zoomed_in_a_soldier_battle_is_drawn_soldier_by_soldier() {
+        use sim_core::battle::{parse_lineup, Battle, BattleModel, BattleParams, FighterState};
+        let (field, specs) = parse_lineup("swordsmen*30 vs spearmen*30").unwrap();
+        let params = BattleParams {
+            model: BattleModel::Soldiers,
+            ..BattleParams::default()
+        };
+        let mut b = Battle::new(params, field, specs, 1);
+        for _ in 0..120 {
+            b.step();
+        }
+        let v = b.live_view(0, (500.0, 200.0), (0.0, 1.0), 0);
+        assert_eq!(v.soldiers.len(), 2);
+        assert!(v.soldiers.iter().all(|s| s.len() == 30));
+        assert!(shows_soldiers(&v, 0.1) && !shows_soldiers(&v, 1.0));
+        let dots =
+            crate::battles::soldier_dots(0.0, v.at, v.facing, v.field, &v.squads, &v.soldiers);
+        let on_field = v
+            .soldiers
+            .iter()
+            .flatten()
+            .filter(|m| m.state != FighterState::Fled)
+            .count();
+        assert_eq!(dots.len(), on_field);
+        // The field on the map: centred at `at`, its length along `facing` (+y).
+        let half = Vec2::new(v.field.1, v.field.0) * 0.5 * crate::battles::SCALE;
+        for d in &dots {
+            let o = (d.at - Vec2::new(500.0, 200.0)).abs();
+            assert!(
+                o.x <= half.x + 1e-3 && o.y <= half.y + 1e-3,
+                "{:?} off the field",
+                d.at
+            );
+        }
+        // Each squad's block stands at the centre of its soldiers in the line.
+        for (q, men) in v.soldiers.iter().enumerate() {
+            let up: Vec<_> = men
+                .iter()
+                .filter(|m| m.state == FighterState::Standing)
+                .collect();
+            if up.is_empty() {
+                continue;
+            }
+            let n = up.len() as f32;
+            let c = Vec2::new(
+                up.iter().map(|m| m.x).sum::<f32>() / n,
+                up.iter().map(|m| m.y).sum::<f32>() / n,
+            );
+            let f = v.frame.squads[q];
+            assert!(
+                (c - Vec2::new(f.0, f.1)).length() < 1.0,
+                "squad {q}: {c} vs {f:?}"
+            );
+        }
+        // The squad model has no soldiers to show.
+        let (field, specs) = parse_lineup("swordsmen*30 vs spearmen*30").unwrap();
+        let v = Battle::new(BattleParams::default(), field, specs, 1).live_view(
+            0,
+            (0.0, 0.0),
+            (1.0, 0.0),
+            0,
+        );
+        assert!(v.soldiers.is_empty() && !shows_soldiers(&v, 0.1));
     }
 
     /// The scenario's player raids a neighbour: the battle waits, the
@@ -451,6 +579,11 @@ mod tests {
         }
         assert!(waited, "the player's raid never reached a battle");
         let v = s.world.resource::<LiveBattle>().view.clone().unwrap();
+        // Watched battles fight on the soldier model; auto-resolve stays on squads.
+        assert!(
+            !v.soldiers.is_empty(),
+            "the live battle is not on the soldier model"
+        );
         let t0 = v.frame.t;
         // A second of real time steps the battle by BATTLE_SPEED seconds;
         // paused, it holds.

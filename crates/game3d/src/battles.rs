@@ -12,7 +12,9 @@
 //! its clock while the battle runs in real time, the figures follow it, and a
 //! panel lists the player's squads with orders (hold, attack, shoot, withdraw,
 //! or their own judgment), a button to look at the field and one to fight it
-//! out at once.
+//! out at once. Live battles fight on `battle.live_model`, the soldier model
+//! by default: then each figure stands where its soldier stands, facing their
+//! way, so the squads take the shape their soldiers give them.
 
 use crate::live::LiveSim;
 use crate::toon::{toon, ToonMaterial};
@@ -21,7 +23,7 @@ use bevy::asset::RenderAssetUsages;
 use bevy::mesh::PrimitiveTopology;
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
-use sim_core::battle::{Order, Replay, ReplaySquad, SquadState};
+use sim_core::battle::{FighterState, LiveSoldier, Order, Replay, ReplaySquad, SquadState};
 
 pub struct BattlesPlugin;
 
@@ -232,6 +234,13 @@ impl Geo {
         )
     }
 
+    /// A direction on the field as a 3D direction (unit, level).
+    fn dir_3d(&self, (dx, dy): (f32, f32)) -> Vec3 {
+        let (fx, fy) = self.facing;
+        let (mx, my) = (fx * dx - fy * dy, fy * dx + fx * dy);
+        Vec3::new(mx, 0.0, -my).normalize_or(Vec3::X)
+    }
+
     /// The field's centre in 3D.
     fn centre(&self, t: &sim_core::terrain::Terrain) -> Vec3 {
         Vec3::new(self.at.0 / SCALE, ground(t, self.at), -self.at.1 / SCALE)
@@ -303,6 +312,68 @@ fn pose_squad(
             .with_scale(Vec3::splat(size));
         *vis = Visibility::Inherited;
         let colour = if running && !fallen {
+            looks.colours[2].clone()
+        } else {
+            looks.colours[(sq.side as usize).min(1)].clone()
+        };
+        if mat.0 != colour {
+            mat.0 = colour;
+        }
+    }
+}
+
+/// Where a soldier of a live battle stands in 3D (before the ground's
+/// height), which way they face, and whether they lie fallen; `None` for one
+/// who left the field.
+fn soldier_pose(geo: &Geo, m: &LiveSoldier) -> Option<(Vec3, Vec3, bool)> {
+    if m.state == FighterState::Fled {
+        return None;
+    }
+    let (x, y) = geo.on_map(m.x, m.y);
+    // A runner turns to face where they run, as the model turns them.
+    let face = geo.dir_3d(m.facing);
+    Some((
+        Vec3::new(x / SCALE, 0.0, -y / SCALE),
+        face,
+        m.state == FighterState::Down,
+    ))
+}
+
+/// Stands each figure of a squad on the soldier model where its soldier
+/// stands: upright and facing their way, lying where they fell, grey when
+/// they run, gone when they left the field.
+#[allow(clippy::too_many_arguments)]
+fn pose_soldiers(
+    geo: &Geo,
+    sq: &ReplaySquad,
+    men: &[LiveSoldier],
+    entities: &[Entity],
+    figures: &mut Figures,
+    looks: &Looks,
+    t: &sim_core::terrain::Terrain,
+) {
+    let size = if sq.mounted { 1.35 } else { 1.0 };
+    for (k, &e) in entities.iter().enumerate() {
+        let Ok((mut tf, mut vis, mut mat)) = figures.get_mut(e) else {
+            continue;
+        };
+        let Some((base, face, fallen)) = men.get(k).and_then(|m| soldier_pose(geo, m)) else {
+            *vis = Visibility::Hidden;
+            continue;
+        };
+        let mut p = base.with_y(ground(t, (base.x * SCALE, -base.z * SCALE)));
+        let rot = if fallen {
+            p.y += 0.05;
+            Quat::from_rotation_arc(Vec3::Y, face) * Quat::from_rotation_y(0.3 * k as f32)
+        } else {
+            Quat::from_rotation_arc(Vec3::Z, face)
+        };
+        *tf = Transform::from_translation(p)
+            .with_rotation(rot)
+            .with_scale(Vec3::splat(size));
+        *vis = Visibility::Inherited;
+        let running = men[k].state == FighterState::Routing;
+        let colour = if running {
             looks.colours[2].clone()
         } else {
             looks.colours[(sq.side as usize).min(1)].clone()
@@ -405,9 +476,12 @@ fn show_live(
         scene.figures = v
             .squads
             .iter()
-            .map(|sq| {
+            .enumerate()
+            .map(|(q, sq)| {
                 let colour = looks.colours[(sq.side as usize).min(1)].clone();
-                (0..sq.start)
+                // A figure per soldier on the soldier model, else per fighter.
+                let n = v.soldiers.get(q).map_or(sq.start as usize, Vec::len);
+                (0..n)
                     .map(|_| {
                         commands
                             .spawn((
@@ -431,6 +505,18 @@ fn show_live(
         field: v.field,
     };
     for (q, sq) in v.squads.iter().enumerate() {
+        if let Some(men) = v.soldiers.get(q) {
+            pose_soldiers(
+                &geo,
+                sq,
+                men,
+                &scene.figures[q],
+                &mut figures,
+                &looks,
+                &world.terrain,
+            );
+            continue;
+        }
         let Some(&(x, y, standing, state)) = v.frame.squads.get(q) else {
             continue;
         };
@@ -446,6 +532,40 @@ fn show_live(
             &world.terrain,
         );
     }
+}
+
+/// Points the camera at a live battle, from no further than `distance`: at
+/// the centre of the soldiers still on the field on the soldier model, else
+/// at the field's centre.
+pub(crate) fn look_at_field(
+    cam: &mut crate::camera::WorldCamera,
+    v: &sim_core::battle::LiveView,
+    t: &sim_core::terrain::Terrain,
+    distance: f32,
+) {
+    let geo = Geo {
+        at: v.at,
+        facing: v.facing,
+        field: v.field,
+    };
+    let on: Vec<(f32, f32)> = v
+        .soldiers
+        .iter()
+        .flatten()
+        .filter(|m| m.state != FighterState::Fled)
+        .map(|m| geo.on_map(m.x, m.y))
+        .collect();
+    cam.focus = if on.is_empty() {
+        geo.centre(t)
+    } else {
+        let n = on.len() as f32;
+        let at = (
+            on.iter().map(|p| p.0).sum::<f32>() / n,
+            on.iter().map(|p| p.1).sum::<f32>() / n,
+        );
+        Vec3::new(at.0 / SCALE, ground(t, at), -at.1 / SCALE)
+    };
+    cam.distance = cam.distance.min(distance);
 }
 
 /// The battle panel: the player's squads, their state and orders.
@@ -484,14 +604,8 @@ fn battle_panel(
             }
             ui.horizontal(|ui| {
                 if ui.button("Look at the field").clicked() {
-                    let geo = Geo {
-                        at: v.at,
-                        facing: v.facing,
-                        field: v.field,
-                    };
                     for mut cam in &mut cameras {
-                        cam.focus = geo.centre(&world.terrain);
-                        cam.distance = cam.distance.min(45.0);
+                        look_at_field(&mut cam, &v, &world.terrain, 45.0);
                     }
                 }
                 if !v.finished && ui.button("Fight it out").clicked() {
@@ -563,4 +677,42 @@ fn battle_panel(
                 }
             });
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn man(x: f32, y: f32, facing: (f32, f32), state: FighterState) -> LiveSoldier {
+        LiveSoldier {
+            x,
+            y,
+            facing,
+            state,
+        }
+    }
+
+    /// A figure of a live soldier battle stands where its soldier stands on
+    /// the map, faces their way, and is gone once they leave the field.
+    #[test]
+    fn a_soldier_figure_stands_and_faces_as_its_soldier() {
+        // The field's +x points north on the map (+y), which is 3D -z.
+        let geo = Geo {
+            at: (100.0, 50.0),
+            facing: (0.0, 1.0),
+            field: (200.0, 80.0),
+        };
+        let m = man(150.0, 40.0, (1.0, 0.0), FighterState::Standing);
+        let (p, face, down) = soldier_pose(&geo, &m).unwrap();
+        let (x, y) = geo.on_map(150.0, 40.0);
+        assert!((p - Vec3::new(x / SCALE, 0.0, -y / SCALE)).length() < 1e-5);
+        assert!((face - Vec3::new(0.0, 0.0, -1.0)).length() < 1e-5, "{face}");
+        assert!(!down);
+        // 50 m toward the defenders is 50 metres' worth of map units north.
+        assert!((y - 50.0 - 50.0 * METRE * SCALE).abs() < 1e-3 && (x - 100.0).abs() < 1e-3);
+        let fallen = man(150.0, 40.0, (1.0, 0.0), FighterState::Down);
+        assert!(soldier_pose(&geo, &fallen).unwrap().2);
+        let fled = man(0.0, 0.0, (1.0, 0.0), FighterState::Fled);
+        assert!(soldier_pose(&geo, &fled).is_none());
+    }
 }

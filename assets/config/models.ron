@@ -338,6 +338,8 @@
         // Squads: each squad a disc, settled with dice per squad. Soldiers: every
         // soldier simulated (docs/design/battle-per-soldier.md, `soldiers` below).
         model: Squads,
+        // Battles the player watches and commands fight on this model.
+        live_model: Soldiers,
         dt: 1.0,                   // seconds per step
         max_seconds: 10800.0,      // three hours
         walk_speed: 1.4,           // m/s on foot

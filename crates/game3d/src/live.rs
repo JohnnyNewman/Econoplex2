@@ -1031,6 +1031,9 @@ mod tests {
             std::thread::sleep(Duration::from_millis(20));
         };
         let view = view.expect("the player's raid never reached a battle");
+        // Watched battles fight on the soldier model: a figure per soldier.
+        assert_eq!(view.soldiers.len(), view.squads.len());
+        assert!(view.soldiers.iter().any(|s| !s.is_empty()));
         // The clock holds while the battle waits.
         let tick = live.shared.lock().unwrap().latest.tick;
         std::thread::sleep(Duration::from_millis(300));
