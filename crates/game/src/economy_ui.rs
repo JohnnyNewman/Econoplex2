@@ -339,6 +339,18 @@ pub fn economy_lines(
             ),
             DIM,
         );
+        let parts = sim_core::world::town_nutrition(store, town);
+        line(
+            format!(
+                "  food {:.0}% (calories {:.0}, protein {:.0}, fat {:.0}, vitamins {:.0})",
+                sim_core::world::food_score(&parts) * 100.0,
+                parts[0] * 100.0,
+                parts[1] * 100.0,
+                parts[2] * 100.0,
+                parts[3] * 100.0
+            ),
+            DIM,
+        );
         let foreign: Vec<String> = town
             .foreign
             .iter()

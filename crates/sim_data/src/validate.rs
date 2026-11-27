@@ -80,6 +80,15 @@ pub fn learnable(c: &Content) -> Vec<bool> {
 pub fn validate(c: &Content) -> Report {
     let mut r = Report::default();
 
+    for n in &c.nutrition {
+        match c.products.iter().find(|p| p.id == n.food) {
+            Some(p) if p.food > 0.0 => {}
+            _ => r
+                .errors
+                .push(format!("nutrition for `{}`, which is not a food", n.food)),
+        }
+    }
+
     for p in &c.products {
         if let Some(h) = &p.house {
             if p.category != Category::Building {

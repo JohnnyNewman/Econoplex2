@@ -119,6 +119,34 @@ pub struct NeedsParams {
     pub happiness_rate: f32,
     /// Effective proficiency multiplier: 1 - fatigue_penalty * fatigue.
     pub fatigue_penalty: f32,
+    /// Protein, fat and vitamins (when the content gives foods nutrients).
+    #[serde(default)]
+    pub nutrition: NutritionParams,
+}
+
+/// `needs.nutrition` in models.ron: each person keeps a store of protein, fat
+/// and vitamins (0..1) that follows, over about `drain_days`, the share of
+/// each need their meals meet (bread alone: enough protein, most of the fat,
+/// next to no vitamins). Below `low`, health falls by up to `damage` a day (in protein,
+/// fat, vitamins order). `choose` weighs what a store lacks when picking a
+/// meal against the food's calories.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NutritionParams {
+    pub drain_days: [f32; 3],
+    pub low: f32,
+    pub damage: [f32; 3],
+    pub choose: f32,
+}
+
+impl Default for NutritionParams {
+    fn default() -> Self {
+        NutritionParams {
+            drain_days: [90.0, 90.0, 60.0],
+            low: 0.3,
+            damage: [0.005, 0.005, 0.015],
+            choose: 2.0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -3864,3 +3864,47 @@ fn guilds_that_keep_secrets_teach_fewer_people() {
     assert!(open > 0, "nobody learned anything in 3 years");
     assert!(kept < open, "secrets kept {kept} learned, open {open}");
 }
+
+#[test]
+fn a_town_without_vitamin_food_gets_scurvy_and_one_with_gardens_does_not() {
+    // Nutrition: vegetables, fruit, fish, milk and ale carry vitamins; bread
+    // next to none. A town whose land grows only grain runs short within a
+    // year; the same town with its gardens does not.
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let run = |gardens: bool| {
+        let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+        params.governor.enabled = false;
+        // No free land: it can't plant gardens of its own.
+        params.market.free_land = 0;
+        scenario.seed = 9;
+        let t = &mut scenario.towns[0];
+        for n in &mut t.nature {
+            let food = ["hunting_ground", "fishing_water", "pasture", "orchard"];
+            if food.contains(&n.0.as_str()) || (!gardens && n.0 == "garden") {
+                n.1 = 0;
+            }
+        }
+        // The town alone: nobody brings food in.
+        scenario.towns.truncate(1);
+        scenario.player = None;
+        let mut s = Simulation::new(db, params, &scenario);
+        run_years(&mut s, 1);
+        let store = s.world.resource::<sim_core::AgentStore>();
+        let town = &s.world.resource::<sim_core::Towns>().0[0];
+        sim_core::world::town_nutrition(store, town)
+    };
+    let without = run(false);
+    let with = run(true);
+    eprintln!("without gardens {without:?}, with {with:?}");
+    assert!(
+        with[3] > without[3] + 0.2,
+        "vitamins {} with gardens vs {} without",
+        with[3],
+        without[3]
+    );
+    assert!(
+        without[3] < 0.6,
+        "no scurvy without vitamin food: {}",
+        without[3]
+    );
+}

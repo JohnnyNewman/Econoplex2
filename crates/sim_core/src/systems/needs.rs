@@ -37,6 +37,8 @@ pub fn sense(
         _ => None,
     };
     let store = &mut *store;
+    // Protein, fat and vitamins count when the content gives foods any.
+    let nutrition_on = db.nutrients.iter().any(|n| n.iter().any(|&x| x > 0.0));
 
     // Food that a recipe turns into more food (grain into flour for bread) is held
     // back for a reserve of that work, so hungry people don't eat the seed of the
@@ -84,6 +86,14 @@ pub fn sense(
         let st = &mut store.state[i];
 
         st[HUNGER] += cal.flow(p.hunger_per_day);
+        // The foods in the order this person reaches for them: the most
+        // filling first, raised by what they bring that the person lacks.
+        let order: Vec<(u32, f32)> = if nutrition_on {
+            food_order(&db, &store.nutrition[i], &p.nutrition)
+        } else {
+            db.foods.clone()
+        };
+        let mut meals: Vec<(u32, f32)> = Vec::new();
         // Meals until the hunger is stilled: each meal is a portion from the
         // first source that has food (squad packs, larder, firms, the market).
         for _ in 0..MAX_MEALS {
@@ -95,8 +105,9 @@ pub fn sense(
             if st[HUNGER] > p.eat_threshold && !squads.list.is_empty() {
                 if let Some(id) = squads.squad_of(i) {
                     if let Some((food, value, q)) =
-                        crate::goods::squad_meal(&mut squads, id, &db.foods, st[HUNGER])
+                        crate::goods::squad_meal(&mut squads, id, &order, st[HUNGER])
                     {
+                        meals.push((food, q));
                         town.flows.add(crate::goods::Flow::Eaten, food as usize, q);
                         st[HUNGER] = (st[HUNGER] - q * value).max(0.0);
                     }
@@ -106,9 +117,10 @@ pub fn sense(
                 // The household's own food first.
                 if let Some((food, value, q)) = crate::decision::subsistence::take_portion(
                     &mut store.larder[i],
-                    &db.foods,
+                    &order,
                     st[HUNGER],
                 ) {
+                    meals.push((food, q));
                     town.flows.add(crate::goods::Flow::Eaten, food as usize, q);
                     st[HUNGER] = (st[HUNGER] - q * value).max(0.0);
                 }
@@ -116,12 +128,13 @@ pub fn sense(
             // With firms, residents buy food straight from the firms that hold it
             // first, then from the market.
             if st[HUNGER] > p.eat_threshold && params.market.firms.on() {
-                'buy: for &(food, value) in &db.foods {
+                'buy: for &(food, value) in &order {
                     let f = food as usize;
                     let q = crate::decision::subsistence::portion(st[HUNGER], value);
                     for firm in town.firms.iter_mut() {
                         if firm.stock.get(f).is_some_and(|&s| s >= q) {
                             firm.stock[f] -= q;
+                            meals.push((food, q));
                             town.flows.add(crate::goods::Flow::Eaten, f, q);
                             st[HUNGER] = (st[HUNGER] - q * value).max(0.0);
                             let pay = (q * town.price[f]).min(store.wealth[i].coins().max(0.0));
@@ -136,11 +149,12 @@ pub fn sense(
                 }
             }
             if st[HUNGER] > p.eat_threshold {
-                for &(food, value) in &db.foods {
+                for &(food, value) in &order {
                     let f = food as usize;
                     let q = crate::decision::subsistence::portion(st[HUNGER], value);
                     if q > 0.0 && town.stock[f] >= q + reserve[store.town[i] as usize][f] {
                         town.stock[f] -= q;
+                        meals.push((food, q));
                         town.flows.add(crate::goods::Flow::Eaten, f, q);
                         town.index_year.consumed.resize(town.stock.len(), 0.0);
                         town.index_year.consumed[f] += q;
@@ -155,6 +169,27 @@ pub fn sense(
             }
             if st[HUNGER] >= before {
                 break;
+            }
+        }
+
+        if nutrition_on {
+            // What the meals brought tops up the stores, and each store loses
+            // a share of itself day by day, so it settles at the share of the
+            // need the diet meets; a store run low hurts health.
+            let np = &p.nutrition;
+            let nu = &mut store.nutrition[i];
+            for &(f, q) in &meals {
+                let days = q * db.food_value[f as usize] / p.hunger_per_day.max(1e-6);
+                for (k, s) in nu.iter_mut().enumerate() {
+                    *s = (*s + days * db.nutrients[f as usize][k] / np.drain_days[k].max(1.0))
+                        .min(1.0);
+                }
+            }
+            for (k, s) in nu.iter_mut().enumerate() {
+                *s = (*s - *s * cal.flow(1.0 / np.drain_days[k].max(1.0))).max(0.0);
+                if *s < np.low {
+                    st[HEALTH] -= cal.flow(np.damage[k] * (1.0 - *s / np.low.max(1e-6)));
+                }
             }
         }
 
@@ -213,4 +248,22 @@ pub fn sense(
             );
         }
     }
+}
+
+/// The foods in the order a person with stores `nu` reaches for them: by food
+/// value, raised by `choose` times what each brings of the needs whose stores
+/// run low.
+fn food_order(db: &Db, nu: &[f32; 3], np: &crate::config::NutritionParams) -> Vec<(u32, f32)> {
+    let mut v: Vec<(u32, f32, f32)> = db
+        .foods
+        .iter()
+        .map(|&(f, value)| {
+            let lack: f32 = (0..3)
+                .map(|k| db.nutrients[f as usize][k] * (1.0 - nu[k]))
+                .sum();
+            (f, value, value * (1.0 + np.choose * lack))
+        })
+        .collect();
+    v.sort_by(|a, b| b.2.total_cmp(&a.2).then(a.0.cmp(&b.0)));
+    v.into_iter().map(|(f, value, _)| (f, value)).collect()
 }
