@@ -745,6 +745,148 @@ Prisoners are few next to the civilians raids carry off (only routers a
 squad reaches are taken), and population stays within the seeds' spread
 (about 120 either way).
 
+## Combat rules
+
+Both models settle every blow and arrow by one set of rules
+(`battle::rules`), in terms a new player may already know. The mechanics
+follow the ideas of the open fifth-edition System Reference Document (an
+attack roll against armour class, damage dice, resistance, advantage,
+conditions); none of its text is used.
+
+**The attack roll.** A blow or an arrow hits when d20 + the attack bonus
+reaches the target's armour class (AC). A natural 20 always hits and is a
+critical hit: the damage dice are rolled twice. A natural 1 always misses.
+
+- **Attack bonus** = proficiency + the weapon's `quality` − exhaustion.
+  Proficiency is `proficiency` (2) for a fighter of skill 0.5 who has fought
+  no battle, `skill_bonus` (4) more per unit of skill above that, and
+  `experience_bonus` (1) per ln(1 + battles survived). A recruit with an
+  iron spear has +3; a veteran of 20 battles with the same spear has about +6.
+  An arrow loses up to `range_penalty` (8) with range, and the squad model
+  gives `rider_target` (+2) against riders, who are bigger targets.
+- **Armour class** = 10 + armour + shield. A shield counts only from the
+  front. A defender on the wall has cover against arrows from below it
+  (`wall_cover`, +2).
+
+**Damage.** Each weapon has damage dice and a damage type in the content
+(`dice`, `damage_type`, `shot_dice`), and its `quality` adds to the damage
+as well as to the attack roll. A lance rolls `charge_dice` in a charge; any
+charge adds its impact (`charge_damage` hit points per m/s of closing
+speed).
+
+| Item | Dice | Type | Quality | AC | Resists |
+| --- | --- | --- | --- | --- | --- |
+| bronze spear | 1d6 | piercing (reach 3 m) | 0 | | |
+| iron spear | 1d6 | piercing (reach 3 m) | +1 | | |
+| pike | 1d8 | piercing (reach 4.5 m) | 0 | | |
+| lance | 1d8, 1d12 on a charge | piercing | +1 | | |
+| longsword (lvl 1, 2, 3) | 1d8 | slashing | 0, +1, +2 | | |
+| war axe | 1d8 | slashing | +1 | | |
+| mace | 1d6 | bludgeoning | +1 | | |
+| bow (arrows; knife in melee) | 1d6 (1d4) | piercing (slashing) | 0 | | |
+| crossbow (bolts) | 1d8 | piercing | +1 | | |
+| padded coat | | | | +1 | bludgeoning |
+| bronze scale | | | | +4 | slashing |
+| mail shirt | | | | +5 | slashing |
+| plate armour | | | | +8 | slashing, piercing |
+| shield, iron-rimmed shield | | | | +2, +3 (front) | |
+
+Resisted damage is halved and a vulnerable piece doubles it (`resist`,
+`vulnerable`; no item in the content is vulnerable yet). Layers of armour
+add their AC and multiply what they let through.
+
+**Hit points.** A townsperson has `hit_points` (8), and `hp_per_experience`
+(2) more per ln(1 + battles survived): about 14 after 20 battles. `health`
+in 0..1 is still the share of hit points left, so the rest of the code and
+the views read it as before.
+
+**Advantage and disadvantage.** Roll two d20 and take the higher, or the
+lower; one of each cancel out. A blow in the flank or the rear or on a runner
+has advantage (and meets no shield); so has a blow or arrow on a man in a
+crush. A frightened or restrained attacker has disadvantage.
+
+**Walls.** A man climbing the wall or pushing through the breach can't hold
+up his shield, and the defender on it strikes him from the higher ground
+(`wall_ground`, +2 to hit), but the wall gives no advantage: a +5 cover and
+advantage on the climbers together made the wall near impregnable (the
+assault below fell from 31 to 6 wins of 50).
+
+**Conditions.**
+
+- *Prone*: down, out of the fight (`SoldierState::Down`).
+- *Frightened*: wavering (morale below `waver_at`): disadvantage on attacks.
+  This replaces the old cut in the blow rate.
+- *Exhausted*: a level per fifth of fatigue, each −1 to attack rolls
+  (`exhaustion_penalty`). It replaces the old fatigue cut in parries; fatigue
+  still slows a soldier and their attacks.
+- *Restrained*: in a crush, pressed by `crush_bodies` (4) bodies at once.
+  Soldier model only.
+
+**Both models.** The soldier model rolls each attack and each die
+(`rules::attack`, `rules::roll_dice`). The squad model takes each blow's
+chance from the same attack roll (with the squad's mean bonus and its kit's
+mean AC) and deals the mean damage of a hit, criticals included
+(`rules::mean_hit`). It has no crush, and its exhaustion comes from the
+fatigue the members bring. An arrow comes down on the man aimed at
+`arrow_aim` (0.6) of the time on both models; on the soldier model one that
+misses him lands on whoever stands there, so the squad model lets a miss
+land on a man as often as men cover the ground of the target's formation
+(each within `hit_radius`, a rider's `mounted_size` times more). Without
+that the squad model's archers wounded 0.6 times as often as the soldier
+model's (horse archers against levy fell from 14 to 2 wins of 50). Each
+phase of a squad step (charges, arrows, blows) lands its hits together at
+its end, so no squad strikes first because it comes first in the list; that
+first strike had given the attackers of a spearmen mirror 135 wins of 200.
+
+**The rate.** Attack rates in the content are about one attack per six
+seconds of fighting (0.12 to 0.18 per second), half the old strike rates,
+since a d20 roll lands more often than the old hidden chance did.
+
+**The views.** Hovering a soldier (or a squad, on the squad model) shows
+their sheet, e.g. "a soldier of swordsmen1: AC 17, +3 to hit, HP 6/8, 1d8+1
+slashing" (`LiveView::sheets`, `rts::inspect`). The matchup hint speaks the
+same terms, e.g. "even: your swords hit their mail on 14+ (35%), resistant
+to slashing". The F1 help has a "How combat works" page in both clients.
+
+**What it did to the matchups.** `--compare`, 50 seeds, attackers' wins
+(squad model / soldier model), before and after:
+
+| Battle | Before | After |
+| --- | --- | --- |
+| `swordsmen*30 vs swordsmen*30` | 28 / 22 | 25 / 24 |
+| `spearmen*400 vs spearmen*400` | 25 / 19 | 23 / 20 |
+| `cavalry*200 vs cavalry*200` | 19 / 27 | 26 / 32 |
+| `cavalry*20 vs spearmen*30` | 0 / 2 | 0 / 5 |
+| `cavalry*20 vs archers*30` | 50 / 45 | 48 / 49 |
+| `levy*40 vs archers*30` | 0 / 0 | 0 / 0 |
+| `swordsmen*30 vs spearmen*30` | 50 / 50 | 50 / 50 |
+| `swordsmen*25+20 vs swordsmen*30` | 50 / 50 | 50 / 50 |
+| `swordsmen*45,archers*20 vs walls spearmen*30+5!0.6` | 0 / 31 | 33 / 33 |
+| `swordsmen*30,archers*20 vs spearmen*30` | 50 / 50 | 50 / 50 |
+| `heavy*30 vs swordsmen*30` | 50 / 46 | 50 / 50 |
+| `horse_archers*20 vs levy*40` | 14 / 50 | 11 / 48 |
+
+The health bands at 16 seeds, 30 years: before (main at 9335fad), and after
+(this change merged with main, whose farm food raises food per head and
+diversity, and widens the diversity band to 60):
+
+| Metric | Band | Before | After |
+| --- | --- | --- | --- |
+| pop | 1500 to 4000 | 2902 | 2832 |
+| starve% | 0 to 2.5 | 0.00 | 0.00 |
+| food/cap | 2 to 18 | 8.84 | 12.1 |
+| div | 18 to 50 (60 after) | 37.6 | 41.5 |
+| reserve | 3 to 18 | 10.7 | 13.5 |
+
+All in their bands. Of the military columns, conquests fell from 13.9 to
+11.7 and revolts from 5.7 to 4.3 (both within about one standard
+deviation); raids and captives barely moved.
+
+The mirrors at 600 seeds, attackers' wins (squad model / soldier model):
+swordsmen 275 / 287, spearmen 277 / 241 (a line that holds and braces has
+the better of one that walks up to it, as on main), and cavalry, soldier
+model, 310.
+
 ## Open questions
 
 - Should auto-resolved raids ever use the soldier model, or only battles the

@@ -114,7 +114,11 @@ impl SquadBattle {
     fn strikes(&mut self, i: usize, t: usize, n: f32, charge: bool, extra: f32, flank: bool) {
         let (si, st) = (&self.squads[i], &self.squads[t]);
         let on_wall = si.spec.behind_wall && self.across_wall(i, t);
-        let ground = if on_wall { self.params.wall_ground } else { 0.0 };
+        let ground = if on_wall {
+            self.params.wall_ground
+        } else {
+            0.0
+        };
         let roll = Roll::of(flank, self.frightened(i));
         let ac = st.spec.kit.armour_class(!flank && !on_wall);
         let chance = rules::hit_chance(self.bonus(i) + ground, ac, roll);
@@ -239,7 +243,12 @@ impl SquadBattle {
         // on the soldier model; one that misses him lands among the others,
         // on a man as often as men cover the ground of the formation (each
         // within `hit_radius`, a rider's more).
-        let r = p.soldiers.hit_radius * if st.spec.kit.mounted { p.mounted_size } else { 1.0 };
+        let r = p.soldiers.hit_radius
+            * if st.spec.kit.mounted {
+                p.mounted_size
+            } else {
+                1.0
+            };
         let crowd = (std::f32::consts::PI * r * r / st.spacing(&p).powi(2)).min(1.0);
         let lands = p.arrow_aim + (1.0 - p.arrow_aim) * crowd;
         let chance = lands * hit;
