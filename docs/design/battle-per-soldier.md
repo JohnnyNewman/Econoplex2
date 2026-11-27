@@ -142,7 +142,8 @@ starts tired. This comes from the store's `fatigue` state, which
   crowd.
 
 One substep runs in six phases. Phases 2 to 4 only read last substep's state
-and write into per-soldier buffers, so they can run in parallel.
+and write into per-soldier buffers, so they can run in parallel. Phases 3 and
+4 run in one pass: each soldier's blow is rolled right after their plan.
 
 1. **Grid.** Rebuild the spatial grid (below).
 2. **Squad controllers.** Each squad's controller sets its formation, anchor and
@@ -338,11 +339,14 @@ comparison of time per tick and of outcomes.
 
 - soldiers;
 - substeps;
-- ms per battle second, for each of the six phases;
+- ms per battle second, for each phase (3 and 4 together, as they run in one
+  pass);
 - the squad model's figure for the same line-up.
 
-A test marked `#[ignore]` checks the 4,000-soldier budget. It is run by hand on a
-release build.
+A test in `sim_core/tests/battle_budget.rs` checks the 4,000-soldier budget,
+the best of three runs on one core. It runs with `cargo test --release`; debug
+builds skip it. It is an integration test so that it times the library as it
+ships, not the build of it that carries the unit tests.
 
 ## `--battle`
 
@@ -401,8 +405,8 @@ rate with room for chance:
   - stepping 1 s at a time gives the same battle as `run()`.
 - **Formations:** a squad that loses its front rank refills it from the rear. A
   braced line facing riders turns to face them.
-- **Budget:** 4,000 soldiers stay within 1 ms per battle second
-  (`#[ignore]`, release only).
+- **Budget:** 4,000 soldiers stay within 1 ms per battle second (release
+  builds only).
 
 ## Build order
 
@@ -466,12 +470,27 @@ run. The yardstick is 50 squads of 40 a side, a 6.4-minute battle:
 
 | Measure | Budget | Measured |
 | --- | --- | --- |
-| ms per battle second, one core | ≤ 1 | 1.39 (best of 3) |
-| ns per soldier per substep | ≤ 60 | 87 |
-| one battle | ≤ 2 s | 0.53 s |
+| ms per battle second, one core | ≤ 1 | 0.85 (best of 6) |
+| ns per soldier per substep | ≤ 60 | 53 |
+| one battle | ≤ 2 s | 0.33 s |
 
-The soldier controllers take 40% of the time. Apply, the grid and the blows
-take about 15% each. The model is not yet within 1 ms per battle second.
+The soldier controllers and blows take 55% of the time, apply and the grid
+15% each, the squad controllers and the recount 7% each. What brought it
+within budget, from 1.24 ms and 77 ns on the same machine:
+
+- A soldier standing in their slot with nobody to fight, or out of contact
+  and within half a pace of it, does not look for friends to push off. The
+  formation keeps them apart. This is the one change that moves soldiers:
+  `--compare` over 200 seeds stays within chance (`swordsmen*200` a side 93
+  then 101 of 200, `swordsmen*400` 97 then 102, `cavalry*20 vs archers*30`
+  186 then 182).
+- A soldier's blow is rolled in the same pass as their plan, and only blows
+  that reach somebody are kept, in soldier order.
+- The grid keeps a copy of each soldier's position in cell order, so a search
+  reads positions in a row, and builds in one list with no clearing.
+- Neighbour searches skip candidates beyond their radius before any other
+  work, and use a closure rather than an iterator chain.
+- A squad that is not in contact does not tally whom it fights.
 
 ## Open questions
 

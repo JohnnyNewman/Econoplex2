@@ -9,10 +9,10 @@
 use super::V2;
 
 pub(super) struct Grid {
-    /// Cells across and down the field.
-    w: usize,
-    h: usize,
     inv: f32,
+    /// The last cell across and down.
+    xmax: i32,
+    ymax: i32,
     /// The box of cells this build covers: first cell across and down, and
     /// its size. Empty when nobody is listed.
     x0: usize,
@@ -22,11 +22,22 @@ pub(super) struct Grid {
     /// `start[c]..start[c + 1]` are box cell `c`'s entries in `items`.
     start: Vec<u32>,
     items: Vec<u32>,
-    /// Each listed soldier's field cell, the next free entry per cell, and
-    /// the sorted list, while building.
-    cells: Vec<(u32, u32)>,
-    cursor: Vec<u32>,
-    sorted: Vec<u32>,
+    /// Where each entry of `items` stood when listed, in the same order, so
+    /// a search reads positions in a row.
+    at: Vec<V2>,
+    /// The soldiers listed for this build, and the box of cells around them.
+    listed: Vec<Listed>,
+    lo: (u32, u32),
+    hi: (u32, u32),
+}
+
+/// A soldier listed for a build: their field cell, index and place.
+#[derive(Clone, Copy)]
+struct Listed {
+    x: u32,
+    y: u32,
+    i: u32,
+    p: V2,
 }
 
 impl Grid {
@@ -34,82 +45,93 @@ impl Grid {
         let w = (width / cell).ceil().max(1.0) as usize;
         let h = (height / cell).ceil().max(1.0) as usize;
         Self {
-            w,
-            h,
             inv: 1.0 / cell,
+            xmax: (w - 1) as i32,
+            ymax: (h - 1) as i32,
             x0: 0,
             y0: 0,
             bw: 0,
             bh: 0,
             start: vec![0],
             items: Vec::new(),
-            cells: Vec::new(),
-            cursor: Vec::new(),
-            sorted: Vec::new(),
+            at: Vec::new(),
+            listed: Vec::new(),
+            lo: (u32::MAX, u32::MAX),
+            hi: (0, 0),
         }
     }
 
     /// The field cell a point falls in; points off the field fall in its edge cells.
     #[inline]
     pub(super) fn cell(&self, p: V2) -> (usize, usize) {
-        // Clamped as floats, so the cast needs no range checks.
-        let x = (p.x * self.inv).clamp(0.0, (self.w - 1) as f32) as i32;
-        let y = (p.y * self.inv).clamp(0.0, (self.h - 1) as f32) as i32;
+        let x = ((p.x * self.inv) as i32).max(0).min(self.xmax);
+        let y = ((p.y * self.inv) as i32).max(0).min(self.ymax);
         (x as usize, y as usize)
     }
 
     /// Start a build: list soldiers with [`Grid::push`] in index order,
     /// then [`Grid::finish`].
     pub(super) fn clear(&mut self) {
-        self.cells.clear();
-        self.items.clear();
+        self.listed.clear();
+        (self.lo, self.hi) = ((u32::MAX, u32::MAX), (0, 0));
     }
 
     /// List soldier `i` at `p`.
     #[inline]
     pub(super) fn push(&mut self, i: usize, p: V2) {
         let (x, y) = self.cell(p);
-        self.cells.push((x as u32, y as u32));
-        self.items.push(i as u32);
+        let (x, y) = (x as u32, y as u32);
+        self.lo = (self.lo.0.min(x), self.lo.1.min(y));
+        self.hi = (self.hi.0.max(x), self.hi.1.max(y));
+        self.listed.push(Listed {
+            x,
+            y,
+            i: i as u32,
+            p,
+        });
     }
 
     /// Sort the listed soldiers into their cells.
     pub(super) fn finish(&mut self) {
-        if self.items.is_empty() {
+        let n = self.listed.len();
+        if n == 0 {
             (self.bw, self.bh) = (0, 0);
             self.start.clear();
             self.start.push(0);
+            self.items.clear();
+            self.at.clear();
             return;
         }
-        let (mut x0, mut y0, mut x1, mut y1) = (u32::MAX, u32::MAX, 0, 0);
-        for &(x, y) in &self.cells {
-            (x0, y0, x1, y1) = (x0.min(x), y0.min(y), x1.max(x), y1.max(y));
-        }
-        let (x0, y0) = (x0 as usize, y0 as usize);
+        let (x0, y0) = (self.lo.0 as usize, self.lo.1 as usize);
         (self.x0, self.y0) = (x0, y0);
-        (self.bw, self.bh) = (x1 as usize - x0 + 1, y1 as usize - y0 + 1);
-        let cells = self.bw * self.bh;
+        let bw = self.hi.0 as usize - x0 + 1;
+        (self.bw, self.bh) = (bw, self.hi.1 as usize - y0 + 1);
+        let cells = bw * self.bh;
+        let box_cell = |e: &Listed| (e.y as usize - y0) * bw + (e.x as usize - x0);
+        // Count cell c's soldiers in start[c + 2] and sum, so that start[c + 1]
+        // is where cell c begins; writing moves it on to where c ends, which
+        // is where c + 1 begins.
         self.start.clear();
-        self.start.resize(cells + 1, 0);
-        for &(x, y) in &self.cells {
-            let c = (y as usize - y0) * self.bw + (x as usize - x0);
-            self.start[c + 1] += 1;
+        self.start.resize(cells + 2, 0);
+        for e in &self.listed {
+            self.start[box_cell(e) + 2] += 1;
         }
-        for c in 0..cells {
-            self.start[c + 1] += self.start[c];
+        let mut sum = 0;
+        for s in &mut self.start[2..] {
+            sum += *s;
+            *s = sum;
         }
-        // Write in index order: `cursor` is each cell's next free entry.
-        self.cursor.clear();
-        self.cursor.extend_from_slice(&self.start[..cells]);
-        self.sorted.clear();
-        self.sorted.resize(self.items.len(), 0);
-        for (&(x, y), &i) in self.cells.iter().zip(&self.items) {
-            let c = (y as usize - y0) * self.bw + (x as usize - x0);
-            let at = &mut self.cursor[c];
-            self.sorted[*at as usize] = i;
+        // Every entry is written below, so the old ones need no clearing.
+        self.items.resize(n, 0);
+        self.at.resize(n, V2::ZERO);
+        for e in &self.listed {
+            let at = &mut self.start[box_cell(e) + 1];
+            let to = *at as usize;
             *at += 1;
+            self.items[to] = e.i;
+            self.at[to] = e.p;
         }
-        std::mem::swap(&mut self.items, &mut self.sorted);
+        self.start.pop();
     }
 
     /// The box cells from field cells `(xa, ya)` to `(xb, yb)`, or `None`
@@ -131,6 +153,14 @@ impl Grid {
         &self.items[self.start[r + xa] as usize..self.start[r + xb + 1] as usize]
     }
 
+    /// The entries of box row `y`, cells `xa..=xb`, with where they stood.
+    #[inline]
+    fn row_at(&self, y: usize, xa: usize, xb: usize) -> (&[u32], &[V2]) {
+        let r = y * self.bw;
+        let span = self.start[r + xa] as usize..self.start[r + xb + 1] as usize;
+        (&self.items[span.clone()], &self.at[span])
+    }
+
     /// How many soldiers stand in the cells around `(x, y)`, itself included.
     #[inline]
     pub(super) fn around(&self, (x, y): (usize, usize)) -> u32 {
@@ -150,5 +180,23 @@ impl Grid {
         let (xb, yb) = self.cell(V2::new(p.x + r, p.y + r));
         let [xa, ya, xb, yb] = self.clip(xa, ya, xb, yb).unwrap_or([1, 1, 0, 0]);
         (ya..=yb).flat_map(move |y| self.row(y, xa, xb).iter().map(|&i| i as usize))
+    }
+
+    /// Call `f` with every soldier within `r` of `p` (and some a little
+    /// further) and where they stood when listed, in the order of
+    /// [`Grid::near`].
+    #[inline]
+    pub(super) fn each_near(&self, p: V2, r: f32, mut f: impl FnMut(usize, V2)) {
+        let (xa, ya) = self.cell(V2::new(p.x - r, p.y - r));
+        let (xb, yb) = self.cell(V2::new(p.x + r, p.y + r));
+        let Some([xa, ya, xb, yb]) = self.clip(xa, ya, xb, yb) else {
+            return;
+        };
+        for y in ya..=yb {
+            let (items, at) = self.row_at(y, xa, xb);
+            for (&i, &q) in items.iter().zip(at) {
+                f(i as usize, q);
+            }
+        }
     }
 }
