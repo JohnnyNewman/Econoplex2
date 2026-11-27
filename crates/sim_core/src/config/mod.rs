@@ -68,11 +68,15 @@ pub struct ModelParams {
     /// Crops through the seasons (`farming.rs`).
     #[serde(default)]
     pub farming: crate::farming::FarmingParams,
+    /// Who knows which recipe-skill (`knowledge.rs`; off by default).
+    #[serde(default)]
+    pub knowledge: crate::knowledge::KnowledgeParams,
 }
 
 impl ModelParams {
     /// Check the parameters so a typo in the RON file fails loudly at load time.
     pub fn validate(&self) -> Result<(), ConfigError> {
+        self.knowledge.validate().map_err(ConfigError)?;
         let t = &self.time;
         if t.steps_per_day == 0 || t.days_per_month == 0 || t.months_per_year == 0 {
             return Err(ConfigError(

@@ -1,6 +1,8 @@
 # Inventions and knowledge
 
-Design note, agreed in discussion with Nils on 2026-11-26. No code yet.
+Design note, agreed in discussion with Nils on 2026-11-26. Steps 1 (content and
+validation) and 2 (knowledge per person, `knowledge.rs`, opt-in with
+`knowledge.enabled`) are built.
 
 ## Goal
 
@@ -169,12 +171,29 @@ is cached. The nightly pass checks at most `max_checks` related items per workin
 
 1. Content: recipe-skills with output good, level and `requires` (several ways per good); split today's recipes into level 1
    recipe-skills; validation (every node reachable from the start set)
-2. Knowledge bits per person, starting profiles, gating job choice by knowledge (save format)
-3. Apprenticeship and migration carry knowledge; loss on death; town knowledge = union of residents
+2. Knowledge bits per person, starting profiles, gating job choice by knowledge (save format) (done)
+3. Apprenticeship and migration carry knowledge; loss on death; town knowledge = union of residents (done with step 2)
 4. Nightly invention check with context factors; event log
 5. Player reveal and the hidden graph in the UI
-6. Schools and guild secrets
+6. Schools (pupils learn their teacher's recipes: done with step 2) and guild secrets
 7. New levels and new items toward the steampunk end; writing and libraries
+
+## As built (steps 2 and 3)
+
+- Recipe-skills with no `requires` start the graph and everyone knows them, so they take
+  no bits.
+- Founders: every adult knows their family trade (and one way to meet what it requires),
+  and each other recipe-skill with `start_share`, or `start_share × foreign_share` when the
+  town has no building or land for it. Children start knowing only the roots.
+- A regular place needs the recipe-skill known. An apprentice place needs its `requires`
+  met (it is on the person's frontier), so the graph is climbed one step at a time.
+- Anyone on a team with someone who knows the recipe-skill learns it with
+  `1 − (1 − learn_per_day)^days`. Pupils learn each of their teacher's recipe-skills in the
+  school's domain at `learn_per_day × school_share`.
+- Knowledge is per person, so it moves with migrants and captives and is gone when its
+  last holder dies. `knowledge::town_known` counts a town's union.
+- Off, nobody holds bits and nothing draws a random number: runs and state hashes are
+  exactly as before.
 
 ## Open questions
 

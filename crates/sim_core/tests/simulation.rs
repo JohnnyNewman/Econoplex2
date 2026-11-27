@@ -3378,3 +3378,78 @@ fn the_grown_population_starts_with_masters_and_apprentices() {
     assert!(members > 0, "no members");
     assert!(apprentices > 0, "no apprentices after a year");
 }
+
+fn with_knowledge(seed: u64) -> Simulation {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    scenario.seed = seed;
+    params.knowledge.enabled = true;
+    Simulation::new(db, params, &scenario)
+}
+
+#[test]
+fn people_work_only_in_what_they_know_and_learn_from_their_masters() {
+    use sim_core::knowledge::knows;
+    let mut s = with_knowledge(5);
+    let founders = s.world.resource::<sim_core::AgentStore>().len();
+    let kp = s
+        .world
+        .resource::<sim_core::world::Params>()
+        .knowledge
+        .clone();
+    // Every founder knows only part of the graph: nobody starts knowing it all,
+    // and every adult knows at least their trade.
+    {
+        let db = s.world.resource::<sim_core::Db>();
+        let store = s.world.resource::<sim_core::AgentStore>();
+        let all = (0..founders)
+            .filter(|&i| (0..db.recipes.len()).all(|r| knows(&kp, db, store, i, r)))
+            .count();
+        assert!(
+            all < founders / 10 + 1,
+            "{all} of {founders} founders know every recipe"
+        );
+    }
+    let start: Vec<Vec<u64>> = s.world.resource::<sim_core::AgentStore>().known.clone();
+    let mut checked = 0;
+    let per_year = s
+        .world
+        .resource::<sim_core::world::Params>()
+        .time
+        .months_per_year;
+    for _ in 0..3 * per_year {
+        // Check after every tick, while the day's jobs are still set.
+        loop {
+            s.step_tick();
+            let db = s.world.resource::<sim_core::Db>();
+            let store = s.world.resource::<sim_core::AgentStore>();
+            for (i, job) in store.job_today.iter().enumerate() {
+                // A regular place needs the recipe known (an apprentice place
+                // is how anyone gets into work they did not know).
+                if let Some((r, false)) = *job {
+                    assert!(
+                        knows(&kp, db, store, i, r as usize),
+                        "{i} took a place in recipe {r} without knowing it"
+                    );
+                    checked += 1;
+                }
+            }
+            if s.world.resource::<sim_core::world::SimClock>().day_done() {
+                break;
+            }
+        }
+    }
+    assert!(checked > 0, "nobody worked");
+    let store = s.world.resource::<sim_core::AgentStore>();
+    let learned = (0..founders)
+        .filter(|&i| store.known.get(i).is_some_and(|k| Some(k) != start.get(i)))
+        .count();
+    assert!(learned > 0, "no founder learned a recipe in 3 years");
+}
+
+#[test]
+fn knowledge_off_draws_nothing_and_stores_nothing() {
+    let mut s = full(5);
+    run_years(&mut s, 1);
+    assert!(s.world.resource::<sim_core::AgentStore>().known.is_empty());
+}

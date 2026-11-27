@@ -510,4 +510,18 @@
         anomaly_days: 5.0,
         wind_mean: 4.0,
     ),
+    // Who knows which recipe-skill (knowledge.rs, docs/design/inventions.md).
+    // On, people work only in recipes they know; recipes with no `requires` are
+    // known to all. Founders know their family trade and each recipe their town
+    // can run with `start_share` (others with start_share * foreign_share).
+    // Apprentices and children working beside someone who knows a recipe learn it
+    // at `learn_per_day`; pupils learn their teacher's recipes at
+    // learn_per_day * school_share. Off: everyone knows everything.
+    knowledge: (
+        enabled: false,
+        start_share: 0.1,
+        foreign_share: 0.2,
+        learn_per_day: 0.03,
+        school_share: 0.3,
+    ),
 )

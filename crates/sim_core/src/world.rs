@@ -909,6 +909,7 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
                 *x = rng.random::<f32>() * STARTING_SKILL_NOISE;
             }
             // Adults start with some experience in one family trade.
+            let mut family_trade = None;
             if age_years >= params.life.adult_age {
                 let mut x = rng.random::<f32>() * weight_sum;
                 let mut r = 0;
@@ -920,7 +921,15 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
                 for (c, s) in cap.iter_mut().zip(db.recipes[r].skill.iter()) {
                     *c += amount * s;
                 }
+                family_trade = Some(r);
             }
+            // What they know (only drawn with knowledge on, so runs without it
+            // are unchanged).
+            let known = if params.knowledge.enabled && age_years >= params.life.adult_age {
+                crate::knowledge::founder(&params.knowledge, &db, family_trade, &runnable, &mut rng)
+            } else {
+                Vec::new()
+            };
             let age_factor = crate::systems::body::age_curve(age_years, &params.physique);
             let phys: PhysVec = std::array::from_fn(|k| {
                 potential[k] * age_factor * params.physique.untrained_level.max(0.6)
@@ -948,6 +957,10 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
                 },
                 age_years >= params.life.adult_age,
             );
+            if !known.is_empty() {
+                store.known.resize(store.len(), Vec::new());
+                store.known[idx as usize] = known;
+            }
             world.entity_mut(entity).insert((Agent { idx }, TownId(t)));
         }
     }

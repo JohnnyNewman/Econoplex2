@@ -110,6 +110,11 @@ pub struct AgentStore {
     /// at all (a trigger to change trade).
     #[serde(default)]
     pub off_trade: Vec<u32>,
+    /// Recipe-skills each person knows, one bit per recipe (`knowledge.rs`).
+    /// Grown only as people learn, so it stays empty (and out of saves and the
+    /// state hash) while knowledge is off; a missing entry knows only the roots.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub known: Vec<Vec<u64>>,
 }
 
 /// Everything needed to create an agent.

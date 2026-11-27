@@ -1,6 +1,7 @@
 //! Learning on the job: from success, failure and the team's best.
 
 use super::*;
+use crate::knowledge;
 
 /// Practice for every worker; diffusion from the team's best member to the others and to apprentices.
 /// One finished job's learning: every worker practices the recipe's skill, then the
@@ -91,9 +92,15 @@ pub fn learn(
     models: Res<Models>,
     params: Res<Params>,
     clock: Res<SimClock>,
+    seed: Res<SimSeed>,
     log: Res<WorkLog>,
 ) {
     let store = &mut *store;
+    let kp = &params.knowledge;
+    // Draws only with knowledge on, so runs without it are unchanged.
+    let mut krng = kp
+        .enabled
+        .then(|| seed.rng(clock.steps(), streams::KNOWLEDGE));
     // Each finished job changes only its own team's skills. When no agent is in
     // two jobs (the normal case), every job's update is worked out in parallel from
     // the skills at the start of the step and written back afterwards, which gives
@@ -121,6 +128,32 @@ pub fn learn(
         for ev in &log.events {
             for (a, cap) in teach(store, ev) {
                 store.cap[a as usize] = cap;
+            }
+        }
+    }
+
+    // --- knowledge: whoever works beside someone who knows the recipe may learn it.
+    if let Some(rng) = krng.as_mut() {
+        for ev in &log.events {
+            let r = ev.recipe as usize;
+            let team = || {
+                ev.workers
+                    .iter()
+                    .chain(&ev.apprentices)
+                    .map(|&a| a as usize)
+            };
+            if !team().any(|a| store.alive[a] && knowledge::knows(kp, &db, store, a, r)) {
+                continue;
+            }
+            let p = knowledge::chance(kp.learn_per_day, ev.days);
+            for a in team() {
+                if store.alive[a]
+                    && !knowledge::knows(kp, &db, store, a, r)
+                    && knowledge::can_learn(kp, &db, store, a, r)
+                    && rng.random::<f32>() < p
+                {
+                    knowledge::learn(store, a, r);
+                }
             }
         }
     }
@@ -178,6 +211,21 @@ pub fn learn(
                 .diffuse(&mut store.cap[c], &teacher_cap, dir, cal.days());
             for (x, b) in store.cap[c].iter_mut().zip(before) {
                 *x = b + (*x - b) * pp.school_rate;
+            }
+            // Pupils also pick up the recipes the teacher knows in the domain.
+            if let Some(rng) = krng.as_mut() {
+                let p = knowledge::chance(kp.learn_per_day * kp.school_share, cal.days());
+                for r in 0..db.recipes.len() {
+                    if db.recipes[r].domain == school.domain
+                        && !db.requires[r].is_empty()
+                        && knowledge::knows(kp, &db, store, teacher, r)
+                        && !knowledge::knows(kp, &db, store, c, r)
+                        && knowledge::can_learn(kp, &db, store, c, r)
+                        && rng.random::<f32>() < p
+                    {
+                        knowledge::learn(store, c, r);
+                    }
+                }
             }
         }
         let fee = cal.flow(pupils.len() as f32 * pp.school_fee);

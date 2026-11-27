@@ -48,4 +48,5 @@ pub mod streams {
     pub const ORGANIZE: u64 = 7;
     pub const MILITARY: u64 = 8;
     pub const MIGRATE: u64 = 9;
+    pub const KNOWLEDGE: u64 = 10;
 }
