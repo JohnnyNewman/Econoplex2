@@ -873,7 +873,19 @@ impl Shapes {
                 right = Some((a, c));
             }
         }
-        let way = |c: V2| (c - me).len() + (target - c).len();
+        // The way round by a corner: on to the target if the box is out of
+        // the way from there, else by the next corner on.
+        let on = |c: V2| {
+            if b.enters(c, target, r).is_none() {
+                return (target - c).len();
+            }
+            corners
+                .iter()
+                .filter(|&&n| (n - c).len2() > 0.01 && b.enters(n, target, r).is_none())
+                .map(|&n| (n - c).len() + (target - n).len())
+                .fold(f32::INFINITY, f32::min)
+        };
+        let way = |c: V2| (c - me).len() + on(c);
         match (left, right) {
             (Some((_, l)), Some((_, r))) => Some(if way(l) <= way(r) { l } else { r }),
             (Some((_, c)), None) | (None, Some((_, c))) => Some(c),

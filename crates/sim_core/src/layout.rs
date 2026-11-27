@@ -406,6 +406,32 @@ mod tests {
         }
     }
 
+    /// A walker steering by corners (`Shapes::steer`) round a workplace in
+    /// its way gets past it, and never into it: it does not turn back to a
+    /// corner it has passed.
+    #[test]
+    fn steering_by_corners_gets_round_a_building() {
+        let f = building_footprint(1, (0.0, 0.0), (50.0, 0.0), (24.0, 24.0));
+        let layout = TownLayout {
+            centre: (0.0, 0.0),
+            buildings: vec![f],
+            ..TownLayout::default()
+        };
+        let s = layout.shapes();
+        let t = V2::new(90.0, 0.0);
+        let mut p = V2::new(10.0, 1.0);
+        for _ in 0..400 {
+            let step: f32 = 0.5;
+            let mut to = p + (t - p).norm_or(V2::ZERO) * step.min((t - p).len());
+            if let Some(c) = s.steer(p, t, 1.5, 0) {
+                to = p + (c - p).norm_or(V2::ZERO) * step.min((c - p).len());
+            }
+            p = s.resolve(p, to, 1.5, 0);
+            assert!(!f.contains((p.x, p.y), 1.4), "{p:?} in the building");
+        }
+        assert!((p - t).len() < 0.01, "stuck at {p:?}");
+    }
+
     /// The houses of a sample town stand clear of its workplaces and of each
     /// other, and houses keep off a road through the town.
     #[test]
