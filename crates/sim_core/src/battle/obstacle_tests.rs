@@ -292,11 +292,16 @@ fn a_line_narrows_to_pass_an_alley() {
     assert!(line.anchor.0 > 355.0 && line.width >= 29.0, "{line:?}");
 }
 
-/// The squad model fights fewer at once in a built-up town than in the open.
+/// The squad model fights fewer at once among a town's houses than in the
+/// open: two squads that meet in the middle of the town take longer.
 #[test]
 fn the_squad_model_fronts_narrow_in_a_town() {
-    let (open, specs) = parse_lineup("swordsmen*60 vs swordsmen*60").unwrap();
+    let (open, _) = parse_lineup("swordsmen*60 vs swordsmen*60").unwrap();
     let (town, _) = parse_lineup("swordsmen*60 vs town swordsmen*60").unwrap();
+    let specs = vec![
+        swordsmen(0, 60, (390.0, 200.0)),
+        swordsmen(1, 60, (470.0, 200.0)),
+    ];
     let longer = |field: Field| {
         (0..20u64)
             .map(|seed| {
@@ -381,6 +386,50 @@ fn runners_leave_a_town_and_the_battle_ends() {
         }
         assert!(b.finished(), "seed {seed}: still going after an hour");
     }
+}
+
+/// In a town the defenders form up in front of its houses, on their own
+/// half, and not among them.
+#[test]
+fn defenders_form_up_in_front_of_a_town() {
+    let (field, specs) = parse_lineup("swordsmen*40 vs town swordsmen*40,swordsmen*40").unwrap();
+    let front = field
+        .obstacles
+        .iter()
+        .map(|o| o.reach_x().0)
+        .fold(f32::INFINITY, f32::min);
+    assert!(
+        (front - field.width * crate::layout::TOWN_FRONT).abs() < 0.5,
+        "front {front}"
+    );
+    for s in specs.iter().filter(|s| s.side == 1) {
+        assert!(
+            s.pos.0 < front && s.pos.0 > field.width * 0.5,
+            "{:?}",
+            s.pos
+        );
+    }
+}
+
+/// Equal armies in a town come out about even: neither side has to file
+/// through the streets into the other's line.
+#[test]
+fn equal_armies_in_a_town_come_out_about_even() {
+    let side = "swordsmen*40,swordsmen*40,swordsmen*40";
+    let (field, specs) = parse_lineup(&format!("{side} vs town {side}")).unwrap();
+    let won: usize = (0..40u64)
+        .into_par_iter()
+        .map(|seed| {
+            let mut b = Battle::new(
+                params(BattleModel::Squads),
+                field.clone(),
+                specs.clone(),
+                seed,
+            );
+            (b.run().winner == Some(0)) as usize
+        })
+        .sum();
+    assert!((12..=28).contains(&won), "attackers won {won} of 40");
 }
 
 #[test]

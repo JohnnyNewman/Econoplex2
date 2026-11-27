@@ -751,6 +751,19 @@ A raid is fought on a field that reaches from outside the defenders' town
 into it (`layout::battle_field`), and the town's workplaces and houses stand
 on it. Nothing that walks passes through them.
 
+**Where the armies meet.** The field lies so far out from the town that its
+nearest building or house begins 60 % of the way across
+(`layout::TOWN_FRONT`), and the defenders form up 15 m in front of it
+(`Field::defenders_x`; never on the attackers' half). Both sides meet formed
+on open ground with the town at the defenders' backs. When the field
+reached 60 map units out and the defenders formed up three quarters across,
+they stood among the houses. Whichever side came through the streets arrived
+in column, a squad at a time, and lost to a formed line. Single-line mirrors
+went from 0–30 % to 100 % depending on who had to walk through the town.
+Now equal armies split between 42 % and 58 % over 60 seeds on both models.
+A town still has its cost: a beaten defender's men rout through the streets,
+and squads in the second line come up between the houses.
+
 **One layout for everyone.** `sim_core::layout` says where each building and
 house stands, how it is turned and how much ground it covers:
 
@@ -810,15 +823,15 @@ about a third from run to run):
 | Battle | ms per battle second |
 | --- | --- |
 | open field, whole battle | 1.0–1.1 (1,500 substeps) |
-| in a town (`vs town`), whole battle | 3.2–3.6 (2,060 substeps: it lasts longer) |
+| in a town (`vs town`), whole battle | 1.8 (1,748 substeps: it lasts longer) |
 | open field, first 400 s | 1.0–1.1 |
-| in a town, first 400 s | 2.7–3.0 |
+| in a town, first 400 s | 1.9 |
 
 The obstacle queries themselves are cheap: about 0.6 shape queries and 0.1
 corner choices per soldier and substep. The extra time is the fighting a town
 makes: soldiers pressed out of their slots and squads jammed in the streets
 fight longer and closer, and routers find their way out between the houses.
-So a town battle gets its own budget, four times the open battle's cost timed
+So a town battle gets its own budget, three times the open battle's cost timed
 in the same run (`battle_budget.rs`), and the open-field budget stays at 1 ms.
 
 **`--battle`.** `town` before the defenders (`"swordsmen*40 vs town

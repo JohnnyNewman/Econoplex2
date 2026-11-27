@@ -46,9 +46,9 @@ fn four_thousand_soldiers_within_budget() {
 /// everyone is still on the field. A town costs more than open ground: not
 /// the obstacle queries (a few per soldier and substep) but the fighting
 /// they make, soldiers pressed out of their slots and squads jammed in the
-/// streets. Its budget is four times the open battle's cost, timed in the
-/// same run so that a busy machine slows both alike (between two and three
-/// times on a quiet one: 2.7–3.0 ms per battle second against 1.0–1.4).
+/// streets. Its budget is three times the open battle's cost, timed in the
+/// same run so that a busy machine slows both alike (under twice on a quiet
+/// one: 1.9 ms per battle second against 1.1).
 #[test]
 #[cfg_attr(debug_assertions, ignore = "a timing: release builds only")]
 fn four_thousand_soldiers_in_a_town_within_budget() {
@@ -80,7 +80,7 @@ fn four_thousand_soldiers_in_a_town_within_budget() {
     let town = time(&format!("{side} vs town {side}"));
     println!("first 400 s: open {open:.3}, town {town:.3} ms per battle second");
     assert!(
-        town <= 4.0 * open,
-        "town {town:.3} ms per battle second, more than four times open {open:.3}"
+        town <= 3.0 * open,
+        "town {town:.3} ms per battle second, more than three times open {open:.3}"
     );
 }

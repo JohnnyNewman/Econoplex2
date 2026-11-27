@@ -540,7 +540,7 @@ pub(super) fn setup_field_battle(
             let x = if *side == 0 {
                 field.width * 0.15
             } else {
-                field.width * 0.75
+                field.defenders_x()
             };
             SquadSpec {
                 name,

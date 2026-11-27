@@ -112,6 +112,13 @@ impl Obstacle {
         }
     }
 
+    /// The least and the greatest x its shape reaches.
+    pub fn reach_x(&self) -> (f32, f32) {
+        let b = Box2::of(self);
+        let r = (b.u.x * b.hx).abs() + (b.v.x * b.hy).abs();
+        (b.c.x - r, b.c.x + r)
+    }
+
     /// Whether `p` lies inside its shape grown by `r`.
     pub fn contains(&self, p: (f32, f32), r: f32) -> bool {
         Box2::of(self).inside(V2::new(p.0, p.1), r)

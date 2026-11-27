@@ -86,7 +86,7 @@ pub fn parse_lineup(text: &str) -> Result<(Field, Vec<SquadSpec>), String> {
                 (_, true) => {
                     field.wall_x.unwrap_or(0.0) + (count as f32).sqrt() * spacing * 0.5 + 0.6 + back
                 }
-                _ => field.width * 0.75 + back,
+                _ => field.defenders_x() + back,
             };
             let level = if kit_name == "levy" {
                 skill.min(0.2)
@@ -165,13 +165,10 @@ fn take(rest: &mut String, c: char) -> Option<String> {
 }
 
 /// The obstacles of a battle in a town without a world: a town of eight
-/// workplaces and sixty houses, its centre where a raid's field has the
-/// target town (60 map units past the field's centre, toward the defenders).
+/// workplaces and sixty houses, where a raid's field has the target town
+/// (beginning `layout::TOWN_FRONT` of the way across).
 pub fn sample_town(field: &Field) -> Vec<Obstacle> {
-    let (at, facing) = ((0.0, 0.0), (1.0, 0.0));
-    crate::layout::TownLayout::sample((60.0, 0.0), 8, 60).obstacles_on(
-        at,
-        facing,
-        (field.width, field.height),
-    )
+    let (facing, size) = ((1.0, 0.0), (field.width, field.height));
+    let town = crate::layout::TownLayout::sample((0.0, 0.0), 8, 60);
+    town.obstacles_on(town.battle_at(facing, size), facing, size)
 }

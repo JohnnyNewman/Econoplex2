@@ -308,6 +308,25 @@ impl TownLayout {
         )
     }
 
+    /// The centre (map) of a battlefield `size` metres big at this town, its
+    /// +x along `facing`: so far out from the town toward the attackers
+    /// that its nearest footprint begins `TOWN_FRONT` of the way across.
+    pub fn battle_at(&self, facing: (f32, f32), size: (f32, f32)) -> (f32, f32) {
+        let front = self
+            .footprints()
+            .map(|f| f.obstacle_on(self.centre, facing, size).reach_x().0)
+            .fold(f32::INFINITY, f32::min);
+        if !front.is_finite() {
+            return self.centre;
+        }
+        let l = facing.0.hypot(facing.1).max(1e-6);
+        let out = (TOWN_FRONT * size.0 - front) * battle::MAP_PER_METRE;
+        (
+            self.centre.0 - facing.0 / l * out,
+            self.centre.1 - facing.1 / l * out,
+        )
+    }
+
     /// The footprints on a battlefield `size` metres big, centred at `at`
     /// with +x along `facing`: those that reach onto it, in metres.
     pub fn obstacles_on(
@@ -329,10 +348,17 @@ impl TownLayout {
     }
 }
 
+/// How far across a battlefield at a town (a share of its width) the town's
+/// nearest building or house stands: the defenders form up just before it
+/// (`Field::defenders_x`), so that both sides meet formed on open ground
+/// with the town at the defenders' backs, and not one of them filing out
+/// of the streets into the other's line.
+pub const TOWN_FRONT: f32 = 0.6;
+
 /// Where a raid from town `attacker` on town `target` is fought: the field,
 /// with the target's buildings and houses on it as obstacles, its centre on
-/// the map (60 map units out from the town toward the attackers) and the
-/// attackers' heading.
+/// the map (out from the town toward the attackers, so far that the town
+/// begins `TOWN_FRONT` of the way across) and the attackers' heading.
 pub fn battle_field(
     towns: &Towns,
     target: usize,
@@ -344,10 +370,11 @@ pub fn battle_field(
     let (dx, dy) = (there.0 - home.0, there.1 - home.1);
     let len = dx.hypot(dy).max(1e-3);
     let facing = (dx / len, dy / len);
-    let at = (there.0 - facing.0 * 60.0, there.1 - facing.1 * 60.0);
     let mut field = Field::default();
     let layout = TownLayout::of(towns, target, db, terrain);
-    field.obstacles = layout.obstacles_on(at, facing, (field.width, field.height));
+    let size = (field.width, field.height);
+    let at = layout.battle_at(facing, size);
+    field.obstacles = layout.obstacles_on(at, facing, size);
     (field, at, facing)
 }
 

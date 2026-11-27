@@ -220,6 +220,26 @@ pub struct Field {
     pub obstacles: Vec<Obstacle>,
 }
 
+impl Field {
+    /// Where the defenders' first line forms up (x, metres): three quarters
+    /// across, or in a town in front of its houses, so that both sides meet
+    /// formed on open ground and not the defenders filing out of the
+    /// streets to it. Never on the attackers' half.
+    pub fn defenders_x(&self) -> f32 {
+        let stand = self.width * 0.75;
+        let front = self
+            .obstacles
+            .iter()
+            .filter(|o| o.passage.blocks(0))
+            .map(|o| o.reach_x().0)
+            .fold(f32::INFINITY, f32::min);
+        (front - TOWN_GAP).clamp(self.width * 0.5 + TOWN_GAP, stand)
+    }
+}
+
+/// Metres the defenders of a town stand in front of its first house.
+const TOWN_GAP: f32 = 15.0;
+
 impl Default for Field {
     fn default() -> Self {
         Self {
