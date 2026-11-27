@@ -13,7 +13,8 @@
 //! other recipe the town can run with `start_share` (with what it requires);
 //! recipes the town cannot run (no building or land for them) with
 //! `start_share * foreign_share`. Nobody knows recipes of an era after
-//! `start_era`: those have to be invented (`InventionParams`).
+//! `start_era`, or of a level above `start_level`: those have to be invented
+//! (`InventionParams`).
 //!
 //! Off (the default), everyone counts as knowing everything and nothing draws a
 //! random number, so runs are exactly as before.
@@ -40,6 +41,9 @@ pub struct KnowledgeParams {
     /// recipes making goods of a later era are known by nobody at the start and
     /// must be invented.
     pub start_era: u8,
+    /// Highest recipe level founders know: better ways of doing a job (level 2
+    /// and up) are known by nobody at the start and must be invented.
+    pub start_level: u32,
     /// Inventing recipe-skills nobody in town knows (needs `enabled`).
     pub invention: InventionParams,
 }
@@ -93,6 +97,7 @@ impl Default for KnowledgeParams {
             learn_per_day: 0.03,
             school_share: 0.3,
             start_era: 3,
+            start_level: 1,
             invention: InventionParams::default(),
         }
     }
@@ -240,7 +245,7 @@ pub fn founder(
     rng: &mut impl Rng,
 ) -> Vec<u64> {
     let mut bits = Vec::new();
-    let known_then = |r: usize| era(db, r) <= kp.start_era;
+    let known_then = |r: usize| era(db, r) <= kp.start_era && db.recipes[r].level <= kp.start_level;
     if let Some(r) = trade.filter(|&r| known_then(r)) {
         add_with_requires(db, &mut bits, r);
     }

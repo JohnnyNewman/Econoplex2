@@ -312,6 +312,11 @@ pub struct RecipeDef {
     /// (see docs/design/inventions.md). Each recipe is one recipe-skill, one node of the tech graph.
     #[serde(default = "default_level")]
     pub level: u32,
+    /// How much better the work turns out than the skill alone gives: a run's
+    /// quality is as if the team were this much more skilled (a better way of
+    /// doing the same work, such as pattern welding). 0 for most recipes.
+    #[serde(default)]
+    pub quality_bonus: f32,
     /// Recipe-skills a person must know before they can learn or invent this one. Every
     /// entry must be met; an entry is one recipe id, or a list of ids of which any one is enough.
     /// Empty: known from the start of the tech graph.
