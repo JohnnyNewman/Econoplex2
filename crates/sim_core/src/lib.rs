@@ -29,6 +29,7 @@ pub mod models;
 pub mod policy;
 pub mod profile;
 pub mod save;
+pub mod spoilage;
 pub mod start;
 pub mod store;
 pub mod systems;

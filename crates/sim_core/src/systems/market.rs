@@ -323,15 +323,8 @@ pub fn settle(
     }
     // Yearly rates over the steps of a year.
     let dpy = cal.per_year() as f32;
-    for town in towns.0.iter_mut() {
-        for &(food, _) in &db.foods {
-            let f = food as usize;
-            let rotted = town.stock[f] * (mp.food_spoilage / dpy);
-            town.stock[f] *= 1.0 - mp.food_spoilage / dpy;
-            town.flows.add(crate::goods::Flow::Spoiled, f, rotted);
-        }
-    }
-    crate::granary::tend(&mut towns, &db, &params, dpy, env.season);
+    crate::spoilage::rot(&mut towns, &mut store, &db, mp, &env, &cal);
+    crate::granary::tend(&mut towns, &db, &params, env.season);
 
     // Wealth tax: savings above the allowance flow back to the town treasury.
     // Each town's own rate.
@@ -799,18 +792,17 @@ fn food_imports(towns: &mut Towns, db: &Db, params: &Params, terrain: &Terrain, 
     }
     for b in 0..n {
         let pop = towns.0[b].residents.len().max(1) as f32;
+        let aim = super::decide::market_food_target(db, &towns.0[b], params);
         let importing = match towns.0[b].policy.food_imports {
             Imports::Off => false,
             Imports::On => true,
-            Imports::Auto => {
-                towns.0[b].food_stock(db) / pop < ip.hungry_below * mp.food_target_per_capita
-            }
+            Imports::Auto => towns.0[b].food_stock(db) / pop < ip.hungry_below * aim,
         };
         if !importing {
             continue;
         }
         // Food still wanted, in food value.
-        let mut need = (mp.food_target_per_capita * pop - towns.0[b].food_stock(db)).max(0.0);
+        let mut need = (aim * pop - towns.0[b].food_stock(db)).max(0.0);
         for &(f, value) in &db.foods {
             let f = f as usize;
             for a in 0..n {

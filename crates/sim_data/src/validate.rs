@@ -89,6 +89,17 @@ pub fn validate(c: &Content) -> Report {
         }
     }
 
+    for k in &c.keeping {
+        if c.products.iter().all(|p| p.id != k.product) {
+            r.errors
+                .push(format!("keeping for unknown product `{}`", k.product));
+        }
+        if k.days <= 0.0 {
+            r.errors
+                .push(format!("keeping for `{}`: days must be above 0", k.product));
+        }
+    }
+
     for p in &c.products {
         if let Some(h) = &p.house {
             if p.category != Category::Building {

@@ -1,0 +1,22 @@
+// How long food keeps in store (see crate::spoilage): each loses 1 / days of
+// itself a day at 15 °C, twice as fast each 10 °C warmer, slower in the cold
+// (down to the rate at 0 °C). A year is 120 days. Foods not listed keep
+// `market.spoilage.food_days` (240). Fresh fish, meat and milk must be eaten
+// within days; bread within a week or two; salting, cheese and ale make food
+// that outlasts the season. Its own file, so it can change or go on its own.
+(
+    keeping: [
+        (product: "fish",        days: 3.0),
+        (product: "meat",        days: 5.0),
+        (product: "milk",        days: 3.0),
+        (product: "eggs",        days: 20.0),
+        (product: "bread",       days: 10.0),
+        (product: "vegetables",  days: 20.0),
+        (product: "fruit",       days: 25.0),
+        (product: "ale",         days: 60.0),
+        (product: "cheese",      days: 150.0),
+        (product: "salted_fish", days: 300.0),
+        (product: "salted_meat", days: 300.0),
+        (product: "grain",       days: 400.0),
+    ],
+)
