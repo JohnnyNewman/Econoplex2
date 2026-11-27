@@ -2,10 +2,27 @@
 
 use super::*;
 
+/// Where a squad deploys.
+#[derive(Clone, Copy, PartialEq)]
+enum Deploy {
+    /// In its side's line.
+    Line,
+    /// Beside the enemy's line, facing in.
+    Flank,
+    /// Behind the enemy, facing in.
+    Rear,
+}
+
+/// Metres between a squad sent round the enemy and the squad it faces.
+const ROUND_GAP: f32 = 30.0;
+
 /// Parse a battle line-up like `cavalry*20 vs spearmen*30` or
 /// `swordsmen*50,archers*20 vs walls spearmen*30+5!0.6`: each squad is
-/// `kit*count`, optionally `+battles` of experience, `@skill` and `!morale`.
-/// `walls` before the defenders puts them behind a wall.
+/// `kit*count`, optionally `+battles` of experience, `@skill`, `!morale`,
+/// `%fatigue` (0 rested, 1 spent) and `#flank` or `#rear` (deploy beside or
+/// behind the enemy, facing in). `walls` before the defenders puts them
+/// behind a wall. A side with more squads than fit across the field stands
+/// in several lines, one behind the other.
 pub fn parse_lineup(text: &str) -> Result<(Field, Vec<SquadSpec>), String> {
     let (att, def) = text
         .split_once(" vs ")
@@ -18,13 +35,17 @@ pub fn parse_lineup(text: &str) -> Result<(Field, Vec<SquadSpec>), String> {
         field.wall_x = Some(field.width * 0.6);
     }
     let mut specs = Vec::new();
+    let mut deploys = Vec::new();
     for (side, list) in [(0u8, att), (1u8, def)] {
         let parts: Vec<&str> = list
             .split(',')
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .collect();
-        let k = parts.len().max(1) as f32;
+        // Squads per line across the field (40 m fronts and gaps between).
+        let per_line = ((field.height / 50.0) as usize).max(1);
+        let lines = parts.len().div_ceil(per_line).max(1);
+        let k = parts.len().div_ceil(lines).max(1) as f32;
         for (n, part) in parts.iter().enumerate() {
             let mut rest = part.to_string();
             let num = |v: Option<String>, d: f32, what: &str| -> Result<f32, String> {
@@ -32,6 +53,13 @@ pub fn parse_lineup(text: &str) -> Result<(Field, Vec<SquadSpec>), String> {
                     v.parse().map_err(|_| format!("bad {what} in `{part}`"))
                 })
             };
+            let deploy = match take(&mut rest, '#').as_deref() {
+                None => Deploy::Line,
+                Some("flank") => Deploy::Flank,
+                Some("rear") => Deploy::Rear,
+                Some(other) => return Err(format!("`#{other}` in `{part}`: #flank or #rear")),
+            };
+            let fatigue = num(take(&mut rest, '%'), 0.0, "fatigue")?;
             let morale = num(take(&mut rest, '!'), 0.8, "morale")?;
             let skill = num(take(&mut rest, '@'), 0.5, "skill")?;
             let exp = num(take(&mut rest, '+'), 0.0, "experience")?;
@@ -43,15 +71,17 @@ pub fn parse_lineup(text: &str) -> Result<(Field, Vec<SquadSpec>), String> {
                     Kit::PRESETS.join(", ")
                 )
             })?;
-            let y = field.height * (n as f32 + 0.5) / k;
+            let (line, row) = (n / k as usize, n % k as usize);
+            let y = field.height * (row as f32 + 0.5) / k;
             let spacing = if kit.mounted { 2.0 } else { 1.0 };
+            let back = line as f32 * 30.0;
             let x = match (side, walls) {
-                (0, _) => field.width * 0.15,
+                (0, _) => field.width * 0.15 - back,
                 // Right behind the wall.
                 (_, true) => {
-                    field.wall_x.unwrap_or(0.0) + (count as f32).sqrt() * spacing * 0.5 + 0.6
+                    field.wall_x.unwrap_or(0.0) + (count as f32).sqrt() * spacing * 0.5 + 0.6 + back
                 }
-                _ => field.width * 0.75,
+                _ => field.width * 0.75 + back,
             };
             let level = if kit_name == "levy" {
                 skill.min(0.2)
@@ -68,9 +98,52 @@ pub fn parse_lineup(text: &str) -> Result<(Field, Vec<SquadSpec>), String> {
                 morale,
                 (x, y),
             );
+            for m in &mut spec.members {
+                m.fatigue = fatigue.clamp(0.0, 1.0);
+            }
             spec.behind_wall = side == 1 && walls;
             specs.push(spec);
+            deploys.push(deploy);
         }
+    }
+    // Squads sent round the enemy: beside the enemy squad nearest their place
+    // in the line, on its outer side, or behind it.
+    let line: Vec<SquadSpec> = specs.clone();
+    for (spec, &deploy) in specs.iter_mut().zip(&deploys) {
+        if deploy == Deploy::Line {
+            continue;
+        }
+        let radius = |s: &SquadSpec| (s.members.len() as f32).sqrt() * 0.5;
+        let Some(e) = line
+            .iter()
+            .zip(&deploys)
+            .filter(|(e, d)| e.side != spec.side && **d == Deploy::Line)
+            .map(|(e, _)| e)
+            .min_by(|a, b| {
+                (a.pos.1 - spec.pos.1)
+                    .abs()
+                    .total_cmp(&(b.pos.1 - spec.pos.1).abs())
+            })
+        else {
+            continue;
+        };
+        let off = radius(e) + radius(spec) + ROUND_GAP;
+        spec.pos = match deploy {
+            Deploy::Flank => {
+                let out = if e.pos.1 < field.height * 0.5 {
+                    -1.0
+                } else {
+                    1.0
+                };
+                let y = e.pos.1 + out * (e.members.len() as f32).min(40.0) * 0.5 + out * off;
+                (e.pos.0, y.clamp(5.0, field.height - 5.0))
+            }
+            _ => {
+                let behind = if e.side == 0 { -1.0 } else { 1.0 };
+                let x = e.pos.0 + behind * off;
+                (x.clamp(5.0, field.width - 5.0), e.pos.1)
+            }
+        };
     }
     Ok((field, specs))
 }
@@ -79,7 +152,7 @@ pub fn parse_lineup(text: &str) -> Result<(Field, Vec<SquadSpec>), String> {
 fn take(rest: &mut String, c: char) -> Option<String> {
     let at = rest.find(c)?;
     let end = rest[at + 1..]
-        .find(['*', '+', '@', '!'])
+        .find(['*', '+', '@', '!', '%', '#'])
         .map_or(rest.len(), |e| at + 1 + e);
     let v = rest[at + 1..end].to_string();
     rest.replace_range(at..end, "");

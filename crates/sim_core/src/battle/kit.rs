@@ -44,6 +44,9 @@ pub struct Kit {
     pub armour: PerType,
     pub shield: f32,
     pub mounted: bool,
+    /// Kilograms carried (weapon, armour, shield; a horse carries itself),
+    /// which tires a fighter on the soldier model.
+    pub weight: f32,
 }
 
 impl Kit {
@@ -77,42 +80,46 @@ impl Kit {
     /// a 3 m spear, a 1.2 m sword, a 150 m bow with 24 arrows, mail, padded coats.
     pub fn preset(name: &str) -> Option<Kit> {
         use DamageType::{Blunt, Pierce, Slash};
-        let k = |reach, (t, damage), strike_rate, close_penalty, armour, shield, mounted| Kit {
-            name: name.to_string(),
-            reach,
-            damage: typed(t, damage),
-            strike_rate,
-            close_penalty,
-            range: 0.0,
-            shot_rate: 0.0,
-            shot_damage: [0.0; 3],
-            arrows: 0,
-            armour,
-            shield,
-            mounted,
-        };
+        let k =
+            |reach, (t, damage), strike_rate, close_penalty, armour, shield, mounted, weight| Kit {
+                name: name.to_string(),
+                reach,
+                damage: typed(t, damage),
+                strike_rate,
+                close_penalty,
+                range: 0.0,
+                shot_rate: 0.0,
+                shot_damage: [0.0; 3],
+                arrows: 0,
+                armour,
+                shield,
+                mounted,
+                weight,
+            };
         let none = [0.0; 3];
         Some(match name {
-            "spearmen" => k(3.0, (Pierce, 0.45), 0.30, 0.4, PADDED, 0.4, false),
-            "swordsmen" => k(1.2, (Slash, 0.6), 0.35, 0.0, MAIL, 0.3, false),
-            "cavalry" => k(3.0, (Pierce, 0.5), 0.30, 0.3, MAIL, 0.3, true),
+            // Weights from the content: spear 2.5 kg, sword 1.4, lance 4,
+            // bow 1, shield 5, padded coat 4, mail 10.
+            "spearmen" => k(3.0, (Pierce, 0.45), 0.30, 0.4, PADDED, 0.4, false, 11.5),
+            "swordsmen" => k(1.2, (Slash, 0.6), 0.35, 0.0, MAIL, 0.3, false, 16.4),
+            "cavalry" => k(3.0, (Pierce, 0.5), 0.30, 0.3, MAIL, 0.3, true, 19.0),
             // Tools from home: flails, clubs, mallets.
-            "levy" => k(1.5, (Blunt, 0.3), 0.25, 0.0, none, 0.0, false),
-            "heavy" => k(3.0, (Pierce, 0.55), 0.32, 0.1, MAIL, 0.4, false),
+            "levy" => k(1.5, (Blunt, 0.3), 0.25, 0.0, none, 0.0, false, 3.0),
+            "heavy" => k(3.0, (Pierce, 0.55), 0.32, 0.1, MAIL, 0.4, false, 17.5),
             // Archers fight hand to hand with a knife.
             "archers" => Kit {
                 range: 150.0,
                 shot_rate: 0.1,
                 shot_damage: typed(Pierce, 0.4),
                 arrows: 24,
-                ..k(0.5, (Slash, 0.25), 0.3, 0.0, PADDED, 0.0, false)
+                ..k(0.5, (Slash, 0.25), 0.3, 0.0, PADDED, 0.0, false, 5.0)
             },
             "horse_archers" => Kit {
                 range: 120.0,
                 shot_rate: 0.08,
                 shot_damage: typed(Pierce, 0.35),
                 arrows: 20,
-                ..k(0.5, (Slash, 0.25), 0.3, 0.0, PADDED, 0.0, true)
+                ..k(0.5, (Slash, 0.25), 0.3, 0.0, PADDED, 0.0, true, 5.0)
             },
             _ => return None,
         })
@@ -146,6 +153,7 @@ impl Kit {
             armour: [0.0; 3],
             shield: 0.0,
             mounted: false,
+            weight: 0.0,
         };
         let n = members.len().max(1) as f32;
         let (mut shooters, mut riders) = (0.0f32, 0.0f32);
@@ -211,6 +219,10 @@ pub struct Member {
     pub skill: f32,
     /// Battles survived.
     pub experience: f32,
+    /// 0 is rested, 1 is spent (the person's `fatigue` state).
+    pub fatigue: f32,
+    /// Their own kit: an index into the squad's [`SquadSpec::kits`].
+    pub kit: u16,
 }
 
 /// A squad as it enters the battle.
@@ -229,6 +241,9 @@ pub struct SquadSpec {
     pub pos: (f32, f32),
     /// Stands behind the town's wall (defenders only).
     pub behind_wall: bool,
+    /// Each member's own kit, as [`Member::kit`] indexes it (the soldier
+    /// model fights with these; `kit` is their squad's average).
+    pub kits: Vec<Kit>,
 }
 
 impl SquadSpec {
@@ -247,12 +262,15 @@ impl SquadSpec {
         Self {
             name: name.to_string(),
             side,
+            kits: vec![kit.clone()],
             kit,
             members: vec![
                 Member {
                     health: 1.0,
                     skill,
                     experience,
+                    fatigue: 0.0,
+                    kit: 0,
                 };
                 n
             ],

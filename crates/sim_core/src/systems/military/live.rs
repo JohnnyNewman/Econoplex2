@@ -36,6 +36,7 @@ pub(super) fn prepare_live_battle(
         store,
         db,
         params,
+        params.battle.model,
         fight,
         gear_defs,
         &raid.soldiers,
@@ -81,7 +82,9 @@ pub fn step_live_battle(world: &mut World, seconds: f32) {
     let Some(live) = pending.0.as_mut() else {
         return;
     };
-    let steps = (seconds / live.battle.params.dt.max(1e-3)).round().max(1.0) as usize;
+    let steps = (seconds / live.battle.params().dt.max(1e-3))
+        .round()
+        .max(1.0) as usize;
     for _ in 0..steps {
         live.battle.step();
     }
