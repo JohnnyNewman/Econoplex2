@@ -73,7 +73,8 @@ fn composite(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     if a <= 0.0 {
         return image;
     }
-    // A light blur first (quarter size), a heavy one further out (eighth).
-    let blur = mix(tent(quarter, in.uv), tent(eighth, in.uv), smoothstep(0.4, 1.0, a));
-    return vec4<f32>(mix(image.rgb, blur, smoothstep(0.0, 0.5, a)), image.a);
+    // A light blur first (quarter size), the heavy one (eighth) only at the
+    // very edges of the screen at full strength.
+    let blur = mix(tent(quarter, in.uv), tent(eighth, in.uv), smoothstep(0.7, 1.0, a));
+    return vec4<f32>(mix(image.rgb, blur, a), image.a);
 }

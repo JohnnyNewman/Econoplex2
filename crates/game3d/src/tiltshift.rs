@@ -71,9 +71,9 @@ impl Default for TiltShift {
     fn default() -> Self {
         Self {
             centre: 0.55,
-            band: 0.12,
-            fade: 0.35,
-            strength: 1.0,
+            band: 0.22,
+            fade: 0.5,
+            strength: 0.5,
         }
     }
 }
@@ -81,7 +81,7 @@ impl Default for TiltShift {
 fn tilt_keys(keys: Res<ButtonInput<KeyCode>>, mut cams: Query<&mut TiltShift>) {
     if keys.just_pressed(KeyCode::KeyX) {
         for mut t in &mut cams {
-            t.strength = if t.strength > 0.0 { 0.0 } else { 1.0 };
+            t.strength = if t.strength > 0.0 { 0.0 } else { 0.5 };
         }
     }
 }
