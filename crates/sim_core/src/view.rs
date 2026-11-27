@@ -113,6 +113,10 @@ pub struct TownView {
     /// Buildings being put up, with how far along they are.
     #[serde(default)]
     pub sites: Vec<SiteView>,
+    /// The town's pastures: map position and how much grass stands on each
+    /// (0..1 of what it can hold). Flocks graze there (3D view).
+    #[serde(default)]
+    pub pastures: Vec<((f32, f32), f32)>,
 }
 
 /// A building being put up (a construction recipe under way).
@@ -295,6 +299,45 @@ pub fn town_skills(world: &World, town: u16) -> TownSkills {
     TownSkills { level, lit }
 }
 
+/// Per town, its pastures: position and grass standing (0..1 of capacity).
+fn pastures_by_town(world: &World) -> Vec<Vec<((f32, f32), f32)>> {
+    let (Some(towns), Some(db)) = (world.get_resource::<Towns>(), world.get_resource::<Db>())
+    else {
+        return Vec::new();
+    };
+    let Some(kind) = db.content.nature.iter().position(|k| k.id == "pasture") else {
+        return vec![Vec::new(); towns.0.len()];
+    };
+    // A pasture that grows as a crop holds up to `crop_capacity` times its
+    // capacity (farming.rs).
+    let hold = world
+        .get_resource::<crate::world::Params>()
+        .filter(|p| p.farming.crops.iter().any(|c| c == "pasture"))
+        .map_or(1.0, |p| p.farming.crop_capacity.max(1.0));
+    towns
+        .0
+        .iter()
+        .map(|t| {
+            t.nature_sites
+                .iter()
+                .filter_map(|&e| {
+                    let n = world.get::<crate::components::NaturalResource>(e)?;
+                    if n.kind as usize != kind {
+                        return None;
+                    }
+                    let p = world.get::<crate::components::Pos>(e)?;
+                    let grass = if n.capacity > 0.0 {
+                        (n.amount / (n.capacity * hold)).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    };
+                    Some(((p.x, p.y), grass))
+                })
+                .collect()
+        })
+        .collect()
+}
+
 /// Per town, the crop standing on its fields as a share of a year's growth
 /// (sum over its crop sites; the 3D view draws the fields by it).
 fn crops_by_town(world: &World) -> Vec<f32> {
@@ -410,6 +453,7 @@ impl ViewSnapshot {
         let armories = armory_counts(world);
         let crops = crops_by_town(world);
         let sites = sites_by_town(world);
+        let pastures = pastures_by_town(world);
         let towns = world.resource::<Towns>();
         let db = world.resource::<Db>();
         let store = world.resource::<crate::AgentStore>();
@@ -495,6 +539,7 @@ impl ViewSnapshot {
                     armory: armories.get(ti).cloned().unwrap_or_default(),
                     crops: crops.get(ti).copied().unwrap_or(0.0),
                     sites: sites.get(ti).cloned().unwrap_or_default(),
+                    pastures: pastures.get(ti).cloned().unwrap_or_default(),
                     name: t.name.clone(),
                     pos: t.pos,
                     population: t.residents.len() as u32,

@@ -36,6 +36,7 @@ mod hud;
 mod inspect;
 mod lights;
 mod live;
+mod livestock;
 mod nature;
 mod outline;
 mod overlay;
@@ -336,6 +337,7 @@ fn main() {
         grounding::GroundingPlugin,
         fields::FieldsPlugin,
         smoke::SmokePlugin,
+        livestock::LivestockPlugin,
         grading::GradingPlugin,
         battles::BattlesPlugin,
     ))
