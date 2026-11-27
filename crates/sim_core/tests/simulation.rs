@@ -758,7 +758,13 @@ fn a_match_is_won_by_the_first_town_to_reach_the_goal() {
 #[test]
 fn a_town_short_of_money_builds_a_mint_and_strikes_coin() {
     use sim_core::ledger::Flow;
-    let mut s = full(42);
+    // Minting is for a treasury that pays only what it holds (one that issues
+    // its own coin has no use for a mint's coin yet).
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let (db, mut params, mut scenario) = sim_core::load(&AssetPaths::from_root(&root)).unwrap();
+    params.market.treasury = sim_core::config::Treasury::Holds;
+    scenario.seed = 42;
+    let mut s = Simulation::new(db, params, &scenario);
     // Ironhold has ore and a furnace; ordered to mint, it builds a mint and works it.
     s.order("mint Ironhold on").unwrap();
     s.order("build Ironhold mint").unwrap();
