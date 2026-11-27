@@ -948,10 +948,15 @@ mod tests {
             std::thread::sleep(Duration::from_millis(20));
         };
         assert!(applied, "the order never showed in a snapshot");
-        // The "why" view: ask about a town, an answer for it arrives.
+        // The "why" view: ask about a town, an answer for it arrives. A raid
+        // on the player's town may come first and hold the clock for the
+        // player: it is resolved, as the player could.
         live.explain(Some(1));
         let deadline = Instant::now() + Duration::from_secs(30);
         let answered = loop {
+            if live.shared.lock().unwrap().live_battle.is_some() {
+                live.resolve_battle();
+            }
             let snap = live.shared.lock().unwrap().latest.clone();
             if snap.why.as_ref().is_some_and(|(t, _)| *t == 1) {
                 break true;

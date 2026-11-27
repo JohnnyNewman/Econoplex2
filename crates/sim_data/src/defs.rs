@@ -120,7 +120,7 @@ pub struct ProductDef {
     /// Weight of one unit, kg (for carrying).
     #[serde(default = "one_kg")]
     pub kg: f32,
-    /// What the item does in a squad battle (weapons, armour, shields, mounts).
+    /// What the item does in a battle (weapons, armour, shields, mounts).
     #[serde(default)]
     pub fight: Option<FightDef>,
     /// A house (a building): how many people it holds and how well it shelters
@@ -136,8 +136,8 @@ pub struct HouseDef {
     pub quality: f32,
 }
 
-/// How a blow or a shot hurts: a point, an edge or a weight. Armour stops
-/// each kind by its own share.
+/// How a blow or a shot hurts: a point, an edge or a weight. A piece of
+/// armour may resist a kind (half damage) or be vulnerable to it (double).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Deserialize, serde::Serialize)]
 pub enum DamageType {
     #[default]
@@ -149,54 +149,153 @@ pub enum DamageType {
 impl DamageType {
     pub const ALL: [DamageType; 3] = [DamageType::Pierce, DamageType::Slash, DamageType::Blunt];
 
-    /// Position in per-type arrays such as [`Resist::shares`].
+    /// Position in per-type arrays such as [`FightDef::taken`].
     pub fn index(self) -> usize {
         self as usize
     }
 }
 
-/// The share of a hit's damage a piece of armour stops, per damage type.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Deserialize)]
-#[serde(default)]
-pub struct Resist {
-    pub pierce: f32,
-    pub slash: f32,
-    pub blunt: f32,
-}
-
-impl Resist {
-    /// The shares in [`DamageType`] order.
-    pub fn shares(&self) -> [f32; 3] {
-        [self.pierce, self.slash, self.blunt]
+impl DamageType {
+    /// The word for it, as the hints and the help say it.
+    pub fn word(self) -> &'static str {
+        match self {
+            DamageType::Pierce => "piercing",
+            DamageType::Slash => "slashing",
+            DamageType::Blunt => "bludgeoning",
+        }
     }
 }
 
-/// What an item does in a squad battle (`sim_core::battle`). Every field is 0
-/// unless given, so a shield lists only `shield` and a horse only `mounted`.
+/// Damage dice, such as `1d8+1`: `n` dice of `sides` sides, plus `plus`.
+/// Written as text in the content ("1d8", "2d6", "1d4+1").
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub struct Dice {
+    pub n: u8,
+    pub sides: u8,
+    pub plus: i8,
+}
+
+impl Dice {
+    pub const fn new(n: u8, sides: u8, plus: i8) -> Self {
+        Self { n, sides, plus }
+    }
+
+    /// The mean of the dice alone, without `plus`: what a critical hit
+    /// rolls again.
+    pub fn dice_mean(self) -> f32 {
+        self.n as f32 * (self.sides as f32 + 1.0) * 0.5
+    }
+
+    /// The mean of a roll, `plus` included (never below 0).
+    pub fn mean(self) -> f32 {
+        (self.dice_mean() + self.plus as f32).max(0.0)
+    }
+
+    /// The same dice with `more` added to `plus`.
+    pub fn plus(self, more: i8) -> Self {
+        Self {
+            plus: self.plus.saturating_add(more),
+            ..self
+        }
+    }
+}
+
+impl std::fmt::Display for Dice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}d{}", self.n, self.sides)?;
+        match self.plus {
+            0 => Ok(()),
+            p if p > 0 => write!(f, "+{p}"),
+            p => write!(f, "{p}"),
+        }
+    }
+}
+
+impl std::str::FromStr for Dice {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, String> {
+        let bad = || format!("`{s}` is not dice like 1d8 or 2d6+1");
+        let (n, rest) = s.trim().split_once('d').ok_or_else(bad)?;
+        let (sides, plus) = match rest.find(['+', '-']) {
+            Some(k) => (&rest[..k], rest[k..].trim_start_matches('+')),
+            None => (rest, "0"),
+        };
+        let n: u8 = n.parse().map_err(|_| bad())?;
+        let sides: u8 = sides.parse().map_err(|_| bad())?;
+        let plus: i8 = plus.parse().map_err(|_| bad())?;
+        if n == 0 || sides == 0 {
+            return Err(bad());
+        }
+        Ok(Self { n, sides, plus })
+    }
+}
+
+impl<'de> Deserialize<'de> for Dice {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        s.parse().map_err(serde::de::Error::custom)
+    }
+}
+
+impl serde::Serialize for Dice {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.collect_str(self)
+    }
+}
+
+/// What an item does in a battle (`sim_core::battle`), in the terms of the
+/// combat rules: an attack roll of d20 + bonus against armour class, then
+/// damage dice. Every field is 0 or empty unless given, so a shield lists
+/// only `shield` and a horse only `mounted`.
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(default)]
 pub struct FightDef {
-    /// Melee: reach in metres, health taken per hit (a person has 1), the kind
-    /// of damage (required with damage), strikes per second, and the share of
-    /// strikes lost once an enemy is inside the reach.
+    /// Melee: reach in metres, damage dice (a person has about 8 hit points)
+    /// and their kind (required with dice), dice rolled instead on a charge
+    /// (a lance), attacks per second, and the share of attacks lost once an
+    /// enemy is inside the reach.
     pub reach: f32,
-    pub damage: f32,
+    pub dice: Option<Dice>,
     pub damage_type: Option<DamageType>,
+    pub charge_dice: Option<Dice>,
     pub strike_rate: f32,
     pub close_penalty: f32,
-    /// Shooting: range in metres, shots per second, health per hit, the kind
-    /// of damage (Pierce unless given), arrows carried.
+    /// A well-made weapon: added to its attack rolls and to its damage.
+    pub quality: i8,
+    /// Shooting: range in metres, shots per second, damage dice and their
+    /// kind (Pierce unless given), arrows carried.
     pub range: f32,
     pub shot_rate: f32,
-    pub shot_damage: f32,
+    pub shot_dice: Option<Dice>,
     pub shot_type: DamageType,
     pub arrows: u32,
-    /// Share of a hit's damage stopped, per damage type, and share of arrows
-    /// a shield stops.
-    pub armour: Resist,
-    pub shield: f32,
+    /// Armour: what it adds to armour class, and the damage types it
+    /// resists (half damage) or is vulnerable to (double).
+    pub ac: u8,
+    pub resist: Vec<DamageType>,
+    pub vulnerable: Vec<DamageType>,
+    /// A shield: what it adds to armour class against blows and arrows from
+    /// the front.
+    pub shield: u8,
     /// A mount: its rider fights mounted.
     pub mounted: bool,
+}
+
+impl FightDef {
+    /// The share of each type's damage (in [`DamageType`] order) that gets
+    /// through this piece: 0.5 resisted, 2 vulnerable, 1 otherwise.
+    pub fn taken(&self) -> [f32; 3] {
+        DamageType::ALL.map(|t| {
+            let mut m = 1.0;
+            if self.resist.contains(&t) {
+                m *= 0.5;
+            }
+            if self.vulnerable.contains(&t) {
+                m *= 2.0;
+            }
+            m
+        })
+    }
 }
 
 fn one_kg() -> f32 {

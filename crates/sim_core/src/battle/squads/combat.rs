@@ -1,6 +1,8 @@
-//! Blows, charges and arrows.
+//! Blows, charges and arrows, by the combat rules ([`rules`]): each blow's
+//! chance is its attack roll's, and a hit deals the mean damage of the dice.
 
 use super::*;
+use crate::battle::rules::{self, Roll};
 
 impl SquadBattle {
     /// A charge on first contact. A braced line with the longer reach turns it
@@ -31,10 +33,11 @@ impl SquadBattle {
         if braced {
             // The riders run onto the spears: the spear's blow carries the horse's speed.
             let extra = p.charge_damage * speed;
-            self.strikes(b, a, self.squads[b].front(&p), extra, false);
+            self.strikes(b, a, self.squads[b].front(&p), false, extra, false);
         } else if !self.across_wall(a, b) {
+            // A charge rolls the charge dice (a lance's), with the impact on top.
             let extra = per_speed * speed;
-            self.strikes(a, b, self.squads[a].front(&p), extra, false);
+            self.strikes(a, b, self.squads[a].front(&p), true, extra, false);
         }
     }
 
@@ -55,8 +58,7 @@ impl SquadBattle {
         // once inside, the longer one is clumsy.
         let (ri, rt) = (si.spec.kit.reach, st.spec.kit.reach);
         let closing = si.closing.iter().find(|c| c.0 == t).map_or(0.0, |c| c.1);
-        // On a wall nobody gets inside a defender's reach, and a man climbing
-        // or pushing through the breach can't parry or hold up his shield.
+        // On a wall nobody gets inside a defender's reach.
         let on_wall = si.spec.behind_wall && self.across_wall(i, t);
         let reach_factor = if on_wall {
             1.0
@@ -71,10 +73,21 @@ impl SquadBattle {
         } else {
             1.0
         };
-        let flank = st.primary != Some(i) || st.state == SquadState::Routing || on_wall;
-        let blows = front * si.spec.kit.strike_rate * p.dt * reach_factor * self.morale_factor(i);
+        let flank = st.primary != Some(i) || st.state == SquadState::Routing;
+        let blows = front * si.spec.kit.strike_rate * p.dt * reach_factor;
         let n = self.count(blows);
-        self.strikes(i, t, n as f32, 0.0, flank);
+        self.strikes(i, t, n as f32, false, 0.0, flank);
+    }
+
+    /// Frightened: a wavering squad attacks with disadvantage.
+    fn frightened(&self, i: usize) -> bool {
+        self.squads[i].morale < self.params.waver_at
+    }
+
+    /// Squad `i`'s attack bonus: proficiency and weapon quality, less exhaustion.
+    fn bonus(&self, i: usize) -> f32 {
+        let s = &self.squads[i];
+        s.eff + s.spec.kit.quality - self.params.exhaustion_penalty * s.exhaustion
     }
 
     fn morale_factor(&self, i: usize) -> f32 {
@@ -93,19 +106,24 @@ impl SquadBattle {
         base as u32 + u32::from(self.rng.random::<f32>() < x - base)
     }
 
-    /// `n` blows from squad `i` on squad `t`; `flank` blows meet no parry and no shield.
-    fn strikes(&mut self, i: usize, t: usize, n: f32, extra: f32, flank: bool) {
-        let p = &self.params;
+    /// `n` blows from squad `i` on squad `t`, a `charge` with `extra` hit
+    /// points of impact or not. `flank` blows meet no shield and have
+    /// advantage; a frightened squad strikes with disadvantage. A man
+    /// climbing the wall or pushing through the breach can't hold up his
+    /// shield, and the defender on it has the higher ground (`wall_ground`).
+    fn strikes(&mut self, i: usize, t: usize, n: f32, charge: bool, extra: f32, flank: bool) {
         let (si, st) = (&self.squads[i], &self.squads[t]);
-        let def = if flank { 0.0 } else { st.eff };
-        let shield = if flank {
-            0.0
+        let on_wall = si.spec.behind_wall && self.across_wall(i, t);
+        let ground = if on_wall {
+            self.params.wall_ground
         } else {
-            st.spec.kit.shield * p.shield_parry
+            0.0
         };
-        let x = p.skill_slope * (si.eff - def);
-        let chance = (2.0 * p.base_hit / (1.0 + (-x).exp())).min(0.95) * (1.0 - shield);
-        let damage = si.spec.kit.blow(extra, &st.spec.kit.armour);
+        let roll = Roll::of(flank, self.frightened(i));
+        let ac = st.spec.kit.armour_class(!flank && !on_wall);
+        let chance = rules::hit_chance(self.bonus(i) + ground, ac, roll);
+        let crit = rules::crit_chance(roll).min(chance) / chance.max(1e-6);
+        let damage = si.spec.kit.blow(charge, extra, crit, &st.spec.kit.taken);
         let n = n.round() as u32;
         for _ in 0..n {
             if self.rng.random::<f32>() < chance {
@@ -114,8 +132,24 @@ impl SquadBattle {
         }
     }
 
-    /// One hit lands on a random fighter still standing.
+    /// One hit of `damage` hit points on squad `t`, landed with the rest of
+    /// the phase's by [`Self::land_wounds`].
     fn hit(&mut self, t: usize, damage: f32) {
+        self.wounds.push((t, damage));
+    }
+
+    /// The phase's hits land, each on a random fighter of its squad still
+    /// standing: every squad struck with the fighters it had when the phase
+    /// began, so blows and arrows are simultaneous.
+    pub(super) fn land_wounds(&mut self) {
+        let wounds = std::mem::take(&mut self.wounds);
+        for (t, damage) in wounds {
+            self.wound(t, damage);
+        }
+    }
+
+    /// `damage` hit points land on a random fighter of `t` still standing.
+    fn wound(&mut self, t: usize, damage: f32) {
         let standing: Vec<usize> = self.squads[t]
             .spec
             .members
@@ -128,7 +162,8 @@ impl SquadBattle {
             return;
         }
         let k = standing[self.rng.random_range(0..standing.len())];
-        self.squads[t].spec.members[k].health -= damage;
+        let m = &mut self.squads[t].spec.members[k];
+        m.health -= damage / rules::max_hp(&self.params, m.experience);
     }
 
     /// Squad `i` takes runners of routing squad `t` prisoner: as many as
@@ -182,27 +217,42 @@ impl SquadBattle {
         let Some(t) = target else {
             return;
         };
-        let shots = s.alive() as f32 * s.spec.kit.shot_rate * p.dt * self.morale_factor(i);
+        let shots = s.alive() as f32 * s.spec.kit.shot_rate * p.dt;
         let n = self.count(shots).min(self.squads[i].arrows);
         let s = &self.squads[i];
         let st = &self.squads[t];
         let d = self.dist(i, t);
-        let size = if st.spec.kit.mounted {
-            p.mounted_size
+        // A rider is a bigger target; an arrow loses its aim with range.
+        let rider = if st.spec.kit.mounted {
+            p.rider_target
         } else {
-            1.0
+            0.0
         };
+        let bonus = self.bonus(i) - p.range_penalty * d / range + rider;
+        // Cover on the wall; a shield turns arrows unless its bearer runs.
         let cover = if self.across_wall(i, t) && st.spec.behind_wall {
             p.wall_cover
         } else {
             0.0
         };
-        let skill = (0.5 + s.eff).clamp(0.2, 1.5);
-        let chance = (p.shot_accuracy * (1.0 - p.range_falloff * d / range) * skill * size)
-            .clamp(0.0, 0.95)
-            * (1.0 - st.spec.kit.shield)
-            * (1.0 - cover);
-        let damage = s.spec.kit.shot(&st.spec.kit.armour);
+        let ac = st.spec.kit.armour_class(st.state != SquadState::Routing) + cover;
+        let roll = Roll::of(false, self.frightened(i));
+        let hit = rules::hit_chance(bonus, ac, roll);
+        let crit = rules::crit_chance(roll).min(hit) / hit.max(1e-6);
+        // An arrow comes down on the man aimed at `arrow_aim` of the time, as
+        // on the soldier model; one that misses him lands among the others,
+        // on a man as often as men cover the ground of the formation (each
+        // within `hit_radius`, a rider's more).
+        let r = p.soldiers.hit_radius
+            * if st.spec.kit.mounted {
+                p.mounted_size
+            } else {
+                1.0
+            };
+        let crowd = (std::f32::consts::PI * r * r / st.spacing(&p).powi(2)).min(1.0);
+        let lands = p.arrow_aim + (1.0 - p.arrow_aim) * crowd;
+        let chance = lands * hit;
+        let damage = s.spec.kit.shot(crit, &st.spec.kit.taken);
         self.squads[i].arrows -= n;
         self.squads[i].engaged = true;
         for _ in 0..n {

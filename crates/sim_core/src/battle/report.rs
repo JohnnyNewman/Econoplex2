@@ -246,8 +246,13 @@ pub struct LiveView {
     pub stances: Vec<Stance>,
     /// Each squad's marching and running pace now, metres per second.
     pub paces: Vec<(f32, f32)>,
-    /// Each squad's kit, for the matchup hints.
+    /// Each squad's kit, and its attack bonus in melee and with arrows at
+    /// half range (its members' mean), for the matchup hints.
     pub kits: Vec<Kit>,
+    pub bonus: Vec<(f32, f32)>,
+    /// Each soldier's sheet in the combat rules' terms (armour class, attack
+    /// bonus, hit points, weapon dice), by squad in member order.
+    pub sheets: Vec<Vec<super::rules::Sheet>>,
     pub wall_x: Option<f32>,
     pub morale: Vec<f32>,
     /// Each soldier's morale and fatigue, by squad in member order, for the

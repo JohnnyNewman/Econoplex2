@@ -133,33 +133,24 @@ pub fn validate(c: &Content) -> Report {
             }
         }
         if let Some(f) = &p.fight {
-            let resist = f.armour.shares();
-            let shares = [f.close_penalty, resist[0], resist[1], resist[2], f.shield];
-            let amounts = [
-                f.reach,
-                f.damage,
-                f.strike_rate,
-                f.range,
-                f.shot_rate,
-                f.shot_damage,
-            ];
-            if shares.iter().any(|&x| !(0.0..1.0).contains(&x))
+            let amounts = [f.reach, f.strike_rate, f.range, f.shot_rate];
+            if !(0.0..1.0).contains(&f.close_penalty)
                 || amounts.iter().any(|&x| !(x >= 0.0 && x.is_finite()))
             {
                 r.errors.push(format!(
-                    "product `{}` has fight values out of range (shares 0..1, amounts at least 0)",
+                    "product `{}` has fight values out of range (close_penalty 0..1, amounts at least 0)",
                     p.id
                 ));
             }
-            if f.damage > 0.0 && f.damage_type.is_none() {
+            if f.dice.is_some() && f.damage_type.is_none() {
                 r.errors.push(format!(
-                    "product `{}` has melee damage but no damage_type (Pierce, Slash or Blunt)",
+                    "product `{}` has damage dice but no damage_type (Pierce, Slash or Blunt)",
                     p.id
                 ));
             }
-            if f.range > 0.0 && (f.shot_rate <= 0.0 || f.arrows == 0) {
+            if f.range > 0.0 && (f.shot_rate <= 0.0 || f.arrows == 0 || f.shot_dice.is_none()) {
                 r.errors.push(format!(
-                    "product `{}` shoots but has no shot rate or arrows",
+                    "product `{}` shoots but has no shot rate, shot dice or arrows",
                     p.id
                 ));
             }

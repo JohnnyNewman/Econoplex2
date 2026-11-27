@@ -220,39 +220,71 @@ fn content_kit_matches_the_presets() {
     let kit = Kit::from_gear("spearmen", &squad);
     let preset = Kit::preset("spearmen").unwrap();
     let same = |a: &PerType, b: &PerType| a.iter().zip(b).all(|(x, y)| (x - y).abs() < 1e-6);
+    let same_armour = |a: &Kit, b: &Kit| {
+        same(&a.taken, &b.taken) && (a.ac - b.ac).abs() < 1e-6 && (a.shield - b.shield).abs() < 1e-6
+    };
     assert!((kit.reach - preset.reach).abs() < 1e-4);
-    assert!(same(&kit.armour, &preset.armour), "{:?}", kit.armour);
+    assert!(same_armour(&kit, &preset), "{kit:?}");
     assert!(same(&kit.damage, &preset.damage), "{:?}", kit.damage);
-    assert!((kit.shield - preset.shield).abs() < 1e-6);
+    assert_eq!(
+        (kit.dice, kit.damage_type),
+        (preset.dice, preset.damage_type)
+    );
+    assert!((kit.strike_rate - preset.strike_rate).abs() < 1e-6);
     assert!(!kit.mounted && kit.range == 0.0);
 
     let (lance, mail, horse, bow) = (fight("lance"), fight("mail"), fight("horse"), fight("bow"));
     let sword = fight("longsword_2");
-    assert_eq!(coat.armour.shares(), PADDED);
-    assert_eq!(mail.armour.shares(), MAIL);
-    let riders: Vec<Vec<&sim_data::FightDef>> =
-        (0..10).map(|_| vec![&lance, &mail, &horse]).collect();
+    assert_eq!((coat.ac, coat.taken()), (1, PADDED));
+    assert_eq!((mail.ac, mail.taken()), (5, MAIL));
+    let riders: Vec<Vec<&sim_data::FightDef>> = (0..10)
+        .map(|_| vec![&lance, &mail, &shield, &horse])
+        .collect();
     let kit = Kit::from_gear("cavalry", &riders);
-    assert!(kit.mounted && same(&kit.armour, &MAIL), "{:?}", kit.armour);
-    let swords: Vec<Vec<&sim_data::FightDef>> = (0..10).map(|_| vec![&sword, &mail]).collect();
+    let preset = Kit::preset("cavalry").unwrap();
+    assert!(kit.mounted && same_armour(&kit, &preset), "{kit:?}");
+    assert_eq!(
+        (kit.dice, kit.charge_dice),
+        (preset.dice, preset.charge_dice)
+    );
+    assert!(same(&kit.charge, &preset.charge));
+    let swords: Vec<Vec<&sim_data::FightDef>> =
+        (0..10).map(|_| vec![&sword, &mail, &shield]).collect();
     let preset = Kit::preset("swordsmen").unwrap();
     let kit = Kit::from_gear("swordsmen", &swords);
-    assert!(same(&kit.armour, &preset.armour) && same(&kit.damage, &preset.damage));
+    assert!(same_armour(&kit, &preset) && same(&kit.damage, &preset.damage));
+    assert_eq!(kit.dice.to_string(), "1d8+1");
+    let archers: Vec<Vec<&sim_data::FightDef>> = (0..10).map(|_| vec![&bow, &coat]).collect();
+    let preset = Kit::preset("archers").unwrap();
+    let kit = Kit::from_gear("archers", &archers);
+    assert!(same_armour(&kit, &preset) && same(&kit.shot_damage, &preset.shot_damage));
+    assert_eq!(
+        (kit.shot_dice, kit.arrows),
+        (preset.shot_dice, preset.arrows)
+    );
     // A mixed squad's damage splits by its weapons: half spears, half swords.
     let mut mixed: Vec<Vec<&sim_data::FightDef>> = (0..5).map(|_| vec![&spear]).collect();
     mixed.extend((0..5).map(|_| vec![&sword]));
     let kit = Kit::from_gear("mixed", &mixed);
+    let mean = |f: &sim_data::FightDef| f.dice.unwrap().plus(f.quality).mean();
     assert!(same(
         &kit.damage,
-        &[spear.damage / 2.0, sword.damage / 2.0, 0.0]
+        &[mean(&spear) / 2.0, mean(&sword) / 2.0, 0.0]
     ));
+    // Layers of armour add their class and multiply what they let through.
+    let both: Vec<Vec<&sim_data::FightDef>> = vec![vec![&sword, &coat, &mail]];
+    let kit = Kit::from_gear("both", &both);
+    assert!(
+        kit.ac == 6.0 && same(&kit.taken, &[1.0, 0.5, 0.5]),
+        "{kit:?}"
+    );
 
     // Half the squad unarmed: fists pull the average down; bows still count.
     let mut mixed: Vec<Vec<&sim_data::FightDef>> = (0..5).map(|_| vec![&bow]).collect();
     mixed.extend((0..5).map(|_| Vec::new()));
     let kit = Kit::from_gear("archers", &mixed);
     assert_eq!(kit.range, 150.0);
-    assert!(kit.melee_damage() < bow.damage);
+    assert!(kit.melee_damage() < mean(&bow));
 
     // Every weapon in the content can fight, and says how it hurts.
     for p in &db.content.products {
@@ -261,7 +293,7 @@ fn content_kit_matches_the_presets() {
                 .fight
                 .as_ref()
                 .unwrap_or_else(|| panic!("{} has no fight values", p.id));
-            assert!(f.damage == 0.0 || f.damage_type.is_some(), "{}", p.id);
+            assert!(f.dice.is_none() || f.damage_type.is_some(), "{}", p.id);
         }
     }
 }
@@ -318,11 +350,14 @@ fn survivors_gain_experience() {
 
 /// A squad of 30 with the given melee damage per type and armour per type,
 /// otherwise swordsmen.
-fn typed_squad(side: u8, damage: PerType, armour: PerType) -> SquadSpec {
+fn typed_squad(side: u8, t: sim_data::DamageType, taken: PerType) -> SquadSpec {
+    let sword = Kit::preset("swordsmen").unwrap();
     let kit = Kit {
-        damage,
-        armour,
-        ..Kit::preset("swordsmen").unwrap()
+        damage: typed(t, sword.dice.mean()),
+        charge: typed(t, sword.dice.mean()),
+        damage_type: t,
+        taken,
+        ..sword
     };
     let x = if side == 0 { 90.0 } else { 450.0 };
     SquadSpec::uniform("typed", side, kit, 30, 0.5, 0.0, 0.8, (x, 200.0))
@@ -349,26 +384,15 @@ fn typed_battles(model: BattleModel, att: &SquadSpec, def: &SquadSpec, seeds: u6
 fn mail_turns_swords_better_than_spears() {
     for model in MODELS {
         use sim_data::DamageType::{Pierce, Slash};
-        // The same blow by edge and by point: mail stops more of the edge.
-        let sword = Kit {
-            damage: typed(Slash, 0.6),
-            ..Kit::preset("swordsmen").unwrap()
-        };
-        let point = Kit {
-            damage: typed(Pierce, 0.6),
-            ..sword.clone()
-        };
-        assert!(sword.blow(0.0, &MAIL) < point.blow(0.0, &MAIL));
+        // The same blow by edge and by point: mail resists the edge.
+        let sword = typed_squad(0, Slash, MAIL).kit;
+        let point = typed_squad(0, Pierce, MAIL).kit;
+        assert!(sword.blow(false, 0.0, 0.0, &MAIL) < point.blow(false, 0.0, 0.0, &MAIL));
         // In battle, mailed men facing edges lose fewer and win more.
-        let mailed = typed_squad(1, typed(Slash, 0.6), MAIL);
-        let (edge_won, edge_lost) =
-            typed_battles(model, &typed_squad(0, typed(Slash, 0.6), MAIL), &mailed, 40);
-        let (point_won, point_lost) = typed_battles(
-            model,
-            &typed_squad(0, typed(Pierce, 0.6), MAIL),
-            &mailed,
-            40,
-        );
+        let mailed = typed_squad(1, Slash, MAIL);
+        let (edge_won, edge_lost) = typed_battles(model, &typed_squad(0, Slash, MAIL), &mailed, 40);
+        let (point_won, point_lost) =
+            typed_battles(model, &typed_squad(0, Pierce, MAIL), &mailed, 40);
         eprintln!("{model:?}: against mail: swords won {edge_won}, lost {edge_lost}; spears won {point_won}, lost {point_lost}");
         assert!(
             point_won >= edge_won + 10 && point_lost > edge_lost,
@@ -382,21 +406,13 @@ fn mail_turns_swords_better_than_spears() {
 fn blunt_beats_slash_against_plate() {
     for model in MODELS {
         use sim_data::DamageType::{Blunt, Slash};
-        // Plate (not in the content yet): turns edges and points, a weight less.
-        let plate = [0.7, 0.75, 0.35];
-        let plated = typed_squad(1, typed(Slash, 0.6), plate);
-        let (slash_won, slash_lost) = typed_battles(
-            model,
-            &typed_squad(0, typed(Slash, 0.6), plate),
-            &plated,
-            40,
-        );
-        let (blunt_won, blunt_lost) = typed_battles(
-            model,
-            &typed_squad(0, typed(Blunt, 0.6), plate),
-            &plated,
-            40,
-        );
+        // Plate resists edges and points, not a weight.
+        let plate = [0.5, 0.5, 1.0];
+        let plated = typed_squad(1, Slash, plate);
+        let (slash_won, slash_lost) =
+            typed_battles(model, &typed_squad(0, Slash, plate), &plated, 40);
+        let (blunt_won, blunt_lost) =
+            typed_battles(model, &typed_squad(0, Blunt, plate), &plated, 40);
         eprintln!("{model:?}: against plate: slash won {slash_won}, lost {slash_lost}; blunt won {blunt_won}, lost {blunt_lost}");
         assert!(
             blunt_won >= slash_won + 10 && blunt_lost > slash_lost,
@@ -769,8 +785,9 @@ fn group_orders_keep_a_formation() {
     assert!(far(((a.0 + c.0) * 0.5, (a.1 + c.1) * 0.5), (200.0, 200.0)) < 1e-3);
 }
 
-/// The matchup hints: blows and arrows per damage type after armour, which
-/// is the damage the battle deals.
+/// The matchup hints: the attack roll a blow needs against armour class,
+/// and blows and arrows per damage type after armour, which is the damage
+/// the battle deals.
 #[test]
 fn matchups_follow_the_armour() {
     let b = battle(
@@ -780,12 +797,23 @@ fn matchups_follow_the_armour() {
     let v = b.live_view(0, (0.0, 0.0), (1.0, 0.0), 0);
     let spears = v.matchup(0, 2).unwrap();
     let (spear, sword) = (&v.kits[0], &v.kits[2]);
-    assert!((spears.blow.iter().sum::<f32>() - spear.blow(0.0, &sword.armour)).abs() < 1e-5);
+    // Spearmen of skill 0.5 (+2) with an iron spear (+1) against mail and
+    // a shield (AC 17): 14 or more on the d20.
+    assert_eq!((spears.needs, v.bonus[0].0), (14, 3.0));
+    assert!((spears.hit - 0.35).abs() < 1e-6);
+    let crit = 0.05 / 0.35;
+    assert!(
+        (spears.blow.iter().sum::<f32>() - spear.blow(false, 0.0, crit, &sword.taken)).abs() < 1e-5
+    );
     assert!(spears.melee_per_second > 0.0 && spears.shots_per_second == 0.0);
     let arrows = v.matchup(1, 2).unwrap();
     let bare = Kit::preset("levy").unwrap();
-    assert!(arrows.arrow[0] > 0.0 && arrows.arrow[0] < v.kits[1].against(&bare).arrow[0]);
+    let (b, s) = v.bonus[1];
+    assert!(arrows.arrow[0] > 0.0 && arrows.shot_hit < v.kits[1].against(&bare, b, s).shot_hit);
     assert!(v.matchup(0, 9).is_none());
+    // Every soldier has a sheet: AC, attack bonus, hit points, dice.
+    let sheet = v.sheets[2][0];
+    assert_eq!(sheet.words(), "AC 17, +3 to hit, HP 8/8, 1d8+1 slashing");
 }
 
 /// The overlay: on the soldier model each soldier's morale and fatigue;
