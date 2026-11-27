@@ -1,0 +1,31 @@
+// Wild food: hunting and fishing. Food from the land without fields, mills or
+// bakeries. The grounds regrow slowly: a hunting ground feeds about 13 people, a
+// fishing water about 12, and a town has one of each at most, so wild food is a
+// few percent of a town's food. Founders who would have farmed hunt or fish
+// instead (world.rs, starting trades), so wild food replaces some farming rather
+// than adding a surplus.
+//
+// Per worker-day (team discount included): hunting about 1.4 food, fishing about
+// 1.6, against about 2.1 for the whole bread chain (docs/design/food-yields.md).
+(
+    nature: [
+        (id: "hunting_ground", name: "Hunting ground", regrowth: 2.0, capacity: 30.0),
+        (id: "fishing_water",  name: "Fishing water",  regrowth: 3.0, capacity: 40.0),
+    ],
+    skills: [
+        (id: "hunting", name: "Hunting", domain: "foraging"),
+        (id: "fishing", name: "Fishing", domain: "foraging"),
+    ],
+    products: [
+        (id: "meat", name: "Game meat", category: Food, base_price: 2.0, food: 0.8),
+        (id: "fish", name: "Fish",      category: Food, base_price: 1.4, food: 0.5),
+    ],
+    recipes: [
+        (id: "hunt_game", name: "Hunt game", skill: "hunting", difficulty: 0.30,
+            outputs: [("meat", 3)], nature: Some("hunting_ground"), duration: 1.5, max_team: 3,
+            physique: [("endurance", 0.3), ("perception", 0.2)]),
+        (id: "catch_fish", name: "Catch fish", skill: "fishing", difficulty: 0.20,
+            outputs: [("fish", 3)], nature: Some("fishing_water"), duration: 0.85, max_team: 2,
+            physique: [("perception", 0.2), ("dexterity", 0.1)]),
+    ],
+)

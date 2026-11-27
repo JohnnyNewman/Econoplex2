@@ -842,7 +842,7 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
 
         // Starting trades follow what the town can actually run, with food work weighted
         // up so a new town can feed itself while the labor market finds its balance.
-        let trade_weights: Vec<f32> = db
+        let runnable: Vec<bool> = db
             .recipes
             .iter()
             .map(|m| {
@@ -856,10 +856,34 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
                         .iter()
                         .any(|(n, c)| *c > 0 && db.content.nature_kind(n) == Some(k))
                 });
-                if has_building && has_nature {
-                    1.0 + params.life.starting_food_bias * m.food_out
-                } else {
+                has_building && has_nature
+            })
+            .collect();
+        // Food taken straight from the land (farming, hunting, fishing) shares one
+        // weight, the largest such recipe's: where there is game or fish, some of
+        // the founders who would have farmed hunt or fish instead.
+        let raw_food = |m: &crate::db::RecipeMeta| {
+            m.nature.is_some() && m.inputs.is_empty() && m.food_out > 0.0
+        };
+        let (raw_max, raw_sum) = db
+            .recipes
+            .iter()
+            .zip(&runnable)
+            .filter(|(m, &ok)| ok && raw_food(m))
+            .fold((0.0f32, 0.0f32), |(mx, sm), (m, _)| {
+                (mx.max(m.food_out), sm + m.food_out)
+            });
+        let trade_weights: Vec<f32> = db
+            .recipes
+            .iter()
+            .zip(&runnable)
+            .map(|(m, &ok)| {
+                if !ok {
                     0.1
+                } else if raw_food(m) {
+                    1.0 + params.life.starting_food_bias * m.food_out * raw_max / raw_sum
+                } else {
+                    1.0 + params.life.starting_food_bias * m.food_out
                 }
             })
             .collect();

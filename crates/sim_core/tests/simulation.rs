@@ -2799,16 +2799,18 @@ fn a_stockpile_fills_the_town_store_and_draws_production() {
             grain,
         )
     };
+    // The store fills from the market's surplus, and gives it back when milling
+    // drains the market below half its target, so look at the whole week.
+    let mut most_held = 0.0f32;
     for _ in 0..6 {
         s.step();
+        let g = &s.world.resource::<sim_core::Towns>().0[1];
+        most_held = most_held.max(g.granary.get(grain).copied().unwrap_or(0.0));
     }
     let towns = s.world.resource::<sim_core::Towns>();
     let g = &towns.0[1];
     assert_eq!(g.policy.stockpiled(grain), 150.0);
-    assert!(
-        g.granary.get(grain).copied().unwrap_or(0.0) > 0.0,
-        "the store took grain"
-    );
+    assert!(most_held > 0.0, "the store took grain");
     // While the store lacks grain, the market aims for more of it.
     let w = &s.world;
     let target = sim_core::systems::decide::target_stock(
