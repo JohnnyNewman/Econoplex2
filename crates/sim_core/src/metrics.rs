@@ -545,7 +545,8 @@ pub fn record(
                 .iter()
                 .map(|&i| store.wealth[i as usize].coins())
                 .sum::<f32>()
-            + town.foreign.iter().map(|c| c.coins()).sum::<f32>();
+            + town.foreign.iter().map(|c| c.coins()).sum::<f32>()
+            + town.metal.coins();
         s.money_stock = money;
         // With no money (residents in debt for tools), velocity is undefined: 0.
         let per_money = |x: f32| if money > 1.0 { x / money } else { 0.0 };

@@ -2395,11 +2395,8 @@ fn both_caravan_rules_trade_and_conserve_money() {
         let mut s = Simulation::new(db, params, &scenario);
         let money = |s: &Simulation| {
             let towns = s.world.resource::<sim_core::Towns>();
-            let minted: f64 = towns
-                .0
-                .iter()
-                .map(|t| t.ledger.total[sim_core::ledger::Flow::Minted as usize])
-                .sum();
+            // All coin struck, whether into a treasury or a metal reserve.
+            let minted: f64 = towns.0.iter().map(|t| t.minted.coins_f64()).sum();
             sim_core::world::total_money(s.world.resource::<sim_core::AgentStore>(), towns) - minted
         };
         let before = money(&s);
