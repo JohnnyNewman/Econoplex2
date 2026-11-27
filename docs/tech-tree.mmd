@@ -24,6 +24,8 @@ flowchart LR
     p_ore(["Iron ore"])
     p_copper_ore(["Copper ore"])
     p_tin_ore(["Tin ore"])
+    p_hut[["Hut"]]
+    p_cottage[["Cottage"]]
     p_coal(["Coal"])
     p_silver_ore(["Silver ore"])
   end
@@ -43,6 +45,7 @@ flowchart LR
     p_lime["Lime"]
     p_mortar["Mortar"]
     p_roof_tile["Roof tile"]
+    p_stone_house[["Stone house"]]
     p_bow["Bow"]
     p_shield["Shield"]
     p_padded_coat["Padded coat"]
@@ -128,6 +131,7 @@ flowchart LR
   n_tin_vein --> p_tin_ore
   p_beam --> p_bakery
   p_beam --> p_brewery
+  p_beam --> p_cottage
   p_beam --> p_furnace
   p_beam --> p_kiln
   p_beam --> p_machine_shop
@@ -137,6 +141,7 @@ flowchart LR
   p_beam --> p_pike
   p_beam --> p_smithy
   p_beam --> p_stable
+  p_beam --> p_stone_house
   p_beam --> p_weaving_shed
   p_beam --> p_workshop
   p_brick --> p_blast_furnace
@@ -164,6 +169,7 @@ flowchart LR
   p_cut_stone --> p_blast_furnace
   p_cut_stone --> p_mint
   p_cut_stone --> p_roller_mill
+  p_cut_stone --> p_stone_house
   p_cut_stone --> p_textile_mill
   p_flax --> p_yarn
   p_flour --> p_bread
@@ -202,6 +208,7 @@ flowchart LR
   p_mortar --> p_brewery
   p_mortar --> p_machine_shop
   p_mortar --> p_roller_mill
+  p_mortar --> p_stone_house
   p_mortar --> p_textile_mill
   p_nails --> p_machine_shop
   p_nails --> p_rimmed_shield
@@ -210,6 +217,7 @@ flowchart LR
   p_roof_tile --> p_brewery
   p_roof_tile --> p_machine_shop
   p_roof_tile --> p_roller_mill
+  p_roof_tile --> p_stone_house
   p_roof_tile --> p_textile_mill
   p_sand --> p_mortar
   p_sharp_blade --> p_longsword_3
@@ -227,6 +235,8 @@ flowchart LR
   p_straw --> p_thatch
   p_tempered_blade --> p_sharp_blade
   p_thatch --> p_bakery
+  p_thatch --> p_cottage
+  p_thatch --> p_hut
   p_thatch --> p_masons_yard
   p_thatch --> p_mill
   p_thatch --> p_stable

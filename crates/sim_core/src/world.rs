@@ -230,6 +230,9 @@ pub struct Town {
     /// trade, and spendable only on that town's goods or exchanged.
     #[serde(default)]
     pub foreign: Vec<crate::coin::Coin>,
+    /// Houses the town has, by product (only house products count).
+    #[serde(default)]
+    pub houses: Vec<u32>,
     /// All the coin this town's mints have struck, to the unit.
     #[serde(default)]
     pub minted: crate::coin::Coin,
@@ -468,6 +471,47 @@ pub struct MoveCounters {
 }
 
 impl Town {
+    /// People the town's houses hold.
+    pub fn house_room(&self, db: &Db) -> u32 {
+        self.houses
+            .iter()
+            .enumerate()
+            .filter_map(|(p, &n)| db.house.get(p).copied().flatten().map(|h| n * h.0))
+            .sum()
+    }
+
+    /// How well the town's houses shelter its people (0..1): residents fill
+    /// the best houses first; whoever finds no room has no shelter.
+    pub fn shelter(&self, db: &Db) -> f32 {
+        let people = self.residents.len() as f32;
+        if people <= 0.0 {
+            return 1.0;
+        }
+        let mut kinds: Vec<(f32, f32)> = self
+            .houses
+            .iter()
+            .enumerate()
+            .filter_map(|(p, &n)| {
+                db.house
+                    .get(p)
+                    .copied()
+                    .flatten()
+                    .map(|(room, q)| ((n * room) as f32, q))
+            })
+            .collect();
+        kinds.sort_by(|a, b| b.1.total_cmp(&a.1));
+        let (mut left, mut sum) = (people, 0.0f32);
+        for (room, q) in kinds {
+            let n = room.min(left);
+            sum += n * q;
+            left -= n;
+            if left <= 0.0 {
+                break;
+            }
+        }
+        sum / people
+    }
+
     /// How much of town `issuer`'s coin this town holds.
     pub fn holds(&self, issuer: usize) -> crate::coin::Coin {
         self.foreign.get(issuer).copied().unwrap_or_default()
@@ -834,6 +878,7 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
             debts: Vec::new(),
             coin_value: 1.0,
             foreign: Vec::new(),
+            houses: Vec::new(),
             goods_today: Vec::new(),
             goods_use: Vec::new(),
             wage_factor: vec![1.0; db.recipes.len()],
@@ -960,6 +1005,7 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
         towns.0[t as usize].residents.push(i as u32);
     }
     crate::start::households(&mut towns, &mut store, &db, &params);
+    crate::start::houses(&mut towns, &db);
     // Every job shows what it would pay at the starting prices, so the first
     // day's choices see pay (the rate otherwise starts at nothing and only
     // drifts up after the first day has been chosen, idle, at no pay). With

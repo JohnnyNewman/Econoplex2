@@ -107,6 +107,9 @@ flowchart LR
     r_build_bakery["Build bakery"]
     r_build_furnace["Build furnace"]
     r_build_smithy["Build smithy"]
+    r_build_hut["Build hut"]
+    r_build_cottage["Build cottage"]
+    r_build_stone_house["Build stone house"]
     r_build_stable["Build stable"]
     r_build_blast_furnace["Build blast furnace"]
     r_build_machine_shop["Build machine shop"]
@@ -190,6 +193,13 @@ flowchart LR
   r_build_workshop --> r_build_furnace
   r_build_workshop --> r_build_smithy
   r_chop_wood --> r_plant_woodlot
+  r_chop_wood --> r_build_hut
+  r_saw_planks --> r_build_cottage
+  r_hew_beams --> r_build_cottage
+  r_bind_thatch --> r_build_cottage
+  r_cut_stone --> r_build_stone_house
+  r_mix_mortar --> r_build_stone_house
+  r_fire_tiles --> r_build_stone_house
   r_smelt_iron --> r_make_iron_spear
   or_make_iron_spear_1((or))
   r_make_bronze_spear -.-> or_make_iron_spear_1

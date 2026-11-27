@@ -80,6 +80,21 @@ pub fn learnable(c: &Content) -> Vec<bool> {
 pub fn validate(c: &Content) -> Report {
     let mut r = Report::default();
 
+    for p in &c.products {
+        if let Some(h) = &p.house {
+            if p.category != Category::Building {
+                r.errors
+                    .push(format!("house `{}` must be a Building", p.id));
+            }
+            if h.residents == 0 || !(0.0..=1.0).contains(&h.quality) {
+                r.errors.push(format!(
+                    "house `{}` needs residents above 0 and quality in 0..1",
+                    p.id
+                ));
+            }
+        }
+    }
+
     for s in &c.skills {
         for p in &s.prereqs {
             if c.skill(p).is_none() {

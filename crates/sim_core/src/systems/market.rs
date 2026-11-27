@@ -139,6 +139,20 @@ pub fn settle(
                     town.price[p] = land_price(&db, town, mp, p, kind, &sites);
                     continue;
                 }
+                if let Some((_, quality)) = db.house[p] {
+                    // A house is worth its price while people have no room,
+                    // and, while the town's shelter is poor, in proportion
+                    // to how much better it shelters.
+                    let base = db.base_price[p];
+                    let short = (town.house_room(&db) as f32) < town.residents.len() as f32 * 1.05;
+                    let shelter = town.shelter(&db);
+                    town.price[p] = if short {
+                        base
+                    } else {
+                        base * ((quality - shelter) / quality.max(1e-3)).max(0.0)
+                    };
+                    continue;
+                }
                 if db.category(p as u32) == Category::Building {
                     // A building is worth what its places would earn (see
                     // `BuildingValue`), or, at a discount, when the town has none (a

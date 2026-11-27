@@ -70,6 +70,12 @@ pub struct TownView {
     /// Other towns' coin the town holds, by issuing town.
     #[serde(default)]
     pub foreign: Vec<f32>,
+    /// Houses by kind (product id, how many), and how well they shelter the
+    /// town's people (0..1).
+    #[serde(default)]
+    pub houses: Vec<(String, u32)>,
+    #[serde(default)]
+    pub shelter: f32,
     pub buildings: Vec<BuildingView>,
     /// The town this one pays tribute to, if conquered.
     pub ruler: Option<u16>,
@@ -557,6 +563,14 @@ impl ViewSnapshot {
                     treasury: t.treasury.coins(),
                     coin_value: t.coin_value,
                     foreign: t.foreign.iter().map(|c| c.coins()).collect(),
+                    houses: t
+                        .houses
+                        .iter()
+                        .enumerate()
+                        .filter(|&(_, &n)| n > 0)
+                        .map(|(p, &n)| (db.content.products[p].id.clone(), n))
+                        .collect(),
+                    shelter: t.shelter(db),
                     buildings: t
                         .buildings
                         .iter()

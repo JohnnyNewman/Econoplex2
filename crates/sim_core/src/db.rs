@@ -52,6 +52,8 @@ pub struct Db {
     pub recipe_firm: Vec<usize>,
     /// Land products: the nature kind each one opens.
     pub opens: Vec<Option<u32>>,
+    /// Houses: (people each holds, how well it shelters them).
+    pub house: Vec<Option<(u32, f32)>>,
     /// Face value of coin products (0 for everything else).
     pub coin: Vec<f32>,
     /// Per recipe: work done outdoors (harvesting nature, putting up a
@@ -161,6 +163,11 @@ impl Db {
             .collect();
 
         let coin = content.products.iter().map(|p| p.coin).collect();
+        let house = content
+            .products
+            .iter()
+            .map(|p| p.house.map(|h| (h.residents, h.quality)))
+            .collect();
         let mut firm_keys: Vec<crate::firms::FirmKey> =
             recipes.iter().map(crate::firms::key_of).collect();
         firm_keys.sort_unstable();
@@ -188,6 +195,7 @@ impl Db {
         Db {
             cap_dim,
             coin,
+            house,
             content,
             embedding,
             skill_vecs,
