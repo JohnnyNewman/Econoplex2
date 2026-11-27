@@ -33,6 +33,9 @@ pub struct RecipeMeta {
 #[derive(Resource)]
 pub struct Db {
     pub content: Content,
+    /// Per recipe, the recipe-skills it requires: every entry must be met, by any
+    /// one of its recipes (`RecipeDef::requires`, by index).
+    pub requires: Vec<Vec<Vec<u32>>>,
     pub embedding: Embedding,
     /// Length of every capability vector in this game.
     pub cap_dim: usize,
@@ -192,9 +195,27 @@ impl Db {
                 is_input[p as usize] = true;
             }
         }
+        // The tech graph by index: per recipe, its `requires` entries, each a list
+        // of recipes of which any one is enough (docs/design/inventions.md).
+        let requires: Vec<Vec<Vec<u32>>> = content
+            .recipes
+            .iter()
+            .map(|r| {
+                r.requires
+                    .iter()
+                    .map(|req| {
+                        req.options()
+                            .iter()
+                            .filter_map(|id| content.recipe(id))
+                            .collect()
+                    })
+                    .collect()
+            })
+            .collect();
         Db {
             cap_dim,
             coin,
+            requires,
             house,
             content,
             embedding,

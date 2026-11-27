@@ -212,8 +212,15 @@ Each recipe is also a recipe-skill, one node of the knowledge graph
 A recipe's `requires` lists the recipe-skills a person must know first: every entry must
 be met, and an entry that is a list is met by any one of its ids. Recipes that need
 nothing start the graph, and validation checks that every recipe can be learned from
-them. Nothing reads the graph yet: it is step 1 of [inventions](docs/design/inventions.md),
-where people will know recipe-skills, learn them from masters and invent new ones.
+them.
+
+With `knowledge.enabled` in models.ron (off by default), people know only some
+recipe-skills ([inventions](docs/design/inventions.md), step 2). Founders know their
+family trade and a share of what their town can make; a person takes a regular place
+only in work they know, and an apprentice place in work whose `requires` they meet.
+Apprentices and children working beside someone who knows a recipe learn it, pupils
+learn their teacher's recipes, and knowledge moves with migrants and dies with its
+last holder. Inventing new recipe-skills comes next.
 
 The content (`assets/content/*.ron`) spans five eras: **wood and grain**, **stone,
 clay and cloth**, **bronze**, **iron and steel**, and **early industry**. Each file

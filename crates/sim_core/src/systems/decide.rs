@@ -694,9 +694,17 @@ pub fn decide(
                 let jobs = &open_jobs[t];
                 let app_scores = ctx.scores(store, i, jobs, *apprentice_wage).1;
                 let mut options = Vec::with_capacity(jobs.len() * 2);
+                // A regular place needs the recipe known; an apprentice place
+                // only what it requires (knowledge.rs; anything with it off).
+                let kp = &params.knowledge;
                 for (k, &v) in job_scores.iter().enumerate() {
-                    options.push((2 * k as u32, v));
-                    if places[t][k].apprentice > 0 {
+                    let r = jobs[k] as usize;
+                    if crate::knowledge::knows(kp, &db, store, i, r) {
+                        options.push((2 * k as u32, v));
+                    }
+                    if places[t][k].apprentice > 0
+                        && crate::knowledge::can_learn(kp, &db, store, i, r)
+                    {
                         options.push((2 * k as u32 + 1, app_scores[k]));
                     }
                 }
@@ -858,11 +866,27 @@ pub fn decide(
                     .collect()
             });
             let jobs: &[u32] = if own.is_empty() { &open_jobs[t] } else { &own };
+            // Only work the person knows (knowledge.rs; everything with it off).
+            let kp = &params.knowledge;
+            let known_jobs: Vec<u32>;
+            let jobs: &[u32] = if kp.enabled {
+                known_jobs = jobs
+                    .iter()
+                    .copied()
+                    .filter(|&r| crate::knowledge::knows(kp, &db, store, i, r as usize))
+                    .collect();
+                &known_jobs
+            } else {
+                jobs
+            };
             let choice = ctx.pick(
                 store,
                 i,
                 jobs,
-                |r| open(&slots_left, &capacity, t, r),
+                |r| {
+                    open(&slots_left, &capacity, t, r)
+                        && crate::knowledge::knows(kp, &db, store, i, r as usize)
+                },
                 *rest,
                 |r| job_scores[slot_of[t][r as usize] as usize],
                 &mut pool,
