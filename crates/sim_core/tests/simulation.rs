@@ -54,15 +54,6 @@ fn different_seed_different_state() {
 #[test]
 fn economy_produces_and_people_learn() {
     let mut s = sim(3);
-<<<<<<< HEAD
-    // The same people before and after (newborns, who know nothing yet, would
-    // pull an average over everyone down).
-    let before_caps: Vec<Option<f32>> = {
-        let st = s.world.resource::<sim_core::AgentStore>();
-        (0..st.len())
-            .map(|i| st.alive[i].then(|| st.cap[i].iter().sum::<f32>()))
-            .collect()
-=======
     // The founders' skill (children born meanwhile start with little and would
     // pull a mean over everyone down).
     let founders = s.world.resource::<sim_core::AgentStore>().len();
@@ -73,7 +64,6 @@ fn economy_produces_and_people_learn() {
             .map(|&i| st.cap[i].iter().sum::<f32>())
             .sum::<f32>()
             / alive.len() as f32
->>>>>>> origin/main
     };
     let before = mean_cap(s.world.resource::<sim_core::AgentStore>());
     for _ in 0..24 {
@@ -86,20 +76,7 @@ fn economy_produces_and_people_learn() {
         log.successes
     );
     let st = s.world.resource::<sim_core::AgentStore>();
-<<<<<<< HEAD
-    let pairs: Vec<(f32, f32)> = before_caps
-        .iter()
-        .enumerate()
-        .filter_map(|(i, b)| {
-            b.filter(|_| st.alive[i])
-                .map(|b| (b, st.cap[i].iter().sum::<f32>()))
-        })
-        .collect();
-    let before = pairs.iter().map(|p| p.0).sum::<f32>() / pairs.len().max(1) as f32;
-    let after = pairs.iter().map(|p| p.1).sum::<f32>() / pairs.len().max(1) as f32;
-=======
     let after = mean_cap(st);
->>>>>>> origin/main
     assert!(
         after > before,
         "agents should gain skill: {before} -> {after}"
@@ -1753,11 +1730,8 @@ fn households_keep_food_and_the_books_still_balance() {
     let mut s = Simulation::new(db, params, &scenario);
     let money = |s: &Simulation| {
         let towns = s.world.resource::<sim_core::Towns>();
-<<<<<<< HEAD
-=======
         // `minted` also counts coin struck into the metal of towns that
         // issue their own coin, which the ledger leaves out.
->>>>>>> origin/main
         let minted: f64 = towns.0.iter().map(|t| t.minted.coins_f64()).sum();
         sim_core::world::total_money(s.world.resource::<sim_core::AgentStore>(), towns) - minted
     };
@@ -1797,11 +1771,8 @@ fn crowded_towns_charge_more_rent_and_the_books_still_balance() {
     let mut s = Simulation::new(db, params, &scenario);
     let money = |s: &Simulation| {
         let towns = s.world.resource::<sim_core::Towns>();
-<<<<<<< HEAD
-=======
         // `minted` also counts coin struck into the metal of towns that
         // issue their own coin, which the ledger leaves out.
->>>>>>> origin/main
         let minted: f64 = towns.0.iter().map(|t| t.minted.coins_f64()).sum();
         sim_core::world::total_money(s.world.resource::<sim_core::AgentStore>(), towns) - minted
     };
@@ -2119,11 +2090,8 @@ fn workshops_pay_from_their_sales_and_money_is_conserved() {
     let mut s = Simulation::new(db, params, &scenario);
     let money = |s: &Simulation| {
         let towns = s.world.resource::<sim_core::Towns>();
-<<<<<<< HEAD
-=======
         // `minted` also counts coin struck into the metal of towns that
         // issue their own coin, which the ledger leaves out.
->>>>>>> origin/main
         let minted: f64 = towns.0.iter().map(|t| t.minted.coins_f64()).sum();
         sim_core::world::total_money(s.world.resource::<sim_core::AgentStore>(), towns) - minted
     };
@@ -2260,11 +2228,8 @@ fn workshops_buy_on_account_and_pay_from_their_sales() {
     let mut s = Simulation::new(db, params, &scenario);
     let money = |s: &Simulation| {
         let towns = s.world.resource::<sim_core::Towns>();
-<<<<<<< HEAD
-=======
         // `minted` also counts coin struck into the metal of towns that
         // issue their own coin, which the ledger leaves out.
->>>>>>> origin/main
         let minted: f64 = towns.0.iter().map(|t| t.minted.coins_f64()).sum();
         sim_core::world::total_money(s.world.resource::<sim_core::AgentStore>(), towns) - minted
     };
@@ -2356,11 +2321,8 @@ fn a_hungry_broke_town_imports_food_on_credit_and_recovers() {
         }
         let money = |s: &Simulation| {
             let towns = s.world.resource::<sim_core::Towns>();
-<<<<<<< HEAD
-=======
             // `minted` also counts coin struck into the metal of towns that
             // issue their own coin, which the ledger leaves out.
->>>>>>> origin/main
             let minted: f64 = towns.0.iter().map(|t| t.minted.coins_f64()).sum();
             sim_core::world::total_money(s.world.resource::<sim_core::AgentStore>(), towns) - minted
         };
@@ -2402,8 +2364,9 @@ fn a_hungry_broke_town_imports_food_on_credit_and_recovers() {
         starving_with < starving_without,
         "imports didn't help: {starving_with} vs {starving_without}"
     );
-    // Fed from its neighbours, the town keeps most of its people.
-    assert!(pop_with > pop_without + 50, "{pop_with} vs {pop_without}");
+    // Fed from its neighbours, the town keeps more of its people (with hens,
+    // game and fish beside bread it starves less without imports, too).
+    assert!(pop_with > pop_without + 20, "{pop_with} vs {pop_without}");
 }
 
 #[test]
