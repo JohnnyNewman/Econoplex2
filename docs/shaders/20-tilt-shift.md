@@ -24,9 +24,9 @@ blur that spans dozens of pixels costs only a few texture reads per pixel.
 
 | setting | default | meaning |
 | --- | --- | --- |
-| `centre` | 0.55 | where the sharp band sits (0 top, 1 bottom); a little below the middle, where the camera looks |
-| `band` | 0.22 | half its height |
-| `fade` | 0.5 | how far beyond the band the blur becomes full |
+| `centre` | 0.5 | where the sharp band sits (0 top, 1 bottom) |
+| `band` | 0.32 | half its height: the middle two thirds of the window stay sharp |
+| `fade` | 0.18 | how far beyond the band the blur becomes full: only the top and bottom strips soften |
 | `strength` | 0.5 | how far the blur goes: at 0.5 the edges are half blurred, from the quarter-size mip only; `X` toggles between 0.5 and 0 |
 
 ## Cost

@@ -70,9 +70,9 @@ pub struct TiltShift {
 impl Default for TiltShift {
     fn default() -> Self {
         Self {
-            centre: 0.55,
-            band: 0.22,
-            fade: 0.5,
+            centre: 0.5,
+            band: 0.32,
+            fade: 0.18,
             strength: 0.5,
         }
     }
