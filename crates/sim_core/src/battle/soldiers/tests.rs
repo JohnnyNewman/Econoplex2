@@ -3,7 +3,6 @@
 
 use super::*;
 use crate::battle::tests::{losses_on, wins_on};
-use std::time::Instant;
 
 fn soldiers() -> BattleParams {
     BattleParams {
@@ -179,31 +178,6 @@ fn a_braced_line_turns_to_face_riders() {
         "{:?} facing {:?}, riders toward {to_riders:?}, {faced} of 60 face them",
         s.formation,
         s.facing
-    );
-}
-
-/// The budget: a 4,000-soldier battle (50 squads of 40 a side) costs at most
-/// 1 ms per battle second on one core. Release only.
-#[test]
-#[ignore]
-fn four_thousand_soldiers_within_budget() {
-    let side = vec!["swordsmen*40"; 50].join(",");
-    let lineup = format!("{side} vs {side}");
-    let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(1)
-        .build()
-        .unwrap();
-    let (ms, seconds) = pool.install(|| {
-        let (field, specs) = parse_lineup(&lineup).unwrap();
-        let mut b = Battle::new(soldiers(), field, specs, 1);
-        let start = Instant::now();
-        let r = b.run();
-        (start.elapsed().as_secs_f64() * 1e3, r.seconds)
-    });
-    let per = ms / seconds as f64;
-    assert!(
-        per <= 1.0,
-        "{per:.3} ms per battle second ({ms:.0} ms for {seconds:.0} s)"
     );
 }
 

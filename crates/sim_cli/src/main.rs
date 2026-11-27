@@ -245,7 +245,12 @@ fn run_battle(lineup: &str, params: &sim_core::battle::BattleParams, args: &Args
     let seeds = args.seeds.max(1);
     sim_core::battle::parse_lineup(lineup).unwrap_or_else(|e| die(&e));
     if args.profile {
-        profile_battle(lineup, &params, seed, seeds);
+        // The budget is for one core.
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .unwrap_or_else(|e| die(&e.to_string()))
+            .install(|| profile_battle(lineup, &params, seed, seeds));
         return;
     }
     let models = if args.compare {

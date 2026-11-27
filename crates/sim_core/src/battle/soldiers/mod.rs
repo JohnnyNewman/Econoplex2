@@ -21,9 +21,9 @@
 //! 6. **Squads.** Recount each squad and tell the [`Report`] what happened.
 //!
 //! Phases 3 and 4 only read the last substep's state and write per-soldier
-//! buffers, so they run on rayon for big battles and give the same battle as
-//! one thread: every draw comes from a counter-based stream keyed by seed,
-//! substep, soldier and purpose ([`rng`]).
+//! buffers, so one pass does both, soldier by soldier. It runs on rayon for
+//! big battles and gives the same battle as one thread: every draw comes from
+//! a counter-based stream keyed by seed, substep, soldier and purpose ([`rng`]).
 
 mod apply;
 mod grid;
@@ -475,19 +475,27 @@ impl Default for Blow {
     }
 }
 
+/// The blows that landed on one soldier in a substep.
+#[derive(Clone, Copy, Debug, Default)]
+struct Hurt {
+    damage: f32,
+    wounds: u16,
+    /// Blows, hit or not, from their side or rear.
+    side_blows: u16,
+}
+
 /// Seconds spent per phase, for `--profile`.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Profile {
     pub substeps: u64,
-    pub phases: [f64; 6],
+    pub phases: [f64; 5],
 }
 
 impl Profile {
-    pub const PHASES: [&'static str; 6] = [
+    pub const PHASES: [&'static str; 5] = [
         "grid",
         "squad controllers",
-        "soldier controllers",
-        "blows and shots",
+        "soldiers and blows",
         "apply",
         "squads",
     ];
@@ -537,10 +545,10 @@ pub struct SoldierBattle {
     widest: [f32; 2],
     // Buffers, reused every substep.
     plans: Vec<Plan>,
-    blows: Vec<Blow>,
-    incoming: Vec<f32>,
-    wounds: Vec<u16>,
-    side_blows: Vec<u16>,
+    /// The substep's blows and shots, by striker, in soldier order.
+    blows: Vec<(u32, Blow)>,
+    /// What the substep's blows did to each soldier, emptied as it is read.
+    hurt: Vec<Hurt>,
     fallen: Vec<usize>,
     broke: Vec<usize>,
     tally: Vec<u32>,
@@ -588,10 +596,8 @@ impl SoldierBattle {
             start_morale: Vec::with_capacity(n),
             quiet: vec![0.0; n],
             plans: vec![Plan::default(); n],
-            blows: vec![Blow::default(); n],
-            incoming: vec![0.0; n],
-            wounds: vec![0; n],
-            side_blows: vec![0; n],
+            blows: Vec::new(),
+            hurt: vec![Hurt::default(); n],
             fallen: Vec::new(),
             broke: Vec::new(),
             tally: vec![0; specs.len()],
@@ -829,49 +835,44 @@ impl SoldierBattle {
         // 2. Squad controllers.
         self.command();
         lap(self, 1);
-        // 3. Soldier controllers.
+        // 3 and 4. Soldier controllers, and each soldier's blow or shot.
         let mut plans = std::mem::take(&mut self.plans);
+        let mut blows = std::mem::take(&mut self.blows);
+        blows.clear();
         {
             let this = &*self;
             if par {
-                plans
-                    .par_iter_mut()
+                // In chunks, each listing its blows; joined in soldier order.
+                const CHUNK: usize = 256;
+                let lists: Vec<Vec<(u32, Blow)>> = plans
+                    .par_chunks_mut(CHUNK)
                     .enumerate()
-                    .for_each(|(i, p)| *p = this.plan(i));
+                    .map(|(c, chunk)| {
+                        let mut list = Vec::new();
+                        for (k, p) in chunk.iter_mut().enumerate() {
+                            this.plan_and_blow(c * CHUNK + k, p, &mut list);
+                        }
+                        list
+                    })
+                    .collect();
+                blows.extend(lists.into_iter().flatten());
             } else {
                 for (i, p) in plans.iter_mut().enumerate() {
-                    *p = this.plan(i);
+                    this.plan_and_blow(i, p, &mut blows);
                 }
             }
         }
         lap(self, 2);
-        // 4. Blows and shots.
-        let mut blows = std::mem::take(&mut self.blows);
-        {
-            let this = &*self;
-            let plans = &plans;
-            if par {
-                blows
-                    .par_iter_mut()
-                    .enumerate()
-                    .for_each(|(i, b)| *b = this.resolve(i, &plans[i]));
-            } else {
-                for (i, b) in blows.iter_mut().enumerate() {
-                    *b = this.resolve(i, &plans[i]);
-                }
-            }
-        }
-        lap(self, 3);
         // 5. Apply.
         self.apply(&plans, &blows, dt);
         self.plans = plans;
         self.blows = blows;
-        lap(self, 4);
+        lap(self, 3);
         // 6. Squads.
         self.t += dt;
         self.substep += 1;
         self.recount();
-        lap(self, 5);
+        lap(self, 4);
         if let Some(p) = self.profile.as_mut() {
             p.substeps += 1;
         }

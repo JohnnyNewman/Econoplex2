@@ -35,14 +35,18 @@ impl SoldierBattle {
             let home = V2::new(if side == 0 { -1.0 } else { 1.0 }, 0.0);
             let mut away = V2::ZERO;
             if foes_near {
-                for j in foes.near(me, sp.cell) {
-                    let d = me - self.pos[j];
+                let cell2 = sp.cell * sp.cell;
+                foes.each_near(me, sp.cell, |j, pj| {
+                    let d = me - pj;
                     let d2 = d.len2();
-                    if d2 > 1e-6 && d2 < sp.cell * sp.cell {
+                    if d2 >= cell2 {
+                        return;
+                    }
+                    if d2 > 1e-6 {
                         away += d * (2.0 / d2);
                     }
                     plan.push += self.shove(i, j, d, d2, 0.5);
-                }
+                });
             }
             let mut dir = home + away;
             if dir.dot(home) < 0.3 {
@@ -91,21 +95,25 @@ impl SoldierBattle {
                 reach
             };
             let r = look.max(k.body) + self.widest[1 - side];
-            for j in foes.near(me, r.min(sp.cell)) {
-                let d = me - self.pos[j];
+            foes.each_near(me, r.min(sp.cell), |j, pj| {
+                let d = me - pj;
                 let d2 = d.len2();
+                // Nobody further than `r` is pushed against or picked.
+                if d2 > r * r {
+                    return;
+                }
                 let bj = self.body[j];
                 plan.push += self.shove(i, j, d, d2, 0.5);
                 if d2 < best_d2 {
                     let rj = reach + bj;
                     // In reach, or (for the front rank) near the slot.
-                    let close = d2 <= rj * rj || (front && (self.pos[j] - slot).len2() <= slack2);
-                    if close && !self.wall_between(me, self.pos[j], breach) {
+                    let close = d2 <= rj * rj || (front && (pj - slot).len2() <= slack2);
+                    if close && !self.wall_between(me, pj, breach) {
                         best = j as u32;
                         best_d2 = d2;
                     }
                 }
-            }
+            });
         }
 
         if best != NONE {
@@ -172,17 +180,23 @@ impl SoldierBattle {
         }
 
         // Friends give way to the front rank. A soldier standing in their
-        // slot with nobody to fight need not look.
-        let settled = state == SoldierState::Formed && best == NONE && (slot - me).len2() < 0.09;
+        // slot with nobody to fight need not look, nor need one keeping
+        // within half a pace of it out of contact: the formation keeps them apart.
+        let off2 = (slot - me).len2();
+        let half = 0.5 * c.spacing;
+        let settled = state == SoldierState::Formed
+            && best == NONE
+            && (off2 < 0.09 || (!foes_near && off2 < half * half));
         if !settled {
             let r = k.body + self.widest[side];
             let my_squad = self.squad[i];
-            for j in friends.near(me, r) {
-                if j == i || self.state[j] == SoldierState::Routing {
-                    continue;
-                }
-                let d = me - self.pos[j];
+            friends.each_near(me, r, |j, pj| {
+                let d = me - pj;
                 let d2 = d.len2();
+                // Only bodies that overlap push.
+                if d2 >= r * r || j == i || self.state[j] == SoldierState::Routing {
+                    return;
+                }
                 let share = if self.squad[j] != my_squad || self.rank[j] == self.rank[i] {
                     0.5
                 } else if self.rank[j] < self.rank[i] {
@@ -193,7 +207,7 @@ impl SoldierBattle {
                 if share > 0.0 {
                     plan.push += self.shove(i, j, d, d2, share);
                 }
-            }
+            });
         }
 
         plan.morale = self.drift(i, c, best != NONE);
@@ -249,6 +263,20 @@ impl SoldierBattle {
             }
         }
         dm
+    }
+
+    /// Phases 3 and 4 for soldier `i`: their plan into `p`, and their blow
+    /// or shot, if they make one that reaches anybody, onto `blows`. Most
+    /// stand idle in any substep.
+    #[inline]
+    pub(super) fn plan_and_blow(&self, i: usize, p: &mut Plan, blows: &mut Vec<(u32, Blow)>) {
+        *p = self.plan(i);
+        if p.act != Act::None {
+            let b = self.resolve(i, p);
+            if b.target != NONE {
+                blows.push((i as u32, b));
+            }
+        }
     }
 
     /// Phase 4: what soldier `i`'s blow or shot does.
