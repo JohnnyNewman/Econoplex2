@@ -6,8 +6,9 @@ people and water all darken where a cloud passes between them and the sun.
 
 ## How (`cloud_shadow` in `assets/shaders/fog.wesl`)
 
-The clouds are a flat deck of fractal noise (three octaves of
-`season_noise`), 40 units above the ground, 26 units per noise cell. For a
+The clouds are a flat deck of fractal gradient noise (four octaves of
+`cloud_noise`, each turned by 37°), 40 units above the ground, 26 units per
+noise cell. For a
 point `p`, follow the ray toward the sun up to the deck:
 
     deck = p.xz + sun.xz / sun.y · (40 − p.y)
@@ -21,6 +22,15 @@ The result is a new field of the shared toon lighting, `ToonParams::sky`
 (1 clear .. 0.3 shaded), which scales the sunlit part and the rim light in
 `toon_terms`. So every material that uses the toon lighting gets the shadows
 the same way: each sets `params.sky = cloud_shadow(position, env.fog)`.
+
+## Why gradient noise
+
+The first version used value noise (`season_noise`). Its peaks sit on the
+lattice, so a nearly clear sky, where only the peaks count as cloud, laid
+square crosses on the sea. Broken cloud showed straight, cell-shaped edges.
+Gradient noise with a quintic blend has neither, and turning each octave
+keeps the octaves from lining up. Below 10–30 % cover there are no patches
+at all.
 
 ## Broken cloud and overcast
 
