@@ -797,14 +797,16 @@ battle runs exactly as before.
 - The ghost line (`LiveView::preview`) follows the route, and its arrival
   time is the route's length at the squad's pace. Both clients draw it.
 
-**Cost.** Release builds, one core, 50 squads of 40 a side:
+**Cost.** Release builds, one core, 50 squads of 40 a side, the best of
+three runs (`--profile` and `battle_budget.rs`; this machine varies by
+about a third from run to run):
 
 | Battle | ms per battle second |
 | --- | --- |
-| open field, whole battle | OPEN_WHOLE |
-| in a town (`vs town`), whole battle | TOWN_WHOLE |
-| open field, first 400 s | OPEN_400 |
-| in a town, first 400 s | TOWN_400 |
+| open field, whole battle | 1.0 (1,536 substeps) |
+| in a town (`vs town`), whole battle | 2.3 (2,004 substeps: it lasts longer) |
+| open field, first 400 s | 0.95 |
+| in a town, first 400 s | 2.6 |
 
 The obstacle queries themselves are cheap: about 0.6 shape queries and 0.1
 corner choices per soldier and substep. The extra time is the fighting a town
