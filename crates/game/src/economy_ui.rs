@@ -184,6 +184,7 @@ pub fn economy_lines(
     params: &Params,
     governor: Option<(&str, &sim_core::governor::GovernorState, u32)>,
     stats: Option<&sim_core::metrics::TownStats>,
+    names: &[&str],
 ) -> Vec<PanelLine> {
     let mut out: Vec<PanelLine> = Vec::new();
     let mut line = |s: String, c: Color| out.push((s, c, None));
@@ -331,12 +332,23 @@ pub fn economy_lines(
             .sum();
         line(
             format!(
-                "  treasury {:.0}, people hold {:.0}",
+                "  treasury {:.0}, people hold {:.0} (own coin, worth {:.2})",
                 town.treasury.coins(),
-                held
+                held,
+                town.coin_value
             ),
             DIM,
         );
+        let foreign: Vec<String> = town
+            .foreign
+            .iter()
+            .enumerate()
+            .filter(|&(_, c)| c.coins() >= 1.0)
+            .map(|(o, c)| format!("{:.0} {}", c.coins(), names.get(o).copied().unwrap_or("?")))
+            .collect();
+        if !foreign.is_empty() {
+            line(format!("  holds coin of {}", foreign.join(", ")), DIM);
+        }
     }
 
     // The town's economic levers, each against the default from models.ron.
@@ -610,6 +622,7 @@ pub fn update_economy_panel(
         &params,
         governor,
         metrics.latest().and_then(|y| y.towns.get(t)),
+        &towns.0.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(),
     );
     view.headers = content.iter().map(|l| l.2).collect();
     for (l, mut text, mut color, mut node) in &mut lines {
