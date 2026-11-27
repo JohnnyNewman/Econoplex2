@@ -1,13 +1,15 @@
 //! Command-line options for the game, mainly for scripted runs:
 //!
 //! ```text
-//! econoplex [--load FILE] [--speed 1-9] [--shot FILE [--shot-day N] [--exit]]
+//! econoplex [--load FILE] [--speed 1-9] [--shot FILE [--shot-day N | --shot-battle S] [--exit]]
 //!           [--town NAME] [--camera X Y] [--zoom F] [--no-economy] [--product-space]
 //!           [--report why|town|history|log|person] [--select ID] [--culture]
 //! ```
 //!
 //! `--shot` runs until day N (default: right away), pauses, lets the view settle,
-//! writes a PNG screenshot and, with `--exit`, quits. Used to make the README and PR
+//! writes a PNG screenshot and, with `--exit`, quits. With `--shot-battle S` it
+//! waits instead for a live battle to have been fought S battle seconds, and
+//! looks at its field. Used to make the README and PR
 //! screenshots.
 
 use crate::view::WorldCamera;
@@ -22,6 +24,8 @@ pub struct GameArgs {
     pub speed: Option<usize>,
     pub shot: Option<PathBuf>,
     pub shot_day: u64,
+    /// Take the shot once a live battle has been fought this many battle seconds.
+    pub shot_battle: Option<f32>,
     pub exit: bool,
     /// Town shown in the economy panel at start.
     pub town: Option<String>,
@@ -64,6 +68,13 @@ pub fn parse() -> GameArgs {
                 a.shot_day = val()
                     .parse()
                     .unwrap_or_else(|_| die("--shot-day expects a day"))
+            }
+            "--shot-battle" => {
+                a.shot_battle = Some(
+                    val()
+                        .parse()
+                        .unwrap_or_else(|_| die("--shot-battle expects battle seconds")),
+                )
             }
             "--exit" => a.exit = true,
             "--town" => a.town = Some(val()),
@@ -108,6 +119,7 @@ pub fn parse() -> GameArgs {
                      --speed N        start at speed N (1-9)\n\
                      --shot FILE      save a PNG screenshot once the game reaches --shot-day\n\
                      --shot-day N     simulated day (month) of the screenshot (default: at once)\n\
+                     --shot-battle S  instead, once a live battle has been fought S seconds, on its field\n\
                      --exit           quit after the screenshot
                      --town NAME      town shown in the economy panel at start
                      --camera X Y     center the camera on a world position
@@ -167,10 +179,14 @@ pub struct ShotState {
     taken: bool,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn autoshot(
     mut commands: Commands,
     args: Res<GameArgs>,
     clock: Res<sim_core::SimClock>,
+    live: Res<crate::live_battle::LiveBattle>,
+    mut camera: Single<&mut Transform, With<WorldCamera>>,
+    mut follow: ResMut<crate::view::Follow>,
     mut control: ResMut<SimControl>,
     mut state: ResMut<ShotState>,
     mut exit: MessageWriter<AppExit>,
@@ -178,8 +194,20 @@ pub fn autoshot(
     let Some(path) = &args.shot else {
         return;
     };
-    if clock.tick < args.shot_day {
-        return;
+    if state.frames == 0 {
+        match args.shot_battle {
+            Some(s) => {
+                let Some(v) = live.view.as_ref().filter(|v| v.frame.t >= s || v.finished) else {
+                    return;
+                };
+                follow.0 = false;
+                crate::view::look_at(&mut camera, crate::live_battle::look_point(v));
+                let z = args.zoom.unwrap_or(crate::live_battle::LOOK_ZOOM);
+                camera.scale = Vec3::new(z, z, 1.0);
+            }
+            None if clock.tick < args.shot_day => return,
+            None => {}
+        }
     }
     control.paused = true;
     state.frames += 1;

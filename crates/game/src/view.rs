@@ -564,7 +564,8 @@ pub fn camera_controls(
     let zoom = camera.scale.x;
     camera.translation += (dir * 600.0 * zoom * time.delta_secs()).extend(0.0);
     if scroll.delta.y != 0.0 {
-        let z = (zoom * (1.0 - 0.1 * scroll.delta.y.signum())).clamp(0.2, 5.0);
+        // Close enough in to tell the soldiers of a live battle apart.
+        let z = (zoom * (1.0 - 0.1 * scroll.delta.y.signum())).clamp(0.05, 5.0);
         camera.scale = Vec3::new(z, z, 1.0);
     }
 }

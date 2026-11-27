@@ -9,7 +9,12 @@
 //!     [--fog-view N] [--no-fog] [--days N] [--speed 0-8] [--paused] [--trade] [--culture] [--product-space] [--bloom-view] [--focus-town I] [--focus X,Z] [--view-from YAW,PITCH,DIST]
 //!     [--no-ui] [--no-lod] [--lod-view] [--fps] [--render-scale F] [--shot FILE] [--quit-after S] [--select ID]
 //!     [--weather clear|cloudy|rain|storm|snow|fog] [--season spring|summer|autumn|winter]
-//!     [--preset FILE]
+//!     [--preset FILE] [--order TEXT]... [--shot-battle S]
+//!
+//! `--order` gives an order before the first day, as typed in the CLI. With
+//! `--shot FILE --shot-battle S` the screenshot waits for a live battle to have
+//! been fought S battle seconds, and looks at its field.
+//!
 //! econoplex3d --playground [--hour H] [--view N] [--toon-view N] [--pbr] [--face-sun] [--shot FILE]
 //!     (shader playground)
 
@@ -94,9 +99,11 @@ fn apply_outline_start(mut commands: Commands, start: Res<OutlineStart>) {
     }
 }
 
-/// Where to save a screenshot (then quit), if anywhere.
+/// Where to save a screenshot (then quit), if anywhere, and with
+/// `--shot-battle S`, to wait for a live battle fought S battle seconds and
+/// take it on its field.
 #[derive(Resource)]
-struct ShotPath(Option<PathBuf>);
+struct ShotPath(Option<PathBuf>, Option<f32>);
 
 #[derive(Resource)]
 struct World3d {
@@ -120,6 +127,9 @@ fn main() {
     };
     let (mut shot, mut hour, mut view, mut playground, mut face_sun) =
         (None, None, None, false, false);
+    let mut shot_battle: Option<f32> = None;
+    // Orders given before the first day, as typed in the CLI (`--order`).
+    let mut orders: Vec<String> = Vec::new();
     let mut toon_settings = toon::ToonSettings::default();
     let mut terrain_settings = terrain::TerrainSettings::default();
     let mut fog_settings = fog::FogSettings::default();
@@ -150,6 +160,8 @@ fn main() {
             }
             "--towns" => args.towns = it.next().and_then(|v| v.parse().ok()).unwrap_or(5),
             "--shot" => shot = it.next().map(PathBuf::from),
+            "--shot-battle" => shot_battle = it.next().and_then(|v| v.parse().ok()),
+            "--order" => orders.extend(it.next()),
             "--hour" => hour = it.next().and_then(|v| v.parse().ok()),
             "--view" => view = it.next().and_then(|v| v.parse().ok()),
             "--playground" => playground = true,
@@ -269,6 +281,11 @@ fn main() {
     let terrain = Terrain::build(&scenario);
     // The simulation of this world, run ahead by `--days`, then on its own thread.
     let mut sim = sim_core::Simulation::new(db, params, &scenario);
+    for text in &orders {
+        if let Err(e) = sim.order(text) {
+            eprintln!("--order {text}: {e}");
+        }
+    }
     for _ in 0..days {
         sim.step();
     }
@@ -318,7 +335,7 @@ fn main() {
         !(fixed_scale || no_auto_scale || shot.is_some() || fps),
     ))
     .insert_resource(args)
-    .insert_resource(ShotPath(shot))
+    .insert_resource(ShotPath(shot, shot_battle))
     .insert_resource(QuitAfter(quit_after))
     .insert_resource(inspect::Selected(select))
     .add_plugins((
@@ -705,14 +722,31 @@ struct Shot {
     frames: u32,
 }
 
-/// With `--shot FILE`: save a screenshot after 60 frames, then quit.
+/// With `--shot FILE`: save a screenshot after 60 frames, then quit. With
+/// `--shot-battle S`, count the frames from when a live battle has been
+/// fought S battle seconds, looking at its field.
 fn shoot(
     mut commands: Commands,
     args: Res<ShotPath>,
+    // Absent in the shader playground, which has no simulation.
+    live: Option<Res<live::LiveSim>>,
+    world: Option<Res<World3d>>,
+    mut cameras: Query<&mut camera::WorldCamera>,
     mut state: Local<Shot>,
     mut exit: MessageWriter<AppExit>,
 ) {
     let Some(path) = &args.0 else { return };
+    if let Some(s) = args.1.filter(|_| state.frames == 0) {
+        let (Some(live), Some(world)) = (live, world) else {
+            return;
+        };
+        let Some(v) = live.live_battle().filter(|v| v.frame.t >= s || v.finished) else {
+            return;
+        };
+        for mut cam in &mut cameras {
+            battles::look_at_field(&mut cam, &v, &world.terrain, 20.0);
+        }
+    }
     state.frames += 1;
     if state.frames == 60 {
         commands

@@ -36,7 +36,7 @@ pub(super) fn prepare_live_battle(
         store,
         db,
         params,
-        params.battle.model,
+        params.battle.live_model,
         fight,
         gear_defs,
         &raid.soldiers,

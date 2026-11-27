@@ -74,8 +74,11 @@ impl std::str::FromStr for BattleModel {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct BattleParams {
-    /// Which model fights the battle.
+    /// Which model fights a battle that is resolved at once (raids, the
+    /// planner's forecasts, `--battle`).
     pub model: BattleModel,
+    /// Which model fights a battle the player watches and commands.
+    pub live_model: BattleModel,
     /// Seconds per step, and the longest a battle may last.
     pub dt: f32,
     pub max_seconds: f32,
@@ -135,6 +138,7 @@ impl Default for BattleParams {
     fn default() -> Self {
         Self {
             model: BattleModel::Squads,
+            live_model: BattleModel::Soldiers,
             dt: 1.0,
             max_seconds: 3.0 * 3600.0,
             walk_speed: 1.4,
@@ -407,6 +411,10 @@ impl Battle {
             player_side,
             finished,
             winner: if finished { self.report().winner } else { None },
+            soldiers: match self {
+                Self::Squads(_) => Vec::new(),
+                Self::Soldiers(b) => b.live_soldiers(),
+            },
         }
     }
 

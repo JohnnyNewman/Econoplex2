@@ -793,6 +793,28 @@ impl SoldierBattle {
         self.profile
     }
 
+    /// Every soldier of each squad, in member order, as a live battle shows them.
+    pub fn live_soldiers(&self) -> Vec<Vec<LiveSoldier>> {
+        self.squads
+            .iter()
+            .map(|s| {
+                (s.first..s.first + s.spec.members.len())
+                    .map(|i| LiveSoldier {
+                        x: self.pos[i].x,
+                        y: self.pos[i].y,
+                        facing: (self.facing[i].x, self.facing[i].y),
+                        state: match self.state[i] {
+                            SoldierState::Routing => FighterState::Routing,
+                            SoldierState::Down => FighterState::Down,
+                            SoldierState::Fled => FighterState::Fled,
+                            _ => FighterState::Standing,
+                        },
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
     /// How many soldiers fight.
     pub fn soldiers(&self) -> usize {
         self.pos.len()

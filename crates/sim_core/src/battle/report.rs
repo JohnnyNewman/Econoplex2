@@ -126,6 +126,31 @@ pub struct LiveView {
     pub player_side: u8,
     pub finished: bool,
     pub winner: Option<u8>,
+    /// On the soldier model, every soldier of each squad, in member order;
+    /// empty on the squad model.
+    pub soldiers: Vec<Vec<LiveSoldier>>,
+}
+
+/// One soldier of a live battle: where they stand (metres on the field),
+/// the way they face (unit), and how they are.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct LiveSoldier {
+    pub x: f32,
+    pub y: f32,
+    pub facing: (f32, f32),
+    pub state: FighterState,
+}
+
+/// How a soldier of a live battle is, as the clients draw them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FighterState {
+    /// In the line: formed, fighting or wavering.
+    Standing,
+    Routing,
+    /// Lying where they fell.
+    Down,
+    /// Left the field.
+    Fled,
 }
 
 /// Battles fought, for the view (the newest few; `total` counts all of them so

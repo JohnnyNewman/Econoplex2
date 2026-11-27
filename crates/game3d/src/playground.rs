@@ -68,7 +68,7 @@ pub fn run(
     .insert_resource(clock)
     .insert_resource(toon_settings)
     .insert_resource(fog_settings)
-    .insert_resource(crate::ShotPath(shot))
+    .insert_resource(crate::ShotPath(shot, None))
     .insert_resource(Orbit {
         // --face-sun: start looking toward the sun (the camera sits on the
         // opposite side of the shapes).
