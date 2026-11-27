@@ -47,6 +47,8 @@ flowchart LR
     r_carve_hilt["Carve hilt"]
     r_make_bow["Make bow"]
     r_make_shield["Make shield"]
+    r_make_crossbow["Make crossbow"]
+    r_make_rimmed_shield["Make iron-rimmed shield"]
   end
   subgraph d7["mining"]
     r_mine_ore(["Mine ore"])
@@ -85,6 +87,11 @@ flowchart LR
     r_make_iron_spear["Make iron spear"]
     r_make_lance["Make lance"]
     r_make_mail["Make mail shirt"]
+    r_make_pike["Make pike"]
+    r_forge_war_axe["Forge war axe"]
+    r_forge_mace["Forge mace"]
+    r_make_bronze_scale["Make bronze scale"]
+    r_make_plate["Make plate armour"]
     r_forge_plough["Forge plough"]
     r_strike_silver_coins["Strike silver coins"]
     r_strike_copper_coins["Strike copper coins"]
@@ -199,6 +206,18 @@ flowchart LR
   r_forge_hammer --> r_make_mail
   r_shear_sheep --> r_breed_horses
   r_build_workshop --> r_build_stable
+  r_make_iron_spear --> r_make_pike
+  r_hew_beams --> r_make_pike
+  r_forge_iron_blade --> r_forge_war_axe
+  r_forge_hammer --> r_forge_mace
+  r_make_bow --> r_make_crossbow
+  r_make_steel --> r_make_crossbow
+  r_cast_bronze --> r_make_bronze_scale
+  r_weave_cloth --> r_make_bronze_scale
+  r_make_mail --> r_make_plate
+  r_make_steel --> r_make_plate
+  r_make_shield --> r_make_rimmed_shield
+  r_forge_nails --> r_make_rimmed_shield
   r_mine_ore --> r_mine_coal
   r_mine_coal --> r_bake_coke
   r_burn_charcoal --> r_bake_coke
