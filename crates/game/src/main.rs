@@ -25,6 +25,7 @@ mod reports;
 mod saving;
 mod seasons;
 mod terrain_view;
+mod town_ground;
 mod ui_compat;
 mod view;
 
@@ -177,6 +178,7 @@ fn main() {
         .insert_resource(hud::UiHidden::default())
         .init_gizmo_group::<reports::ChartGizmos>()
         .insert_resource(battles::BattleScenes::default())
+        .insert_resource(town_ground::TownGround::default())
         .insert_resource(economy_ui::EconomyView::new(econ_town))
         .insert_resource(ClearColor(Color::srgb(0.08, 0.09, 0.08)))
         .add_systems(
@@ -282,7 +284,6 @@ fn main() {
                 view::attach_agent_sprites,
                 view::attach_building_sprites,
                 view::attach_nature_sprites,
-                view::animate_agents,
                 view::draw_world,
                 view::draw_batches,
                 view::update_skill_labels,
@@ -295,6 +296,13 @@ fn main() {
                 policy_ui::policy_buttons,
                 policy_ui::update_policy_panel,
                 policy_ui::place_building.after(view::select_agent),
+            ),
+        )
+        .add_systems(
+            Update,
+            (
+                town_ground::update_town_ground,
+                view::animate_agents.after(town_ground::update_town_ground),
             ),
         );
     app.run();

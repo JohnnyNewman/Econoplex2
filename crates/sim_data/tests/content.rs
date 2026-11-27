@@ -82,7 +82,7 @@ fn a_building_loop_without_a_starter_is_rejected() {
         skills: [(id: "s", name: "S", domain: "x")],
         products: [
             (id: "plank", name: "Plank", category: Material, base_price: 1.0),
-            (id: "shop", name: "Shop", category: Building, base_price: 1.0),
+            (id: "shop", name: "Shop", category: Building, footprint: Some((20.0, 20.0)), base_price: 1.0),
         ],
         recipes: [
             (id: "saw", name: "Saw", skill: "s", difficulty: 0.1,

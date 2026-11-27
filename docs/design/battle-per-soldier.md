@@ -745,6 +745,100 @@ Prisoners are few next to the civilians raids carry off (only routers a
 squad reaches are taken), and population stays within the seeds' spread
 (about 120 either way).
 
+## Obstacles: battles in towns
+
+A raid is fought on a field that reaches from outside the defenders' town
+into it (`layout::battle_field`), and the town's workplaces and houses stand
+on it. Nothing that walks passes through them.
+
+**Where the armies meet.** The field lies so far out from the town that its
+nearest building or house begins 60 % of the way across
+(`layout::TOWN_FRONT`), and the defenders form up 15 m in front of it
+(`Field::defenders_x`; never on the attackers' half). Both sides meet formed
+on open ground with the town at the defenders' backs. When the field
+reached 60 map units out and the defenders formed up three quarters across,
+they stood among the houses. Whichever side came through the streets arrived
+in column, a squad at a time, and lost to a formed line. Single-line mirrors
+went from 0–30 % to 100 % depending on who had to walk through the town.
+Now equal armies split between 42 % and 58 % over 60 seeds on both models.
+A town still has its cost: a beaten defender's men rout through the streets,
+and squads in the second line come up between the houses.
+
+**One layout for everyone.** `sim_core::layout` says where each building and
+house stands, how it is turned and how much ground it covers:
+
+- workplaces stand where the simulation put them, their front toward the
+  town centre, covering their kind's `footprint` (content, map units, the
+  walls as the 3D client draws them; validation asks every workplace for
+  one);
+- houses (`Town::houses`, one per house the town has) stand on a spiral
+  round the centre, off water, off workplaces, building sites and the next
+  building places, and off the roads into and out of the town.
+
+The 2D and 3D clients draw from it (`TownView::layout`), battles take it as
+obstacles, and walkers in both clients keep out of it. One map scale,
+`battle::MAP_PER_METRE`, puts a battle on the map in both clients.
+
+**The obstacle layer** (`battle/nav.rs`), shaped for town walls to come:
+
+- `Field::obstacles` is a list of `Obstacle { id, shape, passage }`;
+- `shape` is `Shape::Rect { centre, half, axis }` or `Shape::Segment { a,
+  b, half_width }` (a wall);
+- `id` links it to its building (a workplace's entity bits, or the house's
+  town and number);
+- `passage` is `Blocked`, `Open` (a breach, a gate standing open) or
+  `Gate(side)` (only that side passes).
+
+`Battle::set_passage(id, ..)` and `Battle::remove_obstacle(id)` change the
+layer during a battle. Either builds the `Nav` again with a higher
+`version`, so every squad's cached route and both sides' flow fields are
+found again. Walls are not built yet.
+
+**What uses it.** A field without obstacles has no `Nav`, so an open-field
+battle runs exactly as before.
+
+- `Nav` holds the exact shapes in buckets (8 m) and a 1 m grid of them,
+  grown by 1 m, per side.
+- Each squad's way is found once on that grid (weighted A*, the corners
+  pulled tight) and cached in its `Route`. A moving goal (an enemy squad)
+  only moves the last leg while it stays in sight (checked once a battle
+  second), so there are one or two searches per battle second in a
+  4,000-soldier town battle.
+- Routers flee down a per-side flow field to their own edge.
+- Soldiers step round a building by its nearer corner (`steer`) and never
+  into one (`resolve`, `push_out`, all scaled by the step).
+- A line narrows to the street it is in: once a battle second a moving
+  squad measures the room either side of its anchor and takes fewer files.
+  It widens again once there is room.
+- The squad model approximates the same: squads follow the same routes, and
+  a squad's front is no wider than the room where it stands.
+- Orders onto a building (`MoveTo`, deployment) go to the nearest free spot.
+- The ghost line (`LiveView::preview`) follows the route, and its arrival
+  time is the route's length at the squad's pace. Both clients draw it.
+
+**Cost.** Release builds, one core, 50 squads of 40 a side, the best of
+three runs (`--profile` and `battle_budget.rs`; this machine varies by
+about a third from run to run):
+
+| Battle | ms per battle second |
+| --- | --- |
+| open field, whole battle | 1.0–1.1 (1,500 substeps) |
+| in a town (`vs town`), whole battle | 1.8 (1,748 substeps: it lasts longer) |
+| open field, first 400 s | 1.0–1.1 |
+| in a town, first 400 s | 1.9 |
+
+The obstacle queries themselves are cheap: about 0.6 shape queries and 0.1
+corner choices per soldier and substep. The extra time is the fighting a town
+makes: soldiers pressed out of their slots and squads jammed in the streets
+fight longer and closer, and routers find their way out between the houses.
+So a town battle gets its own budget, three times the open battle's cost timed
+in the same run (`battle_budget.rs`), and the open-field budget stays at 1 ms.
+
+**`--battle`.** `town` before the defenders (`"swordsmen*40 vs town
+spearmen*40"`) puts a sample town on their half: eight workplaces and sixty
+houses (`TownLayout::sample`). The clients' `--battle` places it in the
+player's town instead, with that town's real layout.
+
 ## Combat rules
 
 Both models settle every blow and arrow by one set of rules

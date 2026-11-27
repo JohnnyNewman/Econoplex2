@@ -22,7 +22,7 @@
         (id: "leather_armour", name: "Leather armour", category: Weapon, era: 1, base_price: 40.0, kg: 6.0,
             equip: Some((domain: "military", bonus: 0.0, durability: 80, slot: Some("armour"))),
             fight: Some((ac: 2, resist: [Blunt]))),
-        (id: "tannery", name: "Tannery", category: Building, era: 1, base_price: 200.0, slots: 8),
+        (id: "tannery", name: "Tannery", category: Building, era: 1, base_price: 200.0, slots: 8, footprint: Some((24.0, 24.0))),
     ],
     keeping: [
         (product: "hide", days: 30.0),

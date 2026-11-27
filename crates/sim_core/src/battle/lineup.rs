@@ -21,14 +21,19 @@ const ROUND_GAP: f32 = 30.0;
 /// `kit*count`, optionally `+battles` of experience, `@skill`, `!morale`,
 /// `%fatigue` (0 rested, 1 spent) and `#flank` or `#rear` (deploy beside or
 /// behind the enemy, facing in). `walls` before the defenders puts them
-/// behind a wall. A side with more squads than fit across the field stands
-/// in several lines, one behind the other.
+/// behind a wall, `town` fights in a town of the size the scenario starts
+/// with (`sample_town`). A side with more squads than fit across the field
+/// stands in several lines, one behind the other.
 pub fn parse_lineup(text: &str) -> Result<(Field, Vec<SquadSpec>), String> {
     let (att, def) = text
         .split_once(" vs ")
         .ok_or("a line-up needs `ATTACKERS vs DEFENDERS`")?;
     let mut def = def.trim();
     let mut field = Field::default();
+    if let Some(rest) = def.strip_prefix("town ") {
+        def = rest.trim();
+        field.obstacles = sample_town(&field);
+    }
     let walls = def.starts_with("walls ");
     if walls {
         def = def["walls ".len()..].trim();
@@ -81,7 +86,7 @@ pub fn parse_lineup(text: &str) -> Result<(Field, Vec<SquadSpec>), String> {
                 (_, true) => {
                     field.wall_x.unwrap_or(0.0) + (count as f32).sqrt() * spacing * 0.5 + 0.6 + back
                 }
-                _ => field.width * 0.75 + back,
+                _ => field.defenders_x() + back,
             };
             let level = if kit_name == "levy" {
                 skill.min(0.2)
@@ -157,4 +162,13 @@ fn take(rest: &mut String, c: char) -> Option<String> {
     let v = rest[at + 1..end].to_string();
     rest.replace_range(at..end, "");
     Some(v)
+}
+
+/// The obstacles of a battle in a town without a world: a town of eight
+/// workplaces and sixty houses, where a raid's field has the target town
+/// (beginning `layout::TOWN_FRONT` of the way across).
+pub fn sample_town(field: &Field) -> Vec<Obstacle> {
+    let (facing, size) = ((1.0, 0.0), (field.width, field.height));
+    let town = crate::layout::TownLayout::sample((0.0, 0.0), 8, 60);
+    town.obstacles_on(town.battle_at(facing, size), facing, size)
 }

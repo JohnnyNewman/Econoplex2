@@ -28,6 +28,7 @@ use crate::toon::ToonMaterial;
 use crate::{height, World3d, SCALE};
 use bevy::prelude::*;
 use sim_core::history::{Event, Sample};
+use sim_core::layout::{building_footprint, Footprint};
 use sim_core::policy::{Order, OrderQueue};
 use sim_core::view::ViewSnapshot;
 use sim_core::Simulation;
@@ -552,12 +553,11 @@ struct Shown {
 #[derive(Resource, Default)]
 pub struct TownHomes(pub Vec<Vec<Vec2>>);
 
-/// A town's houses: each with its map position, how far along the spiral we
-/// are, and the one entity that draws them all (rebuilt when they change).
+/// A town's houses, where its layout puts them, and the one entity that
+/// draws them all (rebuilt when they change).
 #[derive(Default)]
 struct TownHouses {
-    list: Vec<(HouseSpec, Vec2)>,
-    next_k: u32,
+    list: Vec<HouseSpec>,
     drawn: Option<Entity>,
     changed: bool,
 }
@@ -581,11 +581,6 @@ fn live_keys(keys: Res<ButtonInput<KeyCode>>, live: Res<LiveSim>) {
     if keys.just_pressed(KeyCode::Comma) {
         s.speed = s.speed.saturating_sub(1);
     }
-}
-
-/// Houses a town of `population` shows.
-pub fn houses_for(population: u32) -> u32 {
-    (population / 6).max(12)
 }
 
 /// Bring the scene up to date with the newest snapshot.
@@ -648,7 +643,6 @@ fn sync_scene(
         }
         let houses = &mut shown.houses[ti];
         houses.list.clear();
-        houses.next_k = 0;
         houses.changed = true;
     }
 
@@ -660,10 +654,21 @@ fn sync_scene(
             if shown.buildings.contains_key(&b.id) {
                 continue;
             }
+            // Turned as the town's layout turns it (every workplace with a
+            // footprint is in it; one without, such as a field, faces the
+            // centre all the same).
+            let print = town
+                .layout
+                .buildings
+                .iter()
+                .find(|f| f.id == b.id)
+                .copied()
+                .unwrap_or_else(|| building_footprint(b.id, town.pos, b.pos, (0.0, 0.0)));
             let spec = BuildingSpec {
                 kind: b.kind.clone(),
                 at: ground(b.pos),
                 seed: (b.id as u32).wrapping_mul(2_654_435_761) >> 8 ^ ti as u32,
+                angle: print.angle(),
                 id: b.id,
             };
             let style = shown.styles[ti].unwrap_or_default();
@@ -678,14 +683,14 @@ fn sync_scene(
                 shown.buildings.insert(b.id, e);
                 // Its chimney, if it has one (smoke.rs: it smokes while it works).
                 if let Some((top, dark)) = chimney(&b.kind) {
-                    let at = building_root(spec.at, spec.seed).transform_point(top);
+                    let at = building_root(spec.at, spec.angle).transform_point(top);
                     chimneys.buildings.insert(b.id, (ti, at, dark));
                     chimneys.dirty = true;
                 }
-                // Workplaces are drawn 1.5 times a house's size, and square.
+                // Its shade on the ground, as far as its footprint reaches.
                 if let Some(f) = footprints.as_deref_mut() {
                     f.buildings
-                        .insert(b.id, (Vec2::new(spec.at.x, spec.at.z), 2.4));
+                        .insert(b.id, (Vec2::new(spec.at.x, spec.at.z), shade(&print)));
                     f.dirty = true;
                 }
             }
@@ -728,6 +733,7 @@ fn sync_scene(
                 kind: site.kind.clone(),
                 at: ground(site.pos),
                 seed,
+                angle: building_footprint(0, town.pos, site.pos, (0.0, 0.0)).angle(),
                 id: 0,
             };
             let style = shown.styles[ti].unwrap_or_default();
@@ -751,55 +757,34 @@ fn sync_scene(
         keep
     });
 
-    // Houses: a spiral around each town centre, one house per six residents.
-    let taken: Vec<Vec2> = snap
-        .towns
-        .iter()
-        .flat_map(|t| {
-            t.buildings
-                .iter()
-                .map(|b| b.pos)
-                .chain(t.sites.iter().map(|s| s.pos))
-                .map(|p| Vec2::new(p.0, p.1))
-        })
-        .collect();
+    // Houses: where each town's layout puts them (`sim_core::layout`), one
+    // per house the town has.
     for (ti, town) in snap.towns.iter().enumerate() {
-        let want = houses_for(town.population) as usize;
+        // The walls the crowd keeps out of (grounding.rs's wall map).
+        if let Some(f) = footprints.as_deref_mut() {
+            if f.walls.len() < snap.towns.len() {
+                f.walls.resize(snap.towns.len(), Vec::new());
+            }
+            let walls: Vec<Footprint> = town.layout.footprints().copied().collect();
+            if f.walls[ti] != walls {
+                f.walls[ti] = walls;
+                f.dirty = true;
+            }
+        }
         let style = shown.styles[ti].unwrap_or_default();
         let houses = &mut shown.houses[ti];
-        let clear = |p: Vec2| !taken.iter().any(|b| b.distance(p) < 3.2 * SCALE);
-        // A new building moves the houses standing in its way further out.
-        let before = houses.list.len();
-        houses.list.retain(|&(_, p)| clear(p));
-        houses.changed |= houses.list.len() != before;
-        let mut tries = 0;
-        while houses.list.len() < want && tries < 400 {
-            tries += 1;
-            let k = houses.next_k;
-            houses.next_k += 1;
-            let a = k as f32 * 2.399_963 + ti as f32;
-            let r = 1.8 + (k as f32).sqrt() * 1.05;
-            let p = (
-                town.pos.0 + r * SCALE * a.cos(),
-                town.pos.1 + r * SCALE * a.sin(),
-            );
-            if t.cell_at(p).is_some_and(|c| t.water[c]) {
-                continue;
-            }
-            if !clear(Vec2::new(p.0, p.1)) {
-                continue;
-            }
-            let spec = HouseSpec {
-                at: ground(p),
-                rot: Quat::from_rotation_y(a),
-                k,
-            };
-            houses.list.push((spec, Vec2::new(p.0, p.1)));
-            houses.changed = true;
-        }
-        // A shrinking town loses its outermost houses first.
-        if houses.list.len() > want {
-            houses.list.truncate(want);
+        let list: Vec<HouseSpec> = town
+            .layout
+            .houses
+            .iter()
+            .map(|h| HouseSpec {
+                at: ground(h.pos),
+                rot: Quat::from_rotation_y(h.angle),
+                k: h.k,
+            })
+            .collect();
+        if list != houses.list {
+            houses.list = list;
             houses.changed = true;
         }
         // Draw the town's houses again, as one mesh, if they changed.
@@ -812,7 +797,7 @@ fn sync_scene(
             homes.0[ti] = houses
                 .list
                 .iter()
-                .map(|(h, _)| {
+                .map(|h| {
                     let door = h.at + h.rot * Vec3::new(0.0, 0.0, 0.9);
                     Vec2::new(door.x, door.z)
                 })
@@ -821,10 +806,12 @@ fn sync_scene(
                 if f.houses.len() < snap.towns.len() {
                     f.houses.resize(snap.towns.len(), Vec::new());
                 }
-                f.houses[ti] = houses
-                    .list
+                f.houses[ti] = town
+                    .layout
+                    .house_footprints
                     .iter()
-                    .map(|(h, _)| (Vec2::new(h.at.x, h.at.z), 0.8))
+                    .zip(&houses.list)
+                    .map(|(p, h)| (Vec2::new(h.at.x, h.at.z), shade(p)))
                     .collect();
                 f.dirty = true;
             }
@@ -833,28 +820,29 @@ fn sync_scene(
                 chimneys.houses.resize(snap.towns.len(), Vec::new());
             }
             chimneys.houses[ti] = match house_chimney(style) {
-                Some(top) => houses
-                    .list
-                    .iter()
-                    .map(|(h, _)| h.at + h.rot * top)
-                    .collect(),
+                Some(top) => houses.list.iter().map(|h| h.at + h.rot * top).collect(),
                 None => Vec::new(),
             };
             chimneys.dirty = true;
             if let Some(e) = houses.drawn.take() {
                 commands.entity(e).despawn();
             }
-            let specs: Vec<HouseSpec> = houses.list.iter().map(|(h, _)| *h).collect();
             houses.drawn = spawn_houses(
                 &mut commands,
                 &mut kit,
                 &mut meshes,
                 &outlines,
-                &specs,
+                &houses.list,
                 style,
             );
         }
     }
+}
+
+/// How far a footprint's shade reaches on the ground (`grounding`), 3D
+/// units: a little short of its corners.
+fn shade(f: &Footprint) -> f32 {
+    0.95 * f.half.0.hypot(f.half.1) / SCALE
 }
 
 /// Marks the status line.

@@ -200,16 +200,29 @@ pub fn spawn_camera(mut commands: Commands) {
     ));
 }
 
-/// Sprites and labels for buildings, including ones constructed during play.
+/// Sprites and labels for buildings, including ones constructed during play:
+/// a workplace covers its footprint, its front to the town centre
+/// (`sim_core::layout`, as the 3D client and battles have it); land is a
+/// small square.
 pub fn attach_building_sprites(
     mut commands: Commands,
     db: Res<Db>,
-    buildings: Query<(Entity, &Product, &Pos), Added<Structure>>,
+    towns: Res<Towns>,
+    buildings: Query<(Entity, &Product, &Pos, &sim_core::components::TownId), Added<Structure>>,
 ) {
-    for (e, product, pos) in &buildings {
+    for (e, product, pos, town) in &buildings {
+        let def = &db.content.products[product.def as usize];
+        let centre = towns.0.get(town.0 as usize).map_or((0.0, 0.0), |t| t.pos);
+        let (size, angle) = match def.footprint.filter(|_| def.workplace()) {
+            Some(size) => (
+                Vec2::new(size.0, size.1),
+                sim_core::layout::building_footprint(0, centre, (pos.x, pos.y), size).angle(),
+            ),
+            None => (Vec2::splat(26.0), 0.0),
+        };
         commands.entity(e).insert((
-            Sprite::from_color(Color::srgb(0.55, 0.42, 0.3), Vec2::splat(26.0)),
-            Transform::from_xyz(pos.x, pos.y, 1.0),
+            Sprite::from_color(Color::srgb(0.55, 0.42, 0.3), size),
+            Transform::from_xyz(pos.x, pos.y, 1.0).with_rotation(Quat::from_rotation_z(angle)),
         ));
         commands.spawn((
             Text2d::new(db.content.products[product.def as usize].name.clone()),
@@ -294,6 +307,7 @@ pub fn animate_agents(
     selection: Res<Selection>,
     terrain: Res<sim_core::terrain::Terrain>,
     towns: Res<Towns>,
+    ground: Res<crate::town_ground::TownGround>,
     overlay: Res<Overlay>,
     tasks: Query<&Task>,
     mut agents: Query<(&Agent, &mut Transform, &mut Sprite), With<AgentSprite>>,
@@ -307,9 +321,13 @@ pub fn animate_agents(
     let n = db.domain_dirs.len();
     for (a, mut tf, mut sprite) in &mut agents {
         let i = a.idx as usize;
-        let target = Vec2::new(store.target[i].0, store.target[i].1);
+        // Out of the building they head for (they wait at its wall), and
+        // round the ones in their way.
+        let target = ground.clear(Vec2::new(store.target[i].0, store.target[i].1));
         let pos = tf.translation.truncate();
-        let next = crate::terrain_view::walk(&terrain, &town_pos, pos, target, 160.0 * dt);
+        let step = 160.0 * dt;
+        let next = crate::terrain_view::walk(&terrain, &town_pos, pos, target, step);
+        let next = ground.step(pos, next, target, step);
         tf.translation.x = next.x;
         tf.translation.y = next.y;
 

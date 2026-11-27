@@ -254,6 +254,11 @@ pub struct LiveView {
     /// bonus, hit points, weapon dice), by squad in member order.
     pub sheets: Vec<Vec<super::rules::Sheet>>,
     pub wall_x: Option<f32>,
+    /// The field's obstacles, for the ghost line to find its way round
+    /// (`None`: an open field). Not sent: a view that needs it shares the
+    /// battle's.
+    #[serde(skip)]
+    pub nav: Option<std::sync::Arc<Nav>>,
     pub morale: Vec<f32>,
     /// Each soldier's morale and fatigue, by squad in member order, for the
     /// overlay (empty on the squad model, which has neither per soldier).

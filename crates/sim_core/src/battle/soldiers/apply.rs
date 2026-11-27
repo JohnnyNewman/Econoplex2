@@ -114,6 +114,12 @@ impl SoldierBattle {
                     to.y = to.y.clamp(mid - half, mid + half);
                 }
             }
+            // Nobody walks into a building: out of it, along its wall.
+            if let Some(nav) = self.nav.as_deref() {
+                if nav.any_near(to) || nav.any_near(from) {
+                    to = nav.resolve(from, to, k.body, self.side[i]);
+                }
+            }
             self.pos[i] = to;
             self.vel[i] = plan.vel;
             self.facing[i] = self.facing[i].turned(plan.facing, turn_c, turn_s);

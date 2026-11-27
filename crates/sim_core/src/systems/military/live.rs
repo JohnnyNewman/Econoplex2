@@ -12,6 +12,7 @@ pub(super) fn prepare_live_battle(
     params: &Params,
     fight: &CapVec,
     gear_defs: &Query<&Product, Without<Stored>>,
+    terrain: &crate::terrain::Terrain,
     rng: &mut ChaCha8Rng,
     player: u16,
 ) -> Option<LiveBattle> {
@@ -32,11 +33,14 @@ pub(super) fn prepare_live_battle(
         .collect();
     let militia = muster_militia(store, &towns.0[d], &defenders, mp);
     let seed = rng.random::<u64>();
+    // Fought in the town, among its buildings and houses.
+    let (field, at, facing) = crate::layout::battle_field(towns, d, attacker, db, terrain);
     let Setup::Battle(battle, groups) = setup_field_battle(
         store,
         db,
         params,
         params.battle.live_model,
+        field,
         fight,
         gear_defs,
         &raid.soldiers,
@@ -51,10 +55,6 @@ pub(super) fn prepare_live_battle(
         return None;
     };
     defenders.extend(militia);
-    let (home, there) = (towns.0[attacker].pos, towns.0[d].pos);
-    let (dx, dy) = (there.0 - home.0, there.1 - home.1);
-    let len = dx.hypot(dy).max(1e-3);
-    let facing = (dx / len, dy / len);
     Some(LiveBattle {
         battle: *battle,
         groups,
@@ -63,7 +63,7 @@ pub(super) fn prepare_live_battle(
         defenders,
         attack,
         defense,
-        at: (there.0 - facing.0 * 60.0, there.1 - facing.1 * 60.0),
+        at,
         facing,
         player_side: if player as usize == attacker { 0 } else { 1 },
         started: false,

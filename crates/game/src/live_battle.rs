@@ -642,6 +642,7 @@ mod tests {
             bonus: vec![(2.0, -2.0); 3],
             sheets: Vec::new(),
             wall_x: None,
+            nav: None,
             morale: vec![1.0; 3],
             condition: Vec::new(),
             frame: ReplayFrame {

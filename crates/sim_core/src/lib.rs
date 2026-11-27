@@ -23,6 +23,7 @@ pub mod governor;
 pub mod granary;
 pub mod knowledge;
 pub mod ladder;
+pub mod layout;
 pub mod ledger;
 pub mod metrics;
 pub mod models;
