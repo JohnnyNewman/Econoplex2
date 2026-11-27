@@ -323,15 +323,8 @@ pub fn settle(
     }
     // Yearly rates over the steps of a year.
     let dpy = cal.per_year() as f32;
-    for town in towns.0.iter_mut() {
-        for &(food, _) in &db.foods {
-            let f = food as usize;
-            let rotted = town.stock[f] * (mp.food_spoilage / dpy);
-            town.stock[f] *= 1.0 - mp.food_spoilage / dpy;
-            town.flows.add(crate::goods::Flow::Spoiled, f, rotted);
-        }
-    }
-    crate::granary::tend(&mut towns, &db, &params, dpy, env.season);
+    crate::spoilage::rot(&mut towns, &mut store, &db, mp, &env, &cal);
+    crate::granary::tend(&mut towns, &db, &params, env.season);
 
     // Wealth tax: savings above the allowance flow back to the town treasury.
     // Each town's own rate.
@@ -799,18 +792,17 @@ fn food_imports(towns: &mut Towns, db: &Db, params: &Params, terrain: &Terrain, 
     }
     for b in 0..n {
         let pop = towns.0[b].residents.len().max(1) as f32;
+        let aim = super::decide::market_food_target(db, &towns.0[b], params);
         let importing = match towns.0[b].policy.food_imports {
             Imports::Off => false,
             Imports::On => true,
-            Imports::Auto => {
-                towns.0[b].food_stock(db) / pop < ip.hungry_below * mp.food_target_per_capita
-            }
+            Imports::Auto => towns.0[b].food_stock(db) / pop < ip.hungry_below * aim,
         };
         if !importing {
             continue;
         }
         // Food still wanted, in food value.
-        let mut need = (mp.food_target_per_capita * pop - towns.0[b].food_stock(db)).max(0.0);
+        let mut need = (aim * pop - towns.0[b].food_stock(db)).max(0.0);
         for &(f, value) in &db.foods {
             let f = f as usize;
             for a in 0..n {
@@ -898,6 +890,9 @@ fn derived_targets(
             for (p, w) in want.iter_mut().enumerate() {
                 *w = town.input_use.get(p).copied().unwrap_or(0.0);
             }
+            // Ways of making the same thing draw on one stock and fill one
+            // demand, so a group adds what its hungriest way would use.
+            let mut group_want: Vec<Vec<(u32, f32)>> = vec![Vec::new(); db.same_outputs.len()];
             for (r, m) in db.recipes.iter().enumerate() {
                 if m.inputs.is_empty()
                     || m.builds.is_some()
@@ -909,9 +904,13 @@ fn derived_targets(
                 }
                 for &(p, q) in &m.inputs {
                     if town.stock[p as usize] < q {
-                        want[p as usize] += q * blocked_workers / m.duration.max(1.0);
+                        let add = q * blocked_workers / m.duration.max(1.0);
+                        crate::db::add_once(&mut want, &mut group_want, db.group_of[r], p, add);
                     }
                 }
+            }
+            for &(p, add) in group_want.iter().flatten() {
+                want[p as usize] += add;
             }
             want.iter().map(|w| w * cover_days).collect()
         })

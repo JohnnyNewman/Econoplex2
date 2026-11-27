@@ -206,7 +206,7 @@ pub fn lifecycle(
         .0
         .iter_mut()
         .map(|t| {
-            let stock = t.food_stock(&db);
+            let stock = crate::world::food_held(store, t, &db);
             // Change per day, smoothed over about 60 days.
             t.food_trend +=
                 ((stock - t.food_last) / cal.days() - t.food_trend) * cal.smoothing(60.0);

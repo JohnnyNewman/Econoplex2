@@ -19,6 +19,17 @@ pub struct ContentFile {
     /// What each food gives beside its calories (later entries override by food).
     #[serde(default)]
     pub nutrition: Vec<NutritionDef>,
+    /// How long goods keep before they rot (later entries override by product).
+    #[serde(default)]
+    pub keeping: Vec<KeepDef>,
+}
+
+/// A good that rots: in store at `market.spoilage.reference_c`, it loses
+/// 1 / `days` of itself a day (so `days` is how long it keeps on average).
+#[derive(Debug, Clone, Deserialize)]
+pub struct KeepDef {
+    pub product: String,
+    pub days: f32,
 }
 
 /// Protein, fat and vitamins in a food, against its calories: 1 means that

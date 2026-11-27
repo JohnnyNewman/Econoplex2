@@ -43,10 +43,17 @@
 // errors of the seed means, and the old upper edges were only 1.7 and 2.3 above
 // main, under one seed spread. Both open upward to 18, about one spread above
 // the new means.
+// Spoilage (2026-11-27, nutrition step 4): every food keeps its own days, and
+// a market holds a fresh food only as long as a tenth of them (bread a day,
+// fish a few hours). Food in the market falls to 0.95 per head and the
+// end-of-winter reserve, now mostly grain in granaries and salted or dried
+// food, to 4.35 months (16 seeds x 30 years; population 2894, starving
+// 0.01 %). Food per head's floor moves to 0.4 and the reserve's to 2 months;
+// starvation stays the check that the towns are fed.
 {
     "pop": (1500, 4000),
     "starve%": (0, 2.5),
-    "food/cap": (2.0, 18.0),
+    "food/cap": (0.4, 18.0),
     "div": (18, 60),
-    "reserve": (3.0, 18.0),
+    "reserve": (2.0, 18.0),
 }
