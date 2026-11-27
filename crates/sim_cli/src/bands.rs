@@ -125,6 +125,6 @@ mod tests {
         );
         let b = read(std::path::Path::new(path)).unwrap();
         assert!(!b.is_empty());
-        check(&b, &crate::sweep::COLUMNS, &[0.0; 27]).unwrap();
+        check(&b, &crate::sweep::COLUMNS, &[0.0; crate::sweep::NCOL]).unwrap();
     }
 }
