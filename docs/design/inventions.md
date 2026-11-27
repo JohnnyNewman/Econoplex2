@@ -2,7 +2,7 @@
 
 Design note, agreed in discussion with Nils on 2026-11-26. Steps 1 (content and
 validation) and 2 (knowledge per person, `knowledge.rs`, opt-in with
-`knowledge.enabled`) are built.
+`knowledge.enabled`) are built, and step 4 (inventing, opt-in with `knowledge.invention.enabled`).
 
 ## Goal
 
@@ -173,7 +173,7 @@ is cached. The nightly pass checks at most `max_checks` related items per workin
    recipe-skills; validation (every node reachable from the start set)
 2. Knowledge bits per person, starting profiles, gating job choice by knowledge (save format) (done)
 3. Apprenticeship and migration carry knowledge; loss on death; town knowledge = union of residents (done with step 2)
-4. Nightly invention check with context factors; event log
+4. Nightly invention check with context factors; event log (done)
 5. Player reveal and the hidden graph in the UI
 6. Schools (pupils learn their teacher's recipes: done with step 2) and guild secrets
 7. New levels and new items toward the steampunk end; writing and libraries
@@ -194,6 +194,29 @@ is cached. The nightly pass checks at most `max_checks` related items per workin
   last holder dies. `knowledge::town_known` counts a town's union.
 - Off, nobody holds bits and nothing draws a random number: runs and state hashes are
   exactly as before.
+
+## As built (step 4)
+
+- Nobody knows a recipe-skill of an era after `knowledge.start_era` (3, iron and steel)
+  at the start. A recipe's era is the latest of what it makes and what it requires, so
+  blast iron (which makes iron, but needs coke) is early industry.
+- The check runs after each run of work, for every worker, over the frontier items
+  closest to the recipe they worked (skill cosine at least `related`, at most
+  `max_checks`), and only for recipe-skills nobody in the town knows.
+- The frontier for inventing is shared with the town: the person must know a way to
+  meet at least one of the requirements, and the town a way to meet each (a smelter
+  who hears of coke from the colliers). Learning it from someone still needs one's own
+  requirements met.
+- `p` per day = `rate × success(c · v, difficulty + margin) × materials × need × rest`,
+  turned into a chance over the run's days. Materials: `no_materials` when the town holds
+  too little of an input. Need: the output's price over its base against the town's price
+  level, to the power `need_weight`, within 0.5 to 2. Rest: 1 − fatigue. Contact (having
+  seen the good) is not in yet.
+- At most one idea per worker and run. Each goes to the event log ("invention"). A
+  recipe-skill whose inventor dies without teaching anyone is lost and can be invented again.
+- With the default rate, in one 30-year run on the scenario's seed, about 20 inventions
+  happen across the four towns. They include coke, blast iron and steel, machine parts,
+  machine spinning and weaving, and roller milling.
 
 ## Open questions
 

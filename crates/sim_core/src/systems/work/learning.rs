@@ -94,6 +94,7 @@ pub fn learn(
     clock: Res<SimClock>,
     seed: Res<SimSeed>,
     log: Res<WorkLog>,
+    mut history: ResMut<crate::history::History>,
 ) {
     let store = &mut *store;
     let kp = &params.knowledge;
@@ -156,6 +157,20 @@ pub fn learn(
                 }
             }
         }
+    }
+
+    if kp.enabled && kp.invention.enabled && !log.events.is_empty() {
+        invent(
+            store,
+            &towns,
+            &db,
+            &models,
+            &params,
+            &clock,
+            &seed,
+            &log,
+            &mut history,
+        );
     }
 
     // --- schools: children of school age practice the town's chosen domain and learn
@@ -232,5 +247,126 @@ pub fn learn(
         town.treasury -= crate::coin::Coin::from_coins(fee);
         town.ledger.add(crate::ledger::Flow::SchoolFees, fee);
         store.wealth[teacher] += crate::coin::Coin::from_coins(fee);
+    }
+}
+
+/// After the day's work, workers may think of a recipe-skill close to it that
+/// nobody in their town knows (`knowledge::InventionParams`).
+#[allow(clippy::too_many_arguments)]
+fn invent(
+    store: &mut AgentStore,
+    towns: &Towns,
+    db: &Db,
+    models: &Models,
+    params: &Params,
+    clock: &SimClock,
+    seed: &SimSeed,
+    log: &WorkLog,
+    history: &mut crate::history::History,
+) {
+    let kp = &params.knowledge;
+    let iv = &kp.invention;
+    let mut rng = seed.rng(clock.steps(), streams::INVENT);
+    // Per town, worked out when first needed: what its people know between
+    // them, and its price level (mean price over base price, in its coin).
+    let mut known: Vec<Option<Vec<u64>>> = vec![None; towns.0.len()];
+    let mut level: Vec<Option<f32>> = vec![None; towns.0.len()];
+    for ev in &log.events {
+        let t = ev.town as usize;
+        let town = &towns.0[t];
+        let near: Vec<usize> = db.related[ev.recipe as usize]
+            .iter()
+            .take_while(|&&(_, c)| c >= iv.related)
+            .map(|&(r, _)| r as usize)
+            .collect();
+        if near.is_empty() {
+            continue;
+        }
+        for &w in &ev.workers {
+            let i = w as usize;
+            if !store.alive[i] {
+                continue;
+            }
+            let town_bits =
+                known[t].get_or_insert_with(|| knowledge::union(db, store, &town.residents));
+            let checks: Vec<usize> = near
+                .iter()
+                .copied()
+                .filter(|&r| {
+                    !db.requires[r].is_empty()
+                        && !knowledge::in_set(town_bits, r)
+                        && knowledge::can_invent(kp, db, store, i, town_bits, r)
+                })
+                .take(iv.max_checks)
+                .collect();
+            if checks.is_empty() {
+                continue;
+            }
+            let rest = (1.0 - store.state[i][state::FATIGUE]).clamp(0.0, 1.0);
+            for r in checks {
+                let m = &db.recipes[r];
+                let skill = models
+                    .success
+                    .probability(dot(&store.cap[i], &m.skill), m.difficulty + iv.margin);
+                let materials = if m.inputs.iter().all(|&(p, q)| town.stock[p as usize] >= q) {
+                    1.0
+                } else {
+                    iv.no_materials
+                };
+                let lvl = *level[t].get_or_insert_with(|| price_level(db, &town.price));
+                let dear = m
+                    .outputs
+                    .iter()
+                    .map(|&(p, _)| relative_price(db, &town.price, p as usize))
+                    .fold(0.0f32, f32::max);
+                let need = if dear > 0.0 && lvl > 0.0 {
+                    (dear / lvl).powf(iv.need_weight).clamp(0.5, 2.0)
+                } else {
+                    1.0
+                };
+                let p = iv.rate * skill * materials * need * rest;
+
+                if rng.random::<f32>() < knowledge::chance(p, ev.days) {
+                    knowledge::learn(store, i, r);
+                    if let Some(b) = known[t].as_mut() {
+                        knowledge::add(b, r);
+                    }
+                    history.events.push(crate::history::Event {
+                        tick: clock.tick,
+                        town: t as u16,
+                        kind: crate::history::EventKind::Invented,
+                        text: format!(
+                            "{}: invented {} (person {i}, working at {})",
+                            town.name, m.name, db.recipes[ev.recipe as usize].name
+                        ),
+                    });
+                    // One idea a day is plenty.
+                    break;
+                }
+            }
+        }
+    }
+}
+
+/// A product's price over its base price (0 when it has none).
+fn relative_price(db: &Db, price: &[f32], p: usize) -> f32 {
+    let base = db.base_price[p];
+    if base > 0.0 && price[p] > 0.0 {
+        price[p] / base
+    } else {
+        0.0
+    }
+}
+
+/// The town's price level: the geometric mean of price over base price.
+fn price_level(db: &Db, price: &[f32]) -> f32 {
+    let (sum, n) = (0..price.len())
+        .map(|p| relative_price(db, price, p))
+        .filter(|&x| x > 0.0)
+        .fold((0.0f32, 0u32), |(s, n), x| (s + x.ln(), n + 1));
+    if n == 0 {
+        1.0
+    } else {
+        (sum / n as f32).exp()
     }
 }

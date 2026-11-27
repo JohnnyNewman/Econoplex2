@@ -12,7 +12,8 @@
 //! Founders: every adult knows their family trade and what it requires, and each
 //! other recipe the town can run with `start_share` (with what it requires);
 //! recipes the town cannot run (no building or land for them) with
-//! `start_share * foreign_share`.
+//! `start_share * foreign_share`. Nobody knows recipes of an era after
+//! `start_era`: those have to be invented (`InventionParams`).
 //!
 //! Off (the default), everyone counts as knowing everything and nothing draws a
 //! random number, so runs are exactly as before.
@@ -35,6 +36,52 @@ pub struct KnowledgeParams {
     pub learn_per_day: f32,
     /// Factor on `learn_per_day` for a pupil learning a teacher's recipe at school.
     pub school_share: f32,
+    /// Latest era (index into the content's eras) founders know anything of:
+    /// recipes making goods of a later era are known by nobody at the start and
+    /// must be invented.
+    pub start_era: u8,
+    /// Inventing recipe-skills nobody in town knows (needs `enabled`).
+    pub invention: InventionParams,
+}
+
+/// Inventing (docs/design/inventions.md, "Dreaming"). After a day's work, each
+/// worker may think of a recipe-skill on their frontier that nobody in their
+/// town knows and that is close to the work they did:
+///
+/// p per day = rate × success(c · v, difficulty + margin) × materials × need × rest
+///
+/// - `c · v`: the person's capability along the recipe's skill, judged like the
+///   success of a run but against a harder bar (`margin` above its difficulty);
+/// - only the `max_checks` frontier recipes closest to the day's work (cosine of
+///   the skill vectors at least `related`) are thought about;
+/// - materials: `no_materials` when the town holds none of an input;
+/// - need: the output's price against its base, relative to the town's price
+///   level, to the power `need_weight`, kept within 0.5 .. 2;
+/// - rest: 1 − fatigue, so the exhausted dream less.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct InventionParams {
+    pub enabled: bool,
+    pub rate: f32,
+    pub margin: f32,
+    pub related: f32,
+    pub max_checks: usize,
+    pub no_materials: f32,
+    pub need_weight: f32,
+}
+
+impl Default for InventionParams {
+    fn default() -> Self {
+        InventionParams {
+            enabled: false,
+            rate: 1e-3,
+            margin: 0.1,
+            related: 0.4,
+            max_checks: 4,
+            no_materials: 0.3,
+            need_weight: 1.0,
+        }
+    }
 }
 
 impl Default for KnowledgeParams {
@@ -45,6 +92,8 @@ impl Default for KnowledgeParams {
             foreign_share: 0.2,
             learn_per_day: 0.03,
             school_share: 0.3,
+            start_era: 3,
+            invention: InventionParams::default(),
         }
     }
 }
@@ -58,6 +107,16 @@ impl KnowledgeParams {
             && unit(self.school_share))
         {
             return Err("knowledge: shares and rates must be between 0 and 1".into());
+        }
+        let iv = &self.invention;
+        if !(unit(iv.rate) && unit(iv.no_materials) && (-1.0..=1.0).contains(&iv.related))
+            || iv.need_weight < 0.0
+        {
+            return Err(
+                "knowledge.invention: rate and no_materials in 0..1, related in -1..1, \
+                 need_weight not negative"
+                    .into(),
+            );
         }
         Ok(())
     }
@@ -90,6 +149,28 @@ pub fn can_learn(kp: &KnowledgeParams, db: &Db, store: &AgentStore, i: usize, r:
         || db.requires[r]
             .iter()
             .all(|req| req.iter().any(|&o| knows(kp, db, store, i, o as usize)))
+}
+
+/// Whether person `i` could invent recipe `r` given what their town knows
+/// (`town`, the residents' union): they know one way to meet at least one of its
+/// requirements themselves, and the town knows a way to meet every one (the
+/// rest comes from talk with other trades).
+pub fn can_invent(
+    kp: &KnowledgeParams,
+    db: &Db,
+    store: &AgentStore,
+    i: usize,
+    town: &[u64],
+    r: usize,
+) -> bool {
+    let reqs = &db.requires[r];
+    let root = |o: u32| db.requires[o as usize].is_empty();
+    reqs.iter().any(|req| {
+        req.iter()
+            .any(|&o| !root(o) && knows(kp, db, store, i, o as usize))
+    }) && reqs
+        .iter()
+        .all(|req| req.iter().any(|&o| root(o) || has(town, o as usize)))
 }
 
 /// Person `i` learns recipe `r`. Returns whether it was new.
@@ -132,10 +213,16 @@ pub fn founder(
     rng: &mut impl Rng,
 ) -> Vec<u64> {
     let mut bits = Vec::new();
-    if let Some(r) = trade {
+    let known_then = |r: usize| era(db, r) <= kp.start_era;
+    if let Some(r) = trade.filter(|&r| known_then(r)) {
         add_with_requires(db, &mut bits, r);
     }
     for (r, &here) in runnable.iter().enumerate() {
+        if !known_then(r) {
+            // Still draw, so the era cut changes nothing else.
+            rng.random::<f32>();
+            continue;
+        }
         let p = if here {
             kp.start_share
         } else {
@@ -148,23 +235,46 @@ pub fn founder(
     bits
 }
 
+/// A recipe's era (`Db::recipe_era`).
+pub fn era(db: &Db, r: usize) -> u8 {
+    db.recipe_era[r]
+}
+
 /// Chance of learning over `days` of work at `per_day`.
 pub fn chance(per_day: f32, days: f32) -> f32 {
     1.0 - (1.0 - per_day).powf(days.max(0.0))
 }
 
-/// How many distinct recipe-skills the living people in `residents` know
-/// between them (the town's knowledge).
-pub fn town_known(db: &Db, store: &AgentStore, residents: &[u32]) -> usize {
-    let words = db.recipes.len().div_ceil(64);
-    let mut all = vec![0u64; words];
+/// The union of what the living people in `residents` know.
+pub fn union(db: &Db, store: &AgentStore, residents: &[u32]) -> Vec<u64> {
+    let mut all = vec![0u64; db.recipes.len().div_ceil(64)];
     for &i in residents {
+        if !store.alive[i as usize] {
+            continue;
+        }
         if let Some(b) = store.known.get(i as usize) {
             for (a, w) in all.iter_mut().zip(b) {
                 *a |= w;
             }
         }
     }
+    all
+}
+
+/// Whether bit `r` is set in a known set (such as a town's `union`).
+pub fn in_set(bits: &[u64], r: usize) -> bool {
+    has(bits, r)
+}
+
+/// Add bit `r` to a known set.
+pub fn add(bits: &mut Vec<u64>, r: usize) {
+    set(bits, r)
+}
+
+/// How many distinct recipe-skills the living people in `residents` know
+/// between them (the town's knowledge).
+pub fn town_known(db: &Db, store: &AgentStore, residents: &[u32]) -> usize {
+    let all = union(db, store, residents);
     let roots = (0..db.recipes.len())
         .filter(|&r| db.requires[r].is_empty() && !has(&all, r))
         .count();

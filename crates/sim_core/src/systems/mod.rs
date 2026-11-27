@@ -49,6 +49,7 @@ pub mod streams {
     pub const MILITARY: u64 = 8;
     pub const MIGRATE: u64 = 9;
     pub const KNOWLEDGE: u64 = 10;
+    pub const INVENT: u64 = 11;
 }
 
 /// The tribute town `town` owes its ruler this round, in its own coin: a share

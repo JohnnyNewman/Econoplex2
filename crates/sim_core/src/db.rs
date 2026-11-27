@@ -36,6 +36,13 @@ pub struct Db {
     /// Per recipe, the recipe-skills it requires: every entry must be met, by any
     /// one of its recipes (`RecipeDef::requires`, by index).
     pub requires: Vec<Vec<Vec<u32>>>,
+    /// Per recipe, the other recipes whose skill points the same way (cosine
+    /// of the skill vectors above zero), closest first: what working at it can
+    /// lead a person to think of (`knowledge::invent`).
+    pub related: Vec<Vec<(u32, f32)>>,
+    /// Per recipe, its era: the latest era among what it makes or builds and
+    /// the eras of what it requires (the earliest way to meet each requirement).
+    pub recipe_era: Vec<u8>,
     pub embedding: Embedding,
     /// Length of every capability vector in this game.
     pub cap_dim: usize,
@@ -212,8 +219,53 @@ impl Db {
                     .collect()
             })
             .collect();
+        let related = (0..recipes.len())
+            .map(|a| {
+                let mut near: Vec<(u32, f32)> = (0..recipes.len())
+                    .filter(|&b| b != a)
+                    .map(|b| (b as u32, dot(&recipes[a].skill, &recipes[b].skill)))
+                    .filter(|&(_, c)| c > 0.0)
+                    .collect();
+                near.sort_by(|x, y| y.1.total_cmp(&x.1).then(x.0.cmp(&y.0)));
+                near
+            })
+            .collect();
+        let recipe_era = {
+            let own: Vec<u8> = recipes
+                .iter()
+                .map(|m| {
+                    m.outputs
+                        .iter()
+                        .map(|&(p, _)| p)
+                        .chain(m.builds)
+                        .map(|p| content.products[p as usize].era)
+                        .max()
+                        .unwrap_or(0)
+                })
+                .collect();
+            // The requires links have no loops (validation), so this settles
+            // within as many rounds as there are recipes.
+            let mut era = own.clone();
+            for _ in 0..recipes.len() {
+                let next: Vec<u8> = (0..recipes.len())
+                    .map(|r| {
+                        requires[r]
+                            .iter()
+                            .map(|req| req.iter().map(|&o| era[o as usize]).min().unwrap_or(0))
+                            .fold(own[r], u8::max)
+                    })
+                    .collect();
+                if next == era {
+                    break;
+                }
+                era = next;
+            }
+            era
+        };
         Db {
             cap_dim,
+            related,
+            recipe_era,
             coin,
             requires,
             house,
