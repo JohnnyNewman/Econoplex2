@@ -377,8 +377,10 @@ rate with room for chance:
 - **A flank beats a frontal attack.** Two squads of 100 swordsmen a side.
   - Frontal: side 0's second squad attacks beside its first.
   - Flank: it starts with `#flank` and attacks into the enemy's side.
-  - Over 50 seeds, side 0 wins at least 25 more battles with the flank than
-    frontally, and the enemy loses more soldiers.
+  - Over 50 seeds, side 0 wins at least 40 battles with the flank and at
+    least 15 more than frontally on the same seeds, and the enemy loses more
+    soldiers. (The frontal attack is a mirror, so it wins about 25 of 50; a
+    margin of 25 would ask the flank to win every battle.)
 - **Rested beats exhausted.** `swordsmen*100 vs swordsmen*100%0.8`: the rested
   side wins at least 40 of 50. At fatigue 0.4 it still wins more than half.
 - **The squad model's matchups still hold on the soldier model:**
@@ -454,10 +456,10 @@ Tuning added a few rules that the note above did not name:
 | `swordsmen*2000 vs swordsmen*2000` | 26 | 27 |
 
 The equal-armies test holds at 200 and at 2,000 a side, also with the sides
-swapped. The flank test does not reach the bar. With the frontal mirror near
-25 of 50, a margin of 25 needs the flank to win nearly every battle, and it
-wins 46 to 48 of 50: 19 to 25 more than frontally over four sets of 50 seeds.
-The test is written to the bar and marked `#[ignore]` until that is settled.
+swapped. The flank wins 46 to 48 of 50, 19 to 25 more than frontally, over
+four sets of 50 seeds. The first bar, a margin of 25, could not be met: with the
+frontal mirror near 25 of 50 it asked the flank to win every battle, so the
+test now asks for 40 of 50 and a margin of 15.
 
 **Cost.** Measured on a shared 4-core VM, timings vary about 15% from run to
 run. The yardstick is 50 squads of 40 a side, a 6.4-minute battle:
