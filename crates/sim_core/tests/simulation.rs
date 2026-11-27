@@ -3462,11 +3462,11 @@ fn two_step_sizes_give_close_results() {
 fn goods_made_per_day_do_not_depend_on_the_step_size() {
     // The same seeds at 24 and 120 steps a day make about as much of each
     // main good over two years: every rate is scaled to the step. Small
-    // towns are noisy (one seed's bread moves by a third), so eight seeds
+    // towns are noisy (one seed's bread moves by a third), so sixteen seeds
     // are summed; their sums differ by at most about a fifth.
     let made = |spd: u32| {
         let runs: Vec<Vec<f64>> = std::thread::scope(|sc| {
-            let hs: Vec<_> = (3..11)
+            let hs: Vec<_> = (3..19)
                 .map(|seed| {
                     sc.spawn(move || {
                         // Free job choice: in towns of 60, kept trades make the

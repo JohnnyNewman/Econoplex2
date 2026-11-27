@@ -239,11 +239,18 @@ Nils chose on 2026-11-27 that a level improves a mix, chosen per item.
   places in a way nobody can teach them).
 - Several ways of making exactly the same goods share their places: together they offer
   the places of the most open way (`Db::same_outputs`), not the sum.
-- Content: `70_levels.ron` has pattern welding (quality). A shaft furnace (less ore), a
-  treadle loom (faster) and dressed millstones (finer, faster) were tried and taken out:
-  with them, food per head fell from 8.8 to 5.4 over 16 seeds × 30 years. That held even
-  with the two fixes above, and even for an exact copy of flour milling at level 2. Why a
-  second way of making a staple lowers food reserves is still to find.
+- A way nobody in town knows offers no places, so it takes no share from the ways people
+  do know.
+- Ways of making the same goods count their inputs once: what the market stocks up for
+  workers held up by a shortage, and the inputs held back for the food chain, take the
+  largest need in the group, not the sum.
+- Content: `70_levels.ron` has pattern welding (quality), a shaft furnace (less ore) and
+  a treadle loom (faster). Over 16 seeds × 30 years food per head stays at main's level
+  (10.9 with them, 10.7 without, on the same build).
+- Dressed millstones (finer and a little faster flour) are still out. On their own they
+  lower food per head from 10.7 to 8.0, and so does an exact copy of flour milling at
+  level 2 (8.9), even with all the fixes above. Iron and cloth take a second way without
+  harm, so the cause is somewhere in the flour and bread chain. Still to find.
 
 ## Open questions
 

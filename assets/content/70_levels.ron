@@ -6,9 +6,10 @@
 // as if the team were that much more skilled), inputs, or time.
 // Its own file, so levels can change or go on their own.
 //
-// Only one level so far: a second way of making flour, cloth or iron (tried:
-// a shaft furnace, a treadle loom, dressed millstones) lowered the food
-// reserves in every run, for reasons still to find (docs/design/inventions.md).
+// Dressed millstones (a second way of milling flour) are left out for now: any
+// second way of making flour lowers food per head, for reasons still to find
+// (docs/design/inventions.md).
+
 (
     recipes: [
         // Quality: welding steel and iron in layers makes a better blade, at
@@ -17,5 +18,15 @@
             level: 2, requires: ["forge_steel_blade"], quality_bonus: 0.3,
             inputs: [("steel", 2), ("iron", 1)], outputs: [("steel_blade", 1)], building: Some("smithy"),
             duration: 3.0, physique: [("strength", 0.3), ("dexterity", 0.2)]),
+        // Inputs: a taller shaft furnace gets the same iron from less ore.
+        (id: "shaft_smelt_iron", name: "Smelt iron in a shaft furnace", skill: "smelting", difficulty: 0.55,
+            level: 2, requires: ["smelt_iron"],
+            inputs: [("ore", 2), ("charcoal", 1)], outputs: [("iron", 1)], building: Some("furnace"),
+            duration: 1.5, physique: [("endurance", 0.2), ("strength", 0.1)]),
+        // Time: a treadle loom weaves the same cloth faster.
+        (id: "treadle_weave_cloth", name: "Weave cloth on a treadle loom", skill: "weaving", difficulty: 0.55,
+            level: 2, requires: ["weave_cloth"],
+            inputs: [("yarn", 3)], outputs: [("cloth", 1)], building: Some("weaving_shed"),
+            duration: 0.6, physique: [("dexterity", 0.3), ("perception", 0.1)]),
     ],
 )
