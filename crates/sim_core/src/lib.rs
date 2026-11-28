@@ -27,6 +27,7 @@ pub mod layout;
 pub mod ledger;
 pub mod metrics;
 pub mod models;
+pub mod names;
 pub mod policy;
 pub mod profile;
 pub mod save;

@@ -201,6 +201,7 @@ mod tests {
         SkillDef {
             id: id.into(),
             name: id.into(),
+            worker: String::new(),
             domain: "d".into(),
             prereqs: prereqs.iter().map(|s| s.to_string()).collect(),
         }

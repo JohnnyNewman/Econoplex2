@@ -3,10 +3,10 @@
 // cut stone for the buildings, iron and steel for the machines.
 (
     skills: [
-        (id: "coking",       name: "Coking",       domain: "metallurgy",  prereqs: ["charcoal_burning", "mining"]),
-        (id: "ironfounding", name: "Ironfounding", domain: "metallurgy",  prereqs: ["smelting", "coking"]),
-        (id: "engineering",  name: "Engineering",  domain: "engineering", prereqs: ["toolmaking", "carpentry", "ironfounding"]),
-        (id: "millwrighting", name: "Millwrighting", domain: "engineering", prereqs: ["engineering", "milling"]),
+        (id: "coking",       name: "Coking", worker: "coker",       domain: "metallurgy",  prereqs: ["charcoal_burning", "mining"]),
+        (id: "ironfounding", name: "Ironfounding", worker: "ironfounder", domain: "metallurgy",  prereqs: ["smelting", "coking"]),
+        (id: "engineering",  name: "Engineering", worker: "engineer",  domain: "engineering", prereqs: ["toolmaking", "carpentry", "ironfounding"]),
+        (id: "millwrighting", name: "Millwrighting", worker: "millwright", domain: "engineering", prereqs: ["engineering", "milling"]),
     ],
     products: [
         (id: "coal", name: "Coal", category: Raw,      base_price: 2.0),

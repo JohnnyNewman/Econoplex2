@@ -8,8 +8,8 @@
 // files again.
 (
     skills: [
-        (id: "tanning",        name: "Tanning",        domain: "textiles", prereqs: ["butchery"]),
-        (id: "leatherworking", name: "Leatherworking", domain: "textiles", prereqs: ["tanning"]),
+        (id: "tanning",        name: "Tanning", worker: "tanner",        domain: "textiles", prereqs: ["butchery"]),
+        (id: "leatherworking", name: "Leatherworking", worker: "leatherworker", domain: "textiles", prereqs: ["tanning"]),
     ],
     products: [
         (id: "hide",    name: "Hide",    category: Material, base_price: 2.0),

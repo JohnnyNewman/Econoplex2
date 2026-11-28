@@ -566,6 +566,7 @@ fn main() {
     print_final(&sim);
     print_made(&sim, args.years);
     print_match(&sim);
+    print_battles(&sim);
     print_eras(&sim);
     print_governors(&sim);
     if args.profile {
@@ -751,6 +752,63 @@ fn print_eras(sim: &Simulation) {
             if later.is_empty() { "" } else { "; then " },
             later.join(", ")
         );
+    }
+}
+
+/// Battles shown one by one at the end of a run, the newest.
+const BATTLES_SHOWN: usize = 8;
+
+/// The price of the battles fought (docs/design/war-ideas.md, idea 2): the
+/// newest few, each side's dead and taken by trade and the week's work they
+/// would have done, and each town's losses over the whole run.
+fn print_battles(sim: &Simulation) {
+    let log = sim.world.resource::<sim_core::battle::BattleLog>();
+    if log.costs.is_empty() {
+        return;
+    }
+    let towns = sim.world.resource::<sim_core::Towns>();
+    let dpy = sim
+        .world
+        .resource::<sim_core::SimClock>()
+        .months_per_year
+        .max(1) as u64;
+    let name = |t: u16| towns.0.get(t as usize).map_or("?", |t| t.name.as_str());
+    println!(
+        "\nBattles: {} fought; the newest {}, and what they cost:",
+        log.costs.len(),
+        log.costs.len().min(BATTLES_SHOWN)
+    );
+    let first = log.costs.len().saturating_sub(BATTLES_SHOWN);
+    for c in &log.costs[first..] {
+        let sides = [name(c.attacker), name(c.town)];
+        println!(
+            "  y{} d{:<3} {} raids {} ({} vs {}): {}",
+            c.day / dpy,
+            c.day % dpy,
+            sides[0],
+            sides[1],
+            c.fought[0],
+            c.fought[1],
+            match c.winner {
+                Some(w) => format!("{} won", sides[(w as usize).min(1)]),
+                None => "no decision".into(),
+            }
+        );
+        for (s, side) in sides.iter().enumerate() {
+            println!("      {side} {}", c.losses[s].words());
+        }
+    }
+    let mut total = vec![sim_core::battle::Losses::default(); towns.0.len()];
+    for c in &log.costs {
+        for (s, t) in [c.attacker, c.town].into_iter().enumerate() {
+            if let Some(l) = total.get_mut(t as usize) {
+                l.add(&c.losses[s]);
+            }
+        }
+    }
+    println!("  over the run:");
+    for (t, l) in total.iter().enumerate().filter(|(_, l)| l.count() > 0) {
+        println!("  {:<11} {}", towns.0[t].name, l.words());
     }
 }
 

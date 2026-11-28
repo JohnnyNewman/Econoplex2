@@ -2,12 +2,12 @@
 // clothes; grain and pots to ale, a second food.
 (
     skills: [
-        (id: "shepherding",  name: "Shepherding",  domain: "agriculture", prereqs: ["farming"]),
-        (id: "flax_growing", name: "Flax growing", domain: "agriculture", prereqs: ["farming"]),
-        (id: "spinning",     name: "Spinning",     domain: "textiles",    prereqs: ["shepherding", "flax_growing"]),
-        (id: "weaving",      name: "Weaving",      domain: "textiles",    prereqs: ["spinning"]),
-        (id: "tailoring",    name: "Tailoring",    domain: "textiles",    prereqs: ["weaving"]),
-        (id: "brewing",      name: "Brewing",      domain: "food",        prereqs: ["milling", "pottery"]),
+        (id: "shepherding",  name: "Shepherding", worker: "shepherd",  domain: "agriculture", prereqs: ["farming"]),
+        (id: "flax_growing", name: "Flax growing", worker: "flax grower", domain: "agriculture", prereqs: ["farming"]),
+        (id: "spinning",     name: "Spinning", worker: "spinner",     domain: "textiles",    prereqs: ["shepherding", "flax_growing"]),
+        (id: "weaving",      name: "Weaving", worker: "weaver",      domain: "textiles",    prereqs: ["spinning"]),
+        (id: "tailoring",    name: "Tailoring", worker: "tailor",    domain: "textiles",    prereqs: ["weaving"]),
+        (id: "brewing",      name: "Brewing", worker: "brewer",      domain: "food",        prereqs: ["milling", "pottery"]),
     ],
     products: [
         (id: "wool",    name: "Wool",    category: Raw,      base_price: 1.5),

@@ -3,11 +3,11 @@
 // breweries, blast furnaces and mills.
 (
     skills: [
-        (id: "quarrying",    name: "Quarrying",    domain: "masonry"),
-        (id: "stonecutting", name: "Stonecutting", domain: "masonry", prereqs: ["quarrying"]),
-        (id: "clay_digging", name: "Clay digging", domain: "masonry"),
-        (id: "pottery",      name: "Pottery",      domain: "masonry", prereqs: ["clay_digging"]),
-        (id: "brickmaking",  name: "Brickmaking",  domain: "masonry", prereqs: ["pottery", "charcoal_burning"]),
+        (id: "quarrying",    name: "Quarrying", worker: "quarryman",    domain: "masonry"),
+        (id: "stonecutting", name: "Stonecutting", worker: "stonecutter", domain: "masonry", prereqs: ["quarrying"]),
+        (id: "clay_digging", name: "Clay digging", worker: "clay digger", domain: "masonry"),
+        (id: "pottery",      name: "Pottery", worker: "potter",      domain: "masonry", prereqs: ["clay_digging"]),
+        (id: "brickmaking",  name: "Brickmaking", worker: "brickmaker",  domain: "masonry", prereqs: ["pottery", "charcoal_burning"]),
     ],
     products: [
         (id: "stone",     name: "Stone",     category: Raw,      base_price: 1.5),

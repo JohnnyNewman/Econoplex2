@@ -3,8 +3,8 @@
 // Copper and tin rarely sit in the same town, so bronze needs trade.
 (
     skills: [
-        (id: "bronze_casting", name: "Bronze casting", domain: "metallurgy", prereqs: ["smelting"]),
-        (id: "spear_making",   name: "Spear making",   domain: "smithing",   prereqs: ["bronze_casting", "carpentry"]),
+        (id: "bronze_casting", name: "Bronze casting", worker: "bronzesmith", domain: "metallurgy", prereqs: ["smelting"]),
+        (id: "spear_making",   name: "Spear making", worker: "spearmaker",   domain: "smithing",   prereqs: ["bronze_casting", "carpentry"]),
     ],
     products: [
         (id: "copper_ore", name: "Copper ore", category: Raw,      base_price: 1.5),

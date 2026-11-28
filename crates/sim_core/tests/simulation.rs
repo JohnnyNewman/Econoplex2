@@ -3267,6 +3267,29 @@ fn a_live_battle_waits_for_the_player_then_settles() {
     let view = live_battle_view(&s.world).unwrap();
     assert_eq!(view.player_side, 0);
     let mine = view.squads.iter().position(|q| q.side == 0).unwrap();
+    // Every soldier is a person: a name, a trade, this battle among theirs.
+    assert_eq!(view.people.len(), view.squads.len());
+    let fought_before: Vec<(u32, u16)> = {
+        let store = s.world.resource::<sim_core::store::AgentStore>();
+        view.people
+            .iter()
+            .flatten()
+            .map(|f| (f.id, store.battles[f.id as usize]))
+            .collect()
+    };
+    for (q, people) in view.people.iter().enumerate() {
+        assert_eq!(people.len(), view.squads[q].start as usize);
+        for f in people {
+            assert!(!f.name.is_empty() && !f.trade.is_empty(), "{f:?}");
+            assert!(f.battles >= 1 && f.weekly >= 0.0, "{f:?}");
+        }
+    }
+    assert_eq!(view.losses()[0].count(), 0);
+    let costs_before = s
+        .world
+        .resource::<sim_core::battle::BattleLog>()
+        .costs
+        .len();
     // It starts from the town's doctrine.
     for q in (0..view.squads.len()).filter(|&q| view.squads[q].side == 0) {
         assert_eq!(view.stances[q].pursuit, sim_core::battle::Pursuit::Capture);
@@ -3334,9 +3357,20 @@ fn a_live_battle_waits_for_the_player_then_settles() {
         let live = pending.0.as_ref().unwrap();
         (live.prisoners(), live.battle.report().winner == Some(0))
     };
+    let end = live_battle_view(&s.world).unwrap();
     s.step();
+    // Its cost is logged, as the view had it at the end, and everyone in it
+    // has one more battle behind them.
+    let log = s.world.resource::<sim_core::battle::BattleLog>();
+    assert_eq!(log.costs.len(), costs_before + 1);
+    let cost = log.costs.last().unwrap();
+    assert_eq!(cost.losses, end.losses());
+    assert_eq!(cost.fought[0] + cost.fought[1], fought_before.len() as u32);
     // Prisoners go to the winners' town: the raiders' march home as captives.
     let store = s.world.resource::<sim_core::store::AgentStore>();
+    for &(i, b) in &fought_before {
+        assert!(!store.alive[i as usize] || store.battles[i as usize] == b + 1);
+    }
     let towns = s.world.resource::<sim_core::Towns>();
     let winners = if won {
         player

@@ -50,6 +50,10 @@ pub struct NutritionDef {
 pub struct SkillDef {
     pub id: String,
     pub name: String,
+    /// Someone whose trade this is, e.g. "baker" for baking (a battle names
+    /// its soldiers' trades with it). Empty: the skill's name.
+    #[serde(default)]
+    pub worker: String,
     pub domain: String,
     #[serde(default)]
     pub prereqs: Vec<String>,

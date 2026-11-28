@@ -4,8 +4,8 @@
 // own. Taverns, festivals and schooling come later.
 (
     skills: [
-        (id: "dyeing",        name: "Dyeing",        domain: "textiles", prereqs: ["weaving"]),
-        (id: "jewellery",     name: "Jewellery",     domain: "smithing", prereqs: ["smithing"]),
+        (id: "dyeing",        name: "Dyeing", worker: "dyer",        domain: "textiles", prereqs: ["weaving"]),
+        (id: "jewellery",     name: "Jewellery", worker: "jeweller",     domain: "smithing", prereqs: ["smithing"]),
     ],
     products: [
         // Grown on the flax fields.

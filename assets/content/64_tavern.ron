@@ -4,7 +4,7 @@
 // Its own file, so it can change or go on its own.
 (
     skills: [
-        (id: "innkeeping", name: "Innkeeping", domain: "food", prereqs: ["brewing"]),
+        (id: "innkeeping", name: "Innkeeping", worker: "innkeeper", domain: "food", prereqs: ["brewing"]),
     ],
     products: [
         (id: "tavern", name: "Tavern", category: Building, era: 1, base_price: 220.0, slots: 6, footprint: Some((24.0, 24.0))),

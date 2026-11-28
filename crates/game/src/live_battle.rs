@@ -658,6 +658,9 @@ mod tests {
             deploying: false,
             finished: false,
             winner: None,
+            people: Vec::new(),
+            attacker: None,
+            lost: Vec::new(),
         }
     }
 

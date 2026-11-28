@@ -18,10 +18,10 @@
 // Durability is in uses of 8 hours; battles wear kit (goods::wear).
 (
     skills: [
-        (id: "fighting",       name: "Fighting",       domain: "military"),
-        (id: "bowyery",        name: "Bowyery",        domain: "woodworking", prereqs: ["carpentry"]),
-        (id: "armouring",      name: "Armouring",      domain: "smithing",    prereqs: ["smithing"]),
-        (id: "horse_breeding", name: "Horse breeding", domain: "agriculture", prereqs: ["shepherding"]),
+        (id: "fighting",       name: "Fighting", worker: "soldier",       domain: "military"),
+        (id: "bowyery",        name: "Bowyery", worker: "bowyer",        domain: "woodworking", prereqs: ["carpentry"]),
+        (id: "armouring",      name: "Armouring", worker: "armourer",      domain: "smithing",    prereqs: ["smithing"]),
+        (id: "horse_breeding", name: "Horse breeding", worker: "horse breeder", domain: "agriculture", prereqs: ["shepherding"]),
     ],
     products: [
         (id: "iron_spear", name: "Iron spear (lvl 2)", category: Weapon, era: 3, tier: 2, base_price: 40.0, kg: 2.5,

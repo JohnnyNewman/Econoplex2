@@ -100,6 +100,18 @@ impl BattleScenes {
     pub fn newest_at(&self, now: f32) -> Option<f32> {
         self.scenes.last().map(|s| (now - s.start) * PLAYBACK)
     }
+
+    /// Every battle being played back, oldest first, with how far it has
+    /// got (battle seconds, held at its end while it lingers).
+    pub fn playing(&self, now: f32) -> Vec<(&Replay, f32)> {
+        self.scenes
+            .iter()
+            .map(|s| {
+                let end = s.replay.frames.last().map_or(0.0, |f| f.t);
+                (&s.replay, ((now - s.start) * PLAYBACK).min(end))
+            })
+            .collect()
+    }
 }
 
 /// `--battle LINEUP`: fight it now on `battle.model` (models.ron, `--set`)
@@ -141,19 +153,24 @@ pub fn stage_battle(world: &mut World, lineup: &str) -> (f32, f32) {
         );
         field.obstacles = layout.obstacles_on(at, facing, size);
     }
-    let (report, squads, frames) = Battle::new(params, field, specs, 1).run_recorded(5.0);
+    // Its soldiers are the town's people, and their neighbours'.
+    let (people, attacker) = sim_core::systems::military::stage_fighters(world, &specs, k);
+    let r = Battle::new(params, field, specs, 1).record(5.0);
     info!(
         "--battle {lineup}: {:?} after {:.0} s",
-        report.winner, report.seconds
+        r.report.winner, r.report.seconds
     );
     let mut replay = Replay {
         town: k as u16,
         at,
         facing,
         field: size,
-        squads,
-        frames,
-        winner: report.winner,
+        squads: r.squads,
+        frames: r.frames,
+        winner: r.report.winner,
+        people,
+        attacker,
+        lost: r.lost,
     };
     let to_map = field_to_map(replay.at, replay.facing, replay.field);
     let meet = replay
@@ -452,6 +469,7 @@ mod tests {
                 },
             ],
             winner: Some(1),
+            ..Default::default()
         }
     }
 
@@ -486,6 +504,7 @@ mod tests {
             squads,
             frames,
             winner: None,
+            ..Default::default()
         };
         let t = 0.5 * (r.frames[3].t + r.frames[4].t);
         let men = r.soldiers_at(t);

@@ -44,6 +44,7 @@ mod lineup;
 mod nav;
 #[cfg(test)]
 mod obstacle_tests;
+mod price;
 mod report;
 pub mod rts;
 pub mod rules;
@@ -56,6 +57,7 @@ pub use control::*;
 pub use kit::*;
 pub use lineup::*;
 pub use nav::*;
+pub use price::*;
 pub use report::*;
 pub use soldiers::V2;
 
@@ -746,6 +748,21 @@ impl Battle {
             deploying: false,
             finished,
             winner: if finished { self.report().winner } else { None },
+            people: Vec::new(),
+            attacker: None,
+            lost: (0..m.count())
+                .map(|s| {
+                    (0..m.spec(s).members.len())
+                        .map(|k| {
+                            if finished {
+                                self.lost(s, k)
+                            } else {
+                                !m.spec(s).members[k].fights()
+                            }
+                        })
+                        .collect()
+                })
+                .collect(),
         }
     }
 
@@ -769,7 +786,17 @@ impl Battle {
 
     /// Like [`Self::run`], recording a frame every `every` seconds (and the last).
     pub fn run_recorded(&mut self, every: f32) -> (Report, Vec<ReplaySquad>, Vec<ReplayFrame>) {
+        let r = self.record(every);
+        (r.report, r.squads, r.frames)
+    }
+
+    /// Like [`Self::run_recorded`], and when each member lost to their town
+    /// fell ([`Recording::lost`]).
+    pub fn record(&mut self, every: f32) -> Recording {
         let m = self.model();
+        let mut fell: Vec<Vec<f32>> = (0..m.count())
+            .map(|s| vec![f32::INFINITY; m.spec(s).members.len()])
+            .collect();
         let squads = (0..m.count())
             .map(|s| {
                 let spec = m.spec(s);
@@ -785,13 +812,38 @@ impl Battle {
         let mut next = every;
         while !self.finished() {
             self.step();
+            let (m, t) = (self.model(), self.seconds());
+            for (s, fell) in fell.iter_mut().enumerate() {
+                for (member, at) in m.spec(s).members.iter().zip(fell.iter_mut()) {
+                    if !member.fights() && at.is_infinite() {
+                        *at = t;
+                    }
+                }
+            }
             if self.seconds() >= next {
                 frames.push(self.frame());
                 next += every;
             }
         }
         frames.push(self.frame());
-        (self.finish(), squads, frames)
+        let report = self.finish();
+        let end = self.seconds();
+        let lost = fell
+            .iter()
+            .enumerate()
+            .map(|(s, fell)| {
+                fell.iter()
+                    .enumerate()
+                    .map(|(k, &at)| self.lost(s, k).then_some(at.min(end)))
+                    .collect()
+            })
+            .collect();
+        Recording {
+            report,
+            squads,
+            frames,
+            lost,
+        }
     }
 
     /// Survivors gain a battle's experience; the report is returned and the
@@ -890,6 +942,16 @@ impl Battle {
             events: m.events().to_vec(),
         }
     }
+}
+
+/// A battle fought to its end and recorded ([`Battle::record`]).
+pub struct Recording {
+    pub report: Report,
+    pub squads: Vec<ReplaySquad>,
+    pub frames: Vec<ReplayFrame>,
+    /// For each member lost to their town (dead or taken), the battle time
+    /// they fell; `None` for those who came through. By squad, member order.
+    pub lost: Vec<Vec<Option<f32>>>,
 }
 
 /// Members of a squad still standing.

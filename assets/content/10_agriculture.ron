@@ -1,9 +1,9 @@
 // Agriculture: grain to flour to bread. Food keeps the population alive.
 (
     skills: [
-        (id: "farming", name: "Farming", domain: "agriculture"),
-        (id: "milling", name: "Milling", domain: "agriculture", prereqs: ["farming"]),
-        (id: "baking",  name: "Baking",  domain: "food",        prereqs: ["milling"]),
+        (id: "farming", name: "Farming", worker: "farmer", domain: "agriculture"),
+        (id: "milling", name: "Milling", worker: "miller", domain: "agriculture", prereqs: ["farming"]),
+        (id: "baking",  name: "Baking", worker: "baker",  domain: "food",        prereqs: ["milling"]),
     ],
     products: [
         (id: "grain", name: "Grain", category: Raw,      base_price: 1.0, food: 0.3),

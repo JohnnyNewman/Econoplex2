@@ -40,7 +40,7 @@ use std::path::Path;
 /// town's own coin (`Town::coin_value`, `Town::foreign`), careers
 /// (`off_trade`, `vacancies`, `intake`, signed `GuildLink::since`). 16: the
 /// ledger's coin-exchanged flow (30 flows).
-pub const SAVE_VERSION: u32 = 17;
+pub const SAVE_VERSION: u32 = 18;
 
 /// One simulation entity and its components.
 #[derive(Serialize, Deserialize)]

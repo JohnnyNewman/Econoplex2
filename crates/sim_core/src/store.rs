@@ -118,6 +118,8 @@ pub struct AgentStore {
     /// state hash) while knowledge is off; a missing entry knows only the roots.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub known: Vec<Vec<u64>>,
+    /// Field battles each person has fought (`battle::Fighter::battles`).
+    pub battles: Vec<u16>,
 }
 
 /// Everything needed to create an agent.
@@ -193,6 +195,7 @@ impl AgentStore {
         self.rest_until.push(0);
         self.job_today.push(None);
         self.off_trade.push(0);
+        self.battles.push(0);
         idx
     }
 

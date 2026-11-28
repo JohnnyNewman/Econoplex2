@@ -305,6 +305,67 @@ fn a_recorded_battle_ends_where_the_report_says() {
     }
 }
 
+/// A recorded battle knows who it cost and when they fell: the lost are the
+/// dead and the taken, they fell within the battle, and the replay's losses
+/// grow to the battle's own.
+fn recorded_losses(model: BattleModel) {
+    let (field, specs) = parse_lineup("swordsmen*30 vs spearmen*20").unwrap();
+    let mut b = Battle::new(params(model), field, specs, 3);
+    let r = b.record(5.0);
+    let people: Vec<Vec<Fighter>> = (0..2)
+        .map(|q| {
+            (0..b.members(q).len())
+                .map(|k| Fighter {
+                    id: k as u32,
+                    name: format!("n{k}"),
+                    trade: if k % 2 == 0 { "farmer" } else { "smith" }.into(),
+                    battles: 1,
+                    weekly: 10.0,
+                })
+                .collect()
+        })
+        .collect();
+    let end = r.frames.last().unwrap().t;
+    let mut dead = 0;
+    for (q, lost) in r.lost.iter().enumerate() {
+        assert_eq!(lost.len(), b.members(q).len());
+        for (k, &at) in lost.iter().enumerate() {
+            assert_eq!(at.is_some(), b.lost(q, k), "{q} {k}");
+            if let Some(t) = at {
+                assert!((0.0..=end).contains(&t));
+                dead += 1;
+            }
+        }
+    }
+    assert!(dead > 0);
+    let replay = Replay {
+        town: 0,
+        at: (0.0, 0.0),
+        facing: (1.0, 0.0),
+        field: b.field_size(),
+        squads: r.squads,
+        frames: r.frames,
+        winner: r.report.winner,
+        people: people.clone(),
+        attacker: None,
+        lost: r.lost,
+    };
+    assert_eq!(replay.losses_at(-1.0)[0].count(), 0);
+    assert_eq!(replay.losses_at(end), b.losses(&people));
+    let all: u32 = b.losses(&people).iter().map(Losses::count).sum();
+    assert_eq!(all, dead);
+}
+
+#[test]
+fn recorded_losses_squads() {
+    recorded_losses(BattleModel::Squads);
+}
+
+#[test]
+fn recorded_losses_soldiers() {
+    recorded_losses(BattleModel::Soldiers);
+}
+
 fn recorded(model: BattleModel) {
     let (field, specs) = parse_lineup("cavalry*20 vs archers*30").unwrap();
     let mut b = Battle::new(params(model), field, specs, 5);
@@ -326,6 +387,9 @@ fn recorded(model: BattleModel) {
             squads: squads.clone(),
             frames: Vec::new(),
             winner: report.winner,
+            people: Vec::new(),
+            attacker: None,
+            lost: Vec::new(),
         });
     }
     assert_eq!(log.replays.len(), BattleLog::KEEP);
