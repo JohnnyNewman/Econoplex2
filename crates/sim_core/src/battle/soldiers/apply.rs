@@ -224,33 +224,33 @@ impl SoldierBattle {
         // Friends near the fallen and the broken lose heart.
         let fallen = std::mem::take(&mut self.fallen);
         let broke = std::mem::take(&mut self.broke);
+        let (grids, men, squads) = (&self.grids, &mut self.soldier, &self.squads);
         for (list, loss) in [(&fallen, sp.near_fall), (&broke, sp.near_rout)] {
             for &f in list.iter() {
-                let side = self.soldier[f].side as usize;
+                let side = men[f].side as usize;
                 let r2 = sp.near_radius * sp.near_radius;
-                let pf = self.soldier[f].pos;
-                for j in self.grids[side].near(pf, sp.near_radius) {
-                    if j != f
-                        && (self.soldier[j].pos - pf).len2() <= r2
-                        && self.soldier[j].state.present()
-                    {
-                        let steady = self.squads[self.soldier[j].squad as usize].steady;
-                        self.soldier[j].morale = (self.soldier[j].morale - loss * steady).max(0.0);
-                        self.soldier[j].quiet = 0.0;
+                let pf = men[f].pos;
+                grids[side].each_near(pf, sp.near_radius, |j| {
+                    if j != f && (men[j].pos - pf).len2() <= r2 && men[j].state.present() {
+                        let steady = squads[men[j].squad as usize].steady;
+                        men[j].morale = (men[j].morale - loss * steady).max(0.0);
+                        men[j].quiet = 0.0;
                     }
-                }
+                    true
+                });
             }
         }
         // Foes near the broken take heart.
         for &f in broke.iter() {
-            let foes = 1 - (self.soldier[f].side as usize).min(1);
+            let foes = 1 - (men[f].side as usize).min(1);
             let r2 = sp.near_radius * sp.near_radius;
-            let pf = self.soldier[f].pos;
-            for j in self.grids[foes].near(pf, sp.near_radius) {
-                if (self.soldier[j].pos - pf).len2() <= r2 && self.soldier[j].state.in_line() {
-                    self.soldier[j].morale = (self.soldier[j].morale + sp.foe_breaks).min(1.0);
+            let pf = men[f].pos;
+            grids[foes].each_near(pf, sp.near_radius, |j| {
+                if (men[j].pos - pf).len2() <= r2 && men[j].state.in_line() {
+                    men[j].morale = (men[j].morale + sp.foe_breaks).min(1.0);
                 }
-            }
+                true
+            });
         }
         self.fallen = fallen;
         self.broke = broke;

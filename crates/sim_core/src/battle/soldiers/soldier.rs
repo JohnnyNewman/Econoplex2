@@ -302,7 +302,7 @@ impl SoldierBattle {
     /// True if a friend stands in the way of a blow from `me` along `u`, `d` long.
     fn blocked(&self, i: usize, me: V2, u: V2, d: f32) -> bool {
         let friends = &self.grids[self.soldier[i].side as usize];
-        friends.near(me + u * (d * 0.5), d * 0.5 + 0.5).any(|j| {
+        friends.any_near(me + u * (d * 0.5), d * 0.5 + 0.5, |j| {
             if j == i || self.soldier[j].state == SoldierState::Routing {
                 return false;
             }
@@ -503,7 +503,7 @@ impl SoldierBattle {
             &[0]
         };
         for &g in grids {
-            for j in self.grids[g].near(land, reach) {
+            self.grids[g].each_near(land, reach, |j| {
                 let r = if self.kits[self.soldier[j].kit as usize].kit.mounted {
                     reach
                 } else {
@@ -514,7 +514,8 @@ impl SoldierBattle {
                     best = d2;
                     victim = Some(j);
                 }
-            }
+                true
+            });
         }
         let Some(v) = victim else {
             return;
