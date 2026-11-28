@@ -451,7 +451,7 @@ impl SoldierBattle {
     fn line_of(&self, c: usize) -> Vec<usize> {
         let s = &self.squads[c];
         (s.first..s.first + s.spec.members.len())
-            .filter(|&i| self.state[i].in_line())
+            .filter(|&i| self.soldier[i].state.in_line())
             .collect()
     }
 
@@ -532,17 +532,19 @@ impl SoldierBattle {
         s.files = files as u16;
         // Soldiers by how far back they stand, then rank by rank left to right.
         let (anchor, facing) = (s.anchor, s.facing);
-        let back = |i: usize| -(self.pos[i] - anchor).dot(facing);
-        let lat = |i: usize| (self.pos[i] - anchor).dot(facing.right());
-        line.sort_by(|&a, &b| back(a).total_cmp(&back(b)).then(a.cmp(&b)));
+        let back = |men: &[Soldier], i: usize| -(men[i].pos - anchor).dot(facing);
+        let lat = |men: &[Soldier], i: usize| (men[i].pos - anchor).dot(facing.right());
+        let men = &self.soldier;
+        line.sort_by(|&a, &b| back(men, a).total_cmp(&back(men, b)).then(a.cmp(&b)));
         let mut k = 0;
         while k < n {
             let r = slots[k].1;
             let end = k + slots[k..].iter().take_while(|s| s.1 == r).count();
-            line[k..end].sort_by(|&a, &b| lat(a).total_cmp(&lat(b)).then(a.cmp(&b)));
+            let men = &self.soldier;
+            line[k..end].sort_by(|&a, &b| lat(men, a).total_cmp(&lat(men, b)).then(a.cmp(&b)));
             for j in k..end {
-                self.file[line[j]] = slots[j].0;
-                self.rank[line[j]] = slots[j].1;
+                self.soldier[line[j]].file = slots[j].0;
+                self.soldier[line[j]].rank = slots[j].1;
             }
             k = end;
         }
@@ -550,11 +552,11 @@ impl SoldierBattle {
         // the nearest file of the narrower rank).
         let mut placed: Vec<((u16, i16), usize)> = line
             .iter()
-            .map(|&i| ((self.rank[i], self.file[i]), i))
+            .map(|&i| ((self.soldier[i].rank, self.soldier[i].file), i))
             .collect();
         placed.sort_unstable();
         for &((r, f), i) in &placed {
-            self.ahead[i] = NONE;
+            self.soldier[i].ahead = NONE;
             if r == 0 {
                 continue;
             }
@@ -564,7 +566,7 @@ impl SoldierBattle {
                 f
             };
             if let Ok(k) = placed.binary_search_by(|p| p.0.cmp(&(r - 1, f))) {
-                self.ahead[i] = placed[k].1 as u32;
+                self.soldier[i].ahead = placed[k].1 as u32;
             }
         }
     }
@@ -588,11 +590,11 @@ impl SoldierBattle {
         let files = (self.squads[c].files as usize).max(1);
         let mut cols: Vec<Vec<usize>> = vec![Vec::new(); files];
         for &i in &line {
-            let f = (self.file[i].max(0) as usize).min(files - 1);
+            let f = (self.soldier[i].file.max(0) as usize).min(files - 1);
             cols[f].push(i);
         }
         for col in &mut cols {
-            col.sort_by_key(|&i| (self.rank[i], i));
+            col.sort_by_key(|&i| (self.soldier[i].rank, i));
         }
         // Too few soldiers for the width: drop empty files, outside first.
         while cols.len() > w {
@@ -628,9 +630,9 @@ impl SoldierBattle {
         }
         for (f, col) in cols.iter().enumerate() {
             for (r, &i) in col.iter().enumerate() {
-                self.file[i] = f as i16;
-                self.rank[i] = r as u16;
-                self.ahead[i] = if r == 0 { NONE } else { col[r - 1] as u32 };
+                self.soldier[i].file = f as i16;
+                self.soldier[i].rank = r as u16;
+                self.soldier[i].ahead = if r == 0 { NONE } else { col[r - 1] as u32 };
             }
         }
         self.squads[c].files = cols.len() as u16;

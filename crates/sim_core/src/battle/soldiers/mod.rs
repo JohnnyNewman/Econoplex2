@@ -6,7 +6,8 @@
 //! their own kit, so a flank attack, a broken line, a tired army and a wedge
 //! come out of positions rather than out of flags.
 //!
-//! Soldiers are plain arrays, one entry per soldier and one array per field.
+//! Soldiers are arrays indexed by soldier: what every substep reads of each
+//! in one `Soldier` struct apiece, the rest in an array per field.
 //! [`SoldierBattle::step`] advances one battle second (`params.dt`) in
 //! substeps of `soldiers.substep` seconds. One substep runs in six phases:
 //!
@@ -386,6 +387,9 @@ struct SquadCtl {
     fighting_with: Option<usize>,
     /// Mean fatigue factor of those in line.
     vigour: f32,
+    /// Whether an enemy stands in the grid cells around any of its
+    /// soldiers: if not, none of them need look (phase 1).
+    foes_around: bool,
     /// Soldiers who fell this substep, and who left the line (fell, broke
     /// or fled).
     losses: u32,
@@ -532,6 +536,40 @@ struct Hurt {
     side_blows: u16,
 }
 
+/// What the soldier controllers read of every soldier in every substep,
+/// and the moves and morale the apply phase writes back: one cache line, so
+/// planning a soldier reads one struct (and its neighbours one each) rather
+/// than a column per field.
+#[derive(Clone, Copy, Debug)]
+#[repr(align(64))]
+struct Soldier {
+    pos: V2,
+    facing: V2,
+    vel: V2,
+    morale: f32,
+    /// Morale they started with: nerve comes back up to it.
+    start_morale: f32,
+    fatigue: f32,
+    /// Seconds since they last fought, were hit or saw a friend fall.
+    quiet: f32,
+    cooldown: f32,
+    /// Their kit's body radius, as `kits[kit].body`.
+    body: f32,
+    /// The soldier one rank ahead in their file, whom they keep behind
+    /// while the squad is in contact (`NONE` in the front rank).
+    ahead: u32,
+    kit: u16,
+    squad: u16,
+    /// Their slot in the squad's formation: file and rank.
+    file: i16,
+    rank: u16,
+    arrows: u16,
+    state: SoldierState,
+    side: u8,
+}
+
+const _: () = assert!(std::mem::size_of::<Soldier>() == 64);
+
 /// Seconds spent per phase, for `--profile`.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Profile {
@@ -561,24 +599,10 @@ pub struct SoldierBattle {
     events: Vec<Event>,
     squads: Vec<SquadCtl>,
     kits: Vec<KitEntry>,
-    // One entry per soldier.
-    pos: Vec<V2>,
-    facing: Vec<V2>,
-    vel: Vec<V2>,
+    // One entry per soldier: what every substep reads of each, in one
+    // struct, and the rest in a column each.
+    soldier: Vec<Soldier>,
     health: Vec<f32>,
-    morale: Vec<f32>,
-    fatigue: Vec<f32>,
-    kit: Vec<u16>,
-    /// Their kit's body radius, kept beside the positions for the
-    /// neighbour loops.
-    body: Vec<f32>,
-    squad: Vec<u16>,
-    /// Their slot in the squad's formation: file and rank.
-    file: Vec<i16>,
-    rank: Vec<u16>,
-    /// The soldier one rank ahead in their file, whom they keep behind
-    /// while the squad is in contact (`NONE` in the front rank).
-    ahead: Vec<u32>,
     /// Attack bonus before exhaustion: proficiency and their weapon's
     /// quality; hit points unhurt; and whether they were in a crush last
     /// substep (restrained).
@@ -588,14 +612,6 @@ pub struct SoldierBattle {
     seasoned: Vec<f32>,
     restrained: Vec<bool>,
     target: Vec<u32>,
-    cooldown: Vec<f32>,
-    arrows: Vec<u16>,
-    state: Vec<SoldierState>,
-    side: Vec<u8>,
-    /// Morale they started with (nerve comes back up to it), and seconds since
-    /// they last fought, were hit or saw a friend fall.
-    start_morale: Vec<f32>,
-    quiet: Vec<f32>,
     grids: [Grid; 2],
     /// The widest body on each side: how far to look for bodies to push off.
     widest: [f32; 2],
@@ -613,6 +629,8 @@ pub struct SoldierBattle {
     /// Runners taken prisoner this substep.
     captured: Vec<usize>,
     tally: Vec<u32>,
+    /// Each squad's box of soldiers on their feet (scratch, phase 1).
+    boxes: Vec<(V2, V2)>,
     /// Each squad's nearest enemy squad still fighting, as phase 2 began:
     /// no squad's centre or state changes during it.
     near_foe: Vec<Option<usize>>,
@@ -642,29 +660,13 @@ impl SoldierBattle {
             events: Vec::new(),
             squads: Vec::with_capacity(specs.len()),
             kits: Vec::new(),
-            pos: Vec::with_capacity(n),
-            facing: Vec::with_capacity(n),
-            vel: vec![V2::ZERO; n],
+            soldier: Vec::with_capacity(n),
             health: Vec::with_capacity(n),
-            morale: Vec::with_capacity(n),
-            fatigue: Vec::with_capacity(n),
-            kit: Vec::with_capacity(n),
-            body: Vec::with_capacity(n),
-            squad: Vec::with_capacity(n),
-            file: vec![0; n],
-            rank: vec![0; n],
-            ahead: vec![NONE; n],
             bonus: Vec::with_capacity(n),
             max_hp: Vec::with_capacity(n),
             seasoned: Vec::with_capacity(n),
             restrained: vec![false; n],
             target: vec![NONE; n],
-            cooldown: Vec::with_capacity(n),
-            arrows: Vec::with_capacity(n),
-            state: Vec::with_capacity(n),
-            side: Vec::with_capacity(n),
-            start_morale: Vec::with_capacity(n),
-            quiet: vec![0.0; n],
             plans: vec![Plan::default(); n],
             blows: Vec::new(),
             lands: Vec::new(),
@@ -674,6 +676,7 @@ impl SoldierBattle {
             broke: Vec::new(),
             captured: Vec::new(),
             tally: vec![0; specs.len()],
+            boxes: Vec::new(),
             near_foe: Vec::new(),
             met: vec![false; specs.len() * specs.len()],
             charged: vec![false; specs.len() * specs.len()],
@@ -691,9 +694,9 @@ impl SoldierBattle {
         for c in 0..b.squads.len() {
             b.deploy(c);
         }
-        for i in 0..b.pos.len() {
-            let s = (b.side[i] as usize).min(1);
-            b.widest[s] = b.widest[s].max(b.body[i]);
+        for s in &b.soldier {
+            let side = (s.side as usize).min(1);
+            b.widest[side] = b.widest[side].max(s.body);
         }
         b
     }
@@ -725,7 +728,7 @@ impl SoldierBattle {
 
     fn add_squad(&mut self, c: usize, spec: SquadSpec, centres: &[(u8, V2)]) {
         let p = self.params.clone();
-        let first = self.pos.len();
+        let first = self.soldier.len();
         let kits: Vec<u16> = spec.kits.iter().map(|k| self.intern(k)).collect();
         let squad_kit = self.intern(&spec.kit);
         let morale = spec.morale.clamp(0.0, 1.0);
@@ -744,29 +747,35 @@ impl SoldierBattle {
                 }
             }
             self.health.push(member.health);
-            self.morale.push(morale);
-            self.start_morale.push(morale);
-            self.fatigue.push(member.fatigue.clamp(0.0, 1.0));
-            self.kit.push(k);
-            self.body.push(self.kits[k as usize].body);
-            self.squad.push(c as u16);
             let kit = &self.kits[k as usize].kit;
             self.bonus
                 .push(rules::proficiency(&p, member.skill, e) + kit.quality);
             self.max_hp.push(rules::max_hp(&p, e));
             self.seasoned.push(rules::agility(&p, e, 0.0));
             let mut d = Draw::new(self.seed, 0, i, Purpose::Start);
-            self.cooldown
-                .push(d.f32() / kit.strike_rate.max(kit.shot_rate).max(1e-3));
-            self.arrows.push(kit.arrows.min(u16::MAX as u32) as u16);
-            self.state.push(if up {
-                SoldierState::Formed
-            } else {
-                SoldierState::Down
+            self.soldier.push(Soldier {
+                pos: V2::new(spec.pos.0, spec.pos.1),
+                facing: V2::new(1.0, 0.0),
+                vel: V2::ZERO,
+                morale,
+                start_morale: morale,
+                fatigue: member.fatigue.clamp(0.0, 1.0),
+                quiet: 0.0,
+                cooldown: d.f32() / kit.strike_rate.max(kit.shot_rate).max(1e-3),
+                body: self.kits[k as usize].body,
+                ahead: NONE,
+                kit: k,
+                squad: c as u16,
+                file: 0,
+                rank: 0,
+                arrows: kit.arrows.min(u16::MAX as u32) as u16,
+                state: if up {
+                    SoldierState::Formed
+                } else {
+                    SoldierState::Down
+                },
+                side: spec.side,
             });
-            self.side.push(spec.side);
-            self.pos.push(V2::new(spec.pos.0, spec.pos.1));
-            self.facing.push(V2::new(1.0, 0.0));
         }
         let seasoned = if standing > 0.0 {
             ((1.0 + exp / standing).ln() / (1.0 + p.experience_full).ln()).min(1.0)
@@ -787,7 +796,7 @@ impl SoldierBattle {
         } else {
             ahead
         };
-        let arrows = self.arrows[first..].iter().map(|&a| a as u32).sum();
+        let arrows = self.soldier[first..].iter().map(|s| s.arrows as u32).sum();
         let state = if standing > 0.0 {
             SquadState::Fighting
         } else {
@@ -830,6 +839,7 @@ impl SoldierBattle {
             in_contact: 0,
             fighting_with: None,
             vigour: 1.0,
+            foes_around: true,
             losses: 0,
             left: 0,
             engaged: false,
@@ -845,8 +855,8 @@ impl SoldierBattle {
         let (first, n) = (s.first, s.spec.members.len());
         let centre = V2::new(s.spec.pos.0, s.spec.pos.1);
         let ranks = (first..first + n)
-            .filter(|&i| self.state[i].present())
-            .map(|i| self.rank[i])
+            .filter(|&i| self.soldier[i].state.present())
+            .map(|i| self.soldier[i].rank)
             .max()
             .unwrap_or(0);
         s.anchor = centre + s.facing * (ranks as f32 * s.spacing * 0.5);
@@ -864,8 +874,9 @@ impl SoldierBattle {
         s.front = s.anchor;
         let s = &self.squads[c];
         for i in first..first + n {
-            self.pos[i] = self.clear_slot(s.slot(self.file[i], self.rank[i]), i);
-            self.facing[i] = s.facing;
+            self.soldier[i].pos =
+                self.clear_slot(s.slot(self.soldier[i].file, self.soldier[i].rank), i);
+            self.soldier[i].facing = s.facing;
         }
     }
 
@@ -873,7 +884,7 @@ impl SoldierBattle {
     #[inline]
     fn clear_slot(&self, p: V2, i: usize) -> V2 {
         match &self.nav {
-            Some(nav) => nav.push_out(p, self.body[i], self.side[i]),
+            Some(nav) => nav.push_out(p, self.soldier[i].body, self.soldier[i].side),
             None => p,
         }
     }
@@ -895,10 +906,13 @@ impl SoldierBattle {
         let (first, n) = (s.first, s.spec.members.len());
         let (mut sum, mut k) = (V2::ZERO, 0.0);
         for i in first..first + n {
-            self.pos[i] = self.clear_slot(self.squads[c].slot(self.file[i], self.rank[i]), i);
-            self.facing[i] = facing;
-            if self.state[i].present() {
-                sum += self.pos[i];
+            self.soldier[i].pos = self.clear_slot(
+                self.squads[c].slot(self.soldier[i].file, self.soldier[i].rank),
+                i,
+            );
+            self.soldier[i].facing = facing;
+            if self.soldier[i].state.present() {
+                sum += self.soldier[i].pos;
                 k += 1.0;
             }
         }
@@ -915,7 +929,7 @@ impl SoldierBattle {
             .iter()
             .map(|s| {
                 (s.first..s.first + s.spec.members.len())
-                    .map(|i| Condition::new(self.morale[i], self.fatigue[i]))
+                    .map(|i| Condition::new(self.soldier[i].morale, self.soldier[i].fatigue))
                     .collect()
             })
             .collect()
@@ -938,10 +952,10 @@ impl SoldierBattle {
                 (s.first..s.first + s.spec.members.len())
                     .map(|i| {
                         FrameSoldier::new(
-                            self.pos[i].x,
-                            self.pos[i].y,
-                            (self.facing[i].x, self.facing[i].y),
-                            match self.state[i] {
+                            self.soldier[i].pos.x,
+                            self.soldier[i].pos.y,
+                            (self.soldier[i].facing.x, self.soldier[i].facing.y),
+                            match self.soldier[i].state {
                                 SoldierState::Routing => FighterState::Routing,
                                 SoldierState::Down => FighterState::Down,
                                 SoldierState::Fled => FighterState::Fled,
@@ -956,7 +970,7 @@ impl SoldierBattle {
 
     /// How many soldiers fight.
     pub fn soldiers(&self) -> usize {
-        self.pos.len()
+        self.soldier.len()
     }
 
     /// Advance one battle second (`params.dt`), in substeps.
@@ -970,7 +984,7 @@ impl SoldierBattle {
 
     fn substep(&mut self) {
         let dt = self.params.soldiers.substep;
-        let par = self.pos.len() >= self.params.soldiers.parallel_from
+        let par = self.soldier.len() >= self.params.soldiers.parallel_from
             && rayon::current_num_threads() > 1;
         let mut clock = self.profile.map(|_| Instant::now());
         let mut lap = |b: &mut Self, phase: usize| {
@@ -984,15 +998,46 @@ impl SoldierBattle {
         for g in &mut self.grids {
             g.clear();
         }
-        let soldiers = self.state.iter().zip(&self.side).zip(&self.pos);
-        for (i, ((st, &side), &at)) in soldiers.enumerate() {
-            if st.present() {
-                self.grids[(side as usize).min(1)].push(i, at);
+        // Squad by squad (their soldiers stand in a row, in index order),
+        // with each squad's box of soldiers on their feet, to ask once per
+        // squad whether any enemy is near enough for its soldiers to look.
+        let mut boxes = std::mem::take(&mut self.boxes);
+        boxes.clear();
+        for c in &self.squads {
+            let (first, n) = (c.first, c.spec.members.len());
+            let grid = &mut self.grids[(c.spec.side as usize).min(1)];
+            let mut lo = V2::new(f32::INFINITY, f32::INFINITY);
+            let mut hi = V2::new(f32::NEG_INFINITY, f32::NEG_INFINITY);
+            for (k, s) in self.soldier[first..first + n].iter().enumerate() {
+                if s.state.present() {
+                    grid.push(first + k, s.pos);
+                    let p = s.pos;
+                    if p.x < lo.x {
+                        lo.x = p.x;
+                    }
+                    if p.x > hi.x {
+                        hi.x = p.x;
+                    }
+                    if p.y < lo.y {
+                        lo.y = p.y;
+                    }
+                    if p.y > hi.y {
+                        hi.y = p.y;
+                    }
+                }
             }
+            boxes.push((lo, hi));
         }
         for g in &mut self.grids {
             g.finish();
         }
+        // Grid cells are monotone in each coordinate, so a soldier's cells
+        // lie within their squad's.
+        for (s, &(lo, hi)) in self.squads.iter_mut().zip(&boxes) {
+            let foes = &self.grids[(s.spec.side as usize).min(1) ^ 1];
+            s.foes_around = lo.x <= hi.x && foes.anyone_around_box(foes.cell(lo), foes.cell(hi));
+        }
+        self.boxes = boxes;
         lap(self, 0);
         // 2. Squad controllers.
         self.command();
@@ -1014,7 +1059,7 @@ impl SoldierBattle {
                         for (k, p) in chunk.iter_mut().enumerate() {
                             let i = c * CHUNK + k;
                             // Nobody reads the plan of a soldier who is down or gone.
-                            if this.state[i].present() {
+                            if this.soldier[i].state.present() {
                                 this.plan_and_blow(i, p, &mut list);
                             }
                         }
@@ -1024,7 +1069,7 @@ impl SoldierBattle {
                 blows.extend(lists.into_iter().flatten());
             } else {
                 for (i, p) in plans.iter_mut().enumerate() {
-                    if this.state[i].present() {
+                    if this.soldier[i].state.present() {
                         this.plan_and_blow(i, p, &mut blows);
                     }
                 }
@@ -1050,23 +1095,17 @@ impl SoldierBattle {
         self.events.push(Event { t: self.t, kind });
     }
 
-    /// 1 - `fatigue_effect` * fatigue: the share of their speed and attack
-    /// rate a tired soldier keeps.
-    #[inline]
-    fn vigour(&self, i: usize) -> f32 {
-        1.0 - self.params.soldiers.fatigue_effect * self.fatigue[i]
-    }
-
     /// Frightened: a wavering soldier attacks with disadvantage.
     #[inline]
     fn frightened(&self, i: usize) -> bool {
-        self.morale[i] < self.params.waver_at
+        self.soldier[i].morale < self.params.waver_at
     }
 
     /// Soldier `i`'s attack bonus now: less a point per level of exhaustion.
     #[inline]
     fn attack_bonus(&self, i: usize) -> f32 {
-        self.bonus[i] - self.params.exhaustion_penalty * rules::exhaustion(self.fatigue[i]) as f32
+        self.bonus[i]
+            - self.params.exhaustion_penalty * rules::exhaustion(self.soldier[i].fatigue) as f32
     }
 
     /// True if the wall stands between two points (outside the breach).
