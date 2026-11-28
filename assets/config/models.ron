@@ -392,6 +392,25 @@
         breach_width: 6.0,         // m of gate or breach attackers fight through
         skirmish_distance: 40.0,   // m: skirmishing archers back away from enemies this close
         cautious_wait: 120.0,      // m: a cautious side holds until an enemy is this close
+        // Weather and terrain that bite (battle/weather.rs): each a share at the
+        // worst of its condition (full rain, mud, snow cover or dark), on rates
+        // and speeds, so on both models and whatever the step.
+        weather: (
+            rain_draw: 0.3,        // bows shoot this much slower in full rain
+            rain_to_hit: 1.5,      // and arrows lose this much attack bonus
+            heavy_rain: 0.75,      // from this rain on, every shot at disadvantage
+            mud_foot: 0.25,        // men lose this much speed in full mud
+            mud_horse: 0.55,       // horses this much
+            mud_charge: 0.7,       // and a charge this much of its extra damage
+            snow_slow: 0.15,       // everyone loses this much speed in deep snow
+            night_range: 0.4,      // bows lose this much range in full dark
+            night_sight: 50.0,     // m: past this, shots at disadvantage at night
+            notable: 0.2,          // a condition below this is not named in the panel
+        ),
+        // The conditions a battle is fought in: the war system sets them from the
+        // weather, ground and hour at the town fought over; fair here, for
+        // `--battle` (e.g. `--set battle.conditions.mud=1`).
+        conditions: (rain: 0.0, mud: 0.0, snow: 0.0, dark: 0.0),
         // The soldier model. Every rate is per second, scaled by the substep.
         soldiers: (
             substep: 0.25,         // battle seconds per substep

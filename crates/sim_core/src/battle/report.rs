@@ -302,6 +302,11 @@ pub struct LiveView {
     /// (`loot.rs`; set by the war system).
     #[serde(default)]
     pub gathered: Gathered,
+    /// The weather, ground and light it is fought in, in words ("Rain:
+    /// bows at disadvantage, mud: horses slowed, ..."); `None` in fair
+    /// weather (`weather.rs`).
+    #[serde(default)]
+    pub conditions: Option<String>,
 }
 
 /// How a soldier is, as the clients draw them.
@@ -342,6 +347,9 @@ pub struct Cost {
     /// The kit the side holding the field gathered (`loot.rs`).
     #[serde(default)]
     pub gathered: Gathered,
+    /// The conditions it was fought in, in words (`weather.rs`).
+    #[serde(default)]
+    pub conditions: Option<String>,
 }
 
 impl BattleLog {

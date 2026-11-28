@@ -77,7 +77,8 @@ fn update_forecast(
         shown.set_if_neq(Visibility::Hidden);
         return;
     }
-    let line = forecast::words(&forecasts);
+    let conditions = live.view.as_ref().and_then(|v| v.conditions.as_deref());
+    let line = forecast::words_in(&forecasts, conditions);
     if words.0 != line {
         words.0 = line;
     }

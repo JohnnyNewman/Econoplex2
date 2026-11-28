@@ -113,6 +113,7 @@ pub(super) fn cost(
         fought,
         losses: b.losses(people),
         gathered: crate::battle::Gathered::default(),
+        conditions: b.params().conditions.words(&b.params().weather),
     }
 }
 

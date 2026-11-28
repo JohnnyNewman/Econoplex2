@@ -257,6 +257,11 @@ fn run_battle(lineup: &str, params: &sim_core::battle::BattleParams, args: &Args
     let seed = args.seed.unwrap_or(1);
     let seeds = args.seeds.max(1);
     sim_core::battle::parse_lineup(lineup).unwrap_or_else(|e| die(&e));
+    // Rain, mud, snow or night set with `--set battle.conditions.mud=1`
+    // (docs/design/war-ideas.md, idea 7).
+    if let Some(w) = params.conditions.words(&params.weather) {
+        println!("Fought in the weather: {w}");
+    }
     if let Some(t) = args.forecast {
         forecast_battle(lineup, &params, seed, t);
         return;
@@ -841,6 +846,9 @@ fn print_battles(sim: &Simulation) {
                 None => "no decision".into(),
             }
         );
+        if let Some(w) = &c.conditions {
+            println!("      fought in: {w}");
+        }
         for (s, side) in sides.iter().enumerate() {
             println!("      {side} {}", c.losses[s].words());
         }

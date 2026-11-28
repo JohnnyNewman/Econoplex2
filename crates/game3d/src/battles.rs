@@ -741,6 +741,10 @@ fn battle_panel(
             } else {
                 ui.label(format!("{:.0} min fought", v.frame.t / 60.0));
             }
+            // The weather, ground and light it is fought in (war-ideas.md, idea 7).
+            if let Some(w) = &v.conditions {
+                ui.label(w);
+            }
             ui.horizontal(|ui| {
                 if ui.button("Look at the field").clicked() {
                     for mut cam in &mut cameras {

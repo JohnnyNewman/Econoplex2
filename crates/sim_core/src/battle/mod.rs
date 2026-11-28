@@ -54,6 +54,7 @@ pub mod soldiers;
 pub mod squads;
 #[cfg(test)]
 mod tests;
+mod weather;
 
 pub use control::*;
 pub use kit::*;
@@ -63,6 +64,7 @@ pub use nav::*;
 pub use price::*;
 pub use report::*;
 pub use soldiers::V2;
+pub use weather::*;
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -177,6 +179,13 @@ pub struct BattleParams {
     pub cautious_wait: f32,
     /// Constants only the soldier model uses.
     pub soldiers: soldiers::SoldierParams,
+    /// How hard rain, mud, snow and the dark bite (`weather.rs`).
+    #[serde(default)]
+    pub weather: WeatherParams,
+    /// The conditions this battle is fought in: set by the war system from
+    /// the world's weather, ground and hour; fair by default (`weather.rs`).
+    #[serde(default)]
+    pub conditions: Conditions,
 }
 
 impl Default for BattleParams {
@@ -224,6 +233,8 @@ impl Default for BattleParams {
             skirmish_distance: 40.0,
             cautious_wait: 120.0,
             soldiers: soldiers::SoldierParams::default(),
+            weather: WeatherParams::default(),
+            conditions: Conditions::default(),
         }
     }
 }
@@ -754,6 +765,7 @@ impl Battle {
             people: Vec::new(),
             attacker: None,
             gathered: Gathered::default(),
+            conditions: m.params().conditions.words(&m.params().weather),
             lost: (0..m.count())
                 .map(|s| {
                     (0..m.spec(s).members.len())

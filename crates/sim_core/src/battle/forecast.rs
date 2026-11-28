@@ -307,6 +307,20 @@ impl Forecast {
     }
 }
 
+/// The forecast in words ([`words`]), saying under the heading the
+/// weather it counts with, if any ("Rain: bows at disadvantage", from
+/// `LiveView::conditions`): for both clients.
+pub fn words_in(forecasts: &[Forecast], conditions: Option<&str>) -> String {
+    let all = words(forecasts);
+    match conditions {
+        Some(c) => match all.split_once('\n') {
+            Some((head, rest)) => format!("{head}\nIn the weather: {c}\n{rest}"),
+            None => format!("{all}\nIn the weather: {c}"),
+        },
+        None => all,
+    }
+}
+
 /// The forecast in words, a line a proposal under a heading saying how many
 /// runs it rests on: for both clients and the CLI.
 pub fn words(forecasts: &[Forecast]) -> String {

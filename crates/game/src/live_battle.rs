@@ -493,7 +493,11 @@ pub fn update_battle_panel(
             v.frame.t / 60.0
         )
     };
-    let want = format!("{head}\n{status}");
+    let mut want = format!("{head}\n{status}");
+    // The weather, ground and light it is fought in (war-ideas.md, idea 7).
+    if let Some(w) = &v.conditions {
+        want = format!("{want}\n{w}");
+    }
     if title.0 != want {
         title.0 = want;
     }
@@ -663,6 +667,7 @@ mod tests {
             attacker: None,
             lost: Vec::new(),
             gathered: Default::default(),
+            conditions: None,
         }
     }
 

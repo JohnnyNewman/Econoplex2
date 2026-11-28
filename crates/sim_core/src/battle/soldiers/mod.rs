@@ -711,16 +711,8 @@ impl SoldierBattle {
         self.kits.push(KitEntry {
             mass,
             body: if kit.mounted { sp.horse_body } else { sp.body },
-            top: if kit.mounted {
-                p.horse_charge_speed
-            } else {
-                p.run_speed
-            },
-            walk: if kit.mounted {
-                p.horse_walk_speed
-            } else {
-                p.walk_speed
-            },
+            top: p.paces(kit.mounted).1,
+            walk: p.paces(kit.mounted).0,
             kit: kit.clone(),
         });
         (self.kits.len() - 1) as u16
@@ -761,7 +753,7 @@ impl SoldierBattle {
                 start_morale: morale,
                 fatigue: member.fatigue.clamp(0.0, 1.0),
                 quiet: 0.0,
-                cooldown: d.f32() / kit.strike_rate.max(kit.shot_rate).max(1e-3),
+                cooldown: d.f32() / kit.strike_rate.max(p.shot_rate(kit.shot_rate)).max(1e-3),
                 body: self.kits[k as usize].body,
                 ahead: NONE,
                 kit: k,
@@ -1209,11 +1201,7 @@ impl Model for SoldierBattle {
     fn pace(&self, squad: usize) -> (f32, f32) {
         let p = &self.params;
         let s = &self.squads[squad];
-        let (walk, run) = if s.mounted() {
-            (p.horse_walk_speed, p.horse_charge_speed)
-        } else {
-            (p.walk_speed, p.run_speed)
-        };
+        let (walk, run) = p.paces(s.mounted());
         (walk * s.vigour, run * s.vigour)
     }
     fn deploy(&mut self, squad: usize, anchor: (f32, f32), facing: (f32, f32), width: Option<f32>) {
