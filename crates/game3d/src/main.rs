@@ -51,6 +51,7 @@ mod crowd_compute;
 mod env;
 mod fields;
 mod fog;
+mod forecast;
 mod grading;
 mod grounding;
 mod hud;
@@ -421,6 +422,7 @@ fn main() {
         battle_input::BattleInputPlugin,
         walls3d::Walls3dPlugin,
         battle_price::BattlePricePlugin,
+        forecast::ForecastPlugin,
     ))
     .insert_resource(battle_input::BattleControls::new(rts_demo))
     .insert_resource(env_override)
@@ -820,6 +822,7 @@ fn shoot(
             if live.live_battle().is_some_and(|v| v.deploying) && s > 0.0 {
                 live.start_battle();
             }
+            live.hold_battle();
             let Some(v) = live
                 .live_battle()
                 .filter(|v| v.frame.t >= s || v.finished || (v.deploying && s <= 0.0))

@@ -90,6 +90,12 @@ struct Shared {
     battles: Vec<sim_core::battle::Replay>,
     /// The battle waiting for the player, as it stands now.
     live_battle: Option<Arc<sim_core::battle::LiveView>>,
+    /// The win-chance forecast for it so far (forecast.rs), and whether
+    /// every run is in.
+    forecast: (Vec<sim_core::battle::forecast::Forecast>, bool),
+    /// Keep a live battle that is over on screen, unsettled, until the
+    /// game is unpaused (for a screenshot of its end).
+    hold_battle: bool,
     /// Orders to the player's squads in it, and a request to auto-resolve it.
     battle_commands: Vec<(usize, sim_core::battle::Command)>,
     battle_resolve: bool,
@@ -172,6 +178,8 @@ impl LiveSim {
             samples: Vec::new(),
             battles: Vec::new(),
             live_battle: None,
+            forecast: Default::default(),
+            hold_battle: false,
             battle_commands: Vec::new(),
             battle_resolve: false,
             battle_start: false,
@@ -222,6 +230,12 @@ impl LiveSim {
     /// The battle waiting for the player, if any.
     pub fn live_battle(&self) -> Option<Arc<sim_core::battle::LiveView>> {
         self.shared.lock().unwrap().live_battle.clone()
+    }
+
+    /// The win-chance forecast for the battle being fought, so far, and
+    /// whether every run is in (forecast.rs).
+    pub fn forecast(&self) -> (Vec<sim_core::battle::forecast::Forecast>, bool) {
+        self.shared.lock().unwrap().forecast.clone()
     }
 
     /// What the player tells one of their squads in the waiting battle:
@@ -296,6 +310,12 @@ impl LiveSim {
     pub fn pause(&self) {
         self.shared.lock().unwrap().paused = true;
     }
+
+    /// Keep the live battle on screen once it is over, before the economy
+    /// settles it, and pause there (for a screenshot of its end).
+    pub fn hold_battle(&self) {
+        self.shared.lock().unwrap().hold_battle = true;
+    }
 }
 
 /// Battle seconds per real second while the player fights a battle.
@@ -313,6 +333,8 @@ fn run(sim: &mut Simulation, shared: &Mutex<Shared>, mut seen: sim_core::view::S
     // When the view last got a full snapshot: at the end of each day, and
     // at least this often in between (a day can last minutes of real time).
     let mut snap_at = Instant::now();
+    // The live battle's win-chance forecast, run on a thread of its own.
+    let mut forecaster = sim_core::battle::forecast::Forecaster::new();
     const SNAP_EVERY: Duration = Duration::from_millis(250);
     const PASS_BUDGET: Duration = Duration::from_millis(100);
     loop {
@@ -384,8 +406,19 @@ fn run(sim: &mut Simulation, shared: &Mutex<Shared>, mut seen: sim_core::view::S
                 next_battle = next_battle.max(Instant::now() - Duration::from_millis(200));
             }
             let view = war::live_battle_view(&sim.world).map(Arc::new);
-            shared.lock().unwrap().live_battle = view;
-            if waiting {
+            war::feed_forecast(&sim.world, &mut forecaster);
+            let forecast = forecaster.latest();
+            let held = {
+                let mut s = shared.lock().unwrap();
+                let held = s.hold_battle && view.as_ref().is_some_and(|v| v.finished);
+                if held {
+                    s.paused = true;
+                }
+                s.live_battle = view;
+                s.forecast = forecast;
+                held
+            };
+            if waiting || held {
                 std::thread::sleep(Duration::from_millis(5));
                 next = Instant::now();
                 continue;

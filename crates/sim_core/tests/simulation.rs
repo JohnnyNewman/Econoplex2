@@ -238,6 +238,41 @@ fn a_doctrine_of_capture_takes_prisoners_in_auto_resolved_raids() {
     );
 }
 
+/// Loot the field (war-ideas.md, idea 3): the side holding the field
+/// gathers the dead's weapons and armour, and the battle log says so.
+#[test]
+fn the_side_holding_the_field_gathers_the_deads_kit() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let mut s = Simulation::from_paths(&AssetPaths::from_root(&root)).unwrap();
+    let dpy = s.world.resource::<sim_core::SimClock>().months_per_year;
+    let mut found = None;
+    for _ in 0..20 * dpy {
+        s.step();
+        let log = s.world.resource::<sim_core::battle::BattleLog>();
+        if let Some(c) = log.costs.iter().find(|c| !c.gathered.is_empty()) {
+            found = Some(c.clone());
+            break;
+        }
+    }
+    let c = found.expect("nothing gathered from a field in 20 years of raids");
+    // Only the side that held the field gathers, and only kit.
+    assert_eq!(c.winner, Some(c.gathered.side));
+    let db = s.world.resource::<sim_core::Db>();
+    for (name, n) in &c.gathered.goods {
+        let def = db
+            .content
+            .products
+            .iter()
+            .find(|p| &p.name == name)
+            .expect("a good");
+        assert_eq!(def.category, sim_data::Category::Weapon, "{name}");
+        assert!(*n > 0);
+    }
+    // At most a weapon, an armour and a shield from each of the lost.
+    let lost: u32 = c.losses.iter().map(|l| l.count()).sum();
+    assert!(c.gathered.count() <= 3 * lost, "{c:?}");
+}
+
 #[test]
 fn households_migrate_and_carry_their_skills() {
     // Households decide together and know only some towns, so moves are rare: use

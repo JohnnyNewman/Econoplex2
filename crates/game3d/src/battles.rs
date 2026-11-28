@@ -316,6 +316,7 @@ fn stage_battle(
         attacker,
         lost: r.lost,
         walls,
+        gathered: Default::default(),
     };
     let geo = Geo {
         at: replay.at,

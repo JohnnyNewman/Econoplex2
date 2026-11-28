@@ -281,15 +281,33 @@ fn side_names(attacker: Option<u16>, town: u16, name: &dyn Fn(u16) -> String) ->
     ]
 }
 
+/// The ticker with, once the battle is over, a line for what the side
+/// holding the field gathered (`loot.rs`): "Ashford gathered: 12 iron
+/// spears, 4 mail shirts".
+fn with_gathered(line: String, over: bool, gathered: &Gathered, names: &[String; 2]) -> String {
+    if !over || gathered.is_empty() {
+        return line;
+    }
+    let side = (gathered.side as usize).min(1);
+    format!("{line}\n{} {}", names[side], gathered.words())
+}
+
 impl Replay {
-    /// The ticker at battle time `t`, attackers first ([`ticker`]); `None`
-    /// for a battle of nobody in particular.
+    /// The ticker at battle time `t`, attackers first ([`ticker`]), and at
+    /// the end what was gathered; `None` for a battle of nobody in
+    /// particular.
     pub fn ticker(&self, t: f32, name: &dyn Fn(u16) -> String) -> Option<String> {
         if self.people.is_empty() {
             return None;
         }
         let names = side_names(self.attacker, self.town, name);
-        Some(ticker(&self.losses_at(t), &names, 0, "lost"))
+        let over = self.frames.last().is_some_and(|f| t >= f.t);
+        Some(with_gathered(
+            ticker(&self.losses_at(t), &names, 0, "lost"),
+            over,
+            &self.gathered,
+            &names,
+        ))
     }
 }
 
@@ -303,7 +321,12 @@ impl LiveView {
         }
         let names = side_names(self.attacker, self.town, name);
         let what = if self.finished { "lost" } else { "fallen" };
-        Some(ticker(&self.losses(), &names, self.player_side, what))
+        Some(with_gathered(
+            ticker(&self.losses(), &names, self.player_side, what),
+            self.finished,
+            &self.gathered,
+            &names,
+        ))
     }
 }
 

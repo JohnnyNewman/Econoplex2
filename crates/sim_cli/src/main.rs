@@ -64,6 +64,8 @@ struct Args {
     battle_model: Option<sim_core::battle::BattleModel>,
     /// Fight `--battle` on both models and print both.
     compare: bool,
+    /// Fight `--battle` this many battle seconds, then forecast the rest.
+    forecast: Option<f32>,
 }
 
 fn parse_args() -> Args {
@@ -95,6 +97,7 @@ fn parse_args() -> Args {
         battle: None,
         battle_model: None,
         compare: false,
+        forecast: None,
     };
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
@@ -131,6 +134,13 @@ fn parse_args() -> Args {
                 a.battle_model = Some(val().parse().unwrap_or_else(|e: String| die(&e)))
             }
             "--compare" => a.compare = true,
+            "--forecast" => {
+                a.forecast = Some(
+                    val()
+                        .parse()
+                        .unwrap_or_else(|_| die("--forecast expects battle seconds")),
+                )
+            }
             "--preset" => {
                 let path = PathBuf::from(val());
                 let sets = sim_core::read_preset(&path).unwrap_or_else(|e| die(&e.to_string()));
@@ -202,6 +212,8 @@ fn parse_args() -> Args {
                                     %FATIGUE (0..1) tires a squad; #flank or #rear deploys it beside or behind the enemy\n\
                      --battle-model M  squads or soldiers (default: battle.model in models.ron)\n\
                      --compare      with --battle: fight on both models over the same seeds and print both\n\
+                     --forecast T   with --battle: fight it T battle seconds, print the attackers' win-chance\n\
+                                    forecast for the rest (20 runs per order on the squad model), then fight it out\n\
                      --assets DIR   assets folder (default: discovered)\n\
                      --csv FILE     write per-town yearly metrics as CSV (batch mode: one row per run)\n\
                      --set P=V      override a parameter in models.ron, e.g. military.tribute_share=0.3\n\
@@ -245,6 +257,10 @@ fn run_battle(lineup: &str, params: &sim_core::battle::BattleParams, args: &Args
     let seed = args.seed.unwrap_or(1);
     let seeds = args.seeds.max(1);
     sim_core::battle::parse_lineup(lineup).unwrap_or_else(|e| die(&e));
+    if let Some(t) = args.forecast {
+        forecast_battle(lineup, &params, seed, t);
+        return;
+    }
     if args.profile {
         // The budget is for one core.
         rayon::ThreadPoolBuilder::new()
@@ -294,6 +310,36 @@ fn run_battle(lineup: &str, params: &sim_core::battle::BattleParams, args: &Args
             1000.0 * wall / seeds as f64
         );
     }
+}
+
+/// `--forecast T`: fight the line-up T battle seconds, forecast the rest for
+/// the attackers (docs/design/war-ideas.md, idea 1), then fight it out as
+/// ordered and print what happened, to set beside the forecast.
+fn forecast_battle(lineup: &str, params: &sim_core::battle::BattleParams, seed: u64, t: f32) {
+    use rayon::prelude::*;
+    use sim_core::battle::forecast::{self, Proposal, RUNS};
+    use sim_core::battle::{parse_lineup, Battle};
+    let (field, specs) = parse_lineup(lineup).unwrap_or_else(|e| die(&e));
+    let mut b = Battle::new(params.clone(), field, specs, seed);
+    while b.seconds() < t && !b.finished() {
+        b.step();
+    }
+    let snapshot = b.snapshot(0);
+    let start = Instant::now();
+    let forecasts: Vec<forecast::Forecast> = Proposal::ALL
+        .par_iter()
+        .map(|&p| snapshot.forecast(p, 0, RUNS))
+        .collect();
+    let wall = start.elapsed().as_secs_f64();
+    println!(
+        "{lineup} [{:?}], the attackers' forecast after {:.0} s ({:.0} ms for {} runs):",
+        params.model,
+        b.seconds(),
+        1000.0 * wall,
+        RUNS as usize * forecasts.len()
+    );
+    println!("{}", forecast::words(&forecasts));
+    print!("fought out as ordered: {}", b.run());
 }
 
 /// One report per seed, fought on all threads.
@@ -760,7 +806,8 @@ const BATTLES_SHOWN: usize = 8;
 
 /// The price of the battles fought (docs/design/war-ideas.md, idea 2): the
 /// newest few, each side's dead and taken by trade and the week's work they
-/// would have done, and each town's losses over the whole run.
+/// would have done, what the side holding the field gathered (idea 3), and
+/// each town's losses and gatherings over the whole run.
 fn print_battles(sim: &Simulation) {
     let log = sim.world.resource::<sim_core::battle::BattleLog>();
     if log.costs.is_empty() {
@@ -797,6 +844,10 @@ fn print_battles(sim: &Simulation) {
         for (s, side) in sides.iter().enumerate() {
             println!("      {side} {}", c.losses[s].words());
         }
+        if c.winner.is_some() {
+            let side = sides[(c.gathered.side as usize).min(1)];
+            println!("      {side} {}", c.gathered.words());
+        }
     }
     let mut total = vec![sim_core::battle::Losses::default(); towns.0.len()];
     for c in &log.costs {
@@ -809,6 +860,23 @@ fn print_battles(sim: &Simulation) {
     println!("  over the run:");
     for (t, l) in total.iter().enumerate().filter(|(_, l)| l.count() > 0) {
         println!("  {:<11} {}", towns.0[t].name, l.words());
+    }
+    // The kit each town gathered from the field (war-ideas.md, idea 3).
+    let mut gathered = vec![sim_core::battle::Gathered::default(); towns.0.len()];
+    for c in &log.costs {
+        let t = if c.gathered.side == 0 {
+            c.attacker
+        } else {
+            c.town
+        };
+        if let Some(g) = gathered.get_mut(t as usize) {
+            g.add(&c.gathered);
+        }
+    }
+    println!("  kit gathered from the field over the run:");
+    for (t, g) in gathered.iter().enumerate().filter(|(_, g)| !g.is_empty()) {
+        let list = g.words().replace("gathered: ", "");
+        println!("  {:<11} {} pieces: {list}", towns.0[t].name, g.count());
     }
 }
 

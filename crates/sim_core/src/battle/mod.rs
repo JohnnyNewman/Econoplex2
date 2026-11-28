@@ -39,8 +39,10 @@
 //! members) back.
 
 mod control;
+pub mod forecast;
 mod kit;
 mod lineup;
+mod loot;
 mod nav;
 #[cfg(test)]
 mod obstacle_tests;
@@ -59,6 +61,7 @@ mod walls;
 pub use control::*;
 pub use kit::*;
 pub use lineup::*;
+pub use loot::*;
 pub use nav::*;
 pub use price::*;
 pub use report::*;
@@ -786,6 +789,7 @@ impl Battle {
             winner: if finished { self.report().winner } else { None },
             people: Vec::new(),
             attacker: None,
+            gathered: Gathered::default(),
             lost: (0..m.count())
                 .map(|s| {
                     (0..m.spec(s).members.len())
@@ -948,6 +952,11 @@ impl Battle {
             }
             _ => rules::Care::Friends,
         }
+    }
+
+    /// The battle's seed.
+    pub fn seed(&self) -> u64 {
+        self.model().seed()
     }
 
     /// Whether member `k` of squad `squad` dies of the battle

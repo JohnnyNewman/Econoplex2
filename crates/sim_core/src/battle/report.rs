@@ -201,6 +201,9 @@ pub struct Replay {
     /// The town's wall on the field, if it has one.
     #[serde(default)]
     pub walls: Vec<ReplayWall>,
+    /// The kit the side holding the field gathered (`loot.rs`).
+    #[serde(default)]
+    pub gathered: Gathered,
 }
 
 impl Replay {
@@ -321,6 +324,10 @@ pub struct LiveView {
     /// once it is over, each lost to their town (`Battle::lost`).
     #[serde(default)]
     pub lost: Vec<Vec<bool>>,
+    /// Once it is over, the kit the side holding the field will gather
+    /// (`loot.rs`; set by the war system).
+    #[serde(default)]
+    pub gathered: Gathered,
 }
 
 /// How a soldier is, as the clients draw them.
@@ -358,6 +365,9 @@ pub struct Cost {
     /// How many fought on each side.
     pub fought: [u32; 2],
     pub losses: [Losses; 2],
+    /// The kit the side holding the field gathered (`loot.rs`).
+    #[serde(default)]
+    pub gathered: Gathered,
 }
 
 impl BattleLog {

@@ -81,6 +81,23 @@ pub fn live_battle_view(world: &World) -> Option<crate::battle::LiveView> {
     v.deploying = !live.started;
     v.people = live.people.clone();
     v.attacker = Some(live.attacker as u16);
+    // Once it is over, what the side holding the field will gather.
+    if let (true, Some(store), Some(db), Some(params)) = (
+        live.battle.finished(),
+        world.get_resource::<AgentStore>(),
+        world.get_resource::<Db>(),
+        world.get_resource::<Params>(),
+    ) {
+        let def_of = |e: Entity| world.get::<Product>(e).map(|p| p.def);
+        let left = super::loot::left_on_field(
+            &live.battle,
+            &live.groups,
+            store,
+            &def_of,
+            params.military.loot_broken,
+        );
+        v.gathered = super::loot::gathered(&live.battle, &left, db);
+    }
     Some(v)
 }
 
@@ -151,4 +168,24 @@ pub fn live_battle_waiting(world: &World) -> bool {
         .get_resource::<PendingBattle>()
         .and_then(|p| p.0.as_ref())
         .is_some_and(|b| !b.battle.finished())
+}
+
+/// Keep a win-chance forecast (`battle::forecast`) up to date for the battle
+/// waiting for the player: feed `f` a snapshot of it, for the player's
+/// side, every `Forecaster::EVERY` battle seconds from the end of the
+/// deployment; forget it once no battle is being fought. Both clients call this where they step the battle.
+pub fn feed_forecast(world: &World, f: &mut crate::battle::forecast::Forecaster) {
+    let live = world
+        .get_resource::<PendingBattle>()
+        .and_then(|p| p.0.as_ref())
+        .filter(|l| l.started && !l.battle.finished());
+    match live {
+        Some(l) => {
+            let t = l.battle.seconds();
+            if f.wants(t) {
+                f.feed(l.battle.snapshot(l.player_side));
+            }
+        }
+        None => f.clear(),
+    }
 }

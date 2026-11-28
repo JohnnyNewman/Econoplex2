@@ -72,7 +72,7 @@ pub(super) fn battle(
     gear_defs: &Query<&Product, Without<Stored>>,
     terrain: &crate::terrain::Terrain,
     rng: &mut ChaCha8Rng,
-    log: Option<&mut crate::battle::BattleLog>,
+    mut log: Option<&mut crate::battle::BattleLog>,
     now: u64,
 ) -> Vec<u32> {
     let mp = &params.military;
@@ -112,7 +112,7 @@ pub(super) fn battle(
         field,
         doctrines,
         seed,
-        log.map(|log| Record {
+        log.as_deref_mut().map(|log| Record {
             log,
             town: d as u16,
             at,
@@ -128,6 +128,21 @@ pub(super) fn battle(
     }
     if let Some((b, groups)) = &fought {
         take_prisoners(commands, raid, attacker, towns, store, rng, b, groups);
+        // The dead's kit, for the side holding the field (loot.rs).
+        let def_of = |e: Entity| gear_defs.get(e).ok().map(|p| p.def);
+        let left = loot::left_on_field(b, groups, store, &def_of, mp.loot_broken);
+        if let Some(to) = loot::holder(b, attacker, d) {
+            if let Some(log) = log {
+                let g = loot::gathered(b, &left, db);
+                if let Some(r) = log.replays.back_mut() {
+                    r.gathered = g.clone();
+                }
+                if let Some(c) = log.costs.last_mut() {
+                    c.gathered = g;
+                }
+            }
+            loot::gather(commands, towns, store, to, &left);
+        }
     }
     defenders.extend(militia);
     aftermath(
@@ -400,6 +415,7 @@ fn field_battle(
                 attacker: Some(attacker as u16),
                 lost: r.lost,
                 walls,
+                gathered: crate::battle::Gathered::default(),
             });
             r.report
         }
