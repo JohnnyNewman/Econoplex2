@@ -51,9 +51,11 @@ a compatibility shim: both models stay real options.
 
 ## Data per soldier
 
-Soldiers are stored as plain arrays, one entry per soldier and one array per
-field, indexed by soldier. A soldier is never an ECS entity: the battle runs
-outside the world, as today.
+Soldiers are stored in arrays indexed by soldier: the fields every substep
+reads of each soldier in one 64-byte struct per soldier (`Soldier`: place,
+facing, velocity, morale, fatigue, cooldown, body, slot, kit, squad, arrows,
+state and side), the rest in an array each (see "Packed soldiers" below). A
+soldier is never an ECS entity: the battle runs outside the world, as today.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1198,6 +1200,56 @@ Tried and dropped: a finer grid and a 3 m cell (more cells to build than
 neighbours saved), a nine-cell count table per box cell (the box holds
 about 4,000 cells, most of them empty), and a vectorised distance filter
 (most soldiers in the box are within range, so it only added work).
+
+## Packed soldiers
+
+The soldier model runs the same battles bit for bit, in 12% fewer
+instructions per substep of the 4,000-soldier battle (callgrind, one
+thread: 2.16 million before, 1.91 million after). Checked by hashing every
+squad's centre and morale after each battle second, the report and every
+member, for nine line-ups (the yardstick, the yardstick in a town, a wall,
+mirrors, riders, archers and a flank), two seeds each, on one thread and on
+four.
+
+- **One struct per soldier.** What the substep reads of each soldier
+  (place, facing, velocity, morale, fatigue, quiet, cooldown, body, the
+  soldier ahead, kit, squad, slot, arrows, state and side) is one 64-byte
+  `Soldier`, a cache line, instead of seventeen arrays. Planning a soldier
+  indexes one struct with one bounds check, and a neighbour costs one line
+  instead of four. Health, attack bonus, hit points, experience, restraint
+  and target, read rarely or only when applying, keep an array each.
+  Planning: −19% instructions; applying: −14%.
+- **Foes near, once per squad.** The grid is built squad by squad (their
+  soldiers stand in a row), with each squad's box of soldiers on their feet.
+  A squad none of whose box cells has an enemy around it has no soldier
+  that would find one, since grid cells grow with position, so its soldiers
+  skip that question. Most of a big battle's squads stand clear of the
+  enemy at any moment.
+- **The apply and recount loops skip what cannot change:** no morale shock
+  without a wound or a side blow, and only soldiers who left the field are
+  asked whether they were taken (everyone on their feet still fights).
+
+Tried and dropped: carrying each neighbour's body, squad, rank and
+whether they run in the grid's entries (the grid then has to be built
+after the squad controllers, and the bigger entries cost more to build than
+the lookups they save); filtering a grid row by distance eight entries at a
+time (rows hold a handful of soldiers, so the scalar tail did most of the
+work); and moving the runners', fighters' and pushers' work out of the
+planning function to shorten its common path (more calls, no faster).
+
+**Time.** `cargo test --release --test battle_budget`, best of three on one
+core, the two builds run in turn six times on this shared 4-core machine at
+a load of 10 to 16 (ms per battle second):
+
+| Battle | Before | After |
+| --- | --- | --- |
+| the yardstick, whole battle (410 s) | 0.80–0.82 (median 0.81) | 0.71–0.95 (median 0.73) |
+| the yardstick, first 400 s | 0.80–0.85 | 0.71–0.75 |
+| the same in a town, first 400 s | 1.52–1.72 | 1.45–1.60 |
+
+The town gains less (−5% against −11%): its extra time is the fighting in
+the streets and the obstacle queries, which these changes do not touch.
+A town battle still costs about twice the open one.
 
 ## Deep line-ups
 

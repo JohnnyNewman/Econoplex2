@@ -115,8 +115,12 @@ impl Grid {
         // is where c + 1 begins.
         self.start.clear();
         self.start.resize(cells + 2, 0);
-        for e in &self.listed {
-            self.start[box_cell(e) + 2] += 1;
+        // Each entry's box cell, worked out once, takes the place of its
+        // field cell across.
+        for e in &mut self.listed {
+            let c = box_cell(e);
+            e.x = c as u32;
+            self.start[c + 2] += 1;
         }
         let mut sum = 0;
         for s in &mut self.start[2..] {
@@ -127,7 +131,7 @@ impl Grid {
         self.items.resize(n, 0);
         self.at.resize(n, V2::ZERO);
         for e in &self.listed {
-            let at = &mut self.start[box_cell(e) + 1];
+            let at = &mut self.start[e.x as usize + 1];
             let to = *at as usize;
             *at += 1;
             self.items[to] = e.i;
@@ -165,9 +169,20 @@ impl Grid {
 
     /// Whether anybody stands in the cells around `(x, y)`, itself included.
     #[inline]
-    pub(super) fn anyone_around(&self, (x, y): (usize, usize)) -> bool {
+    pub(super) fn anyone_around(&self, at: (usize, usize)) -> bool {
+        self.anyone_around_box(at, at)
+    }
+
+    /// Whether anybody stands in the cells from `(xa, ya)` to `(xb, yb)`, or
+    /// in the cells around them.
+    #[inline]
+    pub(super) fn anyone_around_box(
+        &self,
+        (xa, ya): (usize, usize),
+        (xb, yb): (usize, usize),
+    ) -> bool {
         let Some([xa, ya, xb, yb]) =
-            self.clip(x.saturating_sub(1), y.saturating_sub(1), x + 1, y + 1)
+            self.clip(xa.saturating_sub(1), ya.saturating_sub(1), xb + 1, yb + 1)
         else {
             return false;
         };

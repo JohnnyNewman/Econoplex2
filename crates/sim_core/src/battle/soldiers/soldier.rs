@@ -12,9 +12,10 @@ impl SoldierBattle {
     /// Phase 3: what soldier `i` means to do.
     #[inline(always)]
     pub(super) fn plan(&self, i: usize) -> Plan {
-        let state = self.state[i];
+        let man = &self.soldier[i];
+        let state = man.state;
         let mut plan = Plan {
-            facing: self.facing[i],
+            facing: man.facing,
             ..Plan::default()
         };
         if !state.present() {
@@ -23,13 +24,13 @@ impl SoldierBattle {
         let p = &self.params;
         let sp = &p.soldiers;
         let dt = sp.substep;
-        let k = &self.kits[self.kit[i] as usize];
-        let c = &self.squads[self.squad[i] as usize];
-        let top = k.top * self.vigour(i);
-        let me = self.pos[i];
-        let side = (self.side[i] as usize).min(1);
+        let k = &self.kits[man.kit as usize];
+        let c = &self.squads[man.squad as usize];
+        let top = k.top * (1.0 - sp.fatigue_effect * man.fatigue);
+        let me = man.pos;
+        let side = (man.side as usize).min(1);
         let (friends, foes) = (&self.grids[side], &self.grids[side ^ 1]);
-        let foes_near = foes.anyone_around(foes.cell(me));
+        let foes_near = c.foes_around && foes.anyone_around(foes.cell(me));
 
         if state == SoldierState::Routing {
             // Away from the nearest enemies, toward their own edge of the
@@ -79,7 +80,7 @@ impl SoldierBattle {
             // runner deciding afresh each substep could swing back and forth
             // between two of them for ever: it keeps some of the way it ran.
             if self.nav.is_some() {
-                dir = (dir + self.vel[i].norm_or(V2::ZERO) * 1.5).norm_or(home);
+                dir = (dir + man.vel.norm_or(V2::ZERO) * 1.5).norm_or(home);
             }
             plan.vel = dir * top;
             plan.facing = dir;
@@ -87,12 +88,12 @@ impl SoldierBattle {
         }
 
         // The nearest enemy within reach, or near the slot; and bodies to push off.
-        let mut slot = c.slot(self.file[i], self.rank[i]);
+        let mut slot = c.slot(man.file, man.rank);
         // In contact, the ranks behind keep a pace behind the man in front:
         // the front presses, the rear does not crowd it.
-        let ahead = self.ahead[i] as usize;
-        if c.in_contact > 0 && ahead != NONE as usize && self.state[ahead].in_line() {
-            let lim = self.pos[ahead] - c.facing * c.spacing;
+        let ahead = man.ahead as usize;
+        if c.in_contact > 0 && ahead != NONE as usize && self.soldier[ahead].state.in_line() {
+            let lim = self.soldier[ahead].pos - c.facing * c.spacing;
             let over = (slot - lim).dot(c.facing);
             if over > 0.0 {
                 slot -= c.facing * over;
@@ -102,7 +103,7 @@ impl SoldierBattle {
         if self.nav.as_deref().is_some_and(|n| n.any_near(slot)) {
             slot = self.clear_slot(slot, i);
         }
-        let front = ahead == NONE as usize || !self.state[ahead].in_line();
+        let front = ahead == NONE as usize || !self.soldier[ahead].state.in_line();
         let reach = k.kit.reach;
         let slack2 = sp.engage_slack * sp.engage_slack;
         let breach = if c.spec.behind_wall {
@@ -127,13 +128,13 @@ impl SoldierBattle {
                 if d2 > r * r {
                     return;
                 }
-                let bj = self.body[j];
+                let bj = self.soldier[j].body;
                 let shove = self.shove(i, j, d, d2, 0.5);
                 plan.crush += u8::from(shove != V2::ZERO);
                 plan.push += shove;
                 // A squad that lets enemies go strikes nobody who runs (one
                 // that takes prisoners goes for them, to take them).
-                if !c.chases() && self.state[j] == SoldierState::Routing {
+                if !c.chases() && self.soldier[j].state == SoldierState::Routing {
                     return;
                 }
                 if d2 < best_d2 {
@@ -150,9 +151,9 @@ impl SoldierBattle {
 
         if best != NONE {
             let t = best as usize;
-            let kt = &self.kits[self.kit[t] as usize];
+            let kt = &self.kits[self.soldier[t].kit as usize];
             let d = best_d2.sqrt();
-            let u = (self.pos[t] - me).norm_or(c.facing);
+            let u = (self.soldier[t].pos - me).norm_or(c.facing);
             plan.target = best;
             plan.facing = u;
             // Close to a little inside their reach; pushing past a longer
@@ -172,11 +173,11 @@ impl SoldierBattle {
             plan.vel = ((to - me) * (1.0 / dt)).clamp_len(top);
             if d <= reach + kt.body {
                 // Arriving at a run is a charge, for any steady soldier.
-                let running = self.vel[i].len() >= p.run_speed - 0.1;
+                let running = man.vel.len() >= p.run_speed - 0.1;
                 let steady = matches!(state, SoldierState::Formed | SoldierState::Engaged);
                 plan.act = if steady && running {
                     Act::Charge
-                } else if self.cooldown[i] <= 0.0 {
+                } else if man.cooldown <= 0.0 {
                     Act::Strike
                 } else {
                     Act::None
@@ -185,7 +186,10 @@ impl SoldierBattle {
                     plan.act = Act::None;
                 }
                 // A runner within reach is taken, not struck.
-                if plan.act != Act::None && !c.pursues() && self.state[t] == SoldierState::Routing {
+                if plan.act != Act::None
+                    && !c.pursues()
+                    && self.soldier[t].state == SoldierState::Routing
+                {
                     plan.act = Act::Capture;
                 }
             }
@@ -194,16 +198,16 @@ impl SoldierBattle {
             // Shoot at a soldier of the squad's mark, if they are in range
             // and no enemy is close enough to make them draw the knife.
             if let Some(q) = c.shoot_at {
-                let free = !foes_near && self.arrows[i] > 0 && self.cooldown[i] <= 0.0;
+                let free = !foes_near && man.arrows > 0 && man.cooldown <= 0.0;
                 if k.kit.range > 0.0 && free {
                     let q = &self.squads[q];
                     let mut d = Draw::new(self.seed, self.substep, i, Purpose::Aim);
                     let n = q.spec.members.len().max(1);
                     let aim = (0..3)
                         .map(|_| q.first + d.below(n))
-                        .find(|&j| self.state[j].present());
+                        .find(|&j| self.soldier[j].state.present());
                     if let Some(a) = aim {
-                        let to = self.pos[a] - me;
+                        let to = self.soldier[a].pos - me;
                         if to.len2() <= k.kit.range * k.kit.range {
                             plan.act = Act::Shoot;
                             plan.aim = a as u32;
@@ -234,22 +238,23 @@ impl SoldierBattle {
             && (off2 < 0.09 || (!foes_near && off2 < half * half));
         if !settled {
             let r = k.body + self.widest[side];
-            let my_squad = self.squad[i];
+            let my_squad = man.squad;
             friends.each_near(me, r, |j, pj| {
                 let d = me - pj;
                 let d2 = d.len2();
                 // Only bodies that overlap push.
-                if d2 >= r * r || j == i || self.state[j] == SoldierState::Routing {
+                if d2 >= r * r || j == i || self.soldier[j].state == SoldierState::Routing {
                     return;
                 }
-                let share = if self.squad[j] != my_squad || self.rank[j] == self.rank[i] {
+                let share = if self.soldier[j].squad != my_squad || self.soldier[j].rank == man.rank
+                {
                     0.5
-                } else if self.rank[j] < self.rank[i] {
+                } else if self.soldier[j].rank < man.rank {
                     1.0
                 } else {
                     0.0
                 };
-                let min = self.body[i] + self.body[j];
+                let min = man.body + self.soldier[j].body;
                 plan.crush += u8::from(d2 < min * min);
                 if share > 0.0 {
                     plan.push += self.shove(i, j, d, d2, share);
@@ -257,7 +262,7 @@ impl SoldierBattle {
             });
         }
 
-        plan.morale = self.drift(i, c, best != NONE);
+        plan.morale = self.drift(man, c, best != NONE);
         plan
     }
 
@@ -265,7 +270,7 @@ impl SoldierBattle {
     /// `d2`), taking `share` of the overlap.
     #[inline]
     fn shove(&self, i: usize, j: usize, d: V2, d2: f32, share: f32) -> V2 {
-        let min = self.body[i] + self.body[j];
+        let min = self.soldier[i].body + self.soldier[j].body;
         if d2 >= min * min {
             return V2::ZERO;
         }
@@ -281,29 +286,30 @@ impl SoldierBattle {
 
     /// True if a friend stands in the way of a blow from `me` along `u`, `d` long.
     fn blocked(&self, i: usize, me: V2, u: V2, d: f32) -> bool {
-        let friends = &self.grids[self.side[i] as usize];
+        let friends = &self.grids[self.soldier[i].side as usize];
         friends.near(me + u * (d * 0.5), d * 0.5 + 0.5).any(|j| {
-            if j == i || self.state[j] == SoldierState::Routing {
+            if j == i || self.soldier[j].state == SoldierState::Routing {
                 return false;
             }
-            let v = self.pos[j] - me;
+            let v = self.soldier[j].pos - me;
             let along = v.dot(u);
             along > 0.3 && along < d - 0.3 && u.cross(v).abs() < 0.5
         })
     }
 
     /// Nerve gained or lost from what is around a soldier.
-    fn drift(&self, i: usize, c: &SquadCtl, fighting: bool) -> f32 {
+    fn drift(&self, man: &Soldier, c: &SquadCtl, fighting: bool) -> f32 {
         let p = &self.params;
         let sp = &p.soldiers;
         let dt = sp.substep;
-        let f = self.fatigue[i];
+        let f = man.fatigue;
         let mut dm = -sp.fatigue_morale * f * f * dt;
-        if !fighting && self.quiet[i] >= sp.quiet_after && self.morale[i] < self.start_morale[i] {
+        if !fighting && man.quiet >= sp.quiet_after && man.morale < man.start_morale {
             dm += p.morale_regen * dt;
             let near_leader = c.leader.is_some_and(|l| {
-                self.state[l].present()
-                    && (self.pos[l] - self.pos[i]).len2() <= sp.leader_radius * sp.leader_radius
+                let leader = &self.soldier[l];
+                leader.state.present()
+                    && (leader.pos - man.pos).len2() <= sp.leader_radius * sp.leader_radius
             });
             if near_leader {
                 dm += sp.leader_regen * dt;
@@ -338,8 +344,8 @@ impl SoldierBattle {
             }
             Act::Charge => {
                 let t = plan.target as usize;
-                let u = (self.pos[t] - self.pos[i]).norm_or(self.facing[i]);
-                let closing = (self.vel[i] - self.vel[t]).dot(u).max(0.0);
+                let u = (self.soldier[t].pos - self.soldier[i].pos).norm_or(self.soldier[i].facing);
+                let closing = (self.soldier[i].vel - self.soldier[t].vel).dot(u).max(0.0);
                 if self.braced(t, i) {
                     // They run onto the spear: its blow carries their speed.
                     let mut d = Draw::new(self.seed, self.substep, i, Purpose::Counter);
@@ -351,7 +357,7 @@ impl SoldierBattle {
                 } else {
                     // Impact: a horse and rider hit with the full charge
                     // damage per metre per second, a man with his mass's share.
-                    let k = &self.kits[self.kit[i] as usize];
+                    let k = &self.kits[self.soldier[i].kit as usize];
                     let full = p.soldiers.man_kg + p.soldiers.horse_kg;
                     let extra = p.charge_damage * closing * k.mass / full;
                     let mut d = Draw::new(self.seed, self.substep, i, Purpose::Hit);
@@ -371,16 +377,18 @@ impl SoldierBattle {
     /// still, steady, with a weapon as long, facing them.
     fn braced(&self, t: usize, i: usize) -> bool {
         let (kt, ki) = (
-            &self.kits[self.kit[t] as usize].kit,
-            &self.kits[self.kit[i] as usize].kit,
+            &self.kits[self.soldier[t].kit as usize].kit,
+            &self.kits[self.soldier[i].kit as usize].kit,
         );
-        let toward = (self.pos[i] - self.pos[t]).norm_or(self.facing[t]);
-        matches!(self.state[t], SoldierState::Formed | SoldierState::Engaged)
-            && !kt.mounted
+        let toward = (self.soldier[i].pos - self.soldier[t].pos).norm_or(self.soldier[t].facing);
+        matches!(
+            self.soldier[t].state,
+            SoldierState::Formed | SoldierState::Engaged
+        ) && !kt.mounted
             && kt.reach + 0.01 >= ki.reach
-            && self.morale[t] >= self.params.waver_at
-            && self.vel[t].len() < 0.5
-            && self.facing[t].dot(toward) > 0.0
+            && self.soldier[t].morale >= self.params.waver_at
+            && self.soldier[t].vel.len() < 0.5
+            && self.soldier[t].facing.dot(toward) > 0.0
     }
 
     /// One blow from `i` on `t`, a `charge` (with its own dice and `extra`
@@ -389,16 +397,16 @@ impl SoldierBattle {
     fn strike(&self, i: usize, t: usize, charge: bool, extra: f32, d: &mut Draw, b: &mut Blow) {
         let p = &self.params;
         let (ki, kt) = (
-            &self.kits[self.kit[i] as usize].kit,
-            &self.kits[self.kit[t] as usize].kit,
+            &self.kits[self.soldier[i].kit as usize].kit,
+            &self.kits[self.soldier[t].kit as usize].kit,
         );
-        let to = self.pos[i] - self.pos[t];
+        let to = self.soldier[i].pos - self.soldier[t].pos;
         let dist = to.len();
-        let from = to.norm_or(self.facing[t]);
-        let face = self.facing[t].dot(from);
+        let from = to.norm_or(self.soldier[t].facing);
+        let face = self.soldier[t].facing.dot(from);
         // A man climbing or pushing through the breach can't parry.
-        let on_wall = self.squads[self.squad[i] as usize].spec.behind_wall
-            && self.field.wall_x.is_some_and(|w| self.pos[t].x < w);
+        let on_wall = self.squads[self.soldier[i].squad as usize].spec.behind_wall
+            && self.field.wall_x.is_some_and(|w| self.soldier[t].pos.x < w);
         b.angle = if face < REAR {
             2
         } else if face < 0.0 {
@@ -411,7 +419,7 @@ impl SoldierBattle {
         // wall can't hold up his shield, and the defender on it has the
         // higher ground (`wall_ground`). A frightened soldier, or one held in
         // a crush, strikes with disadvantage.
-        let flank = b.angle > 0 || self.state[t] == SoldierState::Routing;
+        let flank = b.angle > 0 || self.soldier[t].state == SoldierState::Routing;
         let open = flank || on_wall;
         let roll = Roll::of(
             flank || self.restrained[t],
@@ -428,7 +436,7 @@ impl SoldierBattle {
             rules::FIRST
         } else {
             let face = d.below(20) as i32 + 1;
-            let agility = self.seasoned[i] - rules::exhaustion(self.fatigue[i]) as f32;
+            let agility = self.seasoned[i] - rules::exhaustion(self.soldier[i].fatigue) as f32;
             let outreach = if ki.reach > kt.reach + 0.5 {
                 p.reach_initiative
             } else {
@@ -460,16 +468,16 @@ impl SoldierBattle {
     fn shoot(&self, i: usize, a: usize, b: &mut Blow) {
         let p = &self.params;
         let sp = &p.soldiers;
-        let ki = &self.kits[self.kit[i] as usize].kit;
+        let ki = &self.kits[self.soldier[i].kit as usize].kit;
         let mut d = Draw::new(self.seed, self.substep, i, Purpose::Scatter);
-        let me = self.pos[i];
-        let dist = (self.pos[a] - me).len();
+        let me = self.soldier[i].pos;
+        let dist = (self.soldier[a].pos - me).len();
         let chance = p.arrow_aim.clamp(0.01, 0.95);
         // P(|offset| < r) = 1 - exp(-r^2 / 2s^2) for a normal scatter s.
         let s = sp.hit_radius / (-2.0 * (1.0 - chance).ln()).sqrt();
-        let land = self.pos[a] + V2::new(d.normal(), d.normal()) * s;
+        let land = self.soldier[a].pos + V2::new(d.normal(), d.normal()) * s;
         let reach = sp.hit_radius * p.mounted_size;
-        let side = self.side[i] as usize;
+        let side = self.soldier[i].side as usize;
         let mut victim = None;
         let mut best = f32::INFINITY;
         let grids: &[usize] = if sp.friendly_fire {
@@ -481,12 +489,12 @@ impl SoldierBattle {
         };
         for &g in grids {
             for j in self.grids[g].near(land, reach) {
-                let r = if self.kits[self.kit[j] as usize].kit.mounted {
+                let r = if self.kits[self.soldier[j].kit as usize].kit.mounted {
                     reach
                 } else {
                     sp.hit_radius
                 };
-                let d2 = (self.pos[j] - land).len2();
+                let d2 = (self.soldier[j].pos - land).len2();
                 if d2 <= r * r && d2 < best && j != i {
                     best = d2;
                     victim = Some(j);
@@ -496,12 +504,15 @@ impl SoldierBattle {
         let Some(v) = victim else {
             return;
         };
-        let kv = &self.kits[self.kit[v] as usize].kit;
+        let kv = &self.kits[self.soldier[v].kit as usize].kit;
         // A shield counts from the front; a man on the wall has cover from below.
-        let from = (me - self.pos[v]).norm_or(self.facing[v]);
-        let front = self.state[v] != SoldierState::Routing && self.facing[v].dot(from) > 0.0;
+        let from = (me - self.soldier[v].pos).norm_or(self.soldier[v].facing);
+        let front = self.soldier[v].state != SoldierState::Routing
+            && self.soldier[v].facing.dot(from) > 0.0;
         let covered = self.field.wall_x.is_some_and(|w| {
-            self.squads[self.squad[v] as usize].spec.behind_wall && self.pos[v].x > w && me.x < w
+            self.squads[self.soldier[v].squad as usize].spec.behind_wall
+                && self.soldier[v].pos.x > w
+                && me.x < w
         });
         let ac = kv.armour_class(front) + if covered { p.wall_cover } else { 0.0 };
         let bonus = self.attack_bonus(i) - p.range_penalty * dist / ki.range.max(1.0);
