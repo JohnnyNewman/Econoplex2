@@ -662,6 +662,7 @@ mod tests {
             people: Vec::new(),
             attacker: None,
             lost: Vec::new(),
+            gathered: Default::default(),
         }
     }
 

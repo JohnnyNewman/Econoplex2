@@ -81,6 +81,23 @@ pub fn live_battle_view(world: &World) -> Option<crate::battle::LiveView> {
     v.deploying = !live.started;
     v.people = live.people.clone();
     v.attacker = Some(live.attacker as u16);
+    // Once it is over, what the side holding the field will gather.
+    if let (true, Some(store), Some(db), Some(params)) = (
+        live.battle.finished(),
+        world.get_resource::<AgentStore>(),
+        world.get_resource::<Db>(),
+        world.get_resource::<Params>(),
+    ) {
+        let def_of = |e: Entity| world.get::<Product>(e).map(|p| p.def);
+        let left = super::loot::left_on_field(
+            &live.battle,
+            &live.groups,
+            store,
+            &def_of,
+            params.military.loot_broken,
+        );
+        v.gathered = super::loot::gathered(&live.battle, &left, db);
+    }
     Some(v)
 }
 

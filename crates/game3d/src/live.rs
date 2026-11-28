@@ -93,6 +93,9 @@ struct Shared {
     /// The win-chance forecast for it so far (forecast.rs), and whether
     /// every run is in.
     forecast: (Vec<sim_core::battle::forecast::Forecast>, bool),
+    /// Keep a live battle that is over on screen, unsettled, until the
+    /// game is unpaused (for a screenshot of its end).
+    hold_battle: bool,
     /// Orders to the player's squads in it, and a request to auto-resolve it.
     battle_commands: Vec<(usize, sim_core::battle::Command)>,
     battle_resolve: bool,
@@ -170,6 +173,7 @@ impl LiveSim {
             battles: Vec::new(),
             live_battle: None,
             forecast: Default::default(),
+            hold_battle: false,
             battle_commands: Vec::new(),
             battle_resolve: false,
             battle_start: false,
@@ -298,6 +302,12 @@ impl LiveSim {
     pub fn pause(&self) {
         self.shared.lock().unwrap().paused = true;
     }
+
+    /// Keep the live battle on screen once it is over, before the economy
+    /// settles it, and pause there (for a screenshot of its end).
+    pub fn hold_battle(&self) {
+        self.shared.lock().unwrap().hold_battle = true;
+    }
 }
 
 /// Battle seconds per real second while the player fights a battle.
@@ -390,12 +400,17 @@ fn run(sim: &mut Simulation, shared: &Mutex<Shared>, mut seen: sim_core::view::S
             let view = war::live_battle_view(&sim.world).map(Arc::new);
             war::feed_forecast(&sim.world, &mut forecaster);
             let forecast = forecaster.latest();
-            {
+            let held = {
                 let mut s = shared.lock().unwrap();
+                let held = s.hold_battle && view.as_ref().is_some_and(|v| v.finished);
+                if held {
+                    s.paused = true;
+                }
                 s.live_battle = view;
                 s.forecast = forecast;
-            }
-            if waiting {
+                held
+            };
+            if waiting || held {
                 std::thread::sleep(Duration::from_millis(5));
                 next = Instant::now();
                 continue;

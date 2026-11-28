@@ -112,6 +112,7 @@ pub(super) fn cost(
         winner: b.report().winner,
         fought,
         losses: b.losses(people),
+        gathered: crate::battle::Gathered::default(),
     }
 }
 
