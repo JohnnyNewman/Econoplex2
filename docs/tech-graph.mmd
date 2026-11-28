@@ -143,6 +143,10 @@ flowchart LR
     r_build_hut["Build hut"]
     r_build_cottage["Build cottage"]
     r_build_stone_house["Build stone house"]
+    r_build_palisade["Build palisade"]
+    r_build_palisade_gate["Build palisade gate"]
+    r_build_stone_wall["Build stone wall"]
+    r_build_stone_gate["Build stone gatehouse"]
     r_build_stable["Build stable"]
     r_build_blast_furnace["Build blast furnace"]
     r_build_machine_shop["Build machine shop"]
@@ -269,6 +273,16 @@ flowchart LR
   r_cut_stone --> r_build_stone_house
   r_mix_mortar --> r_build_stone_house
   r_fire_tiles --> r_build_stone_house
+  r_chop_wood --> r_build_palisade
+  r_hew_beams --> r_build_palisade
+  r_chop_wood --> r_build_palisade_gate
+  r_hew_beams --> r_build_palisade_gate
+  r_saw_planks --> r_build_palisade_gate
+  r_cut_stone --> r_build_stone_wall
+  r_mix_mortar --> r_build_stone_wall
+  r_cut_stone --> r_build_stone_gate
+  r_mix_mortar --> r_build_stone_gate
+  r_saw_planks --> r_build_stone_gate
   r_smelt_iron --> r_make_iron_spear
   or_make_iron_spear_1((or))
   r_make_bronze_spear -.-> or_make_iron_spear_1
