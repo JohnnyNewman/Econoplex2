@@ -271,6 +271,7 @@
         // earn above the town's typical pay over payback_days, at most max_factor
         // x base price.
         building_value: (payback_days: 10.0, max_factor: 1.0),
+        wall_pay: 1.5,             // a wall piece pays its inputs and this times the better jobs' pay for its days of work
         // Land: towns clear fields and plant woodlots when theirs are worn down.
         free_land: 6,
         land_threshold: 0.7,
@@ -388,7 +389,8 @@
         wall_ground: 2.0,          // attack bonus of his blows on a man climbing it (the higher ground)
         breach_width: 6.0,         // m of gate or breach attackers fight through
         wall_taken: (0.1, 0.25, 1.0), // share of a blow's pierce, slash, blunt damage a town wall takes
-        wall_strike_up: 0.3,       // squad model: share of the attackers at a wall who strike a defender over it
+        wall_strike_up: 0.75,      // squad model: share of the attackers at a wall who strike a defender over it,
+        wall_strike_down: 0.65,    // and of the defenders on it who strike down at them
         skirmish_distance: 40.0,   // m: skirmishing archers back away from enemies this close
         cautious_wait: 120.0,      // m: a cautious side holds until an enemy is this close
         // The soldier model. Every rate is per second, scaled by the substep.

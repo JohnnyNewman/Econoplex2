@@ -173,11 +173,14 @@ pub struct BattleParams {
     /// weapon's damage of each type (pierce, slash, blunt) that a blow on
     /// one takes off its hit points.
     pub wall_taken: PerType,
-    /// The squad model's share of an attacking front at a town's wall that
-    /// reaches a defender over it and strikes him (the rest batter the
-    /// piece): the soldier model's men who find a man within reach past a
-    /// piece's end or over its top, in expected values.
+    /// The squad model's shares, in expected values, of the soldier
+    /// model's men at a town's wall who find an enemy within reach over
+    /// it: of an attacking front below it that strikes a defender (the
+    /// rest batter the piece), and of a defending front along it that
+    /// strikes down at the attackers. Calibrated so that the two models'
+    /// equal wall battles come out alike.
     pub wall_strike_up: f32,
+    pub wall_strike_down: f32,
     /// Stances and doctrine: archers who skirmish back away from enemies
     /// this close (metres between the squads' edges), and squads of a
     /// cautious side hold their ground until an enemy is this close.
@@ -230,7 +233,8 @@ impl Default for BattleParams {
             wall_ground: 2.0,
             breach_width: 6.0,
             wall_taken: [0.1, 0.25, 1.0],
-            wall_strike_up: 0.3,
+            wall_strike_up: 0.75,
+            wall_strike_down: 0.65,
             skirmish_distance: 40.0,
             cautious_wait: 120.0,
             soldiers: soldiers::SoldierParams::default(),

@@ -322,8 +322,10 @@ impl SquadBattle {
                 .primary
                 .filter(|j| s.contacts.contains(j))
                 .and_then(|j| self.wall_piece_between(i, j).map(|m| (j, m)))
-                .map_or(0.0, |(j, m)| self.over_wall_front(i, j, m) * p.wall_strike_up);
-            let front = (self.wall_front(i, n) - up * tmp_k()).max(0.0);
+                .map_or(0.0, |(j, m)| {
+                    self.over_wall_front(i, j, m) * p.wall_strike_up
+                });
+            let front = (self.wall_front(i, n) - up).max(0.0);
             let per: f32 = (0..3).map(|t| s.spec.kit.damage[t] * p.wall_taken[t]).sum();
             let amount = front * per * s.spec.kit.strike_rate * p.dt;
             self.squads[i].engaged = true;
@@ -342,8 +344,4 @@ impl SquadBattle {
             s.route.clear();
         }
     }
-}
-
-fn tmp_k() -> f32 {
-    std::env::var("TMP_K").map_or(1.0, |v| v.parse().unwrap())
 }

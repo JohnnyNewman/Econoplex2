@@ -67,6 +67,10 @@ pub struct TownStats {
     pub treasury: f32,
     pub buildings: usize,
     pub soldiers: usize,
+    /// Pieces of the town's wall standing at year end, and in its ring (0
+    /// while it has laid out none).
+    #[serde(default)]
+    pub walls: (usize, usize),
     pub war: crate::world::WarCounters,
     pub moves: crate::world::MoveCounters,
     /// The town this one pays tribute to at year end.
@@ -509,6 +513,7 @@ pub fn record(
         }
         s.buildings = town.buildings.len();
         s.soldiers = town.squad.len();
+        s.walls = town.walls.standing();
         s.war = town.war;
         s.moves = town.moves;
         s.ruler = town.ruler;

@@ -48,16 +48,17 @@ impl SquadBattle {
         let p = &self.params;
         let (si, st) = (&self.squads[i], &self.squads[t]);
         let mut front = si.front(p);
-        // Over a town's wall the defenders along it strike down, and the
-        // share of the attackers below who reach one of them strike up.
+        // Over a town's wall the share of the defenders along it who reach
+        // a man below strike down, and the share of the attackers below who
+        // reach one of them strike up.
         let over = self.wall_piece_between(i, t);
         if let Some(n) = over {
             front = self.over_wall_front(i, t, n);
-            if si.spec.side == 0 {
-                front *= p.wall_strike_up;
+            front *= if si.spec.side == 0 {
+                p.wall_strike_up
             } else {
-                front *= std::env::var("TMP_DEF").map_or(1.0, |v| v.parse().unwrap());
-            }
+                p.wall_strike_down
+            };
         }
         // In a breach, front to front: nobody takes another in the flank.
         let breach = self.breach_between(i, t);

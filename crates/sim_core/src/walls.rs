@@ -156,16 +156,20 @@ impl TownWalls {
     /// Whether some piece of the ring needs wall product `p`, for a town
     /// whose best wall is of rank `best`: a gap, a piece of `p`'s kind (a
     /// gate or a stretch) below half its hit points, or one of a lower
-    /// rank than `p`'s. A town builds no rank below its best.
+    /// rank than `p`'s. Below its best rank a town builds only into gaps:
+    /// it closes its ring with what goes up quickest, then builds better.
     pub fn wants(&self, db: &Db, p: u32, best: u8) -> bool {
         let Some(w) = db.wall[p as usize] else {
             return false;
         };
-        w.rank >= best
-            && self
-                .pieces
-                .iter()
-                .any(|q| q.gate == w.gate && needs(db, q, w.rank))
+        self.pieces.iter().any(|q| {
+            q.gate == w.gate
+                && if w.rank >= best {
+                    needs(db, q, w.rank)
+                } else {
+                    q.built.is_none()
+                }
+        })
     }
 
     /// Wall product `p` made: it goes up in the piece that needs it most
@@ -350,14 +354,19 @@ mod tests {
         };
         let n = w.pieces.len();
         assert!(w.wants(&db, stretch, 0) && w.wants(&db, gate, 0));
-        // A town that can build stone builds no palisade.
-        assert!(!w.wants(&db, stretch, 1) && w.wants(&db, stone, 1));
+        // A town that can build stone closes its ring with palisade first.
+        assert!(w.wants(&db, stretch, 1) && w.wants(&db, stone, 1));
         for _ in 0..n - 1 {
             assert!(w.put_up(&db, stretch));
         }
         assert!(w.put_up(&db, gate));
         assert_eq!(w.standing(), (n, n));
         assert!(!w.wants(&db, stretch, 0), "whole: nothing to build");
+        assert!(
+            !w.wants(&db, stretch, 1),
+            "whole: no palisade where stone can go"
+        );
+        assert!(w.wants(&db, stone, 1), "but stone replaces it");
         assert!(!w.put_up(&db, stretch));
         // Years of weather wear it down, never through.
         w.weather(&db, 100.0);
@@ -404,7 +413,9 @@ mod tests {
         let walls = &towns.0[0].walls;
         assert!(walls.planned(), "laid out");
         assert!(walls.pieces.iter().any(|p| p.gate), "with a gate");
+        // Paid for at its builders' better pay, half the ring is up in two
+        // and a half years.
         let (up, all) = walls.standing();
-        assert!(up > 0, "{up} of {all} pieces built in 30 months");
+        assert!(2 * up >= all, "{up} of {all} pieces built in 30 months");
     }
 }

@@ -1266,10 +1266,19 @@ economy and a line of `Shape::Segment` obstacles in battle.
   (300 hp), then a stone wall (2,000 hp) and a stone gatehouse (900 hp) from
   era 1. They are made from wood and beams, or stone and mortar, by
   construction work like a house.
-- The market pays the base price for a piece while the ring needs one: a
-  gap, a piece under half its hit points, or a palisade once the town can
-  build stone. A piece made goes into the gap, then mends the most battered
-  piece, then replaces a palisade (`TownWalls::put_up`).
+- While the ring needs a piece (a gap, a piece under half its hit
+  points, or a palisade once the town can build stone), the market pays
+  for one at least its base price, and at least its inputs at today's
+  prices plus `market.wall_pay` (1.5) times the pay of the town's better
+  jobs (the upper quartile) for each day of its work. So the town's
+  builders would rather put up its wall than most other work, and a
+  mid-size town's ring of about sixty pieces goes up in two to four and a
+  half years (`a_town_that_orders_a_wall_lays_it_out_and_builds_it`).
+- A town closes its ring with what goes up quickest: below its best rank
+  it builds only into gaps, so a town that can cut stone still fills its
+  gaps with palisade and replaces it with stone afterwards. A piece made
+  goes into the gap, then mends the most battered piece, then replaces a
+  palisade (`TownWalls::put_up`).
 - Pieces lose `decay` of their hit points a year: 6 % for timber, 1 % for
   stone. Weathering never opens a breach (a piece keeps 1 hp).
 - An AI governor orders walls once its town has been raided
@@ -1295,9 +1304,19 @@ economy and a line of `Shape::Segment` obstacles in battle.
   holds no shield. Once a piece falls, the two nearest defending squads
   plug the breach and the rest fight as anywhere.
 - **The squad model** does the same in expected values:
-  - an attacking squad's front batters its piece, capped by the piece's
-    length and shared with the other squads there;
-  - defenders strike over the wall with the front that meets the attackers;
+  - the front that meets the enemy over the wall strikes over it, the
+    defenders' down (`wall_strike_down`, 0.65 of it) and the attackers'
+    up (`wall_strike_up`, 0.75): on the soldier model, too, only some of
+    the men on either side find an enemy within reach over a piece;
+  - the rest of an attacking squad's front batters its piece, capped by
+    the piece's length and shared with the other squads there;
+  - defenders share out the attackers below them, each striking the one
+    the fewest of its side strike already, as the men along a wall strike
+    whoever stands before them; one squad taking every blow broke before
+    the breach and left its side to fight on one squad short;
+  - arrows meet the wall's cover only on the defenders' ranks within 4 m
+    of it (`COVER`), as on the soldier model, not on a whole squad behind
+    it;
   - in a breach, front meets front and nobody is taken in the flank;
   - nobody charges across a standing piece.
 - A breach is an `EventKind::Breach`. The nav is built again, so every
@@ -1327,59 +1346,73 @@ model):
 
 | Battle | Open town | Walled town |
 | --- | --- | --- |
-| `swordsmen*40 ×2 vs swordsmen*40 ×2` | 23 / 19 | 0 / 25 |
-| `spearmen*40 ×4 vs spearmen*40 ×4` | | 0 / 1 |
-| `swordsmen*30,archers*20` mirror | | 0 / 36 |
-| `swordsmen*40 ×6` mirror | | 4 / 11 |
-| `swordsmen*40 ×3 vs swordsmen*40 ×2` | | 41 / 49 |
+| `swordsmen*40 ×2 vs swordsmen*40 ×2` | 23 / 19 | 12 / 25 |
+| `spearmen*40 ×4 vs spearmen*40 ×4` | | 22 / 1 |
+| `swordsmen*30,archers*20` mirror | | 4 / 36 |
+| `swordsmen*40 ×6` mirror | | 11 / 11 |
+| `swordsmen*40 ×3 vs swordsmen*40 ×2` | | 50 / 49 |
 
+- **The squad model** gave equal attackers almost nothing (0 of 50 in
+  most mirrors) until its attackers struck up over the wall, its
+  defenders shared out the attackers below, and the cover against arrows
+  was kept to the ranks near the wall. Its two shares of the front that
+  reach over (`wall_strike_up`, `wall_strike_down`) were then set from a
+  sweep of 30 seeds a line-up, to put the melee mirrors in 20–40 %: two
+  squads a side win 12 of 50 (24 %), four spear squads 22 (44 %), six
+  swordsman squads 11 (22 %). The model is close to deterministic, so a
+  small change in either share swings a mirror a long way (two squads a
+  side: 2 of 30 at 0.5 and 0.7, 14 at 1.0 and 0.7). The archers' mirror
+  stays low (4 of 50): the attacking archers lose their duel with the
+  covered archers on the wall and break before the swordsmen breach it.
+  Without the wall's cover they win 16 of 30, so the cover, not the
+  wall, decides it.
 - **The soldier model** depends on the line-up. Two swordsman squads a
   side take the walled town in half their battles, more than the 19 of 50
   they win against the same town without a wall: in that line-up the
-  wall does not help the defenders. Swordsmen with archers win 36. Four
-  spear squads or six swordsman squads a side rarely break in (1 and 11
-  of 50).
-- **The squad model** makes a wall worth a little less than half as many
-  men again (three squads against two behind a wall win 41 of 50). An
-  equal wall battle there is nearly always lost: the model is close to
-  deterministic, and any lasting edge decides nearly every seed. Spreading
-  a defender's blows over the attacking squads at his piece, as the
-  soldier model does, did not change this (3 against walled 2: 33 → 29,
-  before squads moved all at once), so it was left out.
+  wall does not help the defenders. Swordsmen with archers win 36. Six
+  swordsman squads a side win 11 (22 %). Four spear squads a side almost
+  never break in (1 of 50): the spears fight over the gate at their long
+  reach, the attackers lose more men and break before the gate falls.
+  Spears battering faster (pierce taking 0.25 of a blow, not 0.1) did not
+  change that (1 of 30), and a higher ground for the defenders moved
+  nothing else by more than a seed or two, so neither is in.
 
-The equal-force target of 20–40 % attacker wins holds only on the soldier
-model's two-squad mirror. Auto-resolved raids (the squad model) give it
-about 0 %.
+The equal-force target of 20–40 % attacker wins holds on the squad model
+(which auto-resolves raids) for the swordsman mirrors, with spears just
+above it (44 %) and archers below (8 %); on the soldier model it holds
+for six squads a side, with two squads a side at 50 %, archers at 72 %
+and spears at 2 %.
 
-**In the economy, measured.** 16 seeds × 30 years against main:
+**In the economy, measured.** 16 seeds × 30 years against main (#221):
 
 | | main | walls |
 | --- | --- | --- |
-| population | 2,417 ± 105 | 2,369 ± 97 |
-| raids | 68.9 | 72.1 |
-| raids won by the attackers | 84.4 % | 82.5 % |
-| conquests | 12.2 | 10.1 |
-| soldiers fallen | 304 | 303 |
-| wall pieces put up (four towns) | | 11.4 ± 12.1 |
-| spent on them | | 1,924 ± 2,005 |
-| war ms per raid | 70 ± 18 | 101 ± 48 |
-| ms per simulated day | 701 | 723 |
+| population | 2,376 ± 83 | 2,404 ± 145 |
+| raids | 70.6 ± 9.9 | 67.8 ± 11.6 |
+| raids won by the attackers | 82.5 % | 80.7 % |
+| conquests | 12.9 ± 4.6 | 11.1 ± 4.0 |
+| soldiers fallen | 309 | 291 |
+| wall pieces put up (four towns) | | 95.7 ± 42.0 |
+| spent on them | | 20,010 ± 13,534 |
+| share of a laid-out ring standing at year 30 | | 62 ± 26 % |
+| war ms per raid | 48 ± 11 | 130 ± 81 |
+| ms per simulated day | 567 | 574 |
 
-All health bands pass. Raided AI towns order walls (in one 30-year run
-all three AI towns did so in year 3), but by year 30 only about a dozen
-pieces have gone up across all four towns, against rings of about 60
-pieces each; four of the 16 seeds built none. So most raids still
-meet a ring of gaps, and raids won and conquests barely move. Getting
-walls built faster (their price, or the governor paying for them) is
-left for later.
+All health bands pass. A raided AI town now puts its ring up in a few
+years: with every town ordering one at once, three of the four close
+theirs in 30 to 54 months (the fourth, shrinking, has half of its
+ring after six years). Raids won and conquests fall a little, within one
+standard deviation. At year 30 a town's ring is on average 62 % standing:
+raids batter pieces down faster than some towns mend them. A walled raid
+costs two to three times an open one to fight out (the wall's crowd, see
+below), with a wide spread across seeds.
 
 **Cost.** `battle_budget.rs` times a walled town (50 squads of 40 a side,
-the first 400 battle seconds) next to the open battle and the town without
-a wall: 1.2 to 1.3, 2.1 and 3.4 to 4.0 ms per battle second (three runs,
-since the deep line-ups put every soldier in the fight), so the walled town
-costs about three times the open battle. Its budget is five times the open
-battle's, against three for a town without a wall: before the deep
-line-ups the open battle cost 0.8 and the walled town over four times that. The four thousand soldiers spend the
+the first 400 battle seconds, one core) in its engaged-phase test, next
+to the open battle and the town without a wall: 1.0 to 1.2, 1.9 to 2.0
+and 3.7 to 4.0 ms per battle second over three runs, so the walled town
+costs three to four times the open battle. Its budget is five times the
+open battle's, against three for a town without a wall. The four thousand soldiers spend the
 battle pressed along the wall, and there every step asks the obstacles
 where it may go and every blow whether the wall stands between. Those
 lookups are cheap, but they are made millions of times.

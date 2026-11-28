@@ -10,6 +10,10 @@ fn default_mint_below() -> f32 {
     3.0
 }
 
+fn default_wall_pay() -> f32 {
+    1.5
+}
+
 /// `market.pricing` in models.ron: the stock of each good the market aims for. A
 /// good's price rises while its stock is below that target and falls above it.
 ///
@@ -187,6 +191,14 @@ pub struct MarketParams {
     /// What a town pays for another building of a type it has.
     #[serde(default)]
     pub building_value: BuildingValue,
+    /// A town building its wall pays for a piece at least its inputs at
+    /// today's prices and this many times the pay of the town's better jobs
+    /// (the upper quartile) for each day of the work (within the price
+    /// cap, `max_price_factor`), so that its builders
+    /// would rather build it than most else: a ring of sixty pieces goes
+    /// up in a few years, not decades.
+    #[serde(default = "default_wall_pay")]
+    pub wall_pay: f32,
     /// Plots of new land (fields, woodlots) each town can still open up.
     pub free_land: u32,
     /// A town opens new land when its sites of a kind are this depleted on average.

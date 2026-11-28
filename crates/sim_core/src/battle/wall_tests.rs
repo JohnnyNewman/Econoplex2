@@ -3,21 +3,10 @@
 use super::*;
 
 fn params(model: BattleModel) -> BattleParams {
-    let mut p = BattleParams {
+    BattleParams {
         model,
         ..BattleParams::default()
-    };
-    if let Ok(v) = std::env::var("TMP_UP") {
-        p.wall_strike_up = v.parse().unwrap();
     }
-    if let Ok(v) = std::env::var("TMP_TAKEN") {
-        let v: Vec<f32> = v.split(',').map(|x| x.parse().unwrap()).collect();
-        p.wall_taken = [v[0], v[1], v[2]];
-    }
-    if let Ok(v) = std::env::var("TMP_GROUND") {
-        p.wall_ground = v.parse().unwrap();
-    }
-    p
 }
 
 #[test]
@@ -69,6 +58,35 @@ fn attackers_batter_a_breach_and_defenders_keep_inside_till_then() {
         // Others were battered too, or not at all; none healed.
         assert!(b.walls().iter().all(|w| w.hp <= w.max));
     }
+}
+
+/// On the squad model, as on the soldier model, the wall's two sides trade
+/// blows over it before the breach: attackers below reach some of the
+/// defenders on it, and the defenders share out the attackers below, so
+/// that no attacking squad takes every blow and breaks before the breach.
+#[test]
+fn squads_trade_blows_over_the_wall_before_the_breach() {
+    let lineup = "swordsmen*40,swordsmen*40 vs walled town swordsmen*40,swordsmen*40";
+    let (mut defenders, mut broke) = (0, 0);
+    for seed in 1..=4 {
+        let (field, specs) = parse_lineup(lineup).unwrap();
+        let mut b = Battle::new(params(BattleModel::Squads), field, specs, seed);
+        while !b.finished() && b.walls().iter().all(|w| w.hp > 0.0) {
+            b.step();
+        }
+        let r = b.report();
+        defenders += r
+            .squads
+            .iter()
+            .filter(|s| s.side == 1)
+            .map(|s| s.wounded + s.dead)
+            .sum::<usize>();
+        broke += (0..r.squads.len())
+            .filter(|&q| r.squads[q].side == 0 && b.state(q) != SquadState::Fighting)
+            .count();
+    }
+    assert!(defenders > 0, "no defender struck before a breach");
+    assert_eq!(broke, 0, "attacking squads broke before the breach");
 }
 
 /// A blunt weapon batters a wall faster than a spear.
@@ -186,66 +204,4 @@ fn the_long_way_round_to_a_gap_is_found() {
     }
     let nav = nav::Nav::new(&field, 1).unwrap();
     assert!(nav.path(from, ring.centre, 0).is_none());
-}
-
-#[test]
-#[ignore = "tmp probe"]
-fn tmp_breach_stats() {
-    let lineup = std::env::var("LINEUP").unwrap();
-    let seeds: u64 = std::env::var("SEEDS").map_or(50, |s| s.parse().unwrap());
-    let models: Vec<BattleModel> = match std::env::var("MODEL").as_deref() {
-        Ok("squads") => vec![BattleModel::Squads],
-        Ok("soldiers") => vec![BattleModel::Soldiers],
-        _ => vec![BattleModel::Squads, BattleModel::Soldiers],
-    };
-    for model in models {
-        let (mut wins, mut breached, mut tb, mut la, mut ld, mut fa, mut fd) =
-            (0, 0, 0.0, 0.0, 0.0, 0.0, 0.0);
-        let mut secs = 0.0;
-        for seed in 1..=seeds {
-            let (field, specs) = parse_lineup(&lineup).unwrap();
-            let mut b = Battle::new(params(model), field, specs, seed);
-            let mut seen = false;
-            while !b.finished() && b.seconds() < 3.0 * 3600.0 {
-                b.step();
-                if !seen && b.walls().iter().any(|w| w.hp <= 0.0) {
-                    seen = true;
-                    breached += 1;
-                    tb += b.seconds();
-                    for s in &b.report().squads {
-                        let lost = (s.wounded + s.dead) as f32;
-                        if s.side == 0 {
-                            la += lost
-                        } else {
-                            ld += lost
-                        }
-                    }
-                }
-            }
-            secs += b.seconds();
-            let r = b.report();
-            if r.winner == Some(0) {
-                wins += 1;
-            }
-            for s in &r.squads {
-                let lost = (s.wounded + s.dead) as f32;
-                if s.side == 0 {
-                    fa += lost
-                } else {
-                    fd += lost
-                }
-            }
-        }
-        let k = breached.max(1) as f32;
-        let s = seeds as f32;
-        println!(
-            "TMP {model:?}: att wins {wins}/{seeds}; breached {breached} at {:.0} s, lost by then {:.1} vs {:.1}; in all {:.1} vs {:.1}, {:.0} s",
-            tb / k,
-            la / k,
-            ld / k,
-            fa / s,
-            fd / s,
-            secs / s
-        );
-    }
 }
