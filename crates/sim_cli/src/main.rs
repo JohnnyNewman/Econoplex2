@@ -806,7 +806,8 @@ const BATTLES_SHOWN: usize = 8;
 
 /// The price of the battles fought (docs/design/war-ideas.md, idea 2): the
 /// newest few, each side's dead and taken by trade and the week's work they
-/// would have done, and each town's losses over the whole run.
+/// would have done, what the side holding the field gathered (idea 3), and
+/// each town's losses and gatherings over the whole run.
 fn print_battles(sim: &Simulation) {
     let log = sim.world.resource::<sim_core::battle::BattleLog>();
     if log.costs.is_empty() {
@@ -843,6 +844,10 @@ fn print_battles(sim: &Simulation) {
         for (s, side) in sides.iter().enumerate() {
             println!("      {side} {}", c.losses[s].words());
         }
+        if c.winner.is_some() {
+            let side = sides[(c.gathered.side as usize).min(1)];
+            println!("      {side} {}", c.gathered.words());
+        }
     }
     let mut total = vec![sim_core::battle::Losses::default(); towns.0.len()];
     for c in &log.costs {
@@ -855,6 +860,23 @@ fn print_battles(sim: &Simulation) {
     println!("  over the run:");
     for (t, l) in total.iter().enumerate().filter(|(_, l)| l.count() > 0) {
         println!("  {:<11} {}", towns.0[t].name, l.words());
+    }
+    // The kit each town gathered from the field (war-ideas.md, idea 3).
+    let mut gathered = vec![sim_core::battle::Gathered::default(); towns.0.len()];
+    for c in &log.costs {
+        let t = if c.gathered.side == 0 {
+            c.attacker
+        } else {
+            c.town
+        };
+        if let Some(g) = gathered.get_mut(t as usize) {
+            g.add(&c.gathered);
+        }
+    }
+    println!("  kit gathered from the field over the run:");
+    for (t, g) in gathered.iter().enumerate().filter(|(_, g)| !g.is_empty()) {
+        let list = g.words().replace("gathered: ", "");
+        println!("  {:<11} {} pieces: {list}", towns.0[t].name, g.count());
     }
 }
 

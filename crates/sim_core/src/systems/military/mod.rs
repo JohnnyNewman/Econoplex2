@@ -19,6 +19,7 @@
 mod fight;
 mod kit;
 mod live;
+mod loot;
 mod planner;
 mod price;
 
@@ -302,6 +303,20 @@ pub fn military(
                     &live.battle,
                     &live.groups,
                 );
+                // The dead's kit, for the side holding the field (loot.rs).
+                let def_of = |e: Entity| gear_defs.get(e).ok().map(|p| p.def);
+                let left =
+                    loot::left_on_field(&live.battle, &live.groups, store, &def_of, mp.loot_broken);
+                if let Some(to) = loot::holder(&live.battle, t, live.target) {
+                    if let Some(c) = links
+                        .battle_log
+                        .as_deref_mut()
+                        .and_then(|l| l.costs.last_mut())
+                    {
+                        c.gathered = loot::gathered(&live.battle, &left, &db);
+                    }
+                    loot::gather(&mut commands, &mut towns, store, to, &left);
+                }
                 let won = live.battle.report().winner == Some(0);
                 let fought = aftermath(
                     &mut commands,

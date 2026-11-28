@@ -171,6 +171,7 @@ pub fn stage_battle(world: &mut World, lineup: &str) -> (f32, f32) {
         people,
         attacker,
         lost: r.lost,
+        gathered: Default::default(),
     };
     let to_map = field_to_map(replay.at, replay.facing, replay.field);
     let meet = replay

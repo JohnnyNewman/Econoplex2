@@ -68,6 +68,15 @@ pub struct MilitaryParams {
     /// back should take.
     #[serde(default = "default_ration_margin")]
     pub ration_margin: f32,
+    /// Share of the kit the dead leave on the field too broken to use; the
+    /// side holding the field gathers the rest into its armory
+    /// (`military::loot`).
+    #[serde(default = "default_loot_broken")]
+    pub loot_broken: f32,
+}
+
+fn default_loot_broken() -> f32 {
+    0.3
 }
 
 fn default_ration_margin() -> f32 {

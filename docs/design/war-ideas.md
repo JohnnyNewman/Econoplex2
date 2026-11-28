@@ -108,6 +108,28 @@ A war can arm you, or arm your enemy.
 - **Watch:** this adds supply of gear, which the market and the health bands
   will feel.
 - **Size:** small to medium.
+- **Built** (`battle/loot.rs`, `systems/military/loot.rs`):
+  - **What is left.** The weapon, armour and shield of everyone who dies of
+    a field battle: the killed, and the downed who lose their roll at the
+    end. The wounded who live and the taken keep theirs (the taken's goes
+    to the winners already, PR 201). A dead rider's horse goes home, as
+    before.
+  - **Who gathers.** The side that holds the field: the raiders' town if
+    the raid won, the defenders' if it was beaten back. It gathers from
+    both sides' dead, its own included. With no side holding the field,
+    everyone's kit goes home with them, as before.
+  - **Broken.** A `military.loot_broken` share (0.3) is too broken to use
+    and is thrown away. Which pieces follows from the battle's seed, so a
+    live battle can say what will be gathered before it is settled.
+  - **Real goods.** The rest goes into the town's armory as the same
+    items, with their wear. The market counts the armory as its stock of
+    kit, so gathered gear lowers its price and can arm the town's own
+    soldiers at the next muster, or be sold.
+  - **In both clients.** Once a battle is over, the price ticker adds a
+    line: "Ashford gathered: 12 iron spears, 4 mail shirts". It shows for a
+    live battle once the fighting is over, and at the end of a replay.
+  - **In `econoplex-sim`.** The Battles section gives each battle's
+    gathering and each town's over the run.
 
 ## 4. Talks in the middle of a battle
 

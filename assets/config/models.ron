@@ -338,6 +338,9 @@
         // carrying rations. A town raids when a simulated fight says the haul
         // beats wages, rations and the expected dead.
         ration_margin: 1.25,       // rations for 1.25 times the expected trip
+        // The dead's weapons, armour and shields stay on the field; the side
+        // holding it gathers them into its armory, but this share is broken.
+        loot_broken: 0.3,
     ),
     // Squad battles on a field (battle.rs): every number has a unit. Raids fight
     // them; `econoplex-sim --battle "cavalry*20 vs spearmen*30"` fights one.
