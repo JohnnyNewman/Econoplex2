@@ -33,8 +33,11 @@ struct ForecastText;
 
 /// Called by the sim loop after each battle step (live_battle.rs): feed the
 /// forecaster the battle as it stands, every `Forecaster::EVERY` battle
-/// seconds.
+/// seconds. Nothing without the plugin (as in tests of the sim loop).
 pub fn feed(world: &mut World) {
+    if !world.contains_resource::<Forecast>() {
+        return;
+    }
     world.resource_scope(|world, mut f: Mut<Forecast>| {
         sim_core::systems::military::feed_forecast(world, &mut f.0);
     });
