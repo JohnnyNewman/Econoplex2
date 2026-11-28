@@ -396,15 +396,15 @@
         // worst of its condition (full rain, mud, snow cover or dark), on rates
         // and speeds, so on both models and whatever the step.
         weather: (
-            rain_draw: 0.3,        // bows shoot this much slower in full rain
-            rain_to_hit: 1.5,      // and arrows lose this much attack bonus
-            heavy_rain: 0.75,      // from this rain on, every shot at disadvantage
+            rain_draw: 0.4,        // bows shoot this much slower in full rain (with rain²)
+            rain_to_hit: 0.25,     // and arrows lose this much attack bonus (with rain²)
+            heavy_rain: 2.0,       // from this rain on, every shot at disadvantage (above 1: never)
             mud_foot: 0.25,        // men lose this much speed in full mud
             mud_horse: 0.55,       // horses this much
             mud_charge: 0.7,       // and a charge this much of its extra damage
             snow_slow: 0.15,       // everyone loses this much speed in deep snow
-            night_range: 0.4,      // bows lose this much range in full dark
-            night_sight: 50.0,     // m: past this, shots at disadvantage at night
+            night_range: 0.15,     // bows lose this much range in full dark
+            night_sight: 100.0,    // m: past this, shots at disadvantage at night
             notable: 0.2,          // a condition below this is not named in the panel
         ),
         // The conditions a battle is fought in: the war system sets them from the

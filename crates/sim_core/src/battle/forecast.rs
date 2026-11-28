@@ -308,7 +308,7 @@ impl Forecast {
 }
 
 /// The forecast in words ([`words`]), saying under the heading the
-/// weather it counts with, if any ("Rain: bows at disadvantage", from
+/// weather it counts with, if any ("Rain: bows slowed", from
 /// `LiveView::conditions`): for both clients.
 pub fn words_in(forecasts: &[Forecast], conditions: Option<&str>) -> String {
     let all = words(forecasts);
