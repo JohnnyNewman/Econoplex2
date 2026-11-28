@@ -205,11 +205,7 @@ impl SoldierBattle {
         }
         let p = &self.params;
         let s = &self.squads[c];
-        let (walk, run) = if s.mounted() {
-            (p.horse_walk_speed, p.horse_charge_speed)
-        } else {
-            (p.walk_speed, p.run_speed)
-        };
+        let (walk, run) = p.paces(s.mounted());
         let hold = |face: Option<V2>| Goal {
             to: None,
             face,
@@ -307,7 +303,7 @@ impl SoldierBattle {
             Order::Withdraw => Some((V2::new(self.home_x(c), s.centre.y), None)),
             Order::Attack(j) if valid(j) => Some((self.squads[j].centre, Some(j))),
             Order::Shoot(j) if valid(j) => {
-                if s.has_bow() && self.dist(c, j) > 0.9 * s.spec.kit.range {
+                if s.has_bow() && self.dist(c, j) > 0.9 * p.shot_range(s.spec.kit.range) {
                     Some((self.squads[j].centre, Some(j)))
                 } else {
                     return hold(Some(self.squads[j].centre));
@@ -384,7 +380,7 @@ impl SoldierBattle {
             self.near_foe[c]
         }?;
         // Archers stand and shoot once in range.
-        if s.has_bow() && self.dist(c, target) <= 0.9 * kit.range {
+        if s.has_bow() && self.dist(c, target) <= 0.9 * self.params.shot_range(kit.range) {
             return None;
         }
         // Spearmen brace when riders are coming.
@@ -406,7 +402,7 @@ impl SoldierBattle {
         if !s.has_bow() || s.stance.fire == Fire::Hold {
             return None;
         }
-        let range = s.spec.kit.range;
+        let range = self.params.shot_range(s.spec.kit.range);
         let ok = |j: usize| {
             let q = &self.squads[j];
             (q.fighting() || (s.pursues() && q.on_field())) && self.dist(c, j) <= range

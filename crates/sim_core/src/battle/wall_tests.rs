@@ -89,6 +89,39 @@ fn squads_trade_blows_over_the_wall_before_the_breach() {
     assert_eq!(broke, 0, "attacking squads broke before the breach");
 }
 
+/// Rain spoils the archers' shooting at a walled town too: the defenders
+/// on the wall lose fewer to them in the first minutes, on both models.
+#[test]
+fn rain_spares_the_men_on_the_wall() {
+    let lineup = "archers*30,archers*30 vs walled town swordsmen*40,swordsmen*40";
+    let lost = |model: BattleModel, rain: f32| {
+        (1..=4)
+            .map(|seed| {
+                let (field, specs) = parse_lineup(lineup).unwrap();
+                let mut p = params(model);
+                p.conditions = Conditions {
+                    rain,
+                    ..Default::default()
+                };
+                let mut b = Battle::new(p, field, specs, seed);
+                while !b.finished() && b.seconds() < 300.0 {
+                    b.step();
+                }
+                b.report()
+                    .squads
+                    .iter()
+                    .filter(|s| s.side == 1)
+                    .map(|s| s.wounded + s.dead)
+                    .sum::<usize>()
+            })
+            .sum::<usize>()
+    };
+    for model in [BattleModel::Squads, BattleModel::Soldiers] {
+        let (dry, wet) = (lost(model, 0.0), lost(model, 1.0));
+        assert!(wet < dry, "{model:?}: {wet} in rain vs {dry} dry");
+    }
+}
+
 /// A blunt weapon batters a wall faster than a spear.
 #[test]
 fn maces_batter_faster_than_spears() {

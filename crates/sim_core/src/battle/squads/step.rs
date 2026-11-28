@@ -328,7 +328,7 @@ impl SquadBattle {
                 Some((q.0, q.1, Some(j)))
             }
             Order::Shoot(j) if j < self.squads.len() && self.squads[j].on_field() => {
-                if s.has_bow() && self.dist(i, j) > 0.9 * s.spec.kit.range {
+                if s.has_bow() && self.dist(i, j) > 0.9 * s.range(&self.params) {
                     let q = self.squads[j].spec.pos;
                     Some((q.0, q.1, Some(j)))
                 } else {
@@ -399,7 +399,7 @@ impl SquadBattle {
         }?;
         let q = self.squads[target].spec.pos;
         // Archers stand and shoot once in range.
-        if s.has_bow() && self.dist(i, target) <= 0.9 * kit.range {
+        if s.has_bow() && self.dist(i, target) <= 0.9 * self.params.shot_range(kit.range) {
             return None;
         }
         // Spearmen brace when riders are coming.

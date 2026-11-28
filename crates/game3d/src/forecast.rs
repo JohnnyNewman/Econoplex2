@@ -24,9 +24,9 @@ impl Plugin for ForecastPlugin {
 
 fn forecast_ui(mut contexts: EguiContexts, live: Res<LiveSim>) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
-    if !live.live_battle().is_some_and(|v| !v.deploying) {
+    let Some(view) = live.live_battle().filter(|v| !v.deploying) else {
         return;
-    }
+    };
     let (forecasts, _) = live.forecast();
     if forecasts.is_empty() {
         return;
@@ -37,7 +37,8 @@ fn forecast_ui(mut contexts: EguiContexts, live: Res<LiveSim>) {
         .interactable(false)
         .show(ctx, |ui| {
             egui::Frame::popup(ui.style()).show(ui, |ui| {
-                ui.add(egui::Label::new(forecast::words(&forecasts)).extend());
+                let words = forecast::words_in(&forecasts, view.conditions.as_deref());
+                ui.add(egui::Label::new(words).extend());
             });
         });
 }

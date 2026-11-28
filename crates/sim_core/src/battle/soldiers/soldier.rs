@@ -206,7 +206,7 @@ impl SoldierBattle {
             plan.vel = ((to - me) * (1.0 / dt)).clamp_len(top);
             if d <= reach + kt.body {
                 // Arriving at a run is a charge, for any steady soldier.
-                let running = man.vel.len() >= p.run_speed - 0.1;
+                let running = man.vel.len() >= p.paces(false).1 - 0.1;
                 let steady = matches!(state, SoldierState::Formed | SoldierState::Engaged);
                 plan.act = if steady && running {
                     Act::Charge
@@ -241,7 +241,8 @@ impl SoldierBattle {
                         .find(|&j| self.soldier[j].state.present());
                     if let Some(a) = aim {
                         let to = self.soldier[a].pos - me;
-                        if to.len2() <= k.kit.range * k.kit.range {
+                        let range = p.shot_range(k.kit.range);
+                        if to.len2() <= range * range {
                             plan.act = Act::Shoot;
                             plan.aim = a as u32;
                             plan.facing = to.norm_or(c.facing);
@@ -384,7 +385,7 @@ impl SoldierBattle {
                     // They run onto the spear: its blow carries their speed.
                     let mut d = Draw::new(self.seed, self.substep, i, Purpose::Counter);
                     let mut counter = Blow::default();
-                    self.strike(t, i, false, p.charge_damage * closing, &mut d, &mut counter);
+                    self.strike(t, i, false, p.charge() * closing, &mut d, &mut counter);
                     b.counter = if counter.hit { counter.damage } else { 0.0 };
                     b.counter_by = t as u32;
                     b.target = plan.target;
@@ -393,7 +394,7 @@ impl SoldierBattle {
                     // damage per metre per second, a man with his mass's share.
                     let k = &self.kits[self.soldier[i].kit as usize];
                     let full = p.soldiers.man_kg + p.soldiers.horse_kg;
-                    let extra = p.charge_damage * closing * k.mass / full;
+                    let extra = p.charge() * closing * k.mass / full;
                     let mut d = Draw::new(self.seed, self.substep, i, Purpose::Hit);
                     self.strike(i, t, true, extra, &mut d, &mut b);
                 }
@@ -573,8 +574,12 @@ impl SoldierBattle {
                 n.wall_across(self.soldier[v].pos, self.soldier[v].pos + d * 4.0)
             }));
         let ac = kv.armour_class(front) + if covered { p.wall_cover } else { 0.0 };
-        let bonus = self.attack_bonus(i) - p.range_penalty * dist / ki.range.max(1.0);
-        let roll = Roll::of(self.restrained[v], self.frightened(i));
+        let range = p.shot_range(ki.range).max(1.0);
+        let bonus = self.attack_bonus(i) - p.range_penalty * dist / range + p.shot_bonus();
+        let roll = Roll::of(
+            self.restrained[v],
+            self.frightened(i) || p.shot_disadvantage(dist),
+        );
         let (u, w) = (d.f32(), d.f32());
         let (hit, crit) = rules::attack(bonus, ac, roll, u, w);
         b.target = v as u32;

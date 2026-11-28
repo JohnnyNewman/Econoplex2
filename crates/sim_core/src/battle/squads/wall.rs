@@ -42,7 +42,7 @@ impl SquadBattle {
         if s.spec.side == 0 {
             // Archers come close enough that all of them reach the
             // defenders, who stand still behind the wall or in the breach.
-            let near = |f: usize| self.dist(i, f) <= NEAR * s.spec.kit.range;
+            let near = |f: usize| self.dist(i, f) <= NEAR * s.range(&self.params);
             if !self.field.wall_closed() {
                 let f = foe.filter(|_| s.has_bow())?;
                 let q = self.squads[f].spec.pos;
@@ -58,7 +58,7 @@ impl SquadBattle {
                 let off = if s.spec.kit.mounted {
                     RIDERS_OFF
                 } else {
-                    0.5 * NEAR * s.spec.kit.range
+                    0.5 * NEAR * s.range(&self.params)
                 };
                 return to(ring.pieces[n].beside(off + r));
             }

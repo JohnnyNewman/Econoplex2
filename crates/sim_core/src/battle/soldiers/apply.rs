@@ -219,7 +219,7 @@ impl SoldierBattle {
                     me.cooldown = 1.0 / (k.kit.strike_rate * pace).max(1e-3);
                 }
                 Act::Shoot => {
-                    me.cooldown = 1.0 / (k.kit.shot_rate * pace).max(1e-3);
+                    me.cooldown = 1.0 / (p.shot_rate(k.kit.shot_rate) * pace).max(1e-3);
                     me.arrows = me.arrows.saturating_sub(1);
                     let s = &mut squads[c];
                     s.arrows = s.arrows.saturating_sub(1);

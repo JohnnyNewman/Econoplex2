@@ -168,6 +168,39 @@ can see.
 - **Builds on:** the existing weather, ground and night systems; battles
   would just read them.
 - **Size:** small to medium.
+- **Built** (`battle/weather.rs`):
+  - **The conditions.** A raid's battle is fought in the weather at the
+    town fought over, when the raid arrives (`Conditions::at`), each from
+    0 to 1:
+    - rain: the rain falling there (not snow);
+    - mud: the wet ground, unless snow covers it;
+    - snow: the snow cover;
+    - dark: 1 at night, 0.3 at dawn and dusk.
+  - **The effects.** The strengths are content (`battle.weather` in
+    models.ron). Each is a share at the worst of its condition:
+    - rain: bows shoot 30% slower, arrows lose 1.5 attack bonus, and from
+      0.75 rain on every shot is at disadvantage (two d20, the lower);
+    - mud: men lose 25% of their speed, horses 55%, and a charge 70% of
+      its extra damage;
+    - snow: everyone loses 15% of their speed;
+    - night: bows lose 40% of their range, and shots past 50 m are at
+      disadvantage once it is at least half dark.
+  - **On both models.** The models read the effective numbers through
+    `BattleParams` (`paces`, `charge`, `shot_rate`, `shot_range`,
+    `shot_bonus`, `shot_disadvantage`). They are rates and speeds, which
+    the models integrate over their step, so a battle in mud comes out the
+    same at any step (tested). A forecast's snapshot carries the conditions
+    with the battle's parameters.
+  - **What it does.** Rain or night turn archers against swordsmen from a
+    loss of 7 swordsmen a battle to almost none. Mud holds horse archers
+    back from spearmen (fewer brought down, more time), and lets archers
+    shoot longer at men wading towards them. Snow draws a battle out.
+  - **Shown.** Both clients' battle panels say the conditions under the
+    status, for example "Rain: bows at disadvantage, mud: horses slowed,
+    charges blunted", and the forecast box counts with them ("In the
+    weather: ..."). `econoplex-sim` names them for each battle in its
+    Battles section, and `--battle` takes them from
+    `--set battle.conditions.mud=1` and the like.
 
 ## 8. Paying for the war
 

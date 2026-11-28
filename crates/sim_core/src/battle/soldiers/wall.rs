@@ -21,11 +21,7 @@ impl SoldierBattle {
         if s.order() != Order::Auto {
             return None;
         }
-        let walk = if s.mounted() {
-            self.params.horse_walk_speed
-        } else {
-            self.params.walk_speed
-        };
+        let walk = self.params.paces(s.mounted()).0;
         let closed = self.field.wall_closed();
         let foe = self.nearest_foe(c);
         if s.spec.side == 0 {
@@ -49,7 +45,8 @@ impl SoldierBattle {
             let bow = s.has_bow()
                 && (s.first..s.first + s.spec.members.len())
                     .any(|i| self.soldier[i].arrows > 0 && self.soldier[i].state.in_line());
-            let (centre, range, quiver) = (s.centre, s.spec.kit.range, s.has_bow());
+            let range = self.params.shot_range(s.spec.kit.range);
+            let (centre, quiver) = (s.centre, s.has_bow());
             let near = |fc: V2| (fc - centre).len() <= NEAR * range;
             if !closed {
                 self.squads[c].assault = None;
@@ -83,7 +80,7 @@ impl SoldierBattle {
                 let off = if s.mounted() {
                     RIDERS_OFF
                 } else {
-                    0.5 * NEAR * s.spec.kit.range
+                    0.5 * NEAR * range
                 };
                 return Some(goal(p.beside(off), fc));
             }
