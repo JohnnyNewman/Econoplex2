@@ -1623,9 +1623,16 @@ ms per battle second):
    substep, and changes no result. But it is fragile when the machine has
    fewer free cores than threads.
 3. Make the grid's cells 2 m and sort each search's hits back into the 4 m
-   order (row, cell, soldier), so the sums come out the same. The friends'
-   0.8 m search would read about a third as many soldiers. That is perhaps
-   10 to 15% of the melee, and changes no result.
+   order (row, cell, soldier), so the sums come out the same. Tried, and
+   dropped: it changed no result (the same fingerprints on one thread and
+   four), but on one thread the melee took 1.61 G instructions to 2.98 G
+   and 2.84 ms per battle second to 4.86 (+71%), the first 400 s 1.25 ms to
+   1.75. With the masked filter above a soldier read costs about 2.6
+   instructions. A 2 m quarter holds one to four soldiers, and its
+   bookkeeping, its part-empty block of eight and the merge by index that
+   keeps the 4 m order cost far more than the reads it saves. Building four
+   times as many cells costs more too, before the armies even meet. Fine
+   cells would pay only if reading a soldier were dear.
 4. Trade fidelity, not done: ranks behind the front re-plan every other
    substep; the front rank looks 3 m round, not 4; a half-second substep
    while in contact, which halves the cost.
