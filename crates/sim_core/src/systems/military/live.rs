@@ -152,3 +152,23 @@ pub fn live_battle_waiting(world: &World) -> bool {
         .and_then(|p| p.0.as_ref())
         .is_some_and(|b| !b.battle.finished())
 }
+
+/// Keep a win-chance forecast (`battle::forecast`) up to date for the battle
+/// waiting for the player: feed `f` a snapshot of it, for the player's
+/// side, every `Forecaster::EVERY` battle seconds from the end of the
+/// deployment; forget it once no battle is being fought. Both clients call this where they step the battle.
+pub fn feed_forecast(world: &World, f: &mut crate::battle::forecast::Forecaster) {
+    let live = world
+        .get_resource::<PendingBattle>()
+        .and_then(|p| p.0.as_ref())
+        .filter(|l| l.started && !l.battle.finished());
+    match live {
+        Some(l) => {
+            let t = l.battle.seconds();
+            if f.wants(t) {
+                f.feed(l.battle.snapshot(l.player_side));
+            }
+        }
+        None => f.clear(),
+    }
+}

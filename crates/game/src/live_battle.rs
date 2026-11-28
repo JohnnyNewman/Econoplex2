@@ -111,6 +111,7 @@ pub fn run(world: &mut World, real_secs: f32, paused: bool) -> bool {
     }
     let view = war::live_battle_view(world);
     world.resource_mut::<LiveBattle>().view = view;
+    crate::forecast::feed(world);
     waiting
 }
 

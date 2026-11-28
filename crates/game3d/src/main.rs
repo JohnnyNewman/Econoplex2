@@ -51,6 +51,7 @@ mod crowd_compute;
 mod env;
 mod fields;
 mod fog;
+mod forecast;
 mod grading;
 mod grounding;
 mod hud;
@@ -419,6 +420,7 @@ fn main() {
         battles::BattlesPlugin,
         battle_input::BattleInputPlugin,
         battle_price::BattlePricePlugin,
+        forecast::ForecastPlugin,
     ))
     .insert_resource(battle_input::BattleControls::new(rts_demo))
     .insert_resource(env_override)

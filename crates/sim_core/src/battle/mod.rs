@@ -39,6 +39,7 @@
 //! members) back.
 
 mod control;
+pub mod forecast;
 mod kit;
 mod lineup;
 mod nav;

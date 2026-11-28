@@ -90,6 +90,9 @@ struct Shared {
     battles: Vec<sim_core::battle::Replay>,
     /// The battle waiting for the player, as it stands now.
     live_battle: Option<Arc<sim_core::battle::LiveView>>,
+    /// The win-chance forecast for it so far (forecast.rs), and whether
+    /// every run is in.
+    forecast: (Vec<sim_core::battle::forecast::Forecast>, bool),
     /// Orders to the player's squads in it, and a request to auto-resolve it.
     battle_commands: Vec<(usize, sim_core::battle::Command)>,
     battle_resolve: bool,
@@ -166,6 +169,7 @@ impl LiveSim {
             samples: Vec::new(),
             battles: Vec::new(),
             live_battle: None,
+            forecast: Default::default(),
             battle_commands: Vec::new(),
             battle_resolve: false,
             battle_start: false,
@@ -214,6 +218,12 @@ impl LiveSim {
     /// The battle waiting for the player, if any.
     pub fn live_battle(&self) -> Option<Arc<sim_core::battle::LiveView>> {
         self.shared.lock().unwrap().live_battle.clone()
+    }
+
+    /// The win-chance forecast for the battle being fought, so far, and
+    /// whether every run is in (forecast.rs).
+    pub fn forecast(&self) -> (Vec<sim_core::battle::forecast::Forecast>, bool) {
+        self.shared.lock().unwrap().forecast.clone()
     }
 
     /// What the player tells one of their squads in the waiting battle:
@@ -305,6 +315,8 @@ fn run(sim: &mut Simulation, shared: &Mutex<Shared>, mut seen: sim_core::view::S
     // When the view last got a full snapshot: at the end of each day, and
     // at least this often in between (a day can last minutes of real time).
     let mut snap_at = Instant::now();
+    // The live battle's win-chance forecast, run on a thread of its own.
+    let mut forecaster = sim_core::battle::forecast::Forecaster::new();
     const SNAP_EVERY: Duration = Duration::from_millis(250);
     const PASS_BUDGET: Duration = Duration::from_millis(100);
     loop {
@@ -376,7 +388,13 @@ fn run(sim: &mut Simulation, shared: &Mutex<Shared>, mut seen: sim_core::view::S
                 next_battle = next_battle.max(Instant::now() - Duration::from_millis(200));
             }
             let view = war::live_battle_view(&sim.world).map(Arc::new);
-            shared.lock().unwrap().live_battle = view;
+            war::feed_forecast(&sim.world, &mut forecaster);
+            let forecast = forecaster.latest();
+            {
+                let mut s = shared.lock().unwrap();
+                s.live_battle = view;
+                s.forecast = forecast;
+            }
             if waiting {
                 std::thread::sleep(Duration::from_millis(5));
                 next = Instant::now();
