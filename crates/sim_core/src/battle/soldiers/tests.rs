@@ -181,20 +181,23 @@ fn the_rear_refills_a_fallen_front_rank() {
     let (field, specs) = parse_lineup("swordsmen*100 vs swordsmen*100").unwrap();
     let mut b = SoldierBattle::new(soldiers(), field, specs, 1);
     let r = b.squads[0].first..b.squads[0].first + 100;
-    let front = r.clone().find(|&i| b.rank[i] == 0).unwrap();
-    let file = b.file[front];
+    let front = r.clone().find(|&i| b.soldier[i].rank == 0).unwrap();
+    let file = b.soldier[front].file;
     assert!(
-        r.clone().any(|i| b.file[i] == file && b.rank[i] == 1),
+        r.clone()
+            .any(|i| b.soldier[i].file == file && b.soldier[i].rank == 1),
         "the line has a second rank"
     );
-    b.state[front] = SoldierState::Down;
+    b.soldier[front].state = SoldierState::Down;
     b.health[front] = 0.0;
     b.squads[0].losses += 1;
     b.squads[0].left += 1;
     b.substep();
     assert!(
-        r.clone()
-            .any(|i| i != front && b.state[i].in_line() && b.file[i] == file && b.rank[i] == 0),
+        r.clone().any(|i| i != front
+            && b.soldier[i].state.in_line()
+            && b.soldier[i].file == file
+            && b.soldier[i].rank == 0),
         "nobody stepped into file {file} of the front rank"
     );
 }
@@ -208,7 +211,7 @@ fn a_braced_line_turns_to_face_riders() {
     b.squads[0].facing = up;
     let r = b.squads[0].first..b.squads[0].first + 60;
     for i in r.clone() {
-        b.facing[i] = up;
+        b.soldier[i].facing = up;
     }
     for _ in 0..90 {
         b.step();
@@ -217,7 +220,7 @@ fn a_braced_line_turns_to_face_riders() {
     let to_riders = (b.squads[1].centre - s.centre).norm_or(up);
     let faced = r
         .clone()
-        .filter(|&i| b.facing[i].dot(to_riders) > 0.9)
+        .filter(|&i| b.soldier[i].facing.dot(to_riders) > 0.9)
         .count();
     assert!(
         s.formation == Formation::Braced && s.facing.dot(to_riders) > 0.95 && faced >= 50,
@@ -389,8 +392,9 @@ fn trace() {
         if t % every == 0 {
             for (c, s) in b.squads.iter().enumerate() {
                 let r = s.first..s.first + s.spec.members.len();
-                let count = |st: SoldierState| r.clone().filter(|&i| b.state[i] == st).count();
-                let fat = r.clone().map(|i| b.fatigue[i]).sum::<f32>() / r.len() as f32;
+                let count =
+                    |st: SoldierState| r.clone().filter(|&i| b.soldier[i].state == st).count();
+                let fat = r.clone().map(|i| b.soldier[i].fatigue).sum::<f32>() / r.len() as f32;
                 eprintln!(
                     "t={t:>4} {c} {:?} {:?} centre ({:.0},{:.0}) face ({:.2},{:.2}) m {:.2} form {} eng {} wav {} rout {} down {} fled {} fat {:.2} tgt {:?} with {:?}",
                     s.state, s.formation, s.centre.x, s.centre.y, s.facing.x, s.facing.y, s.morale,

@@ -48,7 +48,7 @@ impl SoldierBattle {
             // Archers whose arrows are all with their fallen fight on foot.
             let bow = s.has_bow()
                 && (s.first..s.first + s.spec.members.len())
-                    .any(|i| self.arrows[i] > 0 && self.state[i].in_line());
+                    .any(|i| self.soldier[i].arrows > 0 && self.soldier[i].state.in_line());
             let (centre, range, quiver) = (s.centre, s.spec.kit.range, s.has_bow());
             let near = |fc: V2| (fc - centre).len() <= NEAR * range;
             if !closed {
@@ -212,11 +212,11 @@ impl SoldierBattle {
             }
             let mut amount = 0.0;
             for i in s.first..s.first + s.spec.members.len() {
-                if !self.state[i].in_line() || self.target[i] != NONE {
+                if !self.soldier[i].state.in_line() || self.target[i] != NONE {
                     continue;
                 }
-                let k = &self.kits[self.kit[i] as usize];
-                if p.dist(self.pos[i]) > k.kit.reach + k.body + p.half_width + 0.3 {
+                let k = &self.kits[self.soldier[i].kit as usize];
+                if p.dist(self.soldier[i].pos) > k.kit.reach + k.body + p.half_width + 0.3 {
                     continue;
                 }
                 let per: f32 = (0..3).map(|t| k.kit.damage[t] * taken[t]).sum();
