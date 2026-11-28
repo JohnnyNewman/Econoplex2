@@ -83,6 +83,9 @@ impl SquadBattle {
                 s.engaged = true;
             }
         }
+        if std::env::var("TMP_SPREAD").is_ok() {
+            self.spread_over_wall();
+        }
 
         // 3. Arrows from squads not locked in melee.
         for i in 0..n {

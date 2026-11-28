@@ -301,6 +301,9 @@ pub(crate) const ASSAULT_OFF: f32 = 0.8;
 pub(crate) const MAN_OFF: f32 = 0.8;
 /// Metres past his reach a defender on the wall strikes down at a man below.
 pub(crate) const OVER_WALL: f32 = 1.5;
+/// Metres behind a town's wall that a defender has its cover against
+/// arrows from below: no further than his last metres toward the archer.
+pub(crate) const COVER: f32 = 4.0;
 /// Defending squads that go to plug each breach: the nearest ones.
 pub(crate) const PLUG: usize = 2;
 /// Share of their range from the defenders at which archers attacking a

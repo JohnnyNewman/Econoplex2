@@ -48,13 +48,16 @@ impl SquadBattle {
         let p = &self.params;
         let (si, st) = (&self.squads[i], &self.squads[t]);
         let mut front = si.front(p);
-        // Over a town's wall only the defenders along it strike.
+        // Over a town's wall the defenders along it strike down, and the
+        // share of the attackers below who reach one of them strike up.
         let over = self.wall_piece_between(i, t);
         if let Some(n) = over {
-            if si.spec.side == 0 {
-                return (0.0, false, 0.0, 0.0);
-            }
             front = self.over_wall_front(i, t, n);
+            if si.spec.side == 0 {
+                front *= p.wall_strike_up;
+            } else {
+                front *= std::env::var("TMP_DEF").map_or(1.0, |v| v.parse().unwrap());
+            }
         }
         // In a breach, front to front: nobody takes another in the flank.
         let breach = self.breach_between(i, t);
@@ -291,12 +294,17 @@ impl SquadBattle {
         };
         let bonus = self.bonus(i) - p.range_penalty * d / range + rider;
         // Cover on the wall; a shield turns arrows unless its bearer runs.
-        let behind = (self.across_wall(i, t) && st.spec.behind_wall)
-            || (st.spec.side == 1 && self.wall_piece_between(i, t).is_some());
-        let cover = if behind { p.wall_cover } else { 0.0 };
-        let ac = st.spec.kit.armour_class(st.state != SquadState::Routing) + cover;
+        // Behind a town's wall only the men within `COVER` of it have it:
+        // the share of the squad's depth that stands that near.
+        let covered = if self.across_wall(i, t) && st.spec.behind_wall {
+            1.0
+        } else {
+            self.covered_share(i, t)
+        };
+        let ac = st.spec.kit.armour_class(st.state != SquadState::Routing);
         let roll = Roll::of(false, self.frightened(i));
-        let hit = rules::hit_chance(bonus, ac, roll);
+        let hit = covered * rules::hit_chance(bonus, ac + p.wall_cover, roll)
+            + (1.0 - covered) * rules::hit_chance(bonus, ac, roll);
         let crit = rules::crit_chance(roll).min(hit) / hit.max(1e-6);
         // An arrow comes down on the man aimed at `arrow_aim` of the time, as
         // on the soldier model; one that misses him lands among the others,

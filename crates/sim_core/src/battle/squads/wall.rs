@@ -5,7 +5,7 @@
 //! to plug the breach while the rest fight through it as anywhere.
 
 use super::*;
-use crate::battle::walls::{ASSAULT_OFF, MAN_OFF, NEAR, OVER_WALL, PLUG, RIDERS_OFF};
+use crate::battle::walls::{ASSAULT_OFF, COVER, MAN_OFF, NEAR, OVER_WALL, PLUG, RIDERS_OFF};
 
 impl SquadBattle {
     /// Each attacking squad picks the piece it assaults (or keeps its own
@@ -100,6 +100,72 @@ impl SquadBattle {
         }
         let fc = soldiers::V2::new(self.squads[f].spec.pos.0, self.squads[f].spec.pos.1);
         to(ring.man_at(fc, MAN_OFF + r))
+    }
+
+    /// Defenders striking down over the wall share out the attackers below
+    /// it, as men along it strike whoever stands before them: each takes
+    /// the attacker across the wall the fewest of its side strike already
+    /// (the nearest of those), and keeps its own while that is as few.
+    pub(super) fn spread_over_wall(&mut self) {
+        if self.ring.is_none() {
+            return;
+        }
+        let n = self.squads.len();
+        let mut on = vec![0usize; n];
+        for i in 0..n {
+            let s = &self.squads[i];
+            if s.spec.side != 1 || !s.fighting() {
+                continue;
+            }
+            let over: Vec<usize> = s
+                .contacts
+                .iter()
+                .copied()
+                .filter(|&j| self.wall_piece_between(i, j).is_some())
+                .collect();
+            if over.len() < 2 || s.contacts.len() != over.len() {
+                if let Some(p) = s.primary {
+                    on[p] += 1;
+                }
+                continue;
+            }
+            let keep = s.primary.filter(|p| over.contains(p));
+            let best = over
+                .iter()
+                .copied()
+                .min_by(|&a, &b| {
+                    on[a]
+                        .cmp(&on[b])
+                        .then(self.dist(i, a).total_cmp(&self.dist(i, b)))
+                        .then(a.cmp(&b))
+                })
+                .expect("two or more");
+            let pick = match keep {
+                Some(k) if on[k] <= on[best] => k,
+                _ => best,
+            };
+            self.squads[i].primary = Some(pick);
+            on[pick] += 1;
+        }
+    }
+
+    /// The share of defending squad `t` that has the cover of a standing
+    /// piece of the town's wall against squad `i`'s arrows: its ranks
+    /// within `COVER` of the piece between them.
+    pub(super) fn covered_share(&self, i: usize, t: usize) -> f32 {
+        let st = &self.squads[t];
+        if st.spec.side != 1 {
+            return 0.0;
+        }
+        let Some(n) = self.wall_piece_between(i, t) else {
+            return 0.0;
+        };
+        let w = self.ring.as_ref().expect("a piece is of a ring").pieces[n];
+        let r = st.radius(&self.params);
+        let at = soldiers::V2::new(st.spec.pos.0, st.spec.pos.1);
+        // The squad's front stands this far behind the piece's face.
+        let front = (w.dist(at) - r - w.half_width).max(0.0);
+        ((COVER - front) / (2.0 * r).max(1.0)).clamp(0.0, 1.0)
     }
 
     /// Whether defending squad `i` is among the `PLUG` fighting ones of its
@@ -251,7 +317,13 @@ impl SquadBattle {
             if w.dist(at) > r + s.spec.kit.reach + w.half_width + 1.0 {
                 continue;
             }
-            let front = self.wall_front(i, n);
+            // Those who strike a defender over the wall do not batter it.
+            let up = s
+                .primary
+                .filter(|j| s.contacts.contains(j))
+                .and_then(|j| self.wall_piece_between(i, j).map(|m| (j, m)))
+                .map_or(0.0, |(j, m)| self.over_wall_front(i, j, m) * p.wall_strike_up);
+            let front = (self.wall_front(i, n) - up * tmp_k()).max(0.0);
             let per: f32 = (0..3).map(|t| s.spec.kit.damage[t] * p.wall_taken[t]).sum();
             let amount = front * per * s.spec.kit.strike_rate * p.dt;
             self.squads[i].engaged = true;
@@ -270,4 +342,8 @@ impl SquadBattle {
             s.route.clear();
         }
     }
+}
+
+fn tmp_k() -> f32 {
+    std::env::var("TMP_K").map_or(1.0, |v| v.parse().unwrap())
 }
