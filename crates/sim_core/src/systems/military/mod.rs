@@ -355,6 +355,10 @@ pub fn military(
                     .as_ref()
                     .and_then(|p| p.0)
                     .is_some_and(|p| p as usize == t || p == raid.target);
+            // Fought in the weather, ground and light at the defenders' town
+            // (battle/weather.rs).
+            let mut params = params.clone();
+            params.0.battle.conditions = crate::battle::Conditions::at(&env, raid.target as usize);
             if live_ok {
                 let player = links.player.as_ref().and_then(|p| p.0).unwrap();
                 if let Some(live) = prepare_live_battle(

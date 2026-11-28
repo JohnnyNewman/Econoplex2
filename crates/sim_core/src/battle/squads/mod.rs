@@ -91,13 +91,13 @@ impl Squad {
     fn has_bow(&self) -> bool {
         self.spec.kit.range > 0.0 && self.arrows > 0
     }
+    /// Its bows' range in the battle's conditions (`weather.rs`).
+    fn range(&self, p: &BattleParams) -> f32 {
+        p.shot_range(self.spec.kit.range)
+    }
     /// Marching and running pace, metres per second.
     fn paces(&self, p: &BattleParams) -> (f32, f32) {
-        if self.spec.kit.mounted {
-            (p.horse_walk_speed, p.horse_charge_speed)
-        } else {
-            (p.walk_speed, p.run_speed)
-        }
+        p.paces(self.spec.kit.mounted)
     }
     /// Whether it strikes enemies who run.
     fn pursues(&self) -> bool {

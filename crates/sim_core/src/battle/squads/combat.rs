@@ -10,7 +10,7 @@ impl SquadBattle {
     pub(super) fn charge(&mut self, a: usize, b: usize) {
         let p = self.params.clone();
         let speed = self.squads[a].speed;
-        if speed < p.run_speed - 0.1 || !self.squads[a].fighting() {
+        if speed < p.paces(false).1 - 0.1 || !self.squads[a].fighting() {
             return;
         }
         let (sa, sb) = (&self.squads[a], &self.squads[b]);
@@ -21,9 +21,9 @@ impl SquadBattle {
             && sb.morale >= p.waver_at
             && !self.across_wall(a, b);
         let per_speed = if sa.spec.kit.mounted {
-            p.charge_damage
+            p.charge()
         } else {
-            p.charge_damage * p.foot_charge
+            p.charge() * p.foot_charge
         };
         self.event(EventKind::Charge {
             by: a,
@@ -32,7 +32,7 @@ impl SquadBattle {
         });
         if braced {
             // The riders run onto the spears: the spear's blow carries the horse's speed.
-            let extra = p.charge_damage * speed;
+            let extra = p.charge() * speed;
             self.strikes(b, a, self.squads[b].front(&p), false, extra, false);
         } else if !self.across_wall(a, b) {
             // A charge rolls the charge dice (a lance's), with the impact on top.
@@ -245,7 +245,7 @@ impl SquadBattle {
         if !s.fighting() || !s.has_bow() || !s.contacts.is_empty() || s.stance.fire == Fire::Hold {
             return;
         }
-        let range = s.spec.kit.range;
+        let range = s.range(&p);
         let side = s.spec.side;
         let ok = |j: usize| {
             let q = &self.squads[j];
@@ -263,7 +263,7 @@ impl SquadBattle {
         let Some(t) = target else {
             return;
         };
-        let shots = s.alive() as f32 * s.spec.kit.shot_rate * p.dt;
+        let shots = s.alive() as f32 * p.shot_rate(s.spec.kit.shot_rate) * p.dt;
         let n = self.count(shots).min(self.squads[i].arrows);
         let s = &self.squads[i];
         let st = &self.squads[t];
@@ -274,7 +274,7 @@ impl SquadBattle {
         } else {
             0.0
         };
-        let bonus = self.bonus(i) - p.range_penalty * d / range + rider;
+        let bonus = self.bonus(i) - p.range_penalty * d / range + rider + p.shot_bonus();
         // Cover on the wall; a shield turns arrows unless its bearer runs.
         let cover = if self.across_wall(i, t) && st.spec.behind_wall {
             p.wall_cover
@@ -282,7 +282,7 @@ impl SquadBattle {
             0.0
         };
         let ac = st.spec.kit.armour_class(st.state != SquadState::Routing) + cover;
-        let roll = Roll::of(false, self.frightened(i));
+        let roll = Roll::of(false, self.frightened(i) || p.shot_disadvantage(d));
         let hit = rules::hit_chance(bonus, ac, roll);
         let crit = rules::crit_chance(roll).min(hit) / hit.max(1e-6);
         // An arrow comes down on the man aimed at `arrow_aim` of the time, as
