@@ -178,12 +178,15 @@ can see.
     - dark: 1 at night, 0.3 at dawn and dusk.
   - **The effects.** The strengths are content (`battle.weather` in
     models.ron). Each is a share at the worst of its condition:
-    - rain: bows shoot 30% slower, arrows lose 1.5 attack bonus, and from
-      0.75 rain on every shot is at disadvantage (two d20, the lower);
+    - rain: bows shoot 40% slower and arrows lose 0.25 attack bonus, both
+      growing with the square of the rain (a drizzle hardly matters).
+      `heavy_rain` can also put every shot at disadvantage (two d20, the
+      lower) from some rain on, but it is off (above 1): stacked on the
+      rest, it left bows useless;
     - mud: men lose 25% of their speed, horses 55%, and a charge 70% of
       its extra damage;
     - snow: everyone loses 15% of their speed;
-    - night: bows lose 40% of their range, and shots past 50 m are at
+    - night: bows lose 15% of their range, and shots past 100 m are at
       disadvantage once it is at least half dark.
   - **On both models.** The models read the effective numbers through
     `BattleParams` (`paces`, `charge`, `shot_rate`, `shot_range`,
@@ -191,12 +194,14 @@ can see.
     the models integrate over their step, so a battle in mud comes out the
     same at any step (tested). A forecast's snapshot carries the conditions
     with the battle's parameters.
-  - **What it does.** Rain or night turn archers against swordsmen from a
-    loss of 7 swordsmen a battle to almost none. Mud holds horse archers
-    back from spearmen (fewer brought down, more time), and lets archers
-    shoot longer at men wading towards them. Snow draws a battle out.
+  - **What it does.** Archers are hampered, not useless. Against
+    swordsmen they bring down about 80% of their dry losses in half rain,
+    40-50% in full rain, and about 45% at night, on both models (100
+    seeds). Mud holds horse archers back from spearmen (fewer brought
+    down, more time), and lets archers shoot longer at men wading towards
+    them. Snow draws a battle out.
   - **Shown.** Both clients' battle panels say the conditions under the
-    status, for example "Rain: bows at disadvantage, mud: horses slowed,
+    status, for example "Rain: bows slowed, mud: horses slowed,
     charges blunted", and the forecast box counts with them ("In the
     weather: ..."). `econoplex-sim` names them for each battle in its
     Battles section, and `--battle` takes them from

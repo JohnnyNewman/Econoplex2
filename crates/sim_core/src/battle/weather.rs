@@ -31,9 +31,11 @@ pub struct Conditions {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WeatherParams {
-    /// Share of their shooting rate bows lose in full rain, the attack
-    /// bonus arrows lose in it, and the rain at and above which every shot
-    /// is at disadvantage (heavy rain).
+    /// Share of their shooting rate bows lose in full rain, and the attack
+    /// bonus arrows lose in it; both grow with the square of the rain, so a
+    /// drizzle hardly matters. From `heavy_rain` on every shot is also at
+    /// disadvantage: above 1 (the default), never, as disadvantage on top
+    /// of the rest leaves bows useless.
     pub rain_draw: f32,
     pub rain_to_hit: f32,
     pub heavy_rain: f32,
@@ -56,15 +58,15 @@ pub struct WeatherParams {
 impl Default for WeatherParams {
     fn default() -> Self {
         Self {
-            rain_draw: 0.3,
-            rain_to_hit: 1.5,
-            heavy_rain: 0.75,
+            rain_draw: 0.4,
+            rain_to_hit: 0.25,
+            heavy_rain: 2.0,
             mud_foot: 0.25,
             mud_horse: 0.55,
             mud_charge: 0.7,
             snow_slow: 0.15,
-            night_range: 0.4,
-            night_sight: 50.0,
+            night_range: 0.15,
+            night_sight: 100.0,
             notable: 0.2,
         }
     }
@@ -102,9 +104,14 @@ impl BattleParams {
         self.charge_damage * (1.0 - self.weather.mud_charge * self.cond().mud).max(0.0)
     }
 
+    /// How much the rain spoils a bow, 0 .. 1: the square of the rain.
+    fn wet(&self) -> f32 {
+        self.cond().rain.powi(2)
+    }
+
     /// A bow's shots per second `rate` in the rain.
     pub fn shot_rate(&self, rate: f32) -> f32 {
-        rate * (1.0 - self.weather.rain_draw * self.cond().rain).max(0.05)
+        rate * (1.0 - self.weather.rain_draw * self.wet()).max(0.05)
     }
 
     /// A bow's range `range` (metres) in the dark.
@@ -114,7 +121,7 @@ impl BattleParams {
 
     /// Attack bonus an arrow gains (less than 0: loses) in the conditions.
     pub fn shot_bonus(&self) -> f32 {
-        -self.weather.rain_to_hit * self.cond().rain
+        -self.weather.rain_to_hit * self.wet()
     }
 
     /// Whether a shot at `dist` metres is at disadvantage: in heavy rain,
@@ -147,7 +154,7 @@ impl Conditions {
     }
 
     /// The conditions as the battle panels and the CLI say them, "Rain:
-    /// bows at disadvantage, mud: horses slowed"; `None` in fair weather.
+    /// bows slowed, mud: horses slowed"; `None` in fair weather.
     pub fn words(&self, w: &WeatherParams) -> Option<String> {
         let mut parts: Vec<&str> = Vec::new();
         if self.rain >= w.notable {
@@ -196,7 +203,7 @@ mod tests {
         };
         assert_eq!(
             c.words(&w).unwrap(),
-            "Rain: bows at disadvantage, mud: horses slowed, charges blunted"
+            "Rain: bows slowed, mud: horses slowed, charges blunted"
         );
         let c = Conditions {
             dark: 1.0,
@@ -233,13 +240,22 @@ mod tests {
         });
         assert!(rain.shot_rate(0.2) < dry.shot_rate(0.2));
         assert!(rain.shot_bonus() < 0.0 && dry.shot_bonus() == 0.0);
-        assert!(rain.shot_disadvantage(10.0) && !dry.shot_disadvantage(10.0));
+        // Heavy rain alone does not put shots at disadvantage by default.
+        assert!(!rain.shot_disadvantage(10.0) && !dry.shot_disadvantage(10.0));
+        let heavy = BattleParams {
+            weather: WeatherParams {
+                heavy_rain: 0.75,
+                ..WeatherParams::default()
+            },
+            ..rain.clone()
+        };
+        assert!(heavy.shot_disadvantage(10.0));
         let night = params(Conditions {
             dark: 1.0,
             ..Default::default()
         });
         assert!(night.shot_range(150.0) < dry.shot_range(150.0));
-        assert!(night.shot_disadvantage(60.0) && !night.shot_disadvantage(20.0));
+        assert!(night.shot_disadvantage(110.0) && !night.shot_disadvantage(60.0));
         // Fair weather changes nothing.
         assert_eq!(
             dry.paces(true),

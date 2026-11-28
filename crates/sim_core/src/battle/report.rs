@@ -303,7 +303,7 @@ pub struct LiveView {
     #[serde(default)]
     pub gathered: Gathered,
     /// The weather, ground and light it is fought in, in words ("Rain:
-    /// bows at disadvantage, mud: horses slowed, ..."); `None` in fair
+    /// bows slowed, mud: horses slowed, ..."); `None` in fair
     /// weather (`weather.rs`).
     #[serde(default)]
     pub conditions: Option<String>,
