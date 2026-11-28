@@ -22,9 +22,10 @@ pub(super) struct Grid {
     /// `start[c]..start[c + 1]` are box cell `c`'s entries in `items`.
     start: Vec<u32>,
     items: Vec<u32>,
-    /// Where each entry of `items` stood when listed, in the same order, so
-    /// a search reads positions in a row.
-    at: Vec<V2>,
+    /// Where each entry of `items` stood when listed, across and down, in
+    /// the same order, so a search reads positions in a row, eight at a time.
+    ax: Vec<f32>,
+    ay: Vec<f32>,
     /// The soldiers listed for this build, and the box of cells around them.
     listed: Vec<Listed>,
     lo: (u32, u32),
@@ -54,7 +55,8 @@ impl Grid {
             bh: 0,
             start: vec![0],
             items: Vec::new(),
-            at: Vec::new(),
+            ax: Vec::new(),
+            ay: Vec::new(),
             listed: Vec::new(),
             lo: (u32::MAX, u32::MAX),
             hi: (0, 0),
@@ -101,7 +103,10 @@ impl Grid {
             self.start.clear();
             self.start.push(0);
             self.items.clear();
-            self.at.clear();
+            self.ax.clear();
+            self.ay.clear();
+            self.ax.resize(8, f32::INFINITY);
+            self.ay.resize(8, f32::INFINITY);
             return;
         }
         let (x0, y0) = (self.lo.0 as usize, self.lo.1 as usize);
@@ -129,13 +134,17 @@ impl Grid {
         }
         // Every entry is written below, so the old ones need no clearing.
         self.items.resize(n, 0);
-        self.at.resize(n, V2::ZERO);
+        // Eight past the end, so a search reads every row eight at a time
+        // (the padding is never in a row).
+        self.ax.resize(n + 8, f32::INFINITY);
+        self.ay.resize(n + 8, f32::INFINITY);
         for e in &self.listed {
             let at = &mut self.start[e.x as usize + 1];
             let to = *at as usize;
             *at += 1;
             self.items[to] = e.i;
-            self.at[to] = e.p;
+            self.ax[to] = e.p.x;
+            self.ay[to] = e.p.y;
         }
         self.start.pop();
     }
@@ -159,12 +168,11 @@ impl Grid {
         &self.items[self.start[r + xa] as usize..self.start[r + xb + 1] as usize]
     }
 
-    /// The entries of box row `y`, cells `xa..=xb`, with where they stood.
+    /// Where the entries of box row `y`, cells `xa..=xb`, begin and end.
     #[inline]
-    fn row_at(&self, y: usize, xa: usize, xb: usize) -> (&[u32], &[V2]) {
+    fn span(&self, y: usize, xa: usize, xb: usize) -> (usize, usize) {
         let r = y * self.bw;
-        let span = self.start[r + xa] as usize..self.start[r + xb + 1] as usize;
-        (&self.items[span.clone()], &self.at[span])
+        (self.start[r + xa] as usize, self.start[r + xb + 1] as usize)
     }
 
     /// Whether anybody stands in the cells around `(x, y)`, itself included.
@@ -202,20 +210,49 @@ impl Grid {
         (ya..=yb).flat_map(move |y| self.row(y, xa, xb).iter().map(|&i| i as usize))
     }
 
-    /// Call `f` with every soldier within `r` of `p` (and some a little
-    /// further) and where they stood when listed, in the order of
-    /// [`Grid::near`].
+    /// Call `f` with every soldier within `r` of `p` whose squared distance
+    /// from it is at most `r2`, and where they stood when listed, cell by
+    /// cell in the order of [`Grid::near`]. `f` returns the bound for the
+    /// soldiers after it, `r2` or less: a search that wants only the nearest
+    /// need not hear of anyone further than the nearest so far. (A soldier
+    /// past the bound may still be called for: `f` must check.)
+    ///
+    /// In a melee most of the soldiers in the cells searched stand further
+    /// than the bound, in no order a branch could guess. So the distances
+    /// are worked out eight at a time into a mask, without a branch, and `f`
+    /// is called only for the soldiers the mask keeps.
     #[inline]
-    pub(super) fn each_near(&self, p: V2, r: f32, mut f: impl FnMut(usize, V2)) {
+    pub(super) fn each_within(&self, p: V2, r: f32, r2: f32, mut f: impl FnMut(usize, V2) -> f32) {
         let (xa, ya) = self.cell(V2::new(p.x - r, p.y - r));
         let (xb, yb) = self.cell(V2::new(p.x + r, p.y + r));
         let Some([xa, ya, xb, yb]) = self.clip(xa, ya, xb, yb) else {
             return;
         };
+        let mut r2 = r2;
         for y in ya..=yb {
-            let (items, at) = self.row_at(y, xa, xb);
-            for (&i, &q) in items.iter().zip(at) {
-                f(i as usize, q);
+            let (start, end) = self.span(y, xa, xb);
+            let mut k = start;
+            while k < end {
+                let (bx, by): (&[f32; 8], &[f32; 8]) = (
+                    self.ax[k..k + 8].try_into().expect("eight"),
+                    self.ay[k..k + 8].try_into().expect("eight"),
+                );
+                // The same sums as `(p - q).len2()`, so the same answers.
+                let mut mask = 0u32;
+                for l in 0..8 {
+                    let (dx, dy) = (p.x - bx[l], p.y - by[l]);
+                    mask |= u32::from(dx * dx + dy * dy <= r2) << l;
+                }
+                // Only the row's entries.
+                if end - k < 8 {
+                    mask &= (1 << (end - k)) - 1;
+                }
+                while mask != 0 {
+                    let l = mask.trailing_zeros() as usize;
+                    mask &= mask - 1;
+                    r2 = f(self.items[k + l] as usize, V2::new(bx[l], by[l]));
+                }
+                k += 8;
             }
         }
     }
