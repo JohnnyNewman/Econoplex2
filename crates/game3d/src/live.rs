@@ -131,6 +131,10 @@ pub struct LiveSim {
     /// (product id, name).
     pub product_names: Vec<String>,
     pub building_kinds: Vec<(String, String)>,
+    /// The wall products' kinds (`Db::wall`) and the palisade's stretch and
+    /// gate, for drawing walls and staging battles at one.
+    pub wall_defs: Vec<Option<sim_data::WallDef>>,
+    pub palisade: Option<(u32, u32)>,
 }
 
 impl Drop for LiveSim {
@@ -151,7 +155,7 @@ impl LiveSim {
         let product_names = db.content.products.iter().map(|p| p.name.clone()).collect();
         let building_kinds = (0..db.content.products.len())
             .filter(|&p| db.category(p as u32) == sim_data::Category::Building)
-            .filter(|&p| db.content.products[p].opens.is_none())
+            .filter(|&p| db.content.products[p].opens.is_none() && db.wall[p].is_none())
             .map(|p| {
                 (
                     db.content.products[p].id.clone(),
@@ -159,6 +163,8 @@ impl LiveSim {
                 )
             })
             .collect();
+        let wall_defs = db.wall.clone();
+        let palisade = sim_core::walls::palisade(db);
         let mut seen = sim_core::view::Seen::default();
         let first = Arc::new(ViewSnapshot::capture(&sim.world, &mut seen));
         let history = first.samples.clone();
@@ -205,6 +211,8 @@ impl LiveSim {
             battles: Vec::new(),
             product_names,
             building_kinds,
+            wall_defs,
+            palisade,
         }
     }
 

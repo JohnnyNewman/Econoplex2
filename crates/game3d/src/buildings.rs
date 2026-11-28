@@ -618,6 +618,190 @@ pub fn spawn_houses(
     Some(e.id())
 }
 
+/// One piece of a town's wall (`sim_core::walls`) as the 3D view draws it:
+/// its ends on the ground (3D), stone or timber, a gate or a stretch, and
+/// how it stands: a breach (`Some(0.0)`) is rubble, else the share of its
+/// hit points left (a battered piece stands lower). A gap never built is
+/// not drawn at all.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WallSpec {
+    pub a: Vec3,
+    pub b: Vec3,
+    pub stone: bool,
+    pub gate: bool,
+    pub standing: f32,
+}
+
+/// The wall's height (3D units) for a timber palisade, and a stone wall.
+pub const PALISADE_HIGH: f32 = 0.35;
+pub const STONE_HIGH: f32 = 0.5;
+
+/// One piece of wall `len` long along local x, centred, on y = 0.
+fn wall_parts(kit: &Kit, len: f32, w: &WallSpec) -> Vec<Part> {
+    let half = len / 2.0;
+    let mut parts = Vec::new();
+    if w.standing <= 0.0 {
+        // A breach: stubs at the ends, rubble between.
+        let (colour, h) = if w.stone {
+            ("dark_stone", 0.2)
+        } else {
+            ("timber", 0.12)
+        };
+        for x in [-half + 0.08, half - 0.08] {
+            parts.push((
+                kit.cube.clone(),
+                colour,
+                Vec3::new(x, h / 2.0, 0.0),
+                Vec3::new(0.16, h, 0.14),
+            ));
+        }
+        for (k, x) in [-0.3f32, -0.05, 0.2, 0.4].into_iter().enumerate() {
+            let z = if k % 2 == 0 { 0.12 } else { -0.1 };
+            parts.push((
+                kit.cube.clone(),
+                colour,
+                Vec3::new(x * len, 0.03, z),
+                Vec3::new(0.14, 0.06, 0.1),
+            ));
+        }
+        return parts;
+    }
+    let low = 0.5 + 0.5 * w.standing.clamp(0.0, 1.0);
+    match (w.stone, w.gate) {
+        (false, false) => {
+            // Stakes side by side, and a rail along them.
+            let h = PALISADE_HIGH * low;
+            let n = (len / 0.16).ceil().max(1.0) as usize;
+            for i in 0..n {
+                let x = -half + (i as f32 + 0.5) * len / n as f32;
+                let tall = h * if i % 2 == 0 { 1.0 } else { 0.9 };
+                parts.push((
+                    kit.cylinder.clone(),
+                    "timber",
+                    Vec3::new(x, tall / 2.0, 0.0),
+                    Vec3::new(0.1, tall, 0.1),
+                ));
+            }
+            parts.push((
+                kit.cube.clone(),
+                "timber",
+                Vec3::new(0.0, 0.6 * h, -0.06),
+                Vec3::new(len, 0.04, 0.03),
+            ));
+        }
+        (true, false) => {
+            // A curtain wall with merlons along its top.
+            let h = STONE_HIGH * low;
+            parts.push((
+                kit.cube.clone(),
+                "stone",
+                Vec3::new(0.0, h / 2.0, 0.0),
+                Vec3::new(len, h, 0.16),
+            ));
+            let n = (len / 0.25).floor().max(1.0) as usize;
+            for i in (0..n).step_by(2) {
+                let x = -half + (i as f32 + 0.5) * len / n as f32;
+                parts.push((
+                    kit.cube.clone(),
+                    "stone",
+                    Vec3::new(x, h + 0.05, 0.0),
+                    Vec3::new(0.12, 0.1, 0.18),
+                ));
+            }
+        }
+        (false, true) => {
+            // Two posts, a lintel, and the doors between.
+            let h = (PALISADE_HIGH + 0.15) * low;
+            for x in [-half + 0.06, half - 0.06] {
+                parts.push((
+                    kit.cube.clone(),
+                    "timber",
+                    Vec3::new(x, h / 2.0, 0.0),
+                    Vec3::new(0.12, h, 0.12),
+                ));
+            }
+            parts.push((
+                kit.cube.clone(),
+                "timber",
+                Vec3::new(0.0, h, 0.0),
+                Vec3::new(len, 0.06, 0.1),
+            ));
+            parts.push((
+                kit.cube.clone(),
+                "brown_roof",
+                Vec3::new(0.0, 0.4 * h, 0.0),
+                Vec3::new(len - 0.24, 0.8 * h, 0.05),
+            ));
+        }
+        (true, true) => {
+            // A gatehouse: two towers with roofs, an arch, the doors.
+            let h = (STONE_HIGH + 0.3) * low;
+            for x in [-half + 0.18, half - 0.18] {
+                parts.push((
+                    kit.cube.clone(),
+                    "stone",
+                    Vec3::new(x, h / 2.0, 0.0),
+                    Vec3::new(0.36, h, 0.36),
+                ));
+                parts.push((
+                    kit.cone.clone(),
+                    "slate_roof",
+                    Vec3::new(x, h + 0.12, 0.0),
+                    Vec3::new(0.46, 0.24, 0.46),
+                ));
+            }
+            let span = (len - 0.72).max(0.1);
+            parts.push((
+                kit.cube.clone(),
+                "stone",
+                Vec3::new(0.0, 0.85 * h, 0.0),
+                Vec3::new(span, 0.3 * h, 0.2),
+            ));
+            parts.push((
+                kit.cube.clone(),
+                "timber",
+                Vec3::new(0.0, 0.35 * h, 0.0),
+                Vec3::new(span, 0.7 * h, 0.06),
+            ));
+        }
+    }
+    parts
+}
+
+/// A town's wall as one mesh (`None`: nothing standing to draw).
+pub fn spawn_walls(
+    commands: &mut Commands,
+    kit: &mut Kit,
+    meshes: &mut Assets<Mesh>,
+    outlines: &Outlines,
+    walls: &[WallSpec],
+) -> Option<Entity> {
+    let all: Vec<(Transform, Vec<Part>)> = walls
+        .iter()
+        .filter_map(|w| {
+            let d = w.b - w.a;
+            let len = Vec2::new(d.x, d.z).length();
+            if len < 1e-3 {
+                return None;
+            }
+            let at = Transform::from_translation((w.a + w.b) / 2.0)
+                .with_rotation(Quat::from_rotation_y((-d.z).atan2(d.x)));
+            Some((at, wall_parts(kit, len, w)))
+        })
+        .collect();
+    if all.is_empty() {
+        return None;
+    }
+    let mesh = kit.bake_houses(meshes, &all);
+    let mut e = commands.spawn((
+        Transform::IDENTITY,
+        Mesh3d(mesh.clone()),
+        MeshMaterial3d(kit.white.clone()),
+    ));
+    e.with_child(outlines.hull(mesh));
+    Some(e.id())
+}
+
 /// The parts of house number `k` in the town's style.
 fn house_parts(kit: &Kit, k: u32, style: Style) -> Vec<Part> {
     // (body size, roof radius and height, chimney?)

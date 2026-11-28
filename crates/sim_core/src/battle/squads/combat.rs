@@ -48,6 +48,23 @@ impl SquadBattle {
         let p = &self.params;
         let (si, st) = (&self.squads[i], &self.squads[t]);
         let mut front = si.front(p);
+        // Over a town's wall the share of the defenders along it who reach
+        // a man below strike down, and the share of the attackers below who
+        // reach one of them strike up.
+        let over = self.wall_piece_between(i, t);
+        if let Some(n) = over {
+            front = self.over_wall_front(i, t, n);
+            front *= if si.spec.side == 0 {
+                p.wall_strike_up
+            } else {
+                p.wall_strike_down
+            };
+        }
+        // In a breach, front to front: nobody takes another in the flank.
+        let breach = self.breach_between(i, t);
+        if let Some(n) = breach {
+            front = self.breach_front(i, n);
+        }
         if self.across_wall(i, t) {
             let breach = p.breach_width / si.spacing(p);
             front = front.min(if si.spec.behind_wall {
@@ -61,7 +78,7 @@ impl SquadBattle {
         let (ri, rt) = (si.spec.kit.reach, st.spec.kit.reach);
         let closing = si.closing.iter().find(|c| c.0 == t).map_or(0.0, |c| c.1);
         // On a wall nobody gets inside a defender's reach.
-        let on_wall = si.spec.behind_wall && self.across_wall(i, t);
+        let on_wall = (si.spec.behind_wall && self.across_wall(i, t)) || over.is_some();
         let reach_factor = if on_wall {
             1.0
         } else if closing > 0.0 {
@@ -75,7 +92,8 @@ impl SquadBattle {
         } else {
             1.0
         };
-        let flank = st.primary != Some(i) || st.state == SquadState::Routing;
+        let flank = (st.primary != Some(i) && over.is_none() && breach.is_none())
+            || st.state == SquadState::Routing;
         let blows = front * si.spec.kit.strike_rate * p.dt * reach_factor;
         let (chance, damage) = self.blow_odds(i, t, false, 0.0, flank);
         (blows, flank, chance, damage)
@@ -162,7 +180,8 @@ impl SquadBattle {
     /// points of a hit (see [`Self::strikes`]).
     fn blow_odds(&self, i: usize, t: usize, charge: bool, extra: f32, flank: bool) -> (f32, f32) {
         let (si, st) = (&self.squads[i], &self.squads[t]);
-        let on_wall = si.spec.behind_wall && self.across_wall(i, t);
+        let on_wall = (si.spec.behind_wall && self.across_wall(i, t))
+            || (si.spec.side == 1 && self.wall_piece_between(i, t).is_some());
         let ground = if on_wall {
             self.params.wall_ground
         } else {
@@ -276,14 +295,17 @@ impl SquadBattle {
         };
         let bonus = self.bonus(i) - p.range_penalty * d / range + rider + p.shot_bonus();
         // Cover on the wall; a shield turns arrows unless its bearer runs.
-        let cover = if self.across_wall(i, t) && st.spec.behind_wall {
-            p.wall_cover
+        // Behind a town's wall only the men within `COVER` of it have it:
+        // the share of the squad's depth that stands that near.
+        let covered = if self.across_wall(i, t) && st.spec.behind_wall {
+            1.0
         } else {
-            0.0
+            self.covered_share(i, t)
         };
-        let ac = st.spec.kit.armour_class(st.state != SquadState::Routing) + cover;
+        let ac = st.spec.kit.armour_class(st.state != SquadState::Routing);
         let roll = Roll::of(false, self.frightened(i) || p.shot_disadvantage(d));
-        let hit = rules::hit_chance(bonus, ac, roll);
+        let hit = covered * rules::hit_chance(bonus, ac + p.wall_cover, roll)
+            + (1.0 - covered) * rules::hit_chance(bonus, ac, roll);
         let crit = rules::crit_chance(roll).min(hit) / hit.max(1e-6);
         // An arrow comes down on the man aimed at `arrow_aim` of the time, as
         // on the soldier model; one that misses him lands among the others,

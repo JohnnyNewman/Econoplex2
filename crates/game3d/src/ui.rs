@@ -407,6 +407,21 @@ vitamins {}",
                 "mint",
             );
             choice(ui, &mut state, "war", &pol.war, &["auto", "defend"], "war");
+            // The town wall: build it (and mend it), or not.
+            ui.horizontal(|ui| {
+                ui.label(format!("{:<16}", "walls"));
+                for (on, words) in [(true, "build"), (false, "off")] {
+                    if ui.selectable_label(pol.walls == on, words).clicked() && pol.walls != on {
+                        let o = if on { "on" } else { "off" };
+                        send(&mut state, format!("walls {name} {o}"));
+                    }
+                }
+                ui.label(match (pol.walls, pol.walls_all) {
+                    (false, 0) => "none".to_string(),
+                    (true, 0) => "to be laid out".to_string(),
+                    (_, all) => format!("{} of {all} pieces up", pol.walls_up),
+                });
+            });
             // The doctrine its squads fight by, in every battle.
             let (posture, prisoners) = (pol.posture.as_str(), pol.prisoners.as_str());
             ui.horizontal(|ui| {

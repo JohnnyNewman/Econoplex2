@@ -102,6 +102,7 @@ pub enum Action {
     Raid,
     BuildType(i32),
     Place,
+    WallsToggle,
 }
 
 #[derive(Component, Clone, Copy, PartialEq)]
@@ -127,6 +128,7 @@ pub enum Field {
     RaidTarget,
     BuildType,
     Commissions,
+    Walls,
 }
 
 const BUTTON: Color = Color::srgb(0.22, 0.24, 0.22);
@@ -135,7 +137,7 @@ const BUTTON_HOVER: Color = Color::srgb(0.32, 0.36, 0.32);
 /// Products a town can subsidize: everything made in a workshop, not buildings or land.
 fn buildings(db: &Db) -> Vec<usize> {
     (0..db.content.products.len())
-        .filter(|&p| db.category(p as u32) == Category::Building)
+        .filter(|&p| db.category(p as u32) == Category::Building && db.wall[p].is_none())
         .collect()
 }
 
@@ -296,6 +298,10 @@ pub fn spawn_policy_panel(
                 button(r, "place", Action::Place);
                 value(r, Field::Commissions, 90.0);
             });
+            row(p, "Walls", &|r| {
+                button(r, "toggle", Action::WallsToggle);
+                value(r, Field::Walls, 260.0);
+            });
             p.spawn((Text::new("Sent orders"), font.clone()));
             for k in 0..SENT_SHOWN {
                 p.spawn((
@@ -398,6 +404,10 @@ pub fn policy_buttons(
                             War::Auto => War::Defend,
                             War::Defend => War::Auto,
                         },
+                    }),
+                    Action::WallsToggle => Some(Order::Walls {
+                        town,
+                        on: !policy.walls,
                     }),
                     Action::Posture => Some(Order::Doctrine {
                         town,
@@ -574,6 +584,7 @@ pub fn update_policy_panel(
             Field::BuildType => kinds
                 .get(cursor.building)
                 .map_or(String::new(), |&b| db.content.products[b].name.clone()),
+            Field::Walls => walls_text(p.walls, &town.walls),
             Field::Commissions => match p.commissions.len() {
                 0 => String::new(),
                 n => format!("{n} ordered"),
@@ -741,7 +752,19 @@ fn order_text(order: &Order, db: &Db, towns: &Towns) -> String {
         Order::Procure {
             product: p, amount, ..
         } => format!("order {amount:.0} {}", product(*p)),
+        Order::Walls { on, .. } => if *on { "build walls" } else { "stop the walls" }.into(),
         other => format!("{other:?}"),
+    }
+}
+
+/// The wall line: whether the town builds it, and how much of it stands.
+pub fn walls_text(on: bool, walls: &sim_core::walls::TownWalls) -> String {
+    let (up, all) = walls.standing();
+    match (on, all) {
+        (false, 0) => "none".into(),
+        (true, 0) => "to be laid out".into(),
+        (true, _) => format!("building: {up} of {all} pieces up"),
+        (false, _) => format!("not mended: {up} of {all} pieces up"),
     }
 }
 
@@ -953,6 +976,9 @@ mod tests {
                     assert!(matches!(one(&orders), Order::Charter { on: true, .. }))
                 }
                 Action::ArmyShare(_) => assert!(matches!(one(&orders), Order::Army { .. })),
+                Action::WallsToggle => {
+                    assert!(matches!(one(&orders), Order::Walls { on: true, .. }))
+                }
                 Action::WarToggle => assert!(matches!(
                     one(&orders),
                     Order::War {

@@ -32,6 +32,8 @@ flowchart LR
     p_tin_ore(["Tin ore"])
     p_hut[["Hut"]]
     p_cottage[["Cottage"]]
+    p_palisade[["Palisade"]]
+    p_palisade_gate[["Palisade gate"]]
     p_coal(["Coal"])
     p_tool_handle["Tool handle"]
     p_silver_ore(["Silver ore"])
@@ -65,6 +67,8 @@ flowchart LR
     p_leather_armour["Leather armour"]
     p_tannery[["Tannery"]]
     p_stone_house[["Stone house"]]
+    p_stone_wall[["Stone wall"]]
+    p_stone_gate[["Stone gatehouse"]]
     p_bow["Bow"]
     p_shield["Shield"]
     p_padded_coat["Padded coat"]
@@ -182,10 +186,13 @@ flowchart LR
   p_beam --> p_masons_yard
   p_beam --> p_mill
   p_beam --> p_mint
+  p_beam --> p_palisade
+  p_beam --> p_palisade_gate
   p_beam --> p_pike
   p_beam --> p_smithy
   p_beam --> p_smokehouse
   p_beam --> p_stable
+  p_beam --> p_stone_gate
   p_beam --> p_stone_house
   p_beam --> p_tannery
   p_beam --> p_tavern
@@ -219,7 +226,9 @@ flowchart LR
   p_cut_stone --> p_blast_furnace
   p_cut_stone --> p_mint
   p_cut_stone --> p_roller_mill
+  p_cut_stone --> p_stone_gate
   p_cut_stone --> p_stone_house
+  p_cut_stone --> p_stone_wall
   p_cut_stone --> p_textile_mill
   p_dye --> p_dyed_cloth
   p_dyed_cloth --> p_fine_clothes
@@ -268,7 +277,9 @@ flowchart LR
   p_mortar --> p_brewery
   p_mortar --> p_machine_shop
   p_mortar --> p_roller_mill
+  p_mortar --> p_stone_gate
   p_mortar --> p_stone_house
+  p_mortar --> p_stone_wall
   p_mortar --> p_textile_mill
   p_nails --> p_machine_shop
   p_nails --> p_rimmed_shield

@@ -126,6 +126,12 @@ pub fn draw_live_battle(
     let Some(v) = &live.view else { return };
     let zoom = camera.scale.x;
     let outline = Color::srgba(1.0, 0.95, 0.5, 0.8);
+    crate::walls_view::draw_field_walls(
+        &mut gizmos,
+        &v.walls,
+        &v.frame.walls,
+        crate::battles::field_to_map(v.at, v.facing, v.field),
+    );
     if shows_soldiers(v, zoom) {
         crate::battles::draw_soldiers(
             &mut gizmos,
@@ -647,6 +653,7 @@ mod tests {
             bonus: vec![(2.0, -2.0); 3],
             sheets: Vec::new(),
             wall_x: None,
+            walls: Vec::new(),
             nav: None,
             morale: vec![1.0; 3],
             condition: Vec::new(),
@@ -658,6 +665,7 @@ mod tests {
                     (80.0, 20.0, 15, SquadState::Fighting),
                 ],
                 soldiers: Vec::new(),
+                walls: Vec::new(),
             },
             player_side: 0,
             deploying: false,

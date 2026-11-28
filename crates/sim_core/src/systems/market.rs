@@ -122,16 +122,19 @@ pub fn settle(
         for (ti, town) in towns.0.iter_mut().enumerate() {
             let pop = town.residents.len().max(1) as f32;
             let mint_wanted = town.mint_wanted(mp);
-            // The pay of the town's poorer jobs (the lower quartile of those that
-            // pay), at the start of the step.
-            let poor_pay = {
+            let wall_rank = crate::walls::best_rank(&db, town);
+            // The pay of the town's poorer and better jobs (the lower and
+            // upper quartiles of those that pay), at the start of the step.
+            let (poor_pay, good_pay) = {
                 let mut paid: Vec<f32> =
                     town.pay_rate.iter().copied().filter(|&x| x > 0.0).collect();
                 if paid.is_empty() {
-                    0.0
+                    (0.0, 0.0)
                 } else {
-                    let q = paid.len() / 4;
-                    *paid.select_nth_unstable_by(q, f32::total_cmp).1
+                    let (n, q) = (paid.len(), paid.len() / 4);
+                    let poor = *paid.select_nth_unstable_by(q, f32::total_cmp).1;
+                    let good = *paid.select_nth_unstable_by(n - 1 - q, f32::total_cmp).1;
+                    (poor, good)
                 }
             };
             for p in 0..np {
@@ -149,6 +152,38 @@ pub fn settle(
                 }
                 if let Some(kind) = db.opens[p] {
                     town.price[p] = land_price(&db, town, mp, p, kind, &sites);
+                    continue;
+                }
+                if db.wall[p].is_some() {
+                    // A wall piece is worth its price while the town wants
+                    // a wall and some piece of it needs one: at least its
+                    // inputs and the better jobs' pay for the work
+                    // (`wall_pay`), by its cheapest recipe.
+                    town.price[p] =
+                        if town.policy.walls && town.walls.wants(&db, p as u32, wall_rank) {
+                            let cost = makers[p]
+                                .iter()
+                                .filter(|&&(_, out)| out > 0.0)
+                                .map(|&(r, out)| {
+                                    let m = &db.recipes[r];
+                                    let inputs: f32 = m
+                                        .inputs
+                                        .iter()
+                                        .map(|&(i, q)| town.price[i as usize] * q)
+                                        .sum();
+                                    (inputs + mp.wall_pay * good_pay * m.duration) / out
+                                })
+                                .fold(f32::INFINITY, f32::min);
+                            // Never past the price cap (`max_price_factor`).
+                            let base = db.base_price[p];
+                            if cost.is_finite() {
+                                base.max(cost.min(base * mp.max_price_factor))
+                            } else {
+                                base
+                            }
+                        } else {
+                            0.0
+                        };
                     continue;
                 }
                 if let Some((_, quality)) = db.house[p] {

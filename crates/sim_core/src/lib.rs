@@ -50,6 +50,7 @@ pub mod history;
 pub mod price_index;
 pub mod pricing;
 pub mod view;
+pub mod walls;
 pub mod worldgen;
 pub use coin::Coin;
 pub use config::{ModelParams, Scenario};
@@ -134,6 +135,7 @@ pub fn build_economy_schedule() -> Schedule {
                 organize::organize,
                 profile::mark::<8>,
                 military::military,
+                crate::walls::upkeep.run_if(env::day_start),
                 profile::mark::<9>,
                 migrate::migrate,
                 profile::mark::<10>,

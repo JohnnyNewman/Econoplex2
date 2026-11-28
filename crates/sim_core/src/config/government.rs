@@ -121,6 +121,21 @@ pub struct GovernorParams {
     /// last fewer days than this at the forecast's rate.
     #[serde(default = "food_horizon_days")]
     pub food_horizon_days: f32,
+    /// A governor orders a town wall once the town has been raided this
+    /// many times in a year, if it has at least `walls_min_pop` residents
+    /// and its treasury per resident is above `treasury_low`.
+    #[serde(default = "walls_after_raids")]
+    pub walls_after_raids: u32,
+    #[serde(default = "walls_min_pop")]
+    pub walls_min_pop: usize,
+}
+
+fn walls_after_raids() -> u32 {
+    1
+}
+
+fn walls_min_pop() -> usize {
+    40
 }
 
 fn forecast_days() -> f32 {
@@ -170,6 +185,8 @@ impl Default for GovernorParams {
             granary_days: granary_days(),
             forecast_days: forecast_days(),
             food_horizon_days: food_horizon_days(),
+            walls_after_raids: walls_after_raids(),
+            walls_min_pop: walls_min_pop(),
             personalities: vec![
                 ("balanced".into(), crate::governor::Personality::default()),
                 (

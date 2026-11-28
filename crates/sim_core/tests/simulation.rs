@@ -1277,6 +1277,10 @@ fn a_hungry_town_subsidizes_food_then_winds_it_down() {
     params.decision.attendance = sim_core::config::Attendance::Free;
     // The town starts without bread: no steady-state start refilling it.
     params.start = sim_core::start::StartParams::Scenario;
+    // and no governor builds a town wall: the walls raided towns put up
+    // shift the year enough that this town is not short of food by its
+    // first review.
+    params.governor.walls_after_raids = 0;
     scenario.seed = 4;
     let b = &mut scenario.towns[3];
     for n in &mut b.nature {

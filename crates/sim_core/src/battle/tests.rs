@@ -349,6 +349,7 @@ fn recorded_losses(model: BattleModel) {
         people: people.clone(),
         attacker: None,
         lost: r.lost,
+        walls: Vec::new(),
         gathered: Default::default(),
     };
     assert_eq!(replay.losses_at(-1.0)[0].count(), 0);
@@ -388,6 +389,7 @@ fn recorded(model: BattleModel) {
             squads: squads.clone(),
             frames: Vec::new(),
             winner: report.winner,
+            walls: Vec::new(),
             people: Vec::new(),
             attacker: None,
             lost: Vec::new(),

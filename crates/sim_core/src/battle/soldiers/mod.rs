@@ -33,6 +33,7 @@ mod soldier;
 mod squad;
 #[cfg(test)]
 mod tests;
+mod wall;
 
 use super::*;
 use grid::Grid;
@@ -358,6 +359,12 @@ struct SquadCtl {
     squeeze: Option<u16>,
     /// Its way round the obstacles to where it goes.
     route: Route,
+    /// The piece of the town's wall it batters (an index in the ring's
+    /// pieces), while the wall is closed.
+    assault: Option<usize>,
+    /// It stands at the wall (battering, manning or plugging it): it keeps
+    /// its width there, however little room lies ahead.
+    at_wall: bool,
     /// The centre of the front rank, and where the front faces (unit).
     anchor: V2,
     facing: V2,
@@ -593,6 +600,8 @@ pub struct SoldierBattle {
     field: Field,
     /// The field's obstacles (`None`: an open field).
     nav: Option<Arc<Nav>>,
+    /// The town's wall, if the field has one.
+    ring: Option<crate::battle::walls::Ring>,
     seed: u64,
     t: f32,
     substep: u64,
@@ -653,6 +662,7 @@ impl SoldierBattle {
             ],
             params,
             nav: Nav::new(&field, 0).map(Arc::new),
+            ring: crate::battle::walls::Ring::of(&field),
             field,
             seed,
             t: 0.0,
@@ -811,6 +821,8 @@ impl SoldierBattle {
             width: None,
             reform_due: false,
             squeeze: None,
+            assault: None,
+            at_wall: false,
             route: Route::default(),
             anchor: centre,
             facing,
@@ -1031,8 +1043,9 @@ impl SoldierBattle {
         }
         self.boxes = boxes;
         lap(self, 0);
-        // 2. Squad controllers.
+        // 2. Squad controllers, and the wall battered.
         self.command();
+        self.batter_walls();
         lap(self, 1);
         // 3 and 4. Soldier controllers, and each soldier's blow or shot.
         let mut plans = std::mem::take(&mut self.plans);

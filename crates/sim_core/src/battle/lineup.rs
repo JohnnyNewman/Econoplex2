@@ -40,9 +40,10 @@ const DEFENCE_BEHIND: f32 = 0.25;
 /// `%fatigue` (0 rested, 1 spent) and `#flank` or `#rear` (deploy beside or
 /// behind the enemy, facing in). `walls` before the defenders puts them
 /// behind a wall, `town` fights in a town of the size the scenario starts
-/// with (`sample_town`). A side with more squads than fit across the field
-/// stands in several lines, one behind the other: `LINE_GAP` apart, or as
-/// close as it takes for its last line to stand on the field, both sides
+/// with (`sample_town`), `walled town` in that town with a palisade round
+/// it (`sample_walled_town`). A side with more squads than fit across the
+/// field stands in several lines, one behind the other: `LINE_GAP` apart, or
+/// as close as it takes for its last line to stand on the field, both sides
 /// alike. When even lines back to back would not fit, the field is made
 /// longer.
 pub fn parse_lineup(text: &str) -> Result<(Field, Vec<SquadSpec>), String> {
@@ -52,8 +53,11 @@ pub fn parse_lineup(text: &str) -> Result<(Field, Vec<SquadSpec>), String> {
     let mut def = def.trim();
     let mut field = Field::default();
     let town = def.starts_with("town ");
+    let walled_town = def.starts_with("walled town ");
     if town {
         def = def["town ".len()..].trim();
+    } else if walled_town {
+        def = def["walled town ".len()..].trim();
     }
     let walls = def.starts_with("walls ");
     if walls {
@@ -147,6 +151,10 @@ pub fn parse_lineup(text: &str) -> Result<(Field, Vec<SquadSpec>), String> {
         .max(behind(1) / DEFENCE_BEHIND);
     if town {
         field.obstacles = sample_town(&field);
+    } else if walled_town {
+        let (obstacles, walls) = sample_walled_town(&field);
+        field.obstacles = obstacles;
+        field.walls = walls;
     }
     if walls {
         field.wall_x = Some(field.width * 0.6);
@@ -181,7 +189,12 @@ pub fn parse_lineup(text: &str) -> Result<(Field, Vec<SquadSpec>), String> {
             (0, _) => front[0] - back,
             // Right behind the wall.
             (_, Some(w)) => w + half + 0.6 + back,
-            _ => front[1] + back,
+            // Inside a town's wall at that height, if it has one.
+            _ => {
+                let (x, at) = field.defenders_spot(spec.pos.1);
+                spec.pos.1 = at;
+                x + back
+            }
         };
     }
     // Squads sent round the enemy: beside the enemy squad nearest their place
@@ -225,6 +238,38 @@ pub fn parse_lineup(text: &str) -> Result<(Field, Vec<SquadSpec>), String> {
     }
     Ok((field, specs))
 }
+
+/// The sample town of [`sample_town`] with a whole palisade round it, a
+/// gate on the side the attackers come from and one behind: its obstacles
+/// (the wall's among them) and the wall's hit points.
+pub fn sample_walled_town(field: &Field) -> (Vec<Obstacle>, Vec<WallHp>) {
+    let defs = [Some(SAMPLE_PALISADE), Some(SAMPLE_GATE)];
+    let (facing, size) = ((1.0, 0.0), (field.width, field.height));
+    let town = crate::layout::TownLayout::sample((0.0, 0.0), 8, 60).walled(&defs, 0, 1);
+    let at = town.battle_at(facing, size);
+    let mut obstacles = town.obstacles_on(at, facing, size);
+    let (walls, hp) = crate::walls::on_field(&town.walls, &defs, 0, |p| {
+        crate::battle::map_to_field(at, facing, size, p)
+    });
+    obstacles.extend(walls);
+    (obstacles, hp)
+}
+
+/// The sample wall's pieces: as the content's palisade and its gate.
+const SAMPLE_PALISADE: sim_data::WallDef = sim_data::WallDef {
+    hp: 400.0,
+    thickness: 0.6,
+    gate: false,
+    decay: 0.06,
+    rank: 0,
+};
+const SAMPLE_GATE: sim_data::WallDef = sim_data::WallDef {
+    hp: 300.0,
+    thickness: 0.6,
+    gate: true,
+    decay: 0.06,
+    rank: 0,
+};
 
 /// Cut `<c>value` out of a squad description and return the value.
 fn take(rest: &mut String, c: char) -> Option<String> {

@@ -41,6 +41,13 @@ pub struct BattleScenes {
     scenes: Vec<Scene>,
 }
 
+impl BattleScenes {
+    /// The towns whose battles are being shown.
+    pub fn towns(&self) -> impl Iterator<Item = u16> + '_ {
+        self.scenes.iter().map(|s| s.replay.town)
+    }
+}
+
 struct Scene {
     replay: Replay,
     /// Real time the playback started.
@@ -120,7 +127,7 @@ impl BattleScenes {
 /// on the map the lines meet.
 pub fn stage_battle(world: &mut World, lineup: &str) -> (f32, f32) {
     use sim_core::battle::{parse_lineup, Battle};
-    let (mut field, specs) = parse_lineup(lineup).unwrap_or_else(|e| {
+    let (mut field, mut specs) = parse_lineup(lineup).unwrap_or_else(|e| {
         eprintln!("error: --battle: {e}");
         std::process::exit(2);
     });
@@ -151,11 +158,15 @@ pub fn stage_battle(world: &mut World, lineup: &str) -> (f32, f32) {
             world.resource::<sim_core::Db>(),
             world.resource::<sim_core::terrain::Terrain>(),
         );
-        field.obstacles = layout.obstacles_on(at, facing, size);
+        let db = world.resource::<sim_core::Db>();
+        let palisade = sim_core::walls::palisade(db);
+        layout.stage(&mut field, &mut specs, at, facing, &db.wall, palisade, k);
     }
     // Its soldiers are the town's people, and their neighbours'.
     let (people, attacker) = sim_core::systems::military::stage_fighters(world, &specs, k);
-    let r = Battle::new(params, field, specs, 1).record(5.0);
+    let mut battle = Battle::new(params, field, specs, 1);
+    let walls = battle.replay_walls();
+    let r = battle.record(5.0);
     info!(
         "--battle {lineup}: {:?} after {:.0} s",
         r.report.winner, r.report.seconds
@@ -171,6 +182,7 @@ pub fn stage_battle(world: &mut World, lineup: &str) -> (f32, f32) {
         people,
         attacker,
         lost: r.lost,
+        walls,
         gathered: Default::default(),
     };
     let to_map = field_to_map(replay.at, replay.facing, replay.field);
@@ -401,6 +413,15 @@ pub fn draw_battles(
         } else {
             Vec::new()
         };
+        if !r.walls.is_empty() {
+            let hp = r.around(t).map_or(Vec::new(), |(a, _, _)| a.walls.clone());
+            crate::walls_view::draw_field_walls(
+                &mut gizmos,
+                &r.walls,
+                &hp,
+                field_to_map(r.at, r.facing, r.field),
+            );
+        }
         if soldiers.is_empty() {
             draw_field(
                 &mut gizmos,
@@ -462,11 +483,13 @@ mod tests {
                     t: 0.0,
                     squads: vec![(0.0, 10.0, 20, SquadState::Fighting)],
                     soldiers: Vec::new(),
+                    walls: Vec::new(),
                 },
                 ReplayFrame {
                     t: 10.0,
                     squads: vec![(10.0, 10.0, 12, SquadState::Routing)],
                     soldiers: Vec::new(),
+                    walls: Vec::new(),
                 },
             ],
             winner: Some(1),

@@ -15,6 +15,7 @@
 
 mod combat;
 mod step;
+mod wall;
 
 use super::*;
 use rand::{Rng, SeedableRng};
@@ -52,6 +53,8 @@ struct Squad {
     eff: f32,
     exhaustion: f32,
     discipline: f32,
+    /// The piece of the town's wall it assaults (an index in the ring).
+    assault: Option<usize>,
     /// The fighters' mean battles survived, initiative before the d20
     /// (`rules::agility`), and mean health, refreshed every step.
     experience: f32,
@@ -125,6 +128,8 @@ pub struct SquadBattle {
     /// Hits of this phase of the step, by squad, landed together at its end
     /// so that no squad strikes first because it comes first in the list.
     wounds: Vec<(usize, f32)>,
+    /// The town's wall (`None`: none on the field).
+    ring: Option<crate::battle::walls::Ring>,
 }
 
 impl SquadBattle {
@@ -154,6 +159,7 @@ impl SquadBattle {
                 eff: 0.0,
                 exhaustion: 0.0,
                 discipline: 0.0,
+                assault: None,
                 experience: 0.0,
                 agility: 0.0,
                 health: 1.0,
@@ -167,7 +173,9 @@ impl SquadBattle {
                 s.spec.pos = (p.x, p.y);
             }
         }
+        let ring = crate::battle::walls::Ring::of(&field);
         Self {
+            ring,
             params,
             nav,
             field,

@@ -253,7 +253,7 @@ fn stage_battle(
         *done = true;
         return;
     };
-    let (mut field, specs) = match parse_lineup(lineup) {
+    let (mut field, mut specs) = match parse_lineup(lineup) {
         Ok(x) => x,
         Err(e) => {
             warn!("--battle: {e}");
@@ -284,10 +284,20 @@ fn stage_battle(
         ((town.0, town.1 - 300.0), (1.0, 0.0))
     };
     if let (true, Some(layout)) = (in_town, &layout) {
-        field.obstacles = layout.obstacles_on(at, facing, size);
+        layout.stage(
+            &mut field,
+            &mut specs,
+            at,
+            facing,
+            &live.wall_defs,
+            live.palisade,
+            args.focus_town,
+        );
     }
     // On `battle.model` from models.ron (`--preset`, `--set`).
-    let r = Battle::new(args.battle_params.clone(), field, specs, args.seed).record(5.0);
+    let mut battle = Battle::new(args.battle_params.clone(), field, specs, args.seed);
+    let walls = battle.replay_walls();
+    let r = battle.record(5.0);
     info!(
         "--battle {lineup}: {:?} after {:.0} s",
         r.report.winner, r.report.seconds
@@ -305,6 +315,7 @@ fn stage_battle(
         people,
         attacker,
         lost: r.lost,
+        walls,
         gathered: Default::default(),
     };
     let geo = Geo {

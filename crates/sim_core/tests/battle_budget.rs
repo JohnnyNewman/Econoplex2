@@ -55,6 +55,11 @@ fn four_thousand_soldiers_within_budget() {
 /// open ground: the obstacle queries, and the fighting they make, soldiers
 /// pressed out of their slots and squads jammed in the streets.
 ///
+/// A walled town (`walled town`: the same town in a palisade with two
+/// gates) gets five times: its four thousand soldiers spend the battle
+/// pressed along the wall, where every step asks the obstacles where it
+/// may go and every blow whether the wall stands between.
+///
 /// It also prints the dearest ten battle seconds, the height of the melee
 /// (at 140 to 180 s, about three times the phase's average): no budget
 /// holds it yet, see "The engaged phase" in the design doc.
@@ -64,9 +69,11 @@ fn engaged_phase_within_budget() {
     let side = vec!["swordsmen*40"; 50].join(",");
     let open = engaged(&format!("{side} vs {side}"), 1);
     let town = engaged(&format!("{side} vs town {side}"), 1);
+    let walled = engaged(&format!("{side} vs walled town {side}"), 1);
     println!(
-        "first 400 s on one core: open {:.3} (dearest 10 s {:.3}), town {:.3} ms per battle second",
-        open.0, open.1, town.0
+        "first 400 s on one core: open {:.3} (dearest 10 s {:.3}), town {:.3}, \
+         walled town {:.3} ms per battle second",
+        open.0, open.1, town.0, walled.0
     );
     assert!(
         open.0 <= 1.5,
@@ -77,6 +84,12 @@ fn engaged_phase_within_budget() {
         town.0 <= 3.0 * open.0,
         "town {:.3} ms per battle second, more than three times open {:.3}",
         town.0,
+        open.0
+    );
+    assert!(
+        walled.0 <= 5.0 * open.0,
+        "walled town {:.3} ms per battle second, more than five times open {:.3}",
+        walled.0,
         open.0
     );
 }

@@ -339,6 +339,7 @@ fn replay_frames_carry_every_soldier() {
         squads,
         frames,
         winner: None,
+        walls: Vec::new(),
         people: Vec::new(),
         attacker: None,
         lost: Vec::new(),

@@ -39,8 +39,10 @@ use std::path::Path;
 /// the work no practice has counted yet (`Task::worked_runs`). 15: each
 /// town's own coin (`Town::coin_value`, `Town::foreign`), careers
 /// (`off_trade`, `vacancies`, `intake`, signed `GuildLink::since`). 16: the
-/// ledger's coin-exchanged flow (30 flows).
-pub const SAVE_VERSION: u32 = 18;
+/// ledger's coin-exchanged flow (30 flows). 18: the price of battles
+/// (war idea 2). 19: town walls (`Town::walls`, `Policy::walls`, the war
+/// tallies' wall pieces and cost).
+pub const SAVE_VERSION: u32 = 19;
 
 /// One simulation entity and its components.
 #[derive(Serialize, Deserialize)]

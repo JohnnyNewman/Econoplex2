@@ -80,6 +80,8 @@ pub struct Db {
     pub keep_days: Vec<f32>,
     /// Houses: (people each holds, how well it shelters them).
     pub house: Vec<Option<(u32, f32)>>,
+    /// Wall pieces (`walls.rs`).
+    pub wall: Vec<Option<sim_data::WallDef>>,
     /// Face value of coin products (0 for everything else).
     pub coin: Vec<f32>,
     /// Per recipe: work done outdoors (harvesting nature, putting up a
@@ -219,6 +221,7 @@ impl Db {
             .iter()
             .map(|p| p.house.map(|h| (h.residents, h.quality)))
             .collect();
+        let wall = content.products.iter().map(|p| p.wall).collect();
         let mut firm_keys: Vec<crate::firms::FirmKey> =
             recipes.iter().map(crate::firms::key_of).collect();
         firm_keys.sort_unstable();
@@ -331,6 +334,7 @@ impl Db {
             coin,
             requires,
             house,
+            wall,
             food_value,
             nutrients,
             keep_days,

@@ -30,6 +30,7 @@ mod terrain_view;
 mod town_ground;
 mod ui_compat;
 mod view;
+mod walls_view;
 
 use bevy::prelude::*;
 use sim_core::AssetPaths;
@@ -307,6 +308,7 @@ fn main() {
             Update,
             (
                 town_ground::update_town_ground,
+                walls_view::draw_town_walls,
                 view::animate_agents.after(town_ground::update_town_ground),
             ),
         );
