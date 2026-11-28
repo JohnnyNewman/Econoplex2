@@ -143,6 +143,21 @@ impl BattleScene {
     pub(crate) fn playback(&self, now: f32) -> f32 {
         (now - self.started) * PLAYBACK
     }
+
+    /// The same, held at the battle's end while the scene lingers.
+    pub(crate) fn shown_at(&self, now: f32) -> f32 {
+        let end = self.replay.frames.last().map_or(0.0, |f| f.t);
+        self.playback(now).min(end)
+    }
+
+    pub(crate) fn replay(&self) -> &Replay {
+        &self.replay
+    }
+
+    /// When (real seconds) its playback started.
+    pub(crate) fn started(&self) -> f32 {
+        self.started
+    }
 }
 
 fn figure_mesh() -> Mesh {
@@ -272,20 +287,24 @@ fn stage_battle(
         field.obstacles = layout.obstacles_on(at, facing, size);
     }
     // On `battle.model` from models.ron (`--preset`, `--set`).
-    let (report, squads, frames) =
-        Battle::new(args.battle_params.clone(), field, specs, args.seed).run_recorded(5.0);
+    let r = Battle::new(args.battle_params.clone(), field, specs, args.seed).record(5.0);
     info!(
         "--battle {lineup}: {:?} after {:.0} s",
-        report.winner, report.seconds
+        r.report.winner, r.report.seconds
     );
+    // Its soldiers are the town's people, and their neighbours' (`main.rs`).
+    let (people, attacker) = args.battle_people.clone();
     let mut replay = Replay {
         town: args.focus_town as u16,
         at,
         facing,
         field: size,
-        squads,
-        frames,
-        winner: report.winner,
+        squads: r.squads,
+        frames: r.frames,
+        winner: r.report.winner,
+        people,
+        attacker,
+        lost: r.lost,
     };
     let geo = Geo {
         at: replay.at,

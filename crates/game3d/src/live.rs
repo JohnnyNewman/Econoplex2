@@ -283,6 +283,11 @@ impl LiveSim {
         let s = self.shared.lock().unwrap();
         (s.speed, s.paused)
     }
+
+    /// Pause the simulation, and with it a live battle (for a screenshot).
+    pub fn pause(&self) {
+        self.shared.lock().unwrap().paused = true;
+    }
 }
 
 /// Battle seconds per real second while the player fights a battle.

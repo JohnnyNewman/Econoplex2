@@ -13,8 +13,8 @@
         (id: "fishing_water",  name: "Fishing water",  regrowth: 3.0, capacity: 40.0),
     ],
     skills: [
-        (id: "hunting", name: "Hunting", domain: "foraging"),
-        (id: "fishing", name: "Fishing", domain: "foraging"),
+        (id: "hunting", name: "Hunting", worker: "hunter", domain: "foraging"),
+        (id: "fishing", name: "Fishing", worker: "fisher", domain: "foraging"),
     ],
     products: [
         (id: "meat", name: "Game meat", category: Food, base_price: 2.0, food: 0.8),

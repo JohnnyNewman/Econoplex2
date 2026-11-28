@@ -92,6 +92,7 @@ the end of this note).
 | Armies on the move: soldiers walk to their squad's goal in dark red, captives apart | crowd.rs | partial (group 1): soldiers are red and captives grey; no flag at the squad's goal yet | S | Draw a squad's goal as a small flag. |
 | Battle replays beside the defending town | battles.rs | same (blocks per squad, 2D battles.rs) | | |
 | Replays of battles fought on the soldier model: a figure per soldier, walking from frame to frame (`Replay::soldiers_at`) | battles.rs (`play_battles`) | same: zoomed in, a dot per soldier, as for a live battle; zoomed out, blocks (battles.rs `draw_battles`) | | |
+| The price of a battle (war-ideas.md, idea 2): the soldier under the pointer, live or in a replay, as a person ("Mara, baker, 3 battles"), and a ticker of each side's losses by trade and the week's work lost (`battle::price`); a staged `--battle` is fought by the town's people and its neighbour's (`stage_fighters`) | battle_price.rs, battle_input.rs (the live tip, through `rts::inspect`), battles.rs (`stage_battle`) | same: battle_price.rs (a tip over replays, the ticker at the foot of the screen), battle_input.rs (the live tip), battles.rs (`stage_battle`) | | |
 | `--battle LINEUP` stages a line-up beside a town; `--set PATH=VALUE` changes models.ron for the run (e.g. `battle.model=Soldiers`) | main.rs, battles.rs (`stage_battle`) | same: beside the player's town, the camera starting on its field (main.rs, autorun.rs, battles.rs `stage_battle`) | | |
 
 ### Town information

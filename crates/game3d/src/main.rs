@@ -41,6 +41,7 @@ use std::path::PathBuf;
 
 mod bake;
 mod battle_input;
+mod battle_price;
 mod battles;
 mod bloom;
 mod buildings;
@@ -89,6 +90,9 @@ struct Args {
     /// and the battle settings from models.ron it is fought with.
     battle: Option<String>,
     battle_params: sim_core::battle::BattleParams,
+    /// The staged battle's soldiers as people of the focus town and its
+    /// neighbour, and the neighbour (`stage_fighters`).
+    battle_people: (Vec<Vec<sim_core::battle::Fighter>>, Option<u16>),
 }
 
 /// Bevy's asset plugin, pointed at `crates/game3d/assets` (shaders), so the
@@ -143,6 +147,7 @@ fn main() {
         sets: Vec::new(),
         battle: None,
         battle_params: Default::default(),
+        battle_people: (Vec::new(), None),
     };
     let (mut shot, mut hour, mut view, mut playground, mut face_sun) =
         (None, None, None, false, false);
@@ -330,6 +335,10 @@ fn main() {
     for _ in 0..days {
         sim.step();
     }
+    if let Some(Ok((_, specs))) = args.battle.as_deref().map(sim_core::battle::parse_lineup) {
+        args.battle_people =
+            sim_core::systems::military::stage_fighters(&sim.world, &specs, args.focus_town);
+    }
     let space = sim_core::view::ProductSpace::new(sim.world.resource::<sim_core::Db>());
     let live = live::LiveSim::start(sim, speed, paused);
     // `--select ID`: start with this person selected (inspect.rs).
@@ -409,6 +418,7 @@ fn main() {
         grading::GradingPlugin,
         battles::BattlesPlugin,
         battle_input::BattleInputPlugin,
+        battle_price::BattlePricePlugin,
     ))
     .insert_resource(battle_input::BattleControls::new(rts_demo))
     .insert_resource(env_override)
@@ -817,6 +827,9 @@ fn shoot(
             for mut cam in &mut cameras {
                 battles::look_at_field(&mut cam, &v, &world.terrain, 20.0);
             }
+            // The battle steps on the simulation's thread: hold it there too,
+            // or it is over (and the next one may wait) by the shot.
+            live.pause();
         }
         time.pause();
     }

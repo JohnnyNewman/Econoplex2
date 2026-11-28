@@ -2,7 +2,7 @@
 // A building's `slots` (in 00_core.ron) is how many people can work in it at once.
 (
     skills: [
-        (id: "construction", name: "Construction", domain: "construction", prereqs: ["carpentry"]),
+        (id: "construction", name: "Construction", worker: "builder", domain: "construction", prereqs: ["carpentry"]),
     ],
     recipes: [
         (id: "build_workshop", name: "Build workshop", skill: "construction", difficulty: 0.30,

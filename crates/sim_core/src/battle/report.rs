@@ -155,7 +155,7 @@ impl FrameSoldier {
 }
 
 /// A fought battle, for the views to play back where it happened.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Replay {
     /// The town fought over, and the map position of the field's centre.
     pub town: u16,
@@ -168,6 +168,17 @@ pub struct Replay {
     pub squads: Vec<ReplaySquad>,
     pub frames: Vec<ReplayFrame>,
     pub winner: Option<u8>,
+    /// Each squad's members as people, in member order (`price.rs`); empty
+    /// for a battle of nobody in particular (a line-up).
+    #[serde(default)]
+    pub people: Vec<Vec<Fighter>>,
+    /// The raiding town, if the attackers have one.
+    #[serde(default)]
+    pub attacker: Option<u16>,
+    /// For each member lost to their town (dead or taken), the battle time
+    /// they fell; `None` for those who came through. By squad, member order.
+    #[serde(default)]
+    pub lost: Vec<Vec<Option<f32>>>,
 }
 
 impl Replay {
@@ -272,6 +283,18 @@ pub struct LiveView {
     pub deploying: bool,
     pub finished: bool,
     pub winner: Option<u8>,
+    /// Each squad's members as people, in member order (`price.rs`; set by
+    /// the war system, empty for a line-up).
+    #[serde(default)]
+    pub people: Vec<Vec<Fighter>>,
+    /// The raiding town, if the attackers have one.
+    #[serde(default)]
+    pub attacker: Option<u16>,
+    /// By squad: while the battle goes on, each member out of the fight
+    /// (down or taken: who of the down will die is rolled at the end);
+    /// once it is over, each lost to their town (`Battle::lost`).
+    #[serde(default)]
+    pub lost: Vec<Vec<bool>>,
 }
 
 /// How a soldier is, as the clients draw them.
@@ -292,6 +315,23 @@ pub enum FighterState {
 pub struct BattleLog {
     pub replays: std::collections::VecDeque<Replay>,
     pub total: usize,
+    /// What every battle fought cost each side, oldest first.
+    pub costs: Vec<Cost>,
+}
+
+/// What one battle cost: where and when it was fought, who won, and each
+/// side's losses (`price.rs`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Cost {
+    /// `SimClock::tick` (simulated days) it was fought on.
+    pub day: u64,
+    pub attacker: u16,
+    /// The town fought over.
+    pub town: u16,
+    pub winner: Option<u8>,
+    /// How many fought on each side.
+    pub fought: [u32; 2],
+    pub losses: [Losses; 2],
 }
 
 impl BattleLog {

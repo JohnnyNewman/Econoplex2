@@ -1,10 +1,10 @@
 // Forestry and woodworking: wood, planks, hilts and charcoal.
 (
     skills: [
-        (id: "woodcutting",      name: "Woodcutting",      domain: "forestry"),
-        (id: "charcoal_burning", name: "Charcoal burning", domain: "forestry",    prereqs: ["woodcutting"]),
-        (id: "carpentry",        name: "Carpentry",        domain: "woodworking", prereqs: ["woodcutting"]),
-        (id: "hilt_making",      name: "Hilt making",      domain: "woodworking", prereqs: ["carpentry"]),
+        (id: "woodcutting",      name: "Woodcutting", worker: "woodcutter",      domain: "forestry"),
+        (id: "charcoal_burning", name: "Charcoal burning", worker: "charcoal burner", domain: "forestry",    prereqs: ["woodcutting"]),
+        (id: "carpentry",        name: "Carpentry", worker: "carpenter",        domain: "woodworking", prereqs: ["woodcutting"]),
+        (id: "hilt_making",      name: "Hilt making", worker: "hilt maker",      domain: "woodworking", prereqs: ["carpentry"]),
     ],
     products: [
         (id: "wood",     name: "Wood",     category: Raw,      base_price: 1.0, price_class: Some(Essential),
