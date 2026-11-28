@@ -51,9 +51,12 @@ Every soldier is a person with a trade. Clicking one shows, for example,
     trade is a "soldier". The battles they have fought are counted per
     person (`AgentStore::battles`, save version 18), this one included.
   - **What a fighter's week is worth.** Seven days of the value a
-    worker-day at their job adds in their town: outputs less inputs at
-    today's prices, at a typical worker's success rate. It is given in
-    loaves at the town's price of bread.
+    worker-day at their job adds: outputs less inputs, at a typical
+    worker's success rate. It is given in loaves. Everything is valued at
+    the goods' base prices, not at the town's. A town's prices swing too
+    far: with iron capped at five times its base and bread at a quarter of
+    its base, one herder and one smelter came to 380 loaves a week. At base
+    prices a smelter's week is about 10 loaves, a baker's 12, a farmer's 6.
   - **Who counts as lost.** The dead of the battle and the taken. The
     wounded who live go back to work. Who of the downed dies is only rolled
     at the end, so while a live battle goes on its ticker counts everyone

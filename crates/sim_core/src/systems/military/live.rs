@@ -55,7 +55,7 @@ pub(super) fn prepare_live_battle(
         return None;
     };
     defenders.extend(militia);
-    let people = fighters(store, db, towns, params, &groups);
+    let people = fighters(store, db, params, &groups);
     Some(LiveBattle {
         battle: *battle,
         groups,
