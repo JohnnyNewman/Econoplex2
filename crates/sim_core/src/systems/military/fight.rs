@@ -102,7 +102,6 @@ pub(super) fn battle(
     ];
     let (won, fallen_a, fallen_d, fought) = field_battle(
         store,
-        towns,
         db,
         params,
         fight,
@@ -350,7 +349,6 @@ struct Record<'a> {
 #[allow(clippy::too_many_arguments)]
 fn field_battle(
     store: &mut AgentStore,
-    towns: &Towns,
     db: &Db,
     params: &Params,
     fight: &CapVec,
@@ -381,7 +379,7 @@ fn field_battle(
             attacker,
             day,
         }) => {
-            let people = fighters(store, db, towns, params, &groups);
+            let people = fighters(store, db, params, &groups);
             let r = b.record(5.0);
             log.costs
                 .push(cost(&b, &people, day, attacker, town as usize));

@@ -10,7 +10,7 @@ const WEEK: f32 = 7.0;
 /// Person `i` as a battle's member: name, trade, battles fought (this one
 /// included: `store.battles` counts those before it) and the week's work
 /// their town would lose with them.
-pub fn fighter(store: &AgentStore, db: &Db, towns: &Towns, params: &Params, i: u32) -> Fighter {
+pub fn fighter(store: &AgentStore, db: &Db, params: &Params, i: u32) -> Fighter {
     let k = i as usize;
     let recipe = store.last_recipe[k].map(|r| r as usize);
     let trade = recipe
@@ -25,10 +25,7 @@ pub fn fighter(store: &AgentStore, db: &Db, towns: &Towns, params: &Params, i: u
                 }
             },
         );
-    let weekly = match (recipe, towns.0.get(store.town[k] as usize)) {
-        (Some(r), Some(town)) => WEEK * day_in_loaves(town, db, params, r),
-        _ => 0.0,
-    };
+    let weekly = recipe.map_or(0.0, |r| WEEK * day_in_loaves(db, params, r));
     Fighter {
         id: i,
         name: crate::names::given(i, store.female[k]).to_string(),
@@ -38,15 +35,18 @@ pub fn fighter(store: &AgentStore, db: &Db, towns: &Towns, params: &Params, i: u
     }
 }
 
-/// What a worker-day at recipe `r` makes in `town`, in loaves of bread: the
-/// value one run adds (outputs less inputs at the town's prices) at a
-/// typical worker's success rate, over the days one worker needs for it and
-/// the price of bread there. Without bread in the content, in coin.
-pub fn day_in_loaves(town: &crate::world::Town, db: &Db, params: &Params, r: usize) -> f32 {
+/// What a worker-day at recipe `r` makes, in loaves of bread: the value one
+/// run adds (outputs less inputs) at a typical worker's success rate, over
+/// the days one worker needs for it, all at the goods' base prices. Base
+/// prices, not a town's: a town's prices swing far from them (iron capped at
+/// five times its base where it is short, bread at a quarter of its base in
+/// a glut), and the price of a loss should not swing with them. Without
+/// bread in the content, in coin.
+pub fn day_in_loaves(db: &Db, params: &Params, r: usize) -> f32 {
     let m = &db.recipes[r];
     let value = |list: &[(u32, f32)]| -> f32 {
         list.iter()
-            .map(|&(p, q)| town.price.get(p as usize).copied().unwrap_or(0.0) * q)
+            .map(|&(p, q)| db.base_price.get(p as usize).copied().unwrap_or(0.0) * q)
             .sum()
     };
     let added = (value(&m.outputs) - value(&m.inputs)).max(0.0)
@@ -57,7 +57,7 @@ pub fn day_in_loaves(town: &crate::world::Town, db: &Db, params: &Params, r: usi
         .products
         .iter()
         .position(|p| p.id == "bread")
-        .and_then(|b| town.price.get(b).copied())
+        .and_then(|b| db.base_price.get(b).copied())
         .filter(|&p| p > 0.0)
         .unwrap_or(1.0);
     added / bread
@@ -67,7 +67,6 @@ pub fn day_in_loaves(town: &crate::world::Town, db: &Db, params: &Params, r: usi
 pub(super) fn fighters(
     store: &AgentStore,
     db: &Db,
-    towns: &Towns,
     params: &Params,
     groups: &[(u8, Vec<u32>)],
 ) -> Vec<Vec<Fighter>> {
@@ -76,7 +75,7 @@ pub(super) fn fighters(
         .map(|(_, people)| {
             people
                 .iter()
-                .map(|&i| fighter(store, db, towns, params, i))
+                .map(|&i| fighter(store, db, params, i))
                 .collect()
         })
         .collect()
@@ -172,7 +171,7 @@ pub fn stage_fighters(
                 .map(|_| {
                     let i = pool[next[s] % pool.len()];
                     next[s] += 1;
-                    fighter(store, db, towns, params, i)
+                    fighter(store, db, params, i)
                 })
                 .collect()
         })
