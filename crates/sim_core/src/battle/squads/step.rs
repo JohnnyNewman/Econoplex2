@@ -14,9 +14,18 @@ impl SquadBattle {
         let alive0: Vec<usize> = self.squads.iter().map(Squad::alive).collect();
         let mut flanked = vec![false; n];
 
-        // 1. Move, by order or by the squad's own judgment.
+        // 1. Move, by order or by the squad's own judgment: every squad from
+        // where all stood as the step began, so the order squads are listed
+        // in decides nothing (a line arriving a step before the enemy's
+        // would find it standing, braced against its charge).
+        let start: Vec<(f32, f32)> = self.squads.iter().map(|s| s.spec.pos).collect();
+        let mut moved = start.clone();
         for i in 0..n {
             self.move_squad(i);
+            moved[i] = std::mem::replace(&mut self.squads[i].spec.pos, start[i]);
+        }
+        for (s, &to) in self.squads.iter_mut().zip(&moved) {
+            s.spec.pos = to;
         }
 
         // 2. Contacts, and charges where a contact is new.

@@ -1251,6 +1251,73 @@ The town gains less (−5% against −11%): its extra time is the fighting in
 the streets and the obstacle queries, which these changes do not touch.
 A town battle still costs about twice the open one.
 
+## Deep line-ups
+
+A `--battle` side with more squads than fit across the field (seven
+rows of 50 m on the 350 m field) stands in several lines. They stood
+30 m apart, so the yardstick's eight lines a side (50 squads of 40)
+reached 210 m behind each side's first line. On the 600 m field that put
+the attackers' last five lines, and the defenders' last two, off the field.
+The attackers had more men off the field and further back, and lost
+every deep mirror: on main
+(40 seeds), 50 squads a side went 0 / 40 on both models, and 30 squads a
+side went 0 / 40 on squads and 6 / 34 on soldiers.
+
+`parse_lineup` now places squads in two passes:
+
+- First it reads every squad, its line and its depth: `count / 40` ranks
+  of a 40 m front, at 1 m a rank, or 2 m mounted.
+- Then the lines go `LINE_GAP` (30 m) apart, or as close as the side with
+  less room needs to keep its last line 5 m in from its edge, whichever is
+  smaller. The gap is never less than the deepest squad plus 5 m. Both
+  sides use the same gap, so a mirror is a mirror. When even that gap does
+  not fit, the field is made longer (the attackers' first line stays at
+  15% of its length, the defenders' at 75%). A town or a wall is then
+  placed on the field of that length.
+
+Line-ups of one line, and those whose lines fit 30 m apart, stand exactly
+where they did. The matchup table is unchanged. The yardstick's lines now
+stand 14 m apart: the attackers at 6 to 90 m, the defenders at 450 to
+534 m.
+
+**The squad model's moves are now simultaneous.** Its step moved squads
+one after another, each from where the squads before it had already
+moved. When two lines closed, the squad listed first (an attacker's)
+arrived a step earlier and found its foe standing. A standing foe with
+equal reach is braced against a charge, so the defenders won the
+counter-charge. Every squad now moves from where all of them stood as the
+step began, so the order in which they are listed decides nothing.
+
+Mirrors now, wins as attackers / defenders, with the seeds in brackets.
+Before the change, levy mirrors went 0 / 100 on squads even at 9 squads a
+side.
+
+| Mirror | Squads | Soldiers |
+| --- | --- | --- |
+| 50 × `swordsmen*40` (100) | 42 / 58 | 48 / 52 |
+| 30 × `swordsmen*40` (100) | 49 / 51 | 55 / 45 |
+| 20 × `swordsmen*40` (100) | 50 / 50 | 48 / 52 |
+| 9 × `swordsmen*40` (100) | 50 / 50 | 55 / 45 |
+| 30 × `spearmen*40` (100) | 45 / 55 | 51 / 49 |
+| 40 × `levy*40` (100) | 41 / 59 | 43 / 57 |
+| 20 × `levy*40` (100) | 49 / 51 | 52 / 48 |
+| 30 × `cavalry*40` (60) | 29 / 31 | 30 / 30 |
+| 30 × `archers*40` (60) | 27 / 33 | 29 / 24 |
+
+Losses agree within 2% in every row. At 100 seeds one standard deviation
+is 5 wins, so every row is within two of even.
+
+**The yardstick costs more at its start.** All 4,000 men now reach the
+fight, and sooner: the battle lasts 690 s, not 410. The budget test
+(three runs, best of three each, on one core at a load of 7 to 10) gives
+0.73 to 0.82 ms per battle second over the whole battle, within budget.
+Its first 400 s, where the yardstick gave 0.71 to 0.75 when most of the
+rear lines stood off the field, now cost 1.26 to 1.30, and the town 2.08
+to 2.11 (1.7 times the open battle, within the test's limit of three).
+So a live battle of 4,000 soldiers is over the 1 ms budget while both
+armies are engaged. The budget was set on a yardstick that, as it turned
+out, never had all of them fighting at once.
+
 ## Open questions
 
 - Should auto-resolved raids ever use the soldier model, or only battles the
