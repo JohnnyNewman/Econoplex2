@@ -6,7 +6,7 @@
 // wagon; candles for tallow from the food batch.
 (
     skills: [
-        (id: "coopering", name: "Coopering", domain: "woodworking", prereqs: ["carpentry"]),
+        (id: "coopering", name: "Coopering", worker: "cooper", domain: "woodworking", prereqs: ["carpentry"]),
     ],
     products: [
         // A home's tables, beds and chests: a comfort that lasts for years.

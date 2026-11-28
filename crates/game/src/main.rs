@@ -16,6 +16,7 @@
 
 mod autorun;
 mod battle_input;
+mod battle_price;
 mod battles;
 mod economy_ui;
 mod hud;
@@ -200,6 +201,7 @@ fn main() {
                 live_battle::spawn_battle_panel,
                 battle_input::spawn_controls_tip,
                 battle_input::spawn_overlay_legend,
+                battle_price::spawn_price,
             ),
         )
         .add_systems(
@@ -270,6 +272,7 @@ fn main() {
                 battle_input::draw_battle_controls.after(live_battle::draw_live_battle),
                 battle_input::update_controls_tip,
                 battle_input::update_overlay_legend,
+                battle_price::update_price,
                 live_battle::fold_panels,
                 live_battle::battle_buttons,
                 live_battle::update_battle_panel.after(live_battle::battle_buttons),

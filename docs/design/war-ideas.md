@@ -44,6 +44,28 @@ Every soldier is a person with a trade. Clicking one shows, for example,
 - **Builds on:** members' ids, skills and jobs, and the town's production per
   worker.
 - **Size:** small.
+- **Built** (`battle/price.rs`, `systems/military/price.rs`):
+  - **The person.** A name follows from their index in the agent store
+    (`names.rs`). Their trade is the worker of their last job's skill
+    (`SkillDef::worker`: baking gives "baker"); someone who never worked a
+    trade is a "soldier". The battles they have fought are counted per
+    person (`AgentStore::battles`, save version 18), this one included.
+  - **What a fighter's week is worth.** Seven days of the value a
+    worker-day at their job adds in their town: outputs less inputs at
+    today's prices, at a typical worker's success rate. It is given in
+    loaves at the town's price of bread.
+  - **Who counts as lost.** The dead of the battle and the taken. The
+    wounded who live go back to work. Who of the downed dies is only rolled
+    at the end, so while a live battle goes on its ticker counts everyone
+    out of the fight ("fallen: ..."), and once it is over the dead and the
+    taken ("lost: ..."). A replay knows the end, so its ticker counts each
+    of the lost from the moment they fell (`Replay::lost`).
+  - **In both clients.** The soldier tip names the person first, in a live
+    battle and in a replay: on the squad model, the first of the squad
+    under the pointer who is still fighting. A ticker at the foot of the
+    screen gives each side's losses.
+  - **In `econoplex-sim`.** A run ends with the newest battles' costs and
+    each town's losses over the run (`BattleLog::costs`).
 
 ## 3. Loot the field
 

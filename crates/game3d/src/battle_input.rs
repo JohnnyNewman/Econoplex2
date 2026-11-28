@@ -143,7 +143,7 @@ const DIGITS: [KeyCode; 9] = [
 
 /// Where a ray from the camera meets the ground: a few steps between the
 /// ray and the terrain's height under it.
-fn ray_ground(ray: Ray3d, t: &sim_core::terrain::Terrain, h0: f32) -> Option<Vec3> {
+pub(crate) fn ray_ground(ray: Ray3d, t: &sim_core::terrain::Terrain, h0: f32) -> Option<Vec3> {
     let d = *ray.direction;
     if d.y > -1e-4 {
         return None;

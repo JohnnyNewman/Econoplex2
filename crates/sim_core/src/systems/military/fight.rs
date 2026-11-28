@@ -73,6 +73,7 @@ pub(super) fn battle(
     terrain: &crate::terrain::Terrain,
     rng: &mut ChaCha8Rng,
     log: Option<&mut crate::battle::BattleLog>,
+    now: u64,
 ) -> Vec<u32> {
     let mp = &params.military;
     let loyalty = params.trust.loyalty;
@@ -101,6 +102,7 @@ pub(super) fn battle(
     ];
     let (won, fallen_a, fallen_d, fought) = field_battle(
         store,
+        towns,
         db,
         params,
         fight,
@@ -116,6 +118,8 @@ pub(super) fn battle(
             town: d as u16,
             at,
             facing,
+            attacker,
+            day: now,
         }),
     );
     // Runners taken prisoner go to the winners (a doctrine of capture).
@@ -337,6 +341,9 @@ struct Record<'a> {
     town: u16,
     at: (f32, f32),
     facing: (f32, f32),
+    /// The raiding town, and the day, for the battle's cost.
+    attacker: usize,
+    day: u64,
 }
 
 /// A raid's fight as squads on a field (`battle.rs`): each side's people are
@@ -347,6 +354,7 @@ struct Record<'a> {
 #[allow(clippy::too_many_arguments)]
 fn field_battle(
     store: &mut AgentStore,
+    towns: &Towns,
     db: &Db,
     params: &Params,
     fight: &CapVec,
@@ -374,20 +382,28 @@ fn field_battle(
             town,
             at,
             facing,
+            attacker,
+            day,
         }) => {
             let walls = b.replay_walls();
-            let (report, squads, frames) = b.run_recorded(5.0);
+            let people = fighters(store, db, towns, params, &groups);
+            let r = b.record(5.0);
+            log.costs
+                .push(cost(&b, &people, day, attacker, town as usize));
             log.push(crate::battle::Replay {
                 town,
                 at,
                 facing,
                 field: size,
-                squads,
-                frames,
-                winner: report.winner,
+                squads: r.squads,
+                frames: r.frames,
+                winner: r.report.winner,
+                people,
+                attacker: Some(attacker as u16),
+                lost: r.lost,
                 walls,
             });
-            report
+            r.report
         }
         None => b.run(),
     };
@@ -594,6 +610,7 @@ pub(super) fn settle_field_battle(
     b: &crate::battle::Battle,
     groups: &[(u8, Vec<u32>)],
 ) -> (u32, u32) {
+    count_battle(store, groups);
     let mut fallen = [0u32; 2];
     for (g, (side, people)) in groups.iter().enumerate() {
         for (m_index, (m, &i)) in b.members(g).iter().zip(people).enumerate() {

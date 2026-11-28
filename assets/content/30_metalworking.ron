@@ -5,15 +5,15 @@
 //   Level 3: ... -> make steel -> forge steel blade -> temper -> grind -> assemble
 (
     skills: [
-        (id: "mining",        name: "Mining",        domain: "mining"),
-        (id: "smelting",      name: "Smelting",      domain: "metallurgy", prereqs: ["mining", "charcoal_burning"]),
-        (id: "steelmaking",   name: "Steelmaking",   domain: "metallurgy", prereqs: ["smelting"]),
-        (id: "smithing",      name: "Smithing",      domain: "smithing",   prereqs: ["smelting"]),
-        (id: "toolmaking",    name: "Toolmaking",    domain: "smithing",   prereqs: ["smithing", "carpentry"]),
-        (id: "bladesmithing", name: "Bladesmithing", domain: "smithing",   prereqs: ["smithing"]),
-        (id: "tempering",     name: "Tempering",     domain: "smithing",   prereqs: ["bladesmithing", "steelmaking"]),
-        (id: "grinding",      name: "Grinding",      domain: "smithing",   prereqs: ["bladesmithing"]),
-        (id: "sword_assembly", name: "Sword assembly", domain: "smithing", prereqs: ["bladesmithing", "hilt_making"]),
+        (id: "mining",        name: "Mining", worker: "miner",        domain: "mining"),
+        (id: "smelting",      name: "Smelting", worker: "smelter",      domain: "metallurgy", prereqs: ["mining", "charcoal_burning"]),
+        (id: "steelmaking",   name: "Steelmaking", worker: "steelmaker",   domain: "metallurgy", prereqs: ["smelting"]),
+        (id: "smithing",      name: "Smithing", worker: "smith",      domain: "smithing",   prereqs: ["smelting"]),
+        (id: "toolmaking",    name: "Toolmaking", worker: "toolsmith",    domain: "smithing",   prereqs: ["smithing", "carpentry"]),
+        (id: "bladesmithing", name: "Bladesmithing", worker: "bladesmith", domain: "smithing",   prereqs: ["smithing"]),
+        (id: "tempering",     name: "Tempering", worker: "temperer",     domain: "smithing",   prereqs: ["bladesmithing", "steelmaking"]),
+        (id: "grinding",      name: "Grinding", worker: "grinder",      domain: "smithing",   prereqs: ["bladesmithing"]),
+        (id: "sword_assembly", name: "Sword assembly", worker: "swordsmith", domain: "smithing", prereqs: ["bladesmithing", "hilt_making"]),
     ],
     products: [
         (id: "ore",   name: "Iron ore", category: Raw,      base_price: 1.5),

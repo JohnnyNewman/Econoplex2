@@ -55,9 +55,11 @@ pub(super) fn prepare_live_battle(
         return None;
     };
     defenders.extend(militia);
+    let people = fighters(store, db, towns, params, &groups);
     Some(LiveBattle {
         battle: *battle,
         groups,
+        people,
         attacker,
         target: d,
         defenders,
@@ -77,6 +79,8 @@ pub fn live_battle_view(world: &World) -> Option<crate::battle::LiveView> {
         .battle
         .live_view(live.target as u16, live.at, live.facing, live.player_side);
     v.deploying = !live.started;
+    v.people = live.people.clone();
+    v.attacker = Some(live.attacker as u16);
     Some(v)
 }
 

@@ -20,11 +20,13 @@ mod fight;
 mod kit;
 mod live;
 mod planner;
+mod price;
 
 use fight::*;
 pub use kit::*;
 pub use live::*;
 use planner::*;
+pub use price::*;
 
 use super::migrate::relocate;
 use super::streams;
@@ -286,6 +288,10 @@ pub fn military(
             if done {
                 let live = links.pending.as_mut().and_then(|p| p.0.take()).unwrap();
                 let (fallen_a, fallen_d) = settle_field_battle(store, &live.battle, &live.groups);
+                if let Some(log) = links.battle_log.as_deref_mut() {
+                    log.costs
+                        .push(cost(&live.battle, &live.people, now, t, live.target));
+                }
                 take_prisoners(
                     &mut commands,
                     &mut raid,
@@ -362,6 +368,7 @@ pub fn military(
                 &terrain,
                 &mut rng,
                 links.battle_log.as_deref_mut(),
+                now,
             );
             // A battle wears everyone's kit; what breaks is gone.
             wear_kit(&mut commands, store, &mut kit, &fought, mp.battle_hours);
@@ -651,6 +658,8 @@ pub struct LiveBattle {
     pub battle: crate::battle::Battle,
     /// Each squad's side and people.
     groups: Vec<(u8, Vec<u32>)>,
+    /// The same people as fighters (`battle::price`).
+    pub people: Vec<Vec<crate::battle::Fighter>>,
     pub attacker: usize,
     pub target: usize,
     defenders: Vec<u32>,

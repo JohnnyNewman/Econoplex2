@@ -8,8 +8,8 @@
 // they compete with the smiths for iron. Minters take whichever pays best.
 (
     skills: [
-        (id: "assaying", name: "Assaying", domain: "metallurgy", prereqs: ["smelting"]),
-        (id: "coining",  name: "Coining",  domain: "smithing",   prereqs: ["smithing", "assaying"]),
+        (id: "assaying", name: "Assaying", worker: "assayer", domain: "metallurgy", prereqs: ["smelting"]),
+        (id: "coining",  name: "Coining", worker: "coiner",  domain: "smithing",   prereqs: ["smithing", "assaying"]),
     ],
     products: [
         (id: "silver_ore", name: "Silver ore", category: Raw,      base_price: 4.0),

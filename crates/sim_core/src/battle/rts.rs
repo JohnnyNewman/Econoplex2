@@ -696,7 +696,14 @@ pub fn inspect(v: &LiveView, mine: &[usize], at: (f32, f32)) -> Option<String> {
         let k = v.sheets.get(q)?.iter().position(|s| s.hp > 0)?;
         Some((q, k))
     });
-    let sheet = soldier.and_then(|(q, k)| soldier_words(v, q, k));
+    // The person first: "Mara, baker, 3 battles" (`price.rs`).
+    let sheet = soldier.and_then(|(q, k)| {
+        let sheet = soldier_words(v, q, k)?;
+        Some(match v.fighter_words(q, k) {
+            Some(who) => format!("{who}\n{sheet}"),
+            None => sheet,
+        })
+    });
     let hint = squad
         .filter(|&e| v.squads[e].side != v.player_side)
         .and_then(|e| hint(v, mine, e));
@@ -1257,6 +1264,27 @@ mod tests {
         assert_eq!(soldier_at(&v, (x + 0.2, y), 1.0), Some((3, 5)));
         let words = inspect(&v, &[], (x, y)).unwrap();
         assert!(words.contains("1d6+1 piercing"), "{words}");
+        // A battle of people names the soldier first.
+        let mut v = v;
+        v.people = v
+            .squads
+            .iter()
+            .map(|q| {
+                (0..q.start)
+                    .map(|k| Fighter {
+                        name: format!("Mara{k}"),
+                        trade: "baker".into(),
+                        battles: 3,
+                        ..Default::default()
+                    })
+                    .collect()
+            })
+            .collect();
+        let words = inspect(&v, &[], (x, y)).unwrap();
+        assert!(
+            words.starts_with("Mara5, baker, 3 battles\na soldier of"),
+            "{words}"
+        );
     }
 
     #[test]
