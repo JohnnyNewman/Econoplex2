@@ -1466,6 +1466,137 @@ So a live battle of 4,000 soldiers is over the 1 ms budget while both
 armies are engaged. The budget was set on a yardstick that, as it turned
 out, never had all of them fighting at once.
 
+## The engaged phase
+
+With every line on the field (see "Deep line-ups"), the yardstick's first
+400 battle seconds are the part a player watches: the armies march, meet
+and the first squads break. The targets for it:
+
+| | Target | Holds? |
+| --- | --- | --- |
+| First 400 s, one core | ≤ 1.5 ms per battle second | yes: 0.95 to 1.17 |
+| First 400 s, four threads | ≤ 1 ms per battle second | no: 1.14 to 1.20 here |
+| Town, one core | ≤ 2 × open | no: 1.7 to 2.1 × here |
+
+`engaged_phase_within_budget` in `sim_core/tests/battle_budget.rs` asserts
+the first; the town stays at three times open there, as before.
+`engaged_phase_targets` holds the other two and is ignored until they
+hold (`cargo test --release --test battle_budget -- --ignored`). All
+figures below are on the shared 4-core machine this was written on, at
+loads of 5 to 10, the best of three or more runs.
+
+**The 400 s average hides a peak.** Ten battle seconds at a time, on one
+core (ms per battle second, before the changes below):
+
+| Battle time | Squads fighting | Cost |
+| --- | --- | --- |
+| 10 to 120 s, the march | 100 | 0.6 to 1.1 |
+| 130 s, first contact | 100 | 1.9 |
+| 140 to 180 s, the melee | 87 to 61 | 3.7 to 4.6 |
+| 200 s | 52 | 2.3 |
+| 300 s | 24 | 0.8 |
+| after 400 s | 17 | 0.2 to 0.3 |
+
+So the dearest ten seconds cost three to four times the average, and the
+budget test prints them ("dearest 10 s").
+
+**What the melee costs.** At 160 s, 2,088 of the soldiers are engaged. In
+one substep they cost about 480 ns each, 1.0 of that substep's 1.2 ms. A
+formed soldier at rest costs 50 ns, a runner 40 to 60. Phases 3 and 4
+(soldiers and blows) are four fifths of the melee's time. Most of that is
+the two grid searches:
+
+- the search for foes, up to 4.4 m round the front rank: 2,517 a substep,
+  each reading 40 soldiers and keeping 11;
+- the search for friends to push off, 0.8 m: 2,648 a substep, each reading
+  19 and keeping 3.
+
+So most of the soldiers a search reads stand further than it wants, and
+the 4 m cells are coarse for a 0.8 m search.
+
+**What changed.** None of it changes a result. The fingerprints of nine
+line-ups, two seeds each, and the yardstick, open and in a town, on one
+thread and four, are the same before and after: positions, morale, every
+member and the report.
+
+- The grid keeps its soldiers' places as two columns, across and down, and
+  `Grid::each_within` works out the distances of eight soldiers at a time
+  into a mask, without a branch (the columns are padded by eight, so every
+  row goes eight at a time). The search's callback is called only for the
+  soldiers the mask keeps. "Death, initiative and headroom" tried a vectorised filter
+  on the old yardstick and dropped it, because most soldiers were in range.
+  In the melee most are not.
+- The callback returns the bound for the soldiers after it. The search for
+  foes needs nobody further than the nearest picked so far, unless they
+  are close enough to push, so its bound shrinks once it has a target.
+- That search reads a foe's soldier record (body and state) only when they
+  are close enough to touch (their body and the widest of the enemy's) or
+  nearer than the nearest so far.
+
+Instructions on one thread (callgrind):
+
+| | Before | After | |
+| --- | --- | --- | --- |
+| first 400 s | 4.63 G | 4.32 G | −7% |
+| the melee, 130 to 200 s | 1.89 G | 1.61 G | −15% |
+| town, first 400 s | 6.56 G | 6.19 G | −6% |
+
+Time on one core, before and after, interleaved: the melee 2.75 to 2.34 ms
+per battle second (−15%); the first 400 s 1.25 to 1.15 (−8%); the town's
+2.08 to 2.00 (−4%). The branches saved show in the time, not in the
+instruction counts: at a quieter moment the melee went from 3.59 to 2.67
+(−26%).
+
+**Threads.** Phases 3 and 4 already run in parallel from 2,048 soldiers.
+Here they scale poorly: over the first 400 s, 0.81 ms per battle second on
+one thread and 0.61 on four, timed only while other processes used under
+a third of a core. The whole substep went from 1.20 to 1.14. A bare rayon
+loop over 4,000 items shows why. A region of 130 to 170 µs of work, about
+a substep's phase 3 and 4, takes 63 to 70 µs on four threads, half its time,
+not a quarter. A region of 11 ms takes 3.5 ms. So on this virtual machine
+each fork-join costs tens of microseconds, and a substep has a quarter
+second's work for it.
+
+Tried and dropped, all bit-identical:
+
+- the two sides' grids built on two threads (`rayon::join`): the grid phase
+  went from 0.15 to 0.38 ms per battle second on four threads;
+- phase 5 squad by squad on all threads (each squad's soldiers stand in a
+  row, and only write their own squad): phase 5 went from 0.26 to 0.19, but
+  phase 6 from 0.075 to 0.11 (the soldiers' records now sit in other cores'
+  caches), so nothing gained;
+- chunks of 64 soldiers in phases 3 and 4 instead of 256: no difference
+  to measure.
+
+**The town.** Over the first 400 s a town costs 1.7 to 2.1 times open on
+one core, but only 1.4 times as many instructions. The difference is the
+obstacle queries' memory: `Nav::resolve` for everyone near a house in phase
+5, the runners' `home_dir`, and `clear_slot` and `steer` in phase 3. Phase
+3 costs 1.3 to 1.7 ms per battle second in the town against 0.7 to 0.8 in
+the open, and phase 5 0.4 to 0.5 against 0.17 to 0.2. That is the walls
+and towns work's code (`nav.rs`), changing as this was written, so it is
+left until that lands.
+
+**Options for the melee**, which no target holds on one core (2.3 to 3.8
+ms per battle second):
+
+1. Count it against four threads, measured on a player's machine rather
+   than a shared virtual one. Phases 3 and 4, three quarters of the melee,
+   are parallel already. A region of 900 µs, the melee's, should scale far
+   better than the average substep's.
+2. Fork once per battle second, not once per substep: keep the workers in
+   a scope for the second's four substeps, waiting between phases on a
+   barrier that spins. That removes the wake-up the virtual machine pays per
+   substep, and changes no result. But it is fragile when the machine has
+   fewer free cores than threads.
+3. Make the grid's cells 2 m and sort each search's hits back into the 4 m
+   order (row, cell, soldier), so the sums come out the same. The friends'
+   0.8 m search would read about a third as many soldiers. That is perhaps
+   10 to 15% of the melee, and changes no result.
+4. Trade fidelity, not done: ranks behind the front re-plan every other
+   substep; the front rank looks 3 m round, not 4; a half-second substep
+   while in contact, which halves the cost.
+
 ## Open questions
 
 - Should auto-resolved raids ever use the soldier model, or only battles the
