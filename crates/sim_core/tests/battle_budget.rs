@@ -1,5 +1,8 @@
 //! The soldier model's budget: a 4,000-soldier battle (50 squads of 40 a
-//! side) costs at most 1 ms per battle second on one core.
+//! side) costs at most 1 ms per battle second on one core over the whole
+//! battle, and at most 1.5 ms over its engaged phase, the first 400 battle
+//! seconds. Targets not met yet: 1 ms on four threads, and a town at most
+//! twice the open battle.
 //!
 //! It runs on release builds only (`cargo test --release`). It lives here,
 //! not beside the model, so that it times the library as it ships rather
@@ -42,46 +45,105 @@ fn four_thousand_soldiers_within_budget() {
     );
 }
 
-/// The same armies with the defenders in a town (`town`: sixty houses and
-/// eight workplaces), timed over the first 400 battle seconds, while
-/// everyone is still on the field. A town costs more than open ground: not
-/// the obstacle queries (a few per soldier and substep) but the fighting
-/// they make, soldiers pressed out of their slots and squads jammed in the
-/// streets. Its budget is three times the open battle's cost, timed in the
-/// same run so that a busy machine slows both alike (under twice on a quiet
-/// one: 1.9 ms per battle second against 1.1).
+/// The engaged phase: the yardstick's first 400 battle seconds, while
+/// every line is on the field, the armies meet and the first squads break.
+/// It must cost at most 1.5 ms per battle second on one core. The same
+/// armies with the defenders in a town (`town`: sixty houses and eight
+/// workplaces) cost more, timed in the same run so that a busy machine
+/// slows both alike: here at most three times the open battle, until the
+/// target of twice (`engaged_phase_targets`) is met. A town costs more than
+/// open ground: the obstacle queries, and the fighting they make, soldiers
+/// pressed out of their slots and squads jammed in the streets.
+///
+/// It also prints the dearest ten battle seconds, the height of the melee
+/// (at 140 to 180 s, about three times the phase's average): no budget
+/// holds it yet, see "The engaged phase" in the design doc.
 #[test]
 #[cfg_attr(debug_assertions, ignore = "a timing: release builds only")]
-fn four_thousand_soldiers_in_a_town_within_budget() {
+fn engaged_phase_within_budget() {
     let side = vec!["swordsmen*40"; 50].join(",");
+    let open = engaged(&format!("{side} vs {side}"), 1);
+    let town = engaged(&format!("{side} vs town {side}"), 1);
+    println!(
+        "first 400 s on one core: open {:.3} (dearest 10 s {:.3}), town {:.3} ms per battle second",
+        open.0, open.1, town.0
+    );
+    assert!(
+        open.0 <= 1.5,
+        "open {:.3} ms per battle second on one core, more than 1.5",
+        open.0
+    );
+    assert!(
+        town.0 <= 3.0 * open.0,
+        "town {:.3} ms per battle second, more than three times open {:.3}",
+        town.0,
+        open.0
+    );
+}
+
+/// The engaged phase's targets not met yet: at most 1 ms per battle second
+/// on four threads, for live battles on a machine with the cores to spare,
+/// and a town at most twice the open battle on one core. On the shared
+/// 4-core machine this was written on, four threads cost about what one
+/// does and a town about 2.1 times open (see "The engaged phase" in the
+/// design doc).
+#[test]
+#[ignore = "targets not met yet: run with --ignored on a quiet machine with 4 cores"]
+fn engaged_phase_targets() {
+    let side = vec!["swordsmen*40"; 50].join(",");
+    let one = engaged(&format!("{side} vs {side}"), 1);
+    let four = engaged(&format!("{side} vs {side}"), 4);
+    let town = engaged(&format!("{side} vs town {side}"), 1);
+    println!(
+        "first 400 s: {:.3} ms per battle second on one thread, {:.3} on four \
+         (dearest 10 s {:.3} and {:.3}), town {:.3} on one",
+        one.0, four.0, one.1, four.1, town.0
+    );
+    assert!(
+        four.0 <= 1.0,
+        "{:.3} ms per battle second on four threads, more than 1",
+        four.0
+    );
+    assert!(
+        town.0 <= 2.0 * one.0,
+        "town {:.3} ms per battle second, more than twice open {:.3}",
+        town.0,
+        one.0
+    );
+}
+
+/// The yardstick's first 400 battle seconds of `lineup` on `threads`,
+/// best of three: ms per battle second, and the dearest ten battle
+/// seconds' ms per battle second.
+fn engaged(lineup: &str, threads: usize) -> (f64, f64) {
     let params = BattleParams {
         model: BattleModel::Soldiers,
         ..BattleParams::default()
     };
     let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(1)
+        .num_threads(threads)
         .build()
         .unwrap();
-    let time = |lineup: &str| {
-        (0..3)
-            .map(|_| {
-                pool.install(|| {
-                    let (field, specs) = parse_lineup(lineup).unwrap();
-                    let mut b = Battle::new(params.clone(), field, specs, 1);
-                    let start = Instant::now();
-                    while b.seconds() < 400.0 && !b.finished() {
+    let runs: Vec<(f64, f64)> = (0..3)
+        .map(|_| {
+            pool.install(|| {
+                let (field, specs) = parse_lineup(lineup).unwrap();
+                let mut b = Battle::new(params.clone(), field, specs, 1);
+                let start = Instant::now();
+                let mut dearest = 0.0f64;
+                while b.seconds() < 400.0 && !b.finished() {
+                    let (t0, s0) = (Instant::now(), b.seconds());
+                    while b.seconds() < s0 + 10.0 && !b.finished() {
                         b.step();
                     }
-                    start.elapsed().as_secs_f64() * 1e3 / b.seconds() as f64
-                })
+                    let ds = (b.seconds() - s0).max(1.0) as f64;
+                    dearest = dearest.max(t0.elapsed().as_secs_f64() * 1e3 / ds);
+                }
+                let per = start.elapsed().as_secs_f64() * 1e3 / b.seconds() as f64;
+                (per, dearest)
             })
-            .fold(f64::INFINITY, f64::min)
-    };
-    let open = time(&format!("{side} vs {side}"));
-    let town = time(&format!("{side} vs town {side}"));
-    println!("first 400 s: open {open:.3}, town {town:.3} ms per battle second");
-    assert!(
-        town <= 3.0 * open,
-        "town {town:.3} ms per battle second, more than three times open {open:.3}"
-    );
+        })
+        .collect();
+    let best = |f: fn(&(f64, f64)) -> f64| runs.iter().map(f).fold(f64::INFINITY, f64::min);
+    (best(|r| r.0), best(|r| r.1))
 }

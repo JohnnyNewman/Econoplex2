@@ -45,16 +45,17 @@ impl SoldierBattle {
             let mut away = V2::ZERO;
             if foes_near {
                 let cell2 = sp.cell * sp.cell;
-                foes.each_near(me, sp.cell, |j, pj| {
+                foes.each_within(me, sp.cell, cell2, |j, pj| {
                     let d = me - pj;
                     let d2 = d.len2();
                     if d2 >= cell2 {
-                        return;
+                        return cell2;
                     }
                     if d2 > 1e-6 {
                         away += d * (2.0 / d2);
                     }
                     plan.push += self.shove(i, j, d, d2, 0.5);
+                    cell2
                 });
             }
             let mut dir = home + away;
@@ -121,24 +122,36 @@ impl SoldierBattle {
                 reach
             };
             let r = look.max(k.body) + self.widest[1 - side];
-            foes.each_near(me, r.min(sp.cell), |j, pj| {
+            // Nobody further than this touches them: their body and the
+            // widest of the enemy's.
+            let touch = man.body + self.widest[1 - side];
+            let touch2 = touch * touch;
+            let chases = c.chases();
+            // Nobody further than `r` is pushed against or picked, and once
+            // somebody is picked, nobody further than them.
+            let r2 = r * r;
+            let bound = |best_d2: f32| r2.min(touch2.max(best_d2));
+            foes.each_within(me, r.min(sp.cell), r2, |j, pj| {
                 let d = me - pj;
                 let d2 = d.len2();
-                // Nobody further than `r` is pushed against or picked.
-                if d2 > r * r {
-                    return;
+                // Most of them stand too far to touch and no nearer than
+                // the nearest so far: nothing to read of them.
+                if d2 >= touch2 && d2 >= best_d2 {
+                    return bound(best_d2);
                 }
-                let bj = self.soldier[j].body;
-                let shove = self.shove(i, j, d, d2, 0.5);
-                plan.crush += u8::from(shove != V2::ZERO);
-                plan.push += shove;
+                let them = &self.soldier[j];
+                if d2 < touch2 {
+                    let shove = self.shove(i, j, d, d2, 0.5);
+                    plan.crush += u8::from(shove != V2::ZERO);
+                    plan.push += shove;
+                }
                 // A squad that lets enemies go strikes nobody who runs (one
                 // that takes prisoners goes for them, to take them).
-                if !c.chases() && self.soldier[j].state == SoldierState::Routing {
-                    return;
+                if !chases && them.state == SoldierState::Routing {
+                    return bound(best_d2);
                 }
                 if d2 < best_d2 {
-                    let rj = reach + bj;
+                    let rj = reach + them.body;
                     // In reach, or (for the front rank) near the slot.
                     let close = d2 <= rj * rj || (front && (pj - slot).len2() <= slack2);
                     if close && !self.wall_between(me, pj, breach) {
@@ -146,6 +159,7 @@ impl SoldierBattle {
                         best_d2 = d2;
                     }
                 }
+                bound(best_d2)
             });
         }
 
@@ -239,12 +253,12 @@ impl SoldierBattle {
         if !settled {
             let r = k.body + self.widest[side];
             let my_squad = man.squad;
-            friends.each_near(me, r, |j, pj| {
+            friends.each_within(me, r, r * r, |j, pj| {
                 let d = me - pj;
                 let d2 = d.len2();
                 // Only bodies that overlap push.
                 if d2 >= r * r || j == i || self.soldier[j].state == SoldierState::Routing {
-                    return;
+                    return r * r;
                 }
                 let share = if self.soldier[j].squad != my_squad || self.soldier[j].rank == man.rank
                 {
@@ -259,6 +273,7 @@ impl SoldierBattle {
                 if share > 0.0 {
                     plan.push += self.shove(i, j, d, d2, share);
                 }
+                r * r
             });
         }
 
