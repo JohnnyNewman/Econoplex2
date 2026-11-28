@@ -34,6 +34,33 @@ dead".
 - **Watch:** the run must stay off the frame budget (a worker thread, a few
   seeds at a time), and the result must say how sure it is.
 - **Size:** small to medium.
+- **Built** (`battle/forecast.rs`, `systems/military/live.rs`
+  `feed_forecast`):
+  - **The state.** `Battle::snapshot` turns a live battle on either model
+    into squad specs: each squad where it stands, with its morale, and its
+    members as they are. Who is out of play (downed, taken, fled, or of a
+    squad no longer on the field) has no health left, so the squad model
+    leaves them out. Orders, stances and doctrines carry over, and the
+    snapshot runs for the battle time left.
+  - **The proposals.** The orders as given, and for each of the side's
+    fighting squads: "charge now" (attack the nearest fighting enemy
+    squad), "hold" and "withdraw". The enemy keeps its orders.
+  - **The runs.** 20 runs per proposal on the squad model, each on its
+    own seed, so a snapshot always gives the same forecast. A run counts a
+    win for the side, and who of those in play dies on each side.
+  - **How sure.** The chance of a win comes with a 90% range (Wilson), and
+    the heading says how many runs it rests on: "Forecast (20 of 20 runs
+    each on the squad model; 90% range):", then for example "if you charge
+    now: 70% win (52-84%), about 40 of yours dead, 25 of theirs".
+  - **Off the frame.** A `Forecaster` runs them on a thread of its own, two
+    runs per proposal at a time, so the forecast firms up as it is read. It
+    takes a new snapshot every 10 battle seconds once the deployment is
+    over, and a newer snapshot starts over. 80 runs take 10–90 ms.
+  - **In both clients.** A box at the lower left while the player's battle
+    is fought.
+  - **In `econoplex-sim`.** `--battle LINEUP --forecast T` fights the
+    line-up T battle seconds, prints the attackers' forecast, then fights
+    it out as ordered.
 
 ## 2. The price of the battle
 

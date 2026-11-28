@@ -19,6 +19,7 @@ mod battle_input;
 mod battle_price;
 mod battles;
 mod economy_ui;
+mod forecast;
 mod hud;
 mod live_battle;
 mod policy_ui;
@@ -98,6 +99,7 @@ fn main() {
     }))
     // The button state the panels read (Bevy 0.20 UI widgets are part of
     // DefaultPlugins with the bevy_ui_widgets feature).
+    .add_plugins(forecast::ForecastPlugin)
     .add_systems(PreUpdate, ui_compat::update_interaction)
     .add_systems(
         PreUpdate,
