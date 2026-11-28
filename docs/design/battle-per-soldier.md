@@ -1307,6 +1307,17 @@ side.
 Losses agree within 2% in every row. At 100 seeds one standard deviation
 is 5 wins, so every row is within two of even.
 
+**The yardstick costs more at its start.** All 4,000 men now reach the
+fight, and sooner: the battle lasts 690 s, not 410. The budget test
+(three runs, best of three each, on one core at a load of 7 to 10) gives
+0.73 to 0.82 ms per battle second over the whole battle, within budget.
+Its first 400 s, where the yardstick gave 0.71 to 0.75 when most of the
+rear lines stood off the field, now cost 1.26 to 1.30, and the town 2.08
+to 2.11 (1.7 times the open battle, within the test's limit of three).
+So a live battle of 4,000 soldiers is over the 1 ms budget while both
+armies are engaged. The budget was set on a yardstick that, as it turned
+out, never had all of them fighting at once.
+
 ## Open questions
 
 - Should auto-resolved raids ever use the soldier model, or only battles the
