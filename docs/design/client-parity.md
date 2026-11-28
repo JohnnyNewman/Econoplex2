@@ -93,6 +93,7 @@ the end of this note).
 | Battle replays beside the defending town | battles.rs | same (blocks per squad, 2D battles.rs) | | |
 | Replays of battles fought on the soldier model: a figure per soldier, walking from frame to frame (`Replay::soldiers_at`) | battles.rs (`play_battles`) | same: zoomed in, a dot per soldier, as for a live battle; zoomed out, blocks (battles.rs `draw_battles`) | | |
 | `--battle LINEUP` stages a line-up beside a town; `--set PATH=VALUE` changes models.ron for the run (e.g. `battle.model=Soldiers`) | main.rs, battles.rs (`stage_battle`) | same: beside the player's town, the camera starting on its field (main.rs, autorun.rs, battles.rs `stage_battle`) | | |
+| Town walls (`sim_core::walls`): each town's ring as it stands, a palisade of stakes or a stone curtain, gates between posts or gatehouse towers, battered pieces lower, a breach rubble; in a battle at the town (replay or live) the wall as the battle leaves it, breaches opening as they fall; hovering a piece in a live battle gives its hit points (`rts::wall_words`); "walls" in governance builds and mends it; `--battle "... vs walled town ..."` stages a battle at the focus town's wall (`TownLayout::stage`) | walls3d.rs, buildings.rs (`spawn_walls`), ui.rs ("walls" row), battles.rs (`stage_battle`) | same: lines along the ring, brown, grey or gold for gates, redder the more battered, gaps dotted and breaches broken (walls_view.rs); the same tip by the pointer; policy_ui.rs ("Walls" row); battles.rs `stage_battle` | | |
 
 ### Town information
 

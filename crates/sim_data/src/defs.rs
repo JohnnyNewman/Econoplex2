@@ -144,13 +144,36 @@ pub struct ProductDef {
     /// walkers keep out of it, and the views draw it this size.
     #[serde(default)]
     pub footprint: Option<(f32, f32)>,
+    /// A piece of a town wall (a building): a stretch of it or a gate.
+    /// Towns build their wall piece by piece (`sim_core::walls`).
+    #[serde(default)]
+    pub wall: Option<WallDef>,
 }
 
 impl ProductDef {
-    /// A building that is a workplace: neither land nor a house.
+    /// A building that is a workplace: not land, a house or a wall.
     pub fn workplace(&self) -> bool {
-        self.category == Category::Building && self.opens.is_none() && self.house.is_none()
+        self.category == Category::Building
+            && self.opens.is_none()
+            && self.house.is_none()
+            && self.wall.is_none()
     }
+}
+
+/// A piece of a town wall: one stretch of it (`gate` false) or a gate.
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+pub struct WallDef {
+    /// Hit points it stands, battered in a battle (`battle.wall_taken`).
+    pub hp: f32,
+    /// How thick it is, metres.
+    pub thickness: f32,
+    pub gate: bool,
+    /// Share of its hit points it loses a year standing (rot, frost), made
+    /// good when the town mends it with a new piece.
+    pub decay: f32,
+    /// Its rank among the walls a town can build: a town builds the
+    /// highest it can and replaces lower ones with it.
+    pub rank: u8,
 }
 
 /// A house: people it holds, and how well it shelters them (0..1).

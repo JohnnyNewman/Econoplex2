@@ -702,7 +702,48 @@ pub fn inspect(v: &LiveView, mine: &[usize], at: (f32, f32)) -> Option<String> {
         .and_then(|e| hint(v, mine, e));
     match (sheet, hint) {
         (Some(s), Some(h)) => Some(format!("{s}\n{h}")),
-        (s, h) => s.or(h),
+        (s, h) => s.or(h).or_else(|| wall_words(v, at)),
+    }
+}
+
+/// The piece of the town's wall within 3 m of `at`, if any, in words: what
+/// it is and its hit points ("gate 120 / 300 hp", "breach").
+pub fn wall_words(v: &LiveView, at: (f32, f32)) -> Option<String> {
+    let p = V2::new(at.0, at.1);
+    let (k, w, d) = v
+        .walls
+        .iter()
+        .enumerate()
+        .map(|(k, w)| {
+            let (a, b) = (V2::new(w.a.0, w.a.1), V2::new(w.b.0, w.b.1));
+            let ab = b - a;
+            let t = ((p - a).dot(ab) / ab.len2().max(1e-6)).clamp(0.0, 1.0);
+            (k, w, (a + ab * t - p).len())
+        })
+        .min_by(|x, y| x.2.total_cmp(&y.2))?;
+    if d > 3.0 + w.half_width {
+        return None;
+    }
+    Some(wall_piece_words(
+        w,
+        v.frame.walls.get(k).copied().unwrap_or(0.0),
+    ))
+}
+
+/// One piece of wall in words, at `hp` hit points.
+pub fn wall_piece_words(w: &ReplayWall, hp: f32) -> String {
+    let what = match (w.gate, w.half_width > 0.5) {
+        (true, true) => "stone gatehouse",
+        (true, false) => "palisade gate",
+        (false, true) => "stone wall",
+        (false, false) => "palisade",
+    };
+    if w.max <= 0.0 {
+        "gap in the wall (never built)".into()
+    } else if hp <= 0.0 {
+        format!("{what}: breached")
+    } else {
+        format!("{what}: {hp:.0} / {:.0} hp", w.max)
     }
 }
 

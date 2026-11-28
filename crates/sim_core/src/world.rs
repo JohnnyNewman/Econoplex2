@@ -242,6 +242,8 @@ pub struct Town {
     /// Houses the town has, by product (only house products count).
     #[serde(default)]
     pub houses: Vec<u32>,
+    /// The wall round the town, once it has laid one out (`walls.rs`).
+    pub walls: crate::walls::TownWalls,
     /// All the coin this town's mints have struck, to the unit.
     #[serde(default)]
     pub minted: crate::coin::Coin,
@@ -473,6 +475,10 @@ pub struct WarCounters {
     pub revolts: u32,
     pub tribute_paid: f32,
     pub tribute_received: f32,
+    /// Wall pieces this town put up (new and mended), and what the market
+    /// paid for them.
+    pub wall_pieces: u32,
+    pub wall_spent: f32,
 }
 
 /// Migration since the last yearly report.
@@ -902,6 +908,7 @@ pub fn setup(world: &mut World, mut db: Db, params: ModelParams, scenario: &Scen
             coin_value: 1.0,
             foreign: Vec::new(),
             houses: Vec::new(),
+            walls: Default::default(),
             food_share: Vec::new(),
             metal: crate::coin::Coin::ZERO,
             goods_today: Vec::new(),

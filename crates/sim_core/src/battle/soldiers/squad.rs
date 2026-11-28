@@ -6,17 +6,17 @@
 use super::*;
 
 /// Where a squad goes this substep.
-struct Goal {
+pub(super) struct Goal {
     /// The point it heads for, if it moves.
-    to: Option<V2>,
+    pub(super) to: Option<V2>,
     /// Where it looks while it stands.
-    face: Option<V2>,
+    pub(super) face: Option<V2>,
     /// The enemy squad it closes with.
-    target: Option<usize>,
+    pub(super) target: Option<usize>,
     /// Marching or running pace, metres per second.
-    pace: f32,
+    pub(super) pace: f32,
     /// Backing away: it keeps facing `face` as it goes.
-    backing: bool,
+    pub(super) backing: bool,
 }
 
 impl SoldierBattle {
@@ -122,7 +122,14 @@ impl SoldierBattle {
             return;
         };
         let s = &self.squads[c];
-        if s.formation == Formation::Wedge || s.in_contact > 0 || s.in_line == 0 {
+        if s.at_wall && s.squeeze.is_some() {
+            // At a wall it stands as wide as it is.
+            self.squads[c].squeeze = None;
+            let formation = self.squads[c].formation;
+            self.reform(c, formation);
+            return;
+        }
+        if s.formation == Formation::Wedge || s.in_contact > 0 || s.in_line == 0 || s.at_wall {
             return;
         }
         let own = self.files_for(c, s.formation).min(s.in_line);
@@ -156,7 +163,7 @@ impl SoldierBattle {
         (self.squads[a].anchor - self.squads[b].centre).len() - self.squads[b].radius()
     }
 
-    fn enemies(&self, c: usize) -> impl Iterator<Item = usize> + '_ {
+    pub(super) fn enemies(&self, c: usize) -> impl Iterator<Item = usize> + '_ {
         let side = self.squads[c].spec.side;
         (0..self.squads.len()).filter(move |&j| self.squads[j].spec.side != side)
     }
@@ -192,6 +199,10 @@ impl SoldierBattle {
     /// Where a squad goes, by its order or its own judgment.
     fn goal(&mut self, c: usize) -> Goal {
         self.advance(c);
+        // At a town's wall: battering or manning it, or plugging a breach.
+        if let Some(g) = self.wall_goal(c) {
+            return g;
+        }
         let p = &self.params;
         let s = &self.squads[c];
         let (walk, run) = if s.mounted() {

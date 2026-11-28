@@ -78,6 +78,9 @@ struct Summary {
     fallen: f64,
     armour: f64,
     war_ms_per_raid: f64,
+    /// Pieces of town wall put up over the run, and what they cost.
+    wall_pieces: f64,
+    wall_cost: f64,
 }
 
 /// The table's column names; health bands name metrics by these.
@@ -85,9 +88,9 @@ pub const COLUMNS: [&str; NCOL] = [
     "pop", "starve%", "food/cap", "div", "ECI rng", "spec", "masters", "swords", "wealth", "gini",
     "raids", "captv", "prisn", "conq", "revolts", "ruled%", "moves", "glut%", "gwork%", "hh use",
     "in use", "happy", "capab", "reserve", "foodwk%", "farmwk%", "ms/day", "won%", "fallen",
-    "armour", "war ms",
+    "armour", "war ms", "walls", "wall $",
 ];
-pub const NCOL: usize = 31;
+pub const NCOL: usize = 33;
 
 impl Summary {
     fn values(&self) -> [f64; NCOL] {
@@ -123,6 +126,8 @@ impl Summary {
             self.fallen,
             self.armour,
             self.war_ms_per_raid,
+            self.wall_pieces,
+            self.wall_cost,
         ]
     }
 
@@ -231,6 +236,8 @@ impl Summary {
                 s.prisoners += t.war.prisoners_taken as f64;
                 s.conquests += t.war.conquests as f64;
                 s.revolts += t.war.revolts as f64;
+                s.wall_pieces += t.war.wall_pieces as f64;
+                s.wall_cost += t.war.wall_spent as f64;
                 s.migrants += t.moves.arrived as f64;
             }
         }
@@ -441,6 +448,8 @@ pub fn run(
             "fallen",
             "armour",
             "war_ms_per_raid",
+            "wall_pieces",
+            "wall_cost",
         ];
         writeln!(
             f,

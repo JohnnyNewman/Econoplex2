@@ -119,6 +119,10 @@ pub(super) fn battle(
         }),
     );
     // Runners taken prisoner go to the winners (a doctrine of capture).
+    // The wall keeps the battering it took until it is mended.
+    if let Some((b, _)) = &fought {
+        towns.0[d].walls.after_battle(d, b.walls());
+    }
     if let Some((b, groups)) = &fought {
         take_prisoners(commands, raid, attacker, towns, store, rng, b, groups);
     }
@@ -371,6 +375,7 @@ fn field_battle(
             at,
             facing,
         }) => {
+            let walls = b.replay_walls();
             let (report, squads, frames) = b.run_recorded(5.0);
             log.push(crate::battle::Replay {
                 town,
@@ -380,6 +385,7 @@ fn field_battle(
                 squads,
                 frames,
                 winner: report.winner,
+                walls,
             });
             report
         }
@@ -537,10 +543,11 @@ pub(super) fn setup_field_battle(
             let s = *side as usize;
             let y = field.height * (index[s] + 0.5) / per_side(*side);
             index[s] += 1.0;
-            let x = if *side == 0 {
-                field.width * 0.15
+            // Defenders form up in front of their town, or behind its wall.
+            let (x, y) = if *side == 0 {
+                (field.width * 0.15, y)
             } else {
-                field.defenders_x()
+                field.defenders_spot(y)
             };
             SquadSpec {
                 name,

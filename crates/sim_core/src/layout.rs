@@ -260,6 +260,8 @@ pub struct TownLayout {
     pub buildings: Vec<Footprint>,
     pub houses: Vec<HouseSpot>,
     pub house_footprints: Vec<Footprint>,
+    /// The town's wall, if it has laid one out (`walls.rs`).
+    pub walls: Vec<crate::walls::WallPiece>,
 }
 
 impl TownLayout {
@@ -281,7 +283,9 @@ impl TownLayout {
         taken.extend(town.policy.commissions.iter().filter_map(|c| c.pos));
         taken.extend((0..RESERVED).map(|n| town.building_pos(town.built + n)));
         let count = town.houses.iter().map(|&h| h as usize).sum();
-        let roads = roads_into(terrain, towns, ti);
+        // Houses keep off the wall as off a road.
+        let mut roads = roads_into(terrain, towns, ti);
+        roads.extend(town.walls.pieces.iter().map(|p| (p.a, p.b)));
         let water = |p: (f32, f32)| terrain.cell_at(p).is_some_and(|c| terrain.water[c]);
         let houses = house_spots(ti, town.pos, count, &taken, &roads, water);
         let house_footprints = houses.iter().map(|h| house_footprint(ti, h)).collect();
@@ -290,6 +294,7 @@ impl TownLayout {
             buildings,
             houses,
             house_footprints,
+            walls: town.walls.pieces.clone(),
         }
     }
 
@@ -312,9 +317,15 @@ impl TownLayout {
     /// +x along `facing`: so far out from the town toward the attackers
     /// that its nearest footprint begins `TOWN_FRONT` of the way across.
     pub fn battle_at(&self, facing: (f32, f32), size: (f32, f32)) -> (f32, f32) {
+        let wall = self
+            .walls
+            .iter()
+            .flat_map(|w| [w.a, w.b])
+            .map(|p| battle::map_to_field(self.centre, facing, size, p).0);
         let front = self
             .footprints()
             .map(|f| f.obstacle_on(self.centre, facing, size).reach_x().0)
+            .chain(wall)
             .fold(f32::INFINITY, f32::min);
         if !front.is_finite() {
             return self.centre;
@@ -375,6 +386,11 @@ pub fn battle_field(
     let size = (field.width, field.height);
     let at = layout.battle_at(facing, size);
     field.obstacles = layout.obstacles_on(at, facing, size);
+    let (walls, hp) = crate::walls::on_field(&layout.walls, &db.wall, target, |p| {
+        battle::map_to_field(at, facing, size, p)
+    });
+    field.obstacles.extend(walls);
+    field.walls = hp;
     (field, at, facing)
 }
 
@@ -401,6 +417,72 @@ impl TownLayout {
             buildings,
             houses,
             house_footprints,
+            walls: Vec::new(),
+        }
+    }
+
+    /// The sample town with a whole wall round it, each piece of product
+    /// `stretch` or (where a road along +x crosses it, on either side)
+    /// `gate`, at the hit points of `defs` (`Db::wall`).
+    pub fn walled(mut self, defs: &[Option<sim_data::WallDef>], stretch: u32, gate: u32) -> Self {
+        let c = self.centre;
+        let far = self
+            .footprints()
+            .map(|f| (f.centre.0 - c.0).hypot(f.centre.1 - c.1) + f.half.0.hypot(f.half.1))
+            .fold(0.0f32, f32::max);
+        let road = ((c.0 - 1000.0, c.1 + 1.0), (c.0 + 1000.0, c.1 + 1.0));
+        self.walls = crate::walls::ring(c, far + crate::walls::MARGIN, &[road]);
+        for w in &mut self.walls {
+            let p = if w.gate { gate } else { stretch };
+            w.built = Some(p);
+            w.hp = defs[p as usize].map_or(0.0, |d| d.hp);
+        }
+        self
+    }
+
+    /// Stage a line-up's battle in this town (the clients' `--battle ...
+    /// town ...`): the field's obstacles become its buildings and houses,
+    /// the field centred at `at` heading `facing`. A `walled town` line-up
+    /// fights at its wall: the town's own if it has built one, else a
+    /// palisade laid out round it now (`palisade`: its stretch and gate,
+    /// `walls::palisade`). The defenders form up again where the field
+    /// puts them. `defs` are the wall products' kinds (`Db::wall`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn stage(
+        &self,
+        field: &mut Field,
+        specs: &mut [battle::SquadSpec],
+        at: (f32, f32),
+        facing: (f32, f32),
+        defs: &[Option<sim_data::WallDef>],
+        palisade: Option<(u32, u32)>,
+        ti: usize,
+    ) {
+        let before: Vec<(f32, f32)> = specs
+            .iter()
+            .map(|s| field.defenders_spot(s.pos.1))
+            .collect();
+        let size = (field.width, field.height);
+        field.obstacles = self.obstacles_on(at, facing, size);
+        let walled = !field.walls.is_empty();
+        field.walls = Vec::new();
+        if walled {
+            let own = self.walls.iter().any(|w| w.built.is_some());
+            let town = match (own, palisade) {
+                (false, Some((s, g))) => self.clone().walled(defs, s, g),
+                _ => self.clone(),
+            };
+            let (walls, hp) = crate::walls::on_field(&town.walls, defs, ti, |p| {
+                battle::map_to_field(at, facing, size, p)
+            });
+            field.obstacles.extend(walls);
+            field.walls = hp;
+        }
+        for (s, was) in specs.iter_mut().zip(before) {
+            if s.side == 1 {
+                let now = field.defenders_spot(s.pos.1);
+                s.pos = (s.pos.0 + now.0 - was.0, s.pos.1 + now.1 - was.1);
+            }
         }
     }
 }

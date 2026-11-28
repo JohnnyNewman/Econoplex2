@@ -51,6 +51,9 @@ pub mod soldiers;
 pub mod squads;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod wall_tests;
+mod walls;
 
 pub use control::*;
 pub use kit::*;
@@ -58,6 +61,7 @@ pub use lineup::*;
 pub use nav::*;
 pub use report::*;
 pub use soldiers::V2;
+pub use walls::WallHp;
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -165,6 +169,10 @@ pub struct BattleParams {
     pub wall_cover: f32,
     pub wall_ground: f32,
     pub breach_width: f32,
+    /// A town wall's stretches and gates (`Field::walls`): the share of a
+    /// weapon's damage of each type (pierce, slash, blunt) that a blow on
+    /// one takes off its hit points.
+    pub wall_taken: PerType,
     /// Stances and doctrine: archers who skirmish back away from enemies
     /// this close (metres between the squads' edges), and squads of a
     /// cautious side hold their ground until an enemy is this close.
@@ -216,6 +224,7 @@ impl Default for BattleParams {
             wall_cover: 2.0,
             wall_ground: 2.0,
             breach_width: 6.0,
+            wall_taken: [0.1, 0.25, 1.0],
             skirmish_distance: 40.0,
             cautious_wait: 120.0,
             soldiers: soldiers::SoldierParams::default(),
@@ -226,13 +235,16 @@ impl Default for BattleParams {
 /// The field: its size, a wall at `wall_x` if the defenders have one
 /// (defenders stand at larger x than the wall, attackers at smaller), and
 /// the obstacles on it: the buildings and houses of the town where it is
-/// fought (`layout::battle_field`), in metres on the field.
+/// fought (`layout::battle_field`), in metres on the field. A town's own
+/// wall is among the obstacles too, its stretches and gates listed in
+/// `walls` with their hit points (`walls.rs`).
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Field {
     pub width: f32,
     pub height: f32,
     pub wall_x: Option<f32>,
     pub obstacles: Vec<Obstacle>,
+    pub walls: Vec<WallHp>,
 }
 
 impl Field {
@@ -262,6 +274,7 @@ impl Default for Field {
             height: 400.0,
             wall_x: None,
             obstacles: Vec::new(),
+            walls: Vec::new(),
         }
     }
 }
@@ -574,6 +587,18 @@ impl Battle {
         found
     }
 
+    /// The town wall's stretches and gates as they stand now (empty: no
+    /// wall on the field).
+    pub fn walls(&self) -> &[WallHp] {
+        &self.model().field().walls
+    }
+
+    /// The field as it stands now: its obstacles' passages and its wall's
+    /// hit points change as the battle goes.
+    pub fn field(&self) -> &Field {
+        self.model().field()
+    }
+
     /// The field's obstacles, ready for questions (`None`: an open field).
     pub fn nav(&self) -> Option<&Arc<Nav>> {
         self.model().nav()
@@ -738,6 +763,7 @@ impl Battle {
                 .collect(),
             sheets,
             wall_x: m.field().wall_x,
+            walls: self.replay_walls(),
             nav: m.nav().cloned(),
             morale: (0..m.count()).map(|s| m.morale(s)).collect(),
             condition,
@@ -764,7 +790,29 @@ impl Battle {
                 Self::Squads(_) => Vec::new(),
                 Self::Soldiers(b) => b.frame_soldiers(),
             },
+            walls: m.field().walls.iter().map(|w| w.hp).collect(),
         }
+    }
+
+    /// The town's wall on the field, as the clients draw it.
+    pub fn replay_walls(&self) -> Vec<ReplayWall> {
+        let f = self.model().field();
+        f.walls
+            .iter()
+            .filter_map(|w| {
+                let o = f.obstacles.iter().find(|o| o.id == w.id)?;
+                let Shape::Segment { a, b, half_width } = o.shape else {
+                    return None;
+                };
+                Some(ReplayWall {
+                    a,
+                    b,
+                    half_width,
+                    gate: w.gate,
+                    max: w.max,
+                })
+            })
+            .collect()
     }
 
     /// Like [`Self::run`], recording a frame every `every` seconds (and the last).

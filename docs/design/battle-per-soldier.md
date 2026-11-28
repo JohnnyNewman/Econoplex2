@@ -793,7 +793,7 @@ obstacles, and walkers in both clients keep out of it. One map scale,
 `Battle::set_passage(id, ..)` and `Battle::remove_obstacle(id)` change the
 layer during a battle. Either builds the `Nav` again with a higher
 `version`, so every squad's cached route and both sides' flow fields are
-found again. Walls are not built yet.
+found again. Town walls use it (see "Town walls" below).
 
 **What uses it.** A field without obstacles has no `Nav`, so an open-field
 battle runs exactly as before.
@@ -1198,6 +1198,149 @@ Tried and dropped: a finer grid and a 3 m cell (more cells to build than
 neighbours saved), a nine-cell count table per box cell (the box holds
 about 4,000 cells, most of them empty), and a vectorised distance filter
 (most soldiers in the box are within range, so it only added work).
+
+## Town walls
+
+War idea 10 (`war-ideas.md`). A town's wall is a ring of pieces in the
+economy and a line of `Shape::Segment` obstacles in battle.
+
+**In the economy** (`sim_core::walls`, content `47_walls.ron`):
+
+- A town that wants a wall (`Policy::walls`: the governance "Walls" toggle
+  in either client, `walls NAME on` in the CLI) lays out a ring once.
+  The ring is a circle `walls::MARGIN` outside its furthest building, cut into
+  pieces about 16 map units long, with a gate where each road crosses it.
+- The pieces are building products: a palisade (400 hp) and a palisade gate
+  (300 hp), then a stone wall (2,000 hp) and a stone gatehouse (900 hp) from
+  era 1. They are made from wood and beams, or stone and mortar, by
+  construction work like a house.
+- The market pays the base price for a piece while the ring needs one: a
+  gap, a piece under half its hit points, or a palisade once the town can
+  build stone. A piece made goes into the gap, then mends the most battered
+  piece, then replaces a palisade (`TownWalls::put_up`).
+- Pieces lose `decay` of their hit points a year: 6 % for timber, 1 % for
+  stone. Weathering never opens a breach (a piece keeps 1 hp).
+- An AI governor orders walls once its town has been raided
+  (`walls_after_raids`, 1), has at least `walls_min_pop` (40) residents,
+  and has money above its low mark.
+- Walls are saved (`SAVE_VERSION` 18).
+
+**In battle** (`battle/walls.rs`):
+
+- The town's pieces become the field's `walls` (`layout::battle_field`),
+  each with its hit points. A gate is `Gate(1)`: only the defenders pass it,
+  and they keep it shut behind them. A gap never built, or a piece
+  battered to 0, is `Open`.
+- **Attackers on the soldier model.** Each attacking squad picks a piece:
+  the nearest standing one, with a gate counted 30 m nearer. Its men stand
+  at the face and strike the piece. Each blow does its damage times
+  `wall_taken`: 0.1 for pierce, 0.25 for slash and 1.0 for blunt, so maces
+  and hammers are best. Archers come close enough to reach the men on the
+  wall, and riders wait 30 m out until the wall is breached.
+- **Defenders on the soldier model.** They man the piece nearest their foe,
+  just inside it. They strike down over it (1.5 m past their reach), with
+  `wall_ground` and cover (`wall_cover`) against arrows, and a man climbing
+  holds no shield. Once a piece falls, the two nearest defending squads
+  plug the breach and the rest fight as anywhere.
+- **The squad model** does the same in expected values:
+  - an attacking squad's front batters its piece, capped by the piece's
+    length and shared with the other squads there;
+  - defenders strike over the wall with the front that meets the attackers;
+  - in a breach, front meets front and nobody is taken in the flank;
+  - nobody charges across a standing piece.
+- A breach is an `EventKind::Breach`. The nav is built again, so every
+  route through the gap is found again.
+- **After the battle.** The pieces' hit points go back to the town
+  (`TownWalls::after_battle`), for auto-resolved raids and live battles
+  alike. A breach stays a gap until the town builds a piece there.
+
+**Clients.**
+
+- Both clients draw each town's ring: a palisade brown and a stone wall
+  grey, gates lighter, a battered piece redder, a breach as rubble, and a
+  gap never built dotted (2D).
+- The 3D client draws stakes with a rail, or a stone curtain with merlons;
+  a gate between posts or gatehouse towers; a battered piece lower; and a
+  breach as rubble (`buildings::spawn_walls`).
+- While a battle at the town is shown, its wall is drawn as the battle has
+  it: `ReplayWall` plus `ReplayFrame::walls` for replays, and
+  `LiveView::walls` for live battles.
+- Hovering over a piece in a battle panel shows its hit points ("palisade:
+  120 / 400 hp", "breached").
+- `--battle "... vs walled town ..."` puts a palisade round the player's
+  real town, or uses the town's own wall if it has built any.
+
+**Balance.** `--compare`, 50 seeds, attackers' wins (squad model / soldier
+model):
+
+| Battle | Open town | Walled town |
+| --- | --- | --- |
+| `swordsmen*40 ×2 vs swordsmen*40 ×2` | 23 / 19 | 0 / 25 |
+| `spearmen*40 ×4 vs spearmen*40 ×4` | | 0 / 1 |
+| `swordsmen*30,archers*20` mirror | | 0 / 36 |
+| `swordsmen*40 ×6` mirror | | 1 / 11 |
+| `swordsmen*40 ×3 vs swordsmen*40 ×2` | | 33 / 49 |
+
+- **The soldier model** depends on the line-up. Two swordsman squads a
+  side take the walled town in half their battles, more than the 19 of 50
+  they win against the same town without a wall: in that line-up
+  the wall does not help the defenders. Swordsmen with archers win 36. Four spear squads or six
+  swordsman squads a side rarely break in (1 and 11 of 50).
+- **The squad model** makes a wall worth about half as many men again. An
+  equal wall battle there is nearly always lost: the model is close to
+  deterministic, and any lasting edge decides nearly every seed. Spreading a
+  defender's blows over the attacking squads at his piece, as the soldier
+  model does, did not change this (3 against walled 2: 33 → 29), so it was
+  left out.
+
+The equal-force target of 20–40 % attacker wins holds only on the soldier
+model's two-squad mirror. Auto-resolved raids (the squad model) give it
+about 0 %.
+
+**In the economy, measured.** 16 seeds × 30 years against main:
+
+| | main | walls |
+| --- | --- | --- |
+| population | 2,417 ± 105 | 2,369 ± 97 |
+| raids | 68.9 | 72.1 |
+| raids won by the attackers | 84.4 % | 82.5 % |
+| conquests | 12.2 | 10.1 |
+| soldiers fallen | 304 | 303 |
+| wall pieces put up (four towns) | | 11.4 ± 12.1 |
+| spent on them | | 1,924 ± 2,005 |
+| war ms per raid | 70 ± 18 | 101 ± 48 |
+| ms per simulated day | 701 | 723 |
+
+All health bands pass. Raided AI towns order walls (in one 30-year run
+all three AI towns did so in year 3), but by year 30 only about a dozen
+pieces have gone up across all four towns, against rings of about 60
+pieces each; four of the 16 seeds built none. So most raids still
+meet a ring of gaps, and raids won and conquests barely move. Getting
+walls built faster (their price, or the governor paying for them) is
+left for later.
+
+**Cost.** `battle_budget.rs` times a walled town (50 squads of 40 a side,
+the first 400 battle seconds) next to the open battle and the town without
+a wall: 0.8, 1.5 and 3.4 ms per battle second. Its budget is five times the open battle's, against
+three for a town without a wall. The four thousand soldiers spend the
+battle pressed along the wall, and there every step asks the obstacles
+where it may go and every blow whether the wall stands between. Those
+lookups are cheap, but they are made millions of times.
+
+Two fixes in `nav.rs` came out of the economy runs, where a raid's ring is
+often mostly gaps or reaches off the field:
+
+- **Regions.** Each side's grid is cut into regions (cells it can reach
+  one from another, made the first time that side searches). A search for
+  a way where there is none, such as into a ring whose only gaps lie off
+  the field, now fails at once instead of after opening the whole grid.
+- **No cell opened twice.** With the weighted heuristic, a long way round
+  a wall kept finding cheaper ways to cells already opened and opened them
+  again. That passed the search's limit, so the search gave up, and the
+  squad walked straight at the wall and asked again a second later. One
+  such battle took 7 s; it now takes 0.08 s, and its attackers find the gap.
+
+Neither changes an open-field battle (`--compare` is identical to main).
 
 ## Open questions
 

@@ -211,6 +211,13 @@ pub fn describe(order: &Order, db: &Db, towns: &Towns) -> String {
         Order::Stockpile {
             product: p, amount, ..
         } => format!("stockpile {amount:.0} {}", product(*p)),
+        Order::Walls { on, .. } => {
+            if *on {
+                "ordered a town wall".into()
+            } else {
+                "stopped building the wall".into()
+            }
+        }
         Order::Reserve { on, .. } => {
             format!("seed reserve {}", if *on { "on" } else { "off" })
         }

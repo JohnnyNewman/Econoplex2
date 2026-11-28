@@ -143,6 +143,15 @@ impl BattleScene {
     pub(crate) fn playback(&self, now: f32) -> f32 {
         (now - self.started) * PLAYBACK
     }
+
+    pub(crate) fn replay(&self) -> &Replay {
+        &self.replay
+    }
+
+    /// Real time its playback started.
+    pub(crate) fn started(&self) -> f32 {
+        self.started
+    }
 }
 
 fn figure_mesh() -> Mesh {
@@ -238,7 +247,7 @@ fn stage_battle(
         *done = true;
         return;
     };
-    let (mut field, specs) = match parse_lineup(lineup) {
+    let (mut field, mut specs) = match parse_lineup(lineup) {
         Ok(x) => x,
         Err(e) => {
             warn!("--battle: {e}");
@@ -269,11 +278,20 @@ fn stage_battle(
         ((town.0, town.1 - 300.0), (1.0, 0.0))
     };
     if let (true, Some(layout)) = (in_town, &layout) {
-        field.obstacles = layout.obstacles_on(at, facing, size);
+        layout.stage(
+            &mut field,
+            &mut specs,
+            at,
+            facing,
+            &live.wall_defs,
+            live.palisade,
+            args.focus_town,
+        );
     }
     // On `battle.model` from models.ron (`--preset`, `--set`).
-    let (report, squads, frames) =
-        Battle::new(args.battle_params.clone(), field, specs, args.seed).run_recorded(5.0);
+    let mut battle = Battle::new(args.battle_params.clone(), field, specs, args.seed);
+    let walls = battle.replay_walls();
+    let (report, squads, frames) = battle.run_recorded(5.0);
     info!(
         "--battle {lineup}: {:?} after {:.0} s",
         report.winner, report.seconds
@@ -286,6 +304,7 @@ fn stage_battle(
         squads,
         frames,
         winner: report.winner,
+        walls,
     };
     let geo = Geo {
         at: replay.at,

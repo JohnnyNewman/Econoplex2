@@ -115,6 +115,23 @@ pub fn validate(c: &Content) -> Report {
         }
     }
 
+    for p in &c.products {
+        if let Some(w) = &p.wall {
+            if p.category != Category::Building || p.house.is_some() || p.opens.is_some() {
+                r.errors.push(format!(
+                    "wall `{}` must be a Building, no house or land",
+                    p.id
+                ));
+            }
+            if !(w.hp > 0.0 && w.thickness > 0.0 && (0.0..1.0).contains(&w.decay)) {
+                r.errors.push(format!(
+                    "wall `{}` needs hit points and thickness above 0 and decay in 0..1",
+                    p.id
+                ));
+            }
+        }
+    }
+
     for s in &c.skills {
         for p in &s.prereqs {
             if c.skill(p).is_none() {

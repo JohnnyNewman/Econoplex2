@@ -297,6 +297,8 @@ pub fn military(
                     &live.groups,
                 );
                 let won = live.battle.report().winner == Some(0);
+                let d = raid.target as usize;
+                towns.0[d].walls.after_battle(d, live.battle.walls());
                 let fought = aftermath(
                     &mut commands,
                     &mut raid,

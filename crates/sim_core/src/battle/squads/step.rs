@@ -15,6 +15,7 @@ impl SquadBattle {
         let mut flanked = vec![false; n];
 
         // 1. Move, by order or by the squad's own judgment.
+        self.choose_assaults();
         for i in 0..n {
             self.move_squad(i);
         }
@@ -26,7 +27,7 @@ impl SquadBattle {
                     return Vec::new();
                 }
                 self.enemies(i)
-                    .filter(|&j| self.squads[j].on_field() && self.gap(i, j) <= 1.0)
+                    .filter(|&j| self.squads[j].on_field() && self.gap(i, j) <= self.touch(i, j))
                     .collect()
             })
             .collect();
@@ -37,7 +38,10 @@ impl SquadBattle {
                 }
                 // New contact: the faster one charges (both, if they run into
                 // each other as fast), the longer weapon gets free blows.
-                if i < j {
+                // Nobody charges over a town's wall.
+                if i < j && self.wall_piece_between(i, j).is_some() {
+                    self.event(EventKind::Contact { by: i, with: j });
+                } else if i < j {
                     self.event(EventKind::Contact { by: i, with: j });
                     let (si, sj) = (self.squads[i].speed, self.squads[j].speed);
                     if (si - sj).abs() < 0.1 {
@@ -96,12 +100,18 @@ impl SquadBattle {
                 }
                 continue;
             }
-            if self.squads[p].primary != Some(i) && self.squads[p].fighting() {
+            // Blows down over a town's wall come from the front.
+            if self.squads[p].primary != Some(i)
+                && self.squads[p].fighting()
+                && self.wall_piece_between(i, p).is_none()
+                && self.breach_between(i, p).is_none()
+            {
                 flanked[p] = true;
             }
             self.melee(i, p);
         }
         self.land_wounds();
+        self.batter_walls();
 
         // 5. Morale and state.
         let dt = self.params.dt;
@@ -242,8 +252,12 @@ impl SquadBattle {
         // them, hold their ground: when the melee opens, the riders ride in
         // again, a new charge.
         if !s.contacts.is_empty() {
-            let pressed =
-                |j: &usize| !mounted && !self.squads[*j].spec.kit.mounted && s.contacts.contains(j);
+            let pressed = |j: &usize| {
+                !mounted
+                    && !self.squads[*j].spec.kit.mounted
+                    && s.contacts.contains(j)
+                    && self.wall_piece_between(i, *j).is_none()
+            };
             if let Some(j) = s.primary.filter(pressed) {
                 self.step_toward(i, self.squads[j].spec.pos, walk, Some(j));
                 self.squads[i].speed = 0.0;
@@ -329,6 +343,9 @@ impl SquadBattle {
         let s = &self.squads[i];
         if s.spec.behind_wall {
             return None;
+        }
+        if let Some(goal) = self.wall_goal(i) {
+            return goal;
         }
         let kit = &s.spec.kit;
         let fighting = |q: &Squad| q.fighting();

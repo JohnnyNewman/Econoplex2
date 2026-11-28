@@ -512,6 +512,7 @@ impl LiveView {
                 height: self.field.1,
                 wall_x: self.wall_x,
                 obstacles: Vec::new(),
+                walls: Vec::new(),
             },
             side,
         )

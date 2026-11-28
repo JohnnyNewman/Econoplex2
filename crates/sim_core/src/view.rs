@@ -58,6 +58,14 @@ pub struct PolicyView {
     pub prisoners: String,
     /// Buildings ordered and not yet built.
     pub commissions: u32,
+    /// Whether the town builds (and mends) a wall, and its pieces standing
+    /// of all its ring's.
+    #[serde(default)]
+    pub walls: bool,
+    #[serde(default)]
+    pub walls_up: u32,
+    #[serde(default)]
+    pub walls_all: u32,
 }
 
 /// One town, as a view sees it.
@@ -681,6 +689,9 @@ impl ViewSnapshot {
                             posture: format!("{:?}", pol.doctrine.posture).to_lowercase(),
                             prisoners: format!("{:?}", pol.doctrine.prisoners).to_lowercase(),
                             commissions: pol.commissions.len() as u32,
+                            walls: pol.walls,
+                            walls_up: t.walls.standing().0 as u32,
+                            walls_all: t.walls.standing().1 as u32,
                         }
                     },
                     exports: t.ledger.exports.clone(),

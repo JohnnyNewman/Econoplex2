@@ -18,6 +18,9 @@ pub enum EventKind {
     Fled(usize),
     Destroyed(usize),
     OutOfArrows(usize),
+    /// A stretch of the town's wall or a gate battered down (its index in
+    /// `Field::walls`).
+    Breach(usize),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -96,6 +99,22 @@ pub struct ReplayFrame {
     /// On the soldier model, every soldier of each squad, in member order;
     /// empty on the squad model.
     pub soldiers: Vec<Vec<FrameSoldier>>,
+    /// Hit points left of each piece of a town's wall on the field, in the
+    /// order of the replay's `walls` (0: a breach, or a gap never built).
+    #[serde(default)]
+    pub walls: Vec<f32>,
+}
+
+/// One piece of a town's wall on a battlefield, for the clients to draw:
+/// its ends and half its thickness (field metres), whether it is a gate,
+/// and its hit points at most (0: a gap never built).
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ReplayWall {
+    pub a: (f32, f32),
+    pub b: (f32, f32),
+    pub half_width: f32,
+    pub gate: bool,
+    pub max: f32,
 }
 
 /// One soldier at one moment of a battle, packed into six bytes: where they
@@ -168,6 +187,9 @@ pub struct Replay {
     pub squads: Vec<ReplaySquad>,
     pub frames: Vec<ReplayFrame>,
     pub winner: Option<u8>,
+    /// The town's wall on the field, if it has one.
+    #[serde(default)]
+    pub walls: Vec<ReplayWall>,
 }
 
 impl Replay {
@@ -254,6 +276,10 @@ pub struct LiveView {
     /// bonus, hit points, weapon dice), by squad in member order.
     pub sheets: Vec<Vec<super::rules::Sheet>>,
     pub wall_x: Option<f32>,
+    /// The town's wall on the field, if it has one (its hit points now are
+    /// `frame.walls`).
+    #[serde(default)]
+    pub walls: Vec<ReplayWall>,
     /// The field's obstacles, for the ghost line to find its way round
     /// (`None`: an open field). Not sent: a view that needs it shares the
     /// battle's.

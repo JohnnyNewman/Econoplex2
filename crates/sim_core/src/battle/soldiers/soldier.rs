@@ -5,6 +5,8 @@
 use super::*;
 use crate::battle::rules::{self, Roll};
 
+use crate::battle::walls::OVER_WALL;
+
 /// cos 135°: a blow from further round than this comes from behind.
 const REAR: f32 = -std::f32::consts::FRAC_1_SQRT_2;
 
@@ -36,10 +38,16 @@ impl SoldierBattle {
             // field; round the enemy when they stand in the way.
             let edge = V2::new(if side == 0 { -1.0 } else { 1.0 }, 0.0);
             // Among obstacles, down the side's flow field to its edge.
+            // One pressed into an obstacle steps out of it first.
             let home = self
                 .nav
                 .as_deref()
-                .and_then(|n| n.home_dir(me, side as u8))
+                .and_then(|n| {
+                    n.home_dir(me, side as u8).or_else(|| {
+                        let out = n.free_spot(me, side as u8) - me;
+                        (out.len2() > 1e-4).then(|| out.norm_or(edge))
+                    })
+                })
                 .unwrap_or(edge);
             let mut away = V2::ZERO;
             if foes_near {
@@ -119,7 +127,12 @@ impl SoldierBattle {
             } else {
                 reach
             };
-            let r = look.max(k.body) + self.widest[1 - side];
+            let over = if self.ring.is_some() && side == 1 {
+                OVER_WALL
+            } else {
+                0.0
+            };
+            let r = look.max(k.body) + self.widest[1 - side] + over;
             foes.each_near(me, r.min(sp.cell), |j, pj| {
                 let d = me - pj;
                 let d2 = d.len2();
@@ -139,8 +152,14 @@ impl SoldierBattle {
                 if d2 < best_d2 {
                     let rj = reach + bj;
                     // In reach, or (for the front rank) near the slot.
-                    let close = d2 <= rj * rj || (front && (pj - slot).len2() <= slack2);
-                    if close && !self.wall_between(me, pj, breach) {
+                    // A defender on a town's wall strikes down over it a
+                    // little further.
+                    let close = d2 <= rj * rj
+                        || (front && (pj - slot).len2() <= slack2)
+                        || (over > 0.0
+                            && d2 <= (rj + over) * (rj + over)
+                            && self.nav.as_deref().is_some_and(|n| n.wall_across(me, pj)));
+                    if close && !self.wall_between(me, pj, breach) && self.over_wall(i, me, pj) {
                         best = j as u32;
                         best_d2 = d2;
                     }
@@ -383,6 +402,16 @@ impl SoldierBattle {
             && self.facing[t].dot(toward) > 0.0
     }
 
+    /// Whether `i` at `me` may strike a man at `pj` for a town's wall:
+    /// nobody strikes through a stretch of it from outside; a defender
+    /// strikes down over it.
+    #[inline]
+    fn over_wall(&self, i: usize, me: V2, pj: V2) -> bool {
+        self.side[i] == 1
+            || self.ring.is_none()
+            || !self.nav.as_deref().is_some_and(|n| n.wall_across(me, pj))
+    }
+
     /// One blow from `i` on `t`, a `charge` (with its own dice and `extra`
     /// hit points of impact) or not, rolled on `d`: an attack roll against
     /// their armour class, then the dice.
@@ -396,9 +425,16 @@ impl SoldierBattle {
         let dist = to.len();
         let from = to.norm_or(self.facing[t]);
         let face = self.facing[t].dot(from);
-        // A man climbing or pushing through the breach can't parry.
-        let on_wall = self.squads[self.squad[i] as usize].spec.behind_wall
-            && self.field.wall_x.is_some_and(|w| self.pos[t].x < w);
+        // A man climbing or pushing through the breach can't parry, nor
+        // one below a town's wall.
+        let on_wall = (self.squads[self.squad[i] as usize].spec.behind_wall
+            && self.field.wall_x.is_some_and(|w| self.pos[t].x < w))
+            || (self.ring.is_some()
+                && self.side[i] == 1
+                && self
+                    .nav
+                    .as_deref()
+                    .is_some_and(|n| n.wall_across(self.pos[i], self.pos[t])));
         b.angle = if face < REAR {
             2
         } else if face < 0.0 {
@@ -502,7 +538,14 @@ impl SoldierBattle {
         let front = self.state[v] != SoldierState::Routing && self.facing[v].dot(from) > 0.0;
         let covered = self.field.wall_x.is_some_and(|w| {
             self.squads[self.squad[v] as usize].spec.behind_wall && self.pos[v].x > w && me.x < w
-        });
+        }) || (self.ring.is_some()
+            && self.side[v] == 1
+            && self.side[i] == 0
+            && self.nav.as_deref().is_some_and(|n| {
+                // The wall's cover is near him: his last metres toward me.
+                let d = (me - self.pos[v]).norm_or(V2::ZERO);
+                n.wall_across(self.pos[v], self.pos[v] + d * 4.0)
+            }));
         let ac = kv.armour_class(front) + if covered { p.wall_cover } else { 0.0 };
         let bonus = self.attack_bonus(i) - p.range_penalty * dist / ki.range.max(1.0);
         let roll = Roll::of(self.restrained[v], self.frightened(i));

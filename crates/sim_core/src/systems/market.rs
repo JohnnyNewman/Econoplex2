@@ -122,6 +122,7 @@ pub fn settle(
         for (ti, town) in towns.0.iter_mut().enumerate() {
             let pop = town.residents.len().max(1) as f32;
             let mint_wanted = town.mint_wanted(mp);
+            let wall_rank = crate::walls::best_rank(&db, town);
             // The pay of the town's poorer jobs (the lower quartile of those that
             // pay), at the start of the step.
             let poor_pay = {
@@ -149,6 +150,17 @@ pub fn settle(
                 }
                 if let Some(kind) = db.opens[p] {
                     town.price[p] = land_price(&db, town, mp, p, kind, &sites);
+                    continue;
+                }
+                if db.wall[p].is_some() {
+                    // A wall piece is worth its price while the town wants
+                    // a wall and some piece of it needs one.
+                    town.price[p] =
+                        if town.policy.walls && town.walls.wants(&db, p as u32, wall_rank) {
+                            db.base_price[p]
+                        } else {
+                            0.0
+                        };
                     continue;
                 }
                 if let Some((_, quality)) = db.house[p] {

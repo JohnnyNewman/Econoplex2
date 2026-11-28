@@ -1,7 +1,7 @@
 # War ideas for later
 
-Nils approved these on 2026-11-27 as the backlog for war and battles. None of
-them is built yet. They come after battle controls B and buildings as
+Nils approved these on 2026-11-27 as the backlog for war and battles. Town
+walls (10) are built; the others are not yet. They come after battle controls B and buildings as
 obstacles (see `battle-per-soldier.md`). Most of them only work because every
 soldier is a townsperson in a real economy; that is what should make
 Econoplex's wars play differently from other RTS games.
@@ -113,13 +113,16 @@ In 3D, follow one soldier at eye level through the fight. It's mostly for show
 
 ## 10. Town walls and gates
 
-A buildable structure: a timber palisade first, a stone wall later, with
-gates. It costs materials and labour to build and upkeep to maintain. In
-battle the wall and its gates are obstacles: attackers breach it, climb it or
-force a gate, and defenders on it get cover (`battle.wall_cover` already
-exists). Today walls exist only inside the battle engine (a straight
-`Field.wall_x` with a breach, used by test line-ups); no town builds one, and
-every real raid is fought on open ground.
+**Built** (see "Town walls" in `battle-per-soldier.md`). A town builds a
+ring of wall pieces sized to its layout, a gate where each road crosses it:
+a timber palisade first, a stone wall once it can build one, a piece at a
+time from materials and labour like any building. Pieces weather and are
+mended. The governor orders walls once a town has been raided and can pay
+for them; the player orders them from governance in either client. In battle
+each piece is a wall obstacle and each gate opens only for the defenders.
+Attackers batter a piece (blunt weapons best) until it is a breach, and
+defenders man the wall and then plug the breach. The damage stays until the
+town mends it.
 
 - **Builds on:** buildings as obstacles, building materials, and the
   existing wall rules in the battle model.
@@ -133,7 +136,7 @@ every real raid is fought on open ground.
 
 ## Suggested order
 
-1. Town walls (10), right after buildings as obstacles.
+1. Town walls (10), right after buildings as obstacles (done).
 2. Price of the battle (2), loot (3) and the win-chance forecast (1): small,
    and unlike other games.
 3. Weather and terrain (7) and ride-along (9).

@@ -63,16 +63,27 @@ pub(super) fn plan_raid(
             .collect();
         let militia = muster_militia(store, other, &defenders, mp);
         let (mut wins, mut dead, mut standing) = (0.0f32, 0.0f32, 0.0f32);
+        // A forecast is a guess: it fights on the cheap squad model, on an
+        // open field, but for the town's wall if it has one.
+        let mut field = crate::battle::Field::default();
+        if other.walls.standing().0 > 0 {
+            let (walled, _, _) = crate::layout::battle_field(towns, o, t, db, terrain);
+            let ids: Vec<u64> = walled.walls.iter().map(|w| w.id).collect();
+            field.obstacles = walled
+                .obstacles
+                .into_iter()
+                .filter(|o| ids.contains(&o.id))
+                .collect();
+            field.walls = walled.walls;
+        }
         for _ in 0..FORECASTS {
             let seed = rng.random::<u64>();
-            // A forecast is a guess: it fights on the cheap squad model,
-            // on an open field.
             match setup_field_battle(
                 store,
                 db,
                 params,
                 crate::battle::BattleModel::Squads,
-                crate::battle::Field::default(),
+                field.clone(),
                 fight,
                 gear_defs,
                 &town.squad,

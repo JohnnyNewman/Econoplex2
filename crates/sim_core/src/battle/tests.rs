@@ -326,6 +326,7 @@ fn recorded(model: BattleModel) {
             squads: squads.clone(),
             frames: Vec::new(),
             winner: report.winner,
+            walls: Vec::new(),
         });
     }
     assert_eq!(log.replays.len(), BattleLog::KEEP);

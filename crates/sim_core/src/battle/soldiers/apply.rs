@@ -2,6 +2,7 @@
 //! squad is recounted and tells the report what happened.
 
 use super::*;
+use std::f32::consts::FRAC_1_SQRT_2;
 
 impl SoldierBattle {
     /// Phase 5: damage, movement with collision, morale, fatigue and state.
@@ -86,6 +87,7 @@ impl SoldierBattle {
             quiet: quiets,
             side: sides,
             nav,
+            ring,
             fallen,
             broke,
             ..
@@ -147,10 +149,40 @@ impl SoldierBattle {
                     to.y = to.y.clamp(mid - half, mid + half);
                 }
             }
+            // Defenders keep their gates shut behind them: none walks out
+            // through one, but a man who runs.
+            if ring.is_some() && sides[i] == 1 && state != SoldierState::Routing {
+                if let Some(nav) = nav.as_deref() {
+                    if nav.any_near(to) && nav.wall_across(from, to) {
+                        to = from;
+                    }
+                }
+            }
             // Nobody walks into a building: out of it, along its wall.
             if let Some(nav) = nav.as_deref() {
                 if nav.any_near(to) || nav.any_near(from) {
+                    let want = to - from;
                     to = nav.resolve(from, to, k.body, sides[i]);
+                    // A runner stopped dead in a corner of walls tries a
+                    // little to either side, then along them.
+                    if state == SoldierState::Routing
+                        && (to - from).len2() < 0.01 * want.len2()
+                        && want.len2() > 1e-6
+                    {
+                        let r = want.right();
+                        for w in [
+                            (want + r) * FRAC_1_SQRT_2,
+                            (want - r) * FRAC_1_SQRT_2,
+                            r,
+                            r * -1.0,
+                        ] {
+                            let got = nav.resolve(from, from + w, k.body, sides[i]);
+                            if (got - from).len2() >= 0.25 * want.len2() {
+                                to = got;
+                                break;
+                            }
+                        }
+                    }
                 }
             }
             pos[i] = to;

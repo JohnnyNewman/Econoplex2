@@ -529,6 +529,17 @@ pub fn produce(
                         town.free_land = town.free_land.saturating_sub(1);
                         town.cleared += 1;
                         town.price[pi] = 0.0;
+                    } else if db.wall[pi].is_some() {
+                        // A wall piece goes up in the town's wall.
+                        town.stock[pi] -= q;
+                        town.flows.add(crate::goods::Flow::Built, pi, q);
+                        for _ in 0..q.round().max(0.0) as u32 {
+                            if town.walls.put_up(&db, p) {
+                                town.war.wall_pieces += 1;
+                                town.war.wall_spent += town.price[pi] * (0.5 + quality);
+                            }
+                        }
+                        town.price[pi] = 0.0;
                     } else if db.house[pi].is_some() {
                         // A finished house adds to the town's houses.
                         town.stock[pi] -= q;

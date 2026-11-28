@@ -14,6 +14,7 @@
 //!                              ... and mint                     -> mint TOWN on
 //! treasury per resident high -> lower taxes, spend more         -> spending TOWN 2.5
 //! idle adults           high -> order public works             -> procure TOWN plank 60
+//! raids on the town          -> build a wall                    -> walls TOWN on
 //! ```
 //!
 //! Observations are moving averages, and a lever moves one step per decision, so
@@ -583,6 +584,25 @@ pub fn govern(
                     ),
                 ));
             }
+        }
+
+        // --- defence: a town that has been raided builds a wall
+        if !p.walls
+            && gp.walls_after_raids > 0
+            && town.war.attacked >= gp.walls_after_raids
+            && town.residents.len() >= gp.walls_min_pop
+            && st.treasury > low
+        {
+            orders.push((
+                Order::Walls {
+                    town: tid,
+                    on: true,
+                },
+                format!(
+                    "ordered a town wall: raided {} times this year",
+                    town.war.attacked
+                ),
+            ));
         }
 
         // --- credit: lend to a firm in a short trade, while the treasury is flush

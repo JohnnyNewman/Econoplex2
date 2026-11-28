@@ -387,6 +387,7 @@
         wall_cover: 2.0,           // armour class a man on the wall gains against arrows from below
         wall_ground: 2.0,          // attack bonus of his blows on a man climbing it (the higher ground)
         breach_width: 6.0,         // m of gate or breach attackers fight through
+        wall_taken: (0.1, 0.25, 1.0), // share of a blow's pierce, slash, blunt damage a town wall takes
         skirmish_distance: 40.0,   // m: skirmishing archers back away from enemies this close
         cautious_wait: 120.0,      // m: a cautious side holds until an enemy is this close
         // The soldier model. Every rate is per second, scaled by the substep.
@@ -516,6 +517,8 @@
         public_works: ["cut_stone", "brick", "plank"],
         works_amount: 60.0,
         granary_days: 40.0,      // days of food the granary aims to hold
+        walls_after_raids: 1,    // raids on the town in a year after which it builds a wall (0: never)
+        walls_min_pop: 40,       // ... if it has this many residents and money above treasury_low
         personalities: [
             ("balanced", (thrift: 1.0, ambition: 1.0)),
             ("frugal", (thrift: 1.5, ambition: 0.6)),

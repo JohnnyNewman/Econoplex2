@@ -70,6 +70,7 @@ mod terrain;
 mod tiltshift;
 mod toon;
 mod ui;
+mod walls3d;
 mod water;
 
 #[derive(Resource, Clone)]
@@ -409,6 +410,7 @@ fn main() {
         grading::GradingPlugin,
         battles::BattlesPlugin,
         battle_input::BattleInputPlugin,
+        walls3d::Walls3dPlugin,
     ))
     .insert_resource(battle_input::BattleControls::new(rts_demo))
     .insert_resource(env_override)

@@ -49,7 +49,11 @@ fn four_thousand_soldiers_within_budget() {
 /// they make, soldiers pressed out of their slots and squads jammed in the
 /// streets. Its budget is three times the open battle's cost, timed in the
 /// same run so that a busy machine slows both alike (under twice on a quiet
-/// one: 1.9 ms per battle second against 1.1).
+/// one: 1.9 ms per battle second against 1.1). A walled town (`walled
+/// town`: the same town in a palisade with two gates) gets five times: its
+/// four thousand soldiers spend the battle pressed along the wall, where
+/// every step asks the obstacles where it may go and every blow whether the
+/// wall stands between (4.4 times open on this machine: 3.5 ms against 0.8).
 #[test]
 #[cfg_attr(debug_assertions, ignore = "a timing: release builds only")]
 fn four_thousand_soldiers_in_a_town_within_budget() {
@@ -79,9 +83,14 @@ fn four_thousand_soldiers_in_a_town_within_budget() {
     };
     let open = time(&format!("{side} vs {side}"));
     let town = time(&format!("{side} vs town {side}"));
-    println!("first 400 s: open {open:.3}, town {town:.3} ms per battle second");
-    assert!(
-        town <= 3.0 * open,
-        "town {town:.3} ms per battle second, more than three times open {open:.3}"
+    let walled = time(&format!("{side} vs walled town {side}"));
+    println!(
+        "first 400 s: open {open:.3}, town {town:.3}, walled {walled:.3} ms per battle second"
     );
+    for (name, ms, times) in [("town", town, 3.0), ("walled town", walled, 5.0)] {
+        assert!(
+            ms <= times * open,
+            "{name} {ms:.3} ms per battle second, more than {times} times open {open:.3}"
+        );
+    }
 }

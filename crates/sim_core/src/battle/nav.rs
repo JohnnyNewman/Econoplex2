@@ -135,6 +135,8 @@ struct Box2 {
     hx: f32,
     hy: f32,
     stops: u8,
+    /// A stretch of wall (`Shape::Segment`): it stops blows as well as feet.
+    wall: bool,
 }
 
 impl Box2 {
@@ -150,6 +152,7 @@ impl Box2 {
                     hx: half.0.max(0.0),
                     hy: half.1.max(0.0),
                     stops,
+                    wall: false,
                 }
             }
             Shape::Segment { a, b, half_width } => {
@@ -162,6 +165,7 @@ impl Box2 {
                     hx: (b - a).len() * 0.5 + half_width,
                     hy: half_width.max(0.0),
                     stops,
+                    wall: true,
                 }
             }
         }
@@ -258,6 +262,11 @@ pub struct Nav {
     /// Each side's flow field to its own edge of the field, made the first
     /// time someone of that side runs.
     home: [OnceLock<Vec<f32>>; 2],
+    /// Each side's regions: the cells it can reach one from another share
+    /// a number (`u32::MAX`: blocked), made the first time that side
+    /// searches, so a search for a way there is none (behind a wall closed
+    /// on this field) fails at once rather than after the whole grid.
+    regions: [OnceLock<Vec<u32>>; 2],
     search: Mutex<Search>,
 }
 
@@ -282,6 +291,8 @@ struct Search {
     cost: Vec<f32>,
     from: Vec<u32>,
     seen: Vec<u32>,
+    /// Stamped once a cell is opened.
+    done: Vec<u32>,
     stamp: u32,
     heap: BinaryHeap<Reverse<(u32, u32)>>,
 }
@@ -336,6 +347,7 @@ impl Nav {
             gh,
             blocked,
             home: [OnceLock::new(), OnceLock::new()],
+            regions: [OnceLock::new(), OnceLock::new()],
             search: Mutex::new(Search::default()),
         })
     }
@@ -367,6 +379,11 @@ impl Nav {
     }
     pub fn steer(&self, me: V2, target: V2, r: f32, side: u8) -> Option<V2> {
         self.shapes.steer(me, target, r, side)
+    }
+    /// Whether a stretch of wall that stops the attackers stands between
+    /// `a` and `b` (a few metres apart: a blow, or an arrow's last metres).
+    pub fn wall_across(&self, a: V2, b: V2) -> bool {
+        self.shapes.wall_across(a, b)
     }
 
     // --- The squads' questions: the grid. ---
@@ -526,8 +543,54 @@ impl Nav {
         l
     }
 
+    /// Side `side`'s regions (see `Nav::regions`): free cells joined side by
+    /// side, as a search goes (it cuts no corner).
+    fn regions(&self, side: u8) -> &[u32] {
+        let side = side.min(1);
+        self.regions[side as usize].get_or_init(|| {
+            let n = self.gw * self.gh;
+            let mut region = vec![u32::MAX; n];
+            let mut next = 0u32;
+            let mut stack = Vec::new();
+            for start in 0..n {
+                if region[start] != u32::MAX || !self.free_cell(start, side) {
+                    continue;
+                }
+                region[start] = next;
+                stack.push(start);
+                while let Some(c) = stack.pop() {
+                    let (cx, cy) = (c % self.gw, c / self.gw);
+                    let mut visit = |nc: usize| {
+                        if region[nc] == u32::MAX && self.free_cell(nc, side) {
+                            region[nc] = next;
+                            stack.push(nc);
+                        }
+                    };
+                    if cx > 0 {
+                        visit(c - 1);
+                    }
+                    if cx + 1 < self.gw {
+                        visit(c + 1);
+                    }
+                    if cy > 0 {
+                        visit(c - self.gw);
+                    }
+                    if cy + 1 < self.gh {
+                        visit(c + self.gw);
+                    }
+                }
+                next += 1;
+            }
+            region
+        })
+    }
+
     /// A* from cell `s` to cell `g`: the cells on the way, both included.
     fn search(&self, s: usize, g: usize, side: u8) -> Option<Vec<usize>> {
+        let regions = self.regions(side);
+        if regions[s] != regions[g] {
+            return None;
+        }
         let mut guard = self.search.lock().unwrap_or_else(|e| e.into_inner());
         let w = &mut *guard;
         let n = self.gw * self.gh;
@@ -535,11 +598,13 @@ impl Nav {
             w.cost = vec![0.0; n];
             w.from = vec![0; n];
             w.seen = vec![0; n];
+            w.done = vec![0; n];
             w.stamp = 0;
         }
         w.stamp = w.stamp.wrapping_add(1);
         if w.stamp == 0 {
             w.seen.fill(0);
+            w.done.fill(0);
             w.stamp = 1;
         }
         let stamp = w.stamp;
@@ -571,10 +636,15 @@ impl Nav {
                 cells.reverse();
                 return Some(cells);
             }
-            // A stale entry: the cell was reached more cheaply since.
-            if f32::from_bits(f) > w.cost[c] + h(c) + 1e-4 {
+            // A stale entry: the cell was reached more cheaply since. Nor is
+            // a cell opened twice: with the weighted guess a cheaper way to
+            // one already opened turns up, and opening it again would cost
+            // more than the shorter way is worth (a long way round a town's
+            // wall opened the whole field many times over).
+            if f32::from_bits(f) > w.cost[c] + h(c) + 1e-4 || w.done[c] == stamp {
                 continue;
             }
+            w.done[c] = stamp;
             opened += 1;
             if opened > MAX_OPEN {
                 return None;
@@ -752,6 +822,16 @@ impl Shapes {
     #[inline]
     pub fn any_near(&self, p: V2) -> bool {
         !self.near(p).is_empty()
+    }
+
+    /// Whether a stretch of wall that stops side 0 crosses the way from `a`
+    /// to `b`.
+    pub fn wall_across(&self, a: V2, b: V2) -> bool {
+        let crosses = |k: &u32| {
+            let w = &self.boxes[*k as usize];
+            w.wall && w.stops(0) && (w.enters(a, b, 0.0).is_some() || w.enters(b, a, 0.0).is_some())
+        };
+        self.near(a).iter().any(crosses) || self.near(b).iter().any(crosses)
     }
 
     /// Whether `p` stands inside an obstacle that stops `side`, grown by `r`.

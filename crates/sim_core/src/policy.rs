@@ -146,6 +146,8 @@ pub struct Policy {
     /// market (`granary.rs`); for tools and weapons, unissued in its armory.
     #[serde(default)]
     pub stockpile: Vec<(u32, f32)>,
+    /// Build a wall round the town and keep it mended (`walls.rs`).
+    pub walls: bool,
 }
 
 impl Policy {
@@ -265,6 +267,11 @@ pub enum Order {
         town: u16,
         on: bool,
     },
+    /// Build a wall round the town and keep it mended, or stop.
+    Walls {
+        town: u16,
+        on: bool,
+    },
     /// Keep `amount` units of a good in the town's stores (0 drops the target).
     Stockpile {
         town: u16,
@@ -314,7 +321,8 @@ impl Order {
             | Order::Imports { town, .. }
             | Order::Granary { town, .. }
             | Order::Reserve { town, .. }
-            | Order::Stockpile { town, .. } => town,
+            | Order::Stockpile { town, .. }
+            | Order::Walls { town, .. } => town,
         }
     }
 
@@ -337,6 +345,7 @@ impl Order {
     /// spending <town> <rate>|auto           e.g. spending Greenvale 4
     /// procure <town> <product> <amount>     e.g. procure Greenvale cloth 50 (0 cancels)
     /// imports <town> on|off|auto            emergency food imports from neighbours
+    /// walls <town> on|off                   build a wall round the town and mend it
     /// loan <town> <firm> <amount> <rate> <days>  e.g. loan Ironhold smithy 100 0.1 240
     ///   (a firm is named by its building, nature site or guild domain)
     /// ```
@@ -495,6 +504,10 @@ impl Order {
                     .ok_or_else(|| format!("no good `{p}` to order"))?,
                 amount: number(amount)?.max(0.0),
             }),
+            ["walls", t, m @ ("on" | "off")] => Ok(Order::Walls {
+                town: town(t)?,
+                on: *m == "on",
+            }),
             ["imports", t, m @ ("on" | "off" | "auto")] => Ok(Order::Imports {
                 town: town(t)?,
                 imports: match *m {
@@ -652,6 +665,7 @@ pub fn apply_orders(
             Order::Imports { imports, .. } => p.food_imports = imports,
             Order::Granary { days, .. } => p.granary_days = days,
             Order::Reserve { on, .. } => p.food_reserve = on,
+            Order::Walls { on, .. } => p.walls = on,
             Order::Stockpile {
                 product, amount, ..
             } => {

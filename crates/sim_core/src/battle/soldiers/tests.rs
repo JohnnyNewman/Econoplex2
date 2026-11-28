@@ -336,6 +336,7 @@ fn replay_frames_carry_every_soldier() {
         squads,
         frames,
         winner: None,
+        walls: Vec::new(),
     };
     for f in &replay.frames {
         let sizes: Vec<usize> = f.soldiers.iter().map(Vec::len).collect();
